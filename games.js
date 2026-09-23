@@ -11,4 +11,13 @@ window.MINI_GAMES = [
     imageAlt: 'Striped hot-air balloons drifting over a calm sea at sunset',
     tags: ['3D', 'All ages', 'Touch friendly'],
   },
+  {
+    slug: 'cake-cut',
+    name: 'Cake Cut',
+    description: 'Decorate a photoreal party cake, blow out the candles, then cut and serve slices with a knife, wire or cake sword.',
+    path: 'games/cake-cut/',
+    image: 'games/cake-cut/cover.jpg',
+    imageAlt: 'A chocolate drip cake on a porcelain stand with one slice served on a plate',
+    tags: ['3D', 'All ages', 'Touch friendly'],
+  },
 ];

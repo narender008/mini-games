@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Cake Cut · Mini Games</title>
+    <meta name="description" content="Cut photoreal birthday cakes and serve the slices. Plays in the browser with mouse, touch or pen." />
+    <meta name="theme-color" content="#1c120d" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../../vendor/three/build/three.module.js",
+          "three/addons/": "../../vendor/three/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body data-state="loading">
+    <canvas id="scene" aria-label="Cake Cut: a birthday cake on a stand on a party table"></canvas>
+
+    <div id="loader" role="progressbar" aria-label="Loading Cake Cut" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <svg class="loader-cake" viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M31 6c-2 3-2 5 0 7 2-2 2-4 0-7Z" fill="#ffb347" />
+        <rect x="30" y="13" width="2.5" height="10" rx="1" fill="#f3c3cd" />
+        <path d="M12 30c0-4 9-7 20-7s20 3 20 7v22H12Z" fill="#5a2e1b" />
+        <path d="M12 30c0-4 9-7 20-7s20 3 20 7c0 3-2 5-3 9-1-3-2-5-3-5s-2 6-3 6-2-4-3-4-2 7-4 7-2-6-3-6-2 4-3 4-2-6-4-6-2 3-3 5c-1-4-4-6-4-10Z" fill="#f3c3cd" />
+        <rect x="12" y="41" width="40" height="2" fill="#2a130a" opacity="0.6" />
+        <path d="M6 54h52v3H6Z" fill="#e3b86b" />
+      </svg>
+      <p class="loader-title">Cake Cut</p>
+      <div class="bar"><span id="loader-fill"></span></div>
+      <p id="loader-text">Loading…</p>
+    </div>
+
+    <header id="hud" hidden>
+      <a class="chip home" href="../../index.html" aria-label="Back to all games">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Games</span>
+      </a>
+      <div class="title" aria-live="polite"><span id="cake-name"></span></div>
+      <div class="actions">
+        <button type="button" id="new-cake" class="chip" title="Next cake (N)"><span>New cake</span></button>
+        <button type="button" id="mute" class="icon" aria-pressed="false" aria-label="Mute sound" title="Sound (M)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg>
+        </button>
+        <button type="button" id="pause-btn" class="icon" aria-label="Pause" title="Pause (Esc)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" class="thick" /></svg>
+        </button>
+      </div>
+    </header>
+
+    <nav id="tray" hidden aria-label="Tools">
+      <button type="button" id="spin-left" class="icon" aria-label="Turn the cake left" title="Turn the cake (←)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8a7 7 0 1 1-1.5 7.5" /><path d="M7 3v5h5" /></svg>
+      </button>
+      <div class="toolswitch" role="radiogroup" aria-label="Cutting tool">
+        <button type="button" data-tool="chef" role="radio" aria-checked="true" title="Chef's knife (1)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="fillc" d="M2.5 15.5 14 8.2c2.6-1.6 5.2-1.1 6.6-.2L4.3 17.6z" /><path d="M14.2 8.1 20.8 4" class="thick" /></svg>
+          <span class="lbl">Knife</span>
+        </button>
+        <button type="button" data-tool="serrated" role="radio" aria-checked="false" title="Serrated cake knife (2)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 16.5l1.2-1.6 1 .8 1.2-1.6 1 .8 1.2-1.6 1 .8 1.2-1.6 1 .8 1.2-1.6 1 .8 1.3-1.5L16 12" /><path d="M3 17.5 16 9.5" /><path d="M16.3 9.3 21 6.4" class="thick" /></svg>
+          <span class="lbl">Serrated</span>
+        </button>
+        <button type="button" data-tool="wire" role="radio" aria-checked="false" title="Cake wire (3)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 19V7.5C3 6.7 3.7 6 4.5 6h15c.8 0 1.5.7 1.5 1.5V19" /><path d="M3 19h18" class="hair" /><path d="M8 3.5h8" class="thick" /></svg>
+          <span class="lbl">Wire</span>
+        </button>
+        <button type="button" data-tool="sword" role="radio" aria-checked="false" title="Celebration cake sword (4)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5 9 15" /><path d="M20.5 3.5l-3 .6-11 11 2.4 2.4 11-11z" class="fillc" /><path d="M5 13l6 6" /><path d="M6.6 17.4 3.5 20.5" class="thick" /><path d="M8 16c-2 0-3 1.5-3.5 3M8 16c0 2-1.5 3-3 3.5" /></svg>
+          <span class="lbl">Sword</span>
+        </button>
+        <button type="button" data-tool="server" role="radio" aria-checked="false" title="Cake server (5)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="fillc" d="M13 11.5 21 4l-1.2 5.8c-.8 3.1-3 4.9-6.8 1.7z" /><path d="M13.3 11.2 8.5 14.8 3 20" class="thick" /></svg>
+          <span class="lbl">Server</span>
+        </button>
+      </div>
+      <button type="button" id="spin-right" class="icon" aria-label="Turn the cake right" title="Turn the cake (→)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 8a7 7 0 1 0 1.5 7.5" /><path d="M17 3v5h-5" /></svg>
+      </button>
+    </nav>
+
+    <p id="hint" aria-live="polite"></p>
+
+    <section id="menu" class="panel" hidden aria-labelledby="menu-title">
+      <h1 id="menu-title">Cake Cut</h1>
+      <p class="lede">A birthday cake on the stand and a knife in your hand. Cut it, see the layers, and serve the slices.</p>
+      <div class="modes">
+        <button type="button" id="play-free" class="mode">
+          <strong>Free play</strong>
+          <small>Cut and serve at your own pace. No score.</small>
+        </button>
+      </div>
+      <a class="back" href="../../index.html">← All games</a>
+    </section>
+
+    <section id="paused" class="panel small" hidden aria-labelledby="paused-title">
+      <h2 id="paused-title">Paused</h2>
+      <div class="row">
+        <button type="button" id="resume" class="primary">Resume</button>
+        <button type="button" id="pause-menu">Menu</button>
+      </div>
+    </section>
+
+    <noscript><p class="noscript">Cake Cut needs JavaScript to run.</p></noscript>
+    <script type="module" src="src/boot.js"></script>
+  </body>
+</html>
