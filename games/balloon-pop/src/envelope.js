@@ -227,20 +227,23 @@ vec4 envelopePattern(vec2 uv, vec2 gore, float pal, float pat, out float rough, 
     col = mix(col, envPal(pal, 2.0), band);
     glow = max(dmask, band);
   } else {
-    // Gold leaf with black pills.
-    vec3 gold = vec3(1.0, 0.72, 0.29);
+    // Gold lamé with black pills. Only part metallic: pure metal would
+    // mirror the dark storm sky and look bronze-black, so the gold also
+    // glows a little with the sunset shining through it.
+    vec3 gold = vec3(1.0, 0.7, 0.26);
     col = gold;
-    rough = 0.24;
-    metal = 1.0;
+    rough = 0.2;
+    metal = 0.72;
+    glow = 0.45;
     if (mod(gi, 2.0) < 0.5) {
       float up = envPill(X, y, 0.6 * ENV_LEN, 0.968 * ENV_LEN, hw);
       float lo = envPill(X, y, 0.035 * ENV_LEN, 0.47 * ENV_LEN, hw);
       float m = max(up, lo);
       col = mix(col, vec3(0.02, 0.012, 0.01), m);
       rough = mix(rough, 0.4, m);
-      metal = 1.0 - m;
+      metal = mix(metal, 0.0, m);
+      glow = mix(glow, 0.0, m);
     }
-    glow = 0.0;
   }
 
   // Load tapes along the seams, and a slight shadow in the seam valleys.
