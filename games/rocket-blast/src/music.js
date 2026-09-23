@@ -2,7 +2,6 @@
 // instruments: marimba melody, plucked ukulele-style chords, a round bass,
 // and soft kick, clap and shaker. It loops every eight bars.
 const BPM = 112;
-const STEP = 60 / BPM / 2; // eighth notes
 
 const n = (name) => {
   const map = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -48,6 +47,12 @@ export class Music {
     this.step = 0;
     this.next = 0;
     this.timer = null;
+    this.setTempo(BPM);
+  }
+
+  // eighth-note length from beats per minute (Big Kid plays it faster)
+  setTempo(bpm) {
+    this.stepLen = 60 / bpm / 2;
   }
 
   start() {
@@ -79,7 +84,7 @@ export class Music {
     while (this.next < ctx.currentTime + 0.15) {
       this.play(this.step, this.next);
       this.step = (this.step + 1) % 64;
-      this.next += STEP;
+      this.next += this.stepLen;
     }
   }
 
@@ -90,7 +95,7 @@ export class Music {
     if (note !== '-' && note !== '.') {
       let len = 1;
       while (beat + len < 8 && MELODY[bar][beat + len] === '-') len++;
-      this.marimba(n(note), t, STEP * len);
+      this.marimba(n(note), t, this.stepLen * len);
     }
     if (beat % 2 === 1) this.strum(CHORDS[bar], t);
     if (beat === 0 || beat === 4) this.bass(BASS[bar], t, beat === 0 ? 1 : 1.5);

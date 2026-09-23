@@ -195,7 +195,6 @@ export class Director {
   update(dt, t, now) {
     const mode = this.mode;
     const f = this.field;
-    const slow = 1;
     if (mode === 'free') this.updateFree(dt, t);
     else if (mode === 'big') this.updateBig(dt, t, now);
     else this.updateLittle(dt);
@@ -219,7 +218,7 @@ export class Director {
       }
       for (const e of form.enemies) {
         if (!e.alive) continue;
-        e.y += (e.vyOwn ?? form.vy) * dt * slow;
+        e.y += (e.vyOwn ?? form.vy) * dt;
         // glide to the grid column (sideways steps and break-apart hops)
         const dx = e.gx - e.x;
         e.vx = dx * 6;
@@ -354,7 +353,7 @@ export class Director {
   spawnBoss() {
     const f = this.field;
     const size = clamp(f.halfW * 0.55, 2.6, 3.6);
-    const hp = 36 + this.bosses * 14;
+    const hp = 50 + this.bosses * 20;
     const e = this.app.spawnEnemy({ x: 0, y: f.halfH + size, colorIndex: this.pickColor(), size, hp, boss: true });
     e.z = -0.6;
     this.boss = e;
@@ -379,9 +378,16 @@ export class Director {
   }
 
   bossHit(e, x, y, info) {
+    const app = this.app;
+    // the boss soaks up at most ~12 hits a second, so a fight lasts a while
+    // even with every power-up running; extra shots just sparkle
+    if (app.realTime - (e.lastHit ?? -1) < 0.08) {
+      app.glow.add({ x, y, z: 1, size: 0.6, life: 0.2, frame: 2, rot: Math.random() * 6, r: 2.4, g: 2, b: 1.2 });
+      return;
+    }
+    e.lastHit = app.realTime;
     e.hp--;
     e.jiggle(0.5);
-    const app = this.app;
     app.fx.burst(x, y, e.color, 0.55);
     app.audio.bossHit(app.panFor(x));
     this.scoreHit(x, y, info, 2);
@@ -424,7 +430,7 @@ export class Director {
       for (let i = 0; i < stars; i++) setTimeout(() => app.ui.flyStar(p.x, p.y), i * 90);
     } else if (this.mode === 'big') {
       streak = this.scoreHit(e.x, e.y, info, e.golden ? 100 : 10);
-      if (Math.random() < 0.06 || e.golden) app.powerups.spawn(e.x, e.y);
+      if (Math.random() < 0.03 || e.golden) app.powerups.spawn(e.x, e.y);
     }
     if (this.hits % MEGA_EVERY[this.mode] === 0) app.megaStart();
     return streak;

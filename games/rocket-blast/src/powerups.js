@@ -48,7 +48,7 @@ export class PowerUps {
   }
 
   spawn(x, y, kind = pick(Object.keys(POWERS))) {
-    if (this.items.length >= 6) return;
+    if (this.items.length >= 3) return;
     this.items.push({ kind, x, y, vy: -1.1, phase: rand(0, 6.28), age: 0, spin: rand(-1, 1) });
   }
 

@@ -316,6 +316,7 @@ class App {
     this.lastInput = this.realTime;
     this.megaT = 0;
     this.rocket.gold = 0;
+    this.audio.music?.setTempo(mode === 'big' ? 128 : 112);
   }
 
   toMenu() {
@@ -327,6 +328,7 @@ class App {
     this.ui.show('menu');
     this.megaT = 0;
     this.rocket.gold = 0;
+    this.audio.music?.setTempo(112);
   }
 
   clearField() {

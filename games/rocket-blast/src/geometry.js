@@ -106,7 +106,7 @@ export function mergeGeometries(list) {
   const index = [];
   let offset = 0;
   for (const g0 of list) {
-    const g = g0.index ? g0 : g0.toNonIndexed();
+    const g = g0;
     for (const name of names) {
       const attr = g.attributes[name];
       for (let i = 0; i < attr.count * attr.itemSize; i++) arrays[name].push(attr.array[i]);
