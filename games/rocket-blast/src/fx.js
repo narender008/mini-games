@@ -126,7 +126,7 @@ function spikeGeometry() {
       tips.push(new THREE.Vector3(p.getX(i), p.getY(i), p.getZ(i)).length());
     }
   }
-  const core = new THREE.IcosahedronGeometry(0.42, 2).toNonIndexed();
+  const core = new THREE.IcosahedronGeometry(0.42, 2); // polyhedra are already non-indexed
   for (let i = 0; i < core.attributes.position.count; i++) {
     verts.push(core.attributes.position.getX(i), core.attributes.position.getY(i), core.attributes.position.getZ(i));
     norms.push(core.attributes.normal.getX(i), core.attributes.normal.getY(i), core.attributes.normal.getZ(i));

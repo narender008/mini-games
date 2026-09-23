@@ -212,7 +212,9 @@ export class Director {
             const lo = Math.min(...xs) + form.dir * CELL;
             const hi = Math.max(...xs) + form.dir * CELL;
             if (lo < this.colX(0) - 0.01 || hi > this.colX(n - 1) + 0.01) form.dir *= -1;
-            for (const e of form.enemies) e.gx += form.dir * CELL;
+            // never step sideways into another toy; turn round instead
+            if (this.shiftBlocked(form, form.dir * CELL)) form.dir *= -1;
+            else for (const e of form.enemies) e.gx += form.dir * CELL;
           }
         }
       }
@@ -226,6 +228,7 @@ export class Director {
       }
     }
     this.formations = this.formations.filter((form) => form.enemies.some((e) => !e.gone));
+    if (mode !== 'free') this.separate(dt);
 
     // anything reaching the bottom just boops away
     const bottom = -f.halfH + 0.75;
@@ -234,13 +237,49 @@ export class Director {
     }
   }
 
+  // Would stepping this formation sideways by dx land a toy on another one?
+  shiftBlocked(form, dx) {
+    return this.app.enemies.some(
+      (o) => o.alive && !o.boss && o.formation !== form &&
+        form.enemies.some((e) => e.alive && Math.abs((o.gx ?? o.x) - (e.gx + dx)) < 0.9 && Math.abs(o.y - e.y) < 1.2),
+    );
+  }
+
+  // Toys are solid: a faster toy settles on top of a slower one instead of
+  // sliding through it, eased so nothing jumps.
+  separate(dt) {
+    const list = this.app.enemies.filter((e) => e.alive && !e.boss).sort((a, b) => a.y - b.y);
+    const step = dt * 5;
+    for (let i = 0; i < list.length; i++) {
+      const lo = list[i];
+      for (let j = i + 1; j < list.length; j++) {
+        const up = list[j];
+        const gap = 0.98 - (up.y - lo.y);
+        if (gap <= 0) break;
+        if (Math.abs(up.x - lo.x) >= 0.95) continue;
+        const same = up.formation && up.formation === lo.formation;
+        if (same && !up.formation.broken) continue;
+        // keep whole formations in shape: move the loose toy, not the formation one
+        const upHeld = up.formation && !up.formation.broken;
+        const loHeld = lo.formation && !lo.formation.broken;
+        if (upHeld && !loHeld) lo.y -= Math.min(gap, step);
+        else up.y += Math.min(gap, step);
+      }
+    }
+  }
+
   breakApart(form) {
     form.broken = true;
     const n = this.cols();
+    const all = this.app.enemies.filter((o) => o.alive && !o.boss);
+    const clear = (e, gx) => all.every((o) => o === e || Math.abs((o.gx ?? o.x) - gx) > 0.9 || Math.abs(o.y - e.y) > 1.4);
+    const inside = (gx) => gx >= this.colX(0) - 0.01 && gx <= this.colX(n - 1) + 0.01;
     for (const e of form.enemies) {
       if (!e.alive) continue;
-      const hop = pick([-2, -1, 1, 2]);
-      e.gx = clamp(e.gx + hop * CELL, this.colX(0), this.colX(n - 1));
+      // hop to a free column nearby (or stay put if every one is taken)
+      const hops = [-2, -1, 1, 2].sort(() => Math.random() - 0.5);
+      const hop = hops.find((h) => inside(e.gx + h * CELL) && clear(e, e.gx + h * CELL));
+      if (hop !== undefined) e.gx += hop * CELL;
       e.vyOwn = form.vy * rand(0.85, 1.35);
       e.jiggle(0.6);
     }
