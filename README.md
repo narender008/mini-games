@@ -4,7 +4,7 @@ A small collection of free games that run in the browser. Open the front page, p
 
 | Game | What it is |
 | --- | --- |
-| [Balloon Pop](games/balloon-pop/) | Pop photoreal hot-air balloons drifting over a dusk sea, with a pin or a dart. A relaxed endless mode and a 60-second challenge. |
+| [Balloon Pop](games/balloon-pop/) | Pop photoreal hot-air balloons drifting over a dusk sea, with a pin, a dart, an air rifle or a slingshot. Pop them fast to build a streak. A relaxed endless mode and a 60-second challenge. |
 
 ## Play locally
 
