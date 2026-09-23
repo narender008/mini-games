@@ -25,6 +25,10 @@ const FILES = [
   'src/tools.js',
   'src/scene.js',
   'src/audio.js',
+  'src/decorations.js',
+  'src/candles.js',
+  'src/fx.js',
+  'src/ui.js',
 ];
 
 async function fetchWithProgress(files, onBytes) {
@@ -57,7 +61,7 @@ async function boot() {
     return;
   }
   progress(0.02, 'Loading the engine');
-  const expected = 2_000_000; // rough uncompressed size of the files above
+  const expected = 2_370_000; // rough uncompressed size of the files above
   try {
     await fetchWithProgress(FILES, (bytes) => progress(0.02 + 0.56 * Math.min(1, bytes / expected)));
   } catch {

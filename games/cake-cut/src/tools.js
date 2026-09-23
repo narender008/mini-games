@@ -200,7 +200,7 @@ function buildSerrated() {
       nx: 260,
       nv: 6,
     }),
-    bladeSteel({ roughness: 0.22 }),
+    bladeSteel({ roughness: 0.3 }),
   );
   g.add(blade);
   const handle = new THREE.Mesh(handleGeometry(0.12, 0.024, 0.019), wood('#b07b4c', 0.42));
@@ -264,7 +264,7 @@ function buildSword() {
       half: 0.0016,
       nx: 80,
     }),
-    bladeSteel({ roughness: 0.1, colour: '#eef1f5' }),
+    bladeSteel({ roughness: 0.3, colour: '#e4e8ed' }),
   );
   g.add(blade);
   // fuller: a gold line engraved along the blade

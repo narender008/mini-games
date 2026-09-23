@@ -39,8 +39,16 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Games</span>
       </a>
       <div class="title" aria-live="polite"><span id="cake-name"></span></div>
+      <div id="rush-hud" class="rush-hud" hidden>
+        <span class="stat"><span class="k">Time</span><strong id="rush-time">1:30</strong></span>
+        <span class="stat"><span class="k">Score</span><strong id="rush-score">0</strong></span>
+        <span class="stat mult" id="rush-mult-wrap" hidden><strong id="rush-mult">×2</strong></span>
+      </div>
       <div class="actions">
-        <button type="button" id="new-cake" class="chip" title="Next cake (N)"><span>New cake</span></button>
+        <button type="button" id="new-cake" class="chip" title="Another cake (N)"><span>New cake</span></button>
+        <button type="button" id="photo" class="icon" aria-label="Save a photo" title="Save a photo">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l1.6-2.2h6.8L17 8h3v11H4z" /><circle cx="12" cy="13.2" r="3.4" /></svg>
+        </button>
         <button type="button" id="mute" class="icon" aria-pressed="false" aria-label="Mute sound" title="Sound (M)">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg>
         </button>
@@ -81,18 +89,128 @@
       </button>
     </nav>
 
+    <div id="orders" class="orders" hidden aria-live="polite" aria-label="Guest orders"></div>
+
+    <div id="fairbar" class="fairbar" hidden>
+      <span class="chip plain" id="fair-goal">Cut 6 fair slices</span>
+      <button type="button" id="fair-check" class="chip primary">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" class="thick" /></svg><span>Share it out</span>
+      </button>
+    </div>
+
+    <div id="candlebar" class="candlebar" hidden>
+      <button type="button" id="light" class="bigbtn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 16 8" class="thick" /><path class="fillc" d="M17.5 3.5c-1.8 1.6-2.4 3.1-1.4 4.4 1.3.9 2.8.3 4-1.4-.1-1.4-1-2.5-2.6-3z" /></svg>
+        <span>Light the candles</span>
+      </button>
+      <button type="button" id="blow" class="bigbtn blow" hidden aria-describedby="blow-help">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h10a3 3 0 1 0-3-3" /><path d="M3 13h15a3 3 0 1 1-3 3" /><path d="M3 17h7" /></svg>
+        <span>Hold to blow</span>
+        <i class="meter" aria-hidden="true"><b id="blow-meter"></b></i>
+      </button>
+      <p id="blow-help" class="sr">Press and hold, or hold the space bar, to blow out the candles.</p>
+      <button type="button" id="mic" class="chip" hidden aria-pressed="false" title="Blow into your microphone instead">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" /></svg>
+        <span id="mic-label">Use microphone</span>
+      </button>
+      <button type="button" id="skip-candles" class="chip ghost">Skip</button>
+    </div>
+
+    <button type="button" id="wipe" class="chip wipe" hidden title="Wipe the blade clean (W)">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15c3-1 5 1 8 0s5-3 8-2" /><path d="M4 11c3-1 5 1 8 0s5-3 8-2" /></svg><span>Wipe blade</span>
+    </button>
+
+    <div id="labels" class="labels" aria-hidden="true"></div>
+    <div id="callouts" class="callouts" aria-live="polite"></div>
+    <div id="banner" class="banner" hidden><span>Happy birthday!</span></div>
+
     <p id="hint" aria-live="polite"></p>
 
     <section id="menu" class="panel" hidden aria-labelledby="menu-title">
       <h1 id="menu-title">Cake Cut</h1>
-      <p class="lede">A birthday cake on the stand and a knife in your hand. Cut it, see the layers, and serve the slices.</p>
+      <p class="lede">Decorate a birthday cake, blow out the candles, then cut it open and serve the slices.</p>
       <div class="modes">
         <button type="button" id="play-free" class="mode">
           <strong>Free play</strong>
-          <small>Cut and serve at your own pace. No score.</small>
+          <small>Decorate, celebrate and cut at your own pace. No score.</small>
+        </button>
+        <div class="mode fair">
+          <button type="button" id="play-fair" class="mode-main">
+            <strong>Fair slices</strong>
+            <small>Cut equal slices for every guest. How fair can you be?</small>
+            <small class="best" id="best-fair"></small>
+          </button>
+          <div class="stepper" role="group" aria-label="Number of guests">
+            <button type="button" id="guests-down" aria-label="Fewer guests">−</button>
+            <output id="guests" aria-live="polite">6</output>
+            <button type="button" id="guests-up" aria-label="More guests">+</button>
+            <span class="k">guests</span>
+          </div>
+        </div>
+        <button type="button" id="play-rush" class="mode">
+          <strong>Party rush</strong>
+          <small>Guests are queuing. Cut the size they ask for and serve it fast.</small>
+          <small class="best" id="best-rush"></small>
         </button>
       </div>
       <a class="back" href="../../index.html">← All games</a>
+    </section>
+
+    <section id="decorate" class="sheet" hidden aria-labelledby="decorate-title">
+      <div class="sheet-head">
+        <h2 id="decorate-title">Decorate your cake</h2>
+        <button type="button" id="surprise" class="chip ghost" title="Pick everything at random">Surprise me</button>
+      </div>
+      <div class="sheet-body">
+        <fieldset>
+          <legend>Cake</legend>
+          <div class="chips" id="opt-cake" role="radiogroup" aria-label="Cake"></div>
+          <p class="blurb" id="cake-blurb"></p>
+        </fieldset>
+        <fieldset>
+          <legend>Frosting</legend>
+          <div class="swatches" id="opt-frosting" role="radiogroup" aria-label="Frosting colour"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Toppings <small>pick up to four</small></legend>
+          <div class="chips" id="opt-toppings" role="group" aria-label="Toppings"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Candles</legend>
+          <div class="seg" id="opt-candles" role="radiogroup" aria-label="Candles">
+            <button type="button" data-candles="none" role="radio">None</button>
+            <button type="button" data-candles="regular" role="radio">Candles</button>
+            <button type="button" data-candles="number" role="radio">Number</button>
+          </div>
+          <div class="stepper small" id="candle-count" role="group" aria-label="How many candles">
+            <button type="button" id="count-down" aria-label="Fewer">−</button>
+            <output id="count">5</output>
+            <button type="button" id="count-up" aria-label="More">+</button>
+            <span class="k" id="count-k">candles</span>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Message <small>piped on top · stays on this device</small></legend>
+          <input type="text" id="opt-message" maxlength="18" autocomplete="off" spellcheck="false" placeholder="Happy birthday" aria-label="Message to pipe on the cake" />
+        </fieldset>
+      </div>
+      <div class="sheet-foot">
+        <button type="button" id="decorate-back" class="ghost">Menu</button>
+        <button type="button" id="decorate-done" class="primary">Let's celebrate</button>
+      </div>
+    </section>
+
+    <section id="result" class="panel" hidden aria-labelledby="result-title">
+      <h2 id="result-title">Nicely shared</h2>
+      <div class="stars" id="result-stars" aria-hidden="true"></div>
+      <p class="big" id="result-big"></p>
+      <p class="lede" id="result-text"></p>
+      <dl class="facts" id="result-facts"></dl>
+      <div class="row">
+        <button type="button" id="result-again" class="primary">Play again</button>
+        <button type="button" id="result-look" hidden>Look at the cake</button>
+        <button type="button" id="result-menu">Menu</button>
+      </div>
     </section>
 
     <section id="paused" class="panel small" hidden aria-labelledby="paused-title">

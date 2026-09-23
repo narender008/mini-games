@@ -2,15 +2,18 @@
 import * as THREE from 'three';
 import { QUERY, DEBUG, REDUCED_MOTION } from './config.js';
 import { detectQuality, FrameGovernor } from './quality.js';
-import { CAKES, cakeById } from './recipes.js';
+import { CAKES, FROSTINGS, TOPPINGS, cakeById } from './recipes.js';
 import { Cake } from './cake.js';
 import { clipSegment, pointInPolygon } from './geom.js';
 import { createEnvironment, createTable, createBackdrop, createStand, createPlate, createLights, STAND_TOP, PLATE_TOP } from './scene.js';
 import { buildTools, flutterRibbon } from './tools.js';
-import { Crumbs } from './fx.js';
+import { Crumbs, Smoke, Confetti, Sparkles } from './fx.js';
+import { decorate, messageTexture, hashString } from './decorations.js';
+import { Candles, createMatch } from './candles.js';
+import { Mic } from './mic.js';
 import { Audio } from './audio.js';
 import { Post } from './post.js';
-import { UI } from './ui.js';
+import { UI, store } from './ui.js';
 
 const BOARD = 0.004; // cake board thickness
 const MOUNT_Y = STAND_TOP + BOARD;
@@ -44,6 +47,15 @@ class App {
     this.smear = 0;
     this.served = [];
     this.layout = { w: 1, h: 1, aspect: 1.6 };
+    this.decor = null;
+    this.candles = null;
+    this.mood = 0;
+    this.blowHeld = 0;
+    this.blowing = false;
+    this.timers = [];
+    this.sheet = { x: 0, y: 0 };
+    this.showLabels = false;
+    this.rush = null;
   }
 
   async init() {
@@ -95,24 +107,51 @@ class App {
     for (const t of Object.values(this.tools)) scene.add(t);
     this.crumbs = new Crumbs(q.crumbs, (x, z) => this.supportAt(x, z));
     scene.add(this.crumbs.mesh);
+    this.smoke = new Smoke(scene);
+    this.confetti = new Confetti(REDUCED_MOTION.matches ? Math.round(q.confetti / 3) : q.confetti, (x, z) => this.supportAt(x, z));
+    scene.add(this.confetti.mesh);
+    this.sparkles = new Sparkles();
+    scene.add(this.sparkles.points);
+    this.match = createMatch();
+    scene.add(this.match);
     this.audio = new Audio();
     this.post = new Post(renderer, scene, camera, q);
     this.governor = new FrameGovernor(() => this.resize());
 
-    this.ui = new UI({
-      start: (mode) => this.startGame(mode),
-      resume: () => this.resume(),
-      menu: () => this.toMenu(),
-      pause: () => this.pause(),
-      toggleMute: () => this.toggleMute(),
-      tool: (t) => this.setTool(t),
-      rotate: (dir) => this.nudgeSpin(dir),
-      newCake: () => this.newCake(),
-    });
+    this.mic = new Mic(this.audio);
+    this.ui = new UI(
+      {
+        start: (mode) => this.startGame(mode),
+        resume: () => this.resume(),
+        menu: () => this.toMenu(),
+        pause: () => this.pause(),
+        toggleMute: () => this.toggleMute(),
+        tool: (t) => this.setTool(t),
+        rotate: (dir) => this.nudgeSpin(dir),
+        newCake: () => this.newCake(),
+        photo: () => this.photo(),
+        guests: () => this.showBests(),
+        decor: (change) => this.onDecor(change),
+        surprise: () => this.surprise(),
+        decorDone: () => this.decorDone(),
+        light: () => this.lightCandles(),
+        blow: (on) => this.setBlow(on),
+        mic: () => this.toggleMic(),
+        skipCandles: () => this.skipCandles(),
+        fairCheck: () => this.fairCheck(),
+        wipe: () => this.wipe(),
+        again: () => this.again(),
+        look: () => this.look(),
+      },
+      { cakes: CAKES, frostings: FROSTINGS, toppings: TOPPINGS },
+    );
+    this.ui.micAvailable = Mic.available();
     this.tool = this.ui.tool;
     this.ui.setMuted(this.audio.muted);
+    this.showBests();
 
-    this.setCake(QUERY.get('cake') || CAKES[0].id);
+    this.decor = this.defaultDecor(cakeById(QUERY.get('cake') || CAKES[0].id));
+    this.buildCake();
     this.resize();
     addEventListener('resize', () => this.resize());
     this.bindInput();
@@ -149,7 +188,9 @@ class App {
       this.crumbs.clear();
     }
     this.recipe = cakeById(id);
-    this.cake = new Cake(this.recipe, options);
+    this.cake = new Cake(this.recipe, { frosting: options.frosting || null });
+    this.candles = null;
+    this.smoke.clear();
     this.mount.add(this.cake.group);
     this.cake.group.traverse((o) => {
       if (o.isMesh && o.name === 'board') o.receiveShadow = true;
@@ -159,14 +200,619 @@ class App {
       if (m) m.userData.smear.uSmearCol.value.copy(this.cake.tiers[0].uniforms.uSideCol.value);
     }
     this.smear = 0;
+    this.wipeShown = false;
+    this.ui.setWipe(false);
   }
 
   newCake() {
     this.audio.click();
-    const i = CAKES.findIndex((c) => c.id === this.recipe.id);
     this.clearServed();
-    this.setCake(CAKES[(i + 1) % CAKES.length].id);
+    this.confetti.clear();
+    if (this.mode === 'rush') return;
+    this.openDecorate();
+  }
+
+  // ---------------------------------------------------------------- decorating
+
+  defaultDecor(recipe) {
+    const kind = recipe.candles || 'regular';
+    return {
+      cake: recipe.id,
+      frosting: null,
+      toppings: [...(recipe.toppings || [])].slice(0, 4),
+      candles: { kind, count: 5, number: this.decor ? this.decor.candles.number : 7 },
+      message: this.decor ? this.decor.message : '',
+    };
+  }
+
+  buildCake({ candles = true } = {}) {
+    const d = this.decor;
+    this.clearServed();
+    this.setCake(d.cake, { frosting: d.frosting });
+    this.applyDecor(candles);
+    if (this.views) {
+      this.frameViews();
+      this.placeBokeh();
+    }
     this.ui.cakeName(this.recipe.name);
+  }
+
+  // Toppings, candles and the message on the current cake.
+  applyDecor(withCandles = true) {
+    const d = this.decor;
+    const cake = this.cake;
+    const recipe = this.recipe;
+    cake.clearDecorations();
+    this.candles = null;
+    const top = cake.tiers[cake.tiers.length - 1];
+    const R = top.r;
+    const seed = hashString(`${recipe.id}|${d.toppings.join()}|${d.candles.kind}|${d.candles.count}|${d.candles.number}|${d.message ? 1 : 0}`);
+    const reserved = [];
+    let spot = null;
+    const text = (d.message || '').trim();
+    if (text) {
+      const width = R * 1.62;
+      const z = R * 0.44;
+      const c = top.uniforms.uTopCol.value;
+      const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+      cake.setMessage(messageTexture(text), { x: 0, z, width, colour: lum < 0.1 ? '#fbeee2' : '#4a2314' });
+      for (let i = -3; i <= 3; i++) reserved.push({ x: (i * width) / 7.4, z, r: R * 0.2, hard: true });
+      spot = [0, -R * 0.3];
+    } else cake.setMessage(null);
+    if (withCandles && d.candles.kind !== 'none') {
+      this.candles = new Candles(cake, { kind: d.candles.kind, count: d.candles.count, number: d.candles.number, seed, spot });
+      reserved.push(...this.candles.reserved);
+    }
+    decorate(cake, { toppings: d.toppings, frosting: d.frosting || recipe.frosting || '#fbf6ee', seed, reserved });
+  }
+
+  openDecorate() {
+    this.cancelCut();
+    this.state = 'decorate';
+    this.showLabels = false;
+    this.ui.setDecor(this.decor, this.recipe);
+    this.buildCake();
+    this.ui.show('decorate');
+    this.ui.hint('');
+  }
+
+  onDecor(change) {
+    const d = this.decor;
+    let rebuild = false;
+    if (change.cake && change.cake !== d.cake) {
+      Object.assign(d, this.defaultDecor(cakeById(change.cake)));
+      rebuild = true;
+    }
+    if (change.frosting) {
+      d.frosting = change.frosting;
+      rebuild = true;
+    }
+    if (change.toggle) {
+      const i = d.toppings.indexOf(change.toggle);
+      if (i >= 0) d.toppings.splice(i, 1);
+      else if (d.toppings.length < 4) d.toppings.push(change.toggle);
+    }
+    if (change.candles) {
+      d.candles.kind = change.candles;
+    }
+    if (change.step) {
+      if (d.candles.kind === 'number') d.candles.number = Math.max(0, Math.min(99, d.candles.number + change.step));
+      else d.candles.count = Math.max(1, Math.min(12, d.candles.count + change.step));
+    }
+    this.ui.setDecor(d, cakeById(d.cake));
+    if (change.message !== undefined) {
+      d.message = change.message.slice(0, 18);
+      clearTimeout(this.msgTimer);
+      this.msgTimer = setTimeout(() => this.applyDecor(), 220);
+      return;
+    }
+    this.audio.unlock();
+    this.audio.click();
+    if (rebuild) this.buildCake();
+    else this.applyDecor();
+  }
+
+  surprise() {
+    const pick = (a) => a[Math.floor(Math.random() * a.length)];
+    const recipe = pick(CAKES);
+    const d = this.defaultDecor(recipe);
+    d.frosting = Math.random() < 0.5 ? null : pick(FROSTINGS).color;
+    const pool = TOPPINGS.map((t) => t.id).sort(() => Math.random() - 0.5);
+    d.toppings = pool.slice(0, 2 + Math.floor(Math.random() * 3));
+    d.candles.kind = pick(['regular', 'number', 'regular']);
+    d.candles.count = 1 + Math.floor(Math.random() * 8);
+    d.candles.number = 1 + Math.floor(Math.random() * 60);
+    this.decor = d;
+    this.ui.setDecor(d, recipe);
+    this.audio.unlock();
+    this.audio.sparkle(4);
+    this.buildCake();
+  }
+
+  decorDone() {
+    this.audio.click();
+    clearTimeout(this.msgTimer);
+    this.applyDecor();
+    if (this.candles) {
+      this.state = 'candles';
+      this.ui.show('candles');
+      this.ui.candlePhase('unlit');
+      this.ui.hint('Light the candles, then make a wish');
+    } else this.beginCutting();
+  }
+
+  beginCutting(hint) {
+    this.state = 'playing';
+    this.ui.show('playing');
+    if (this.mode === 'fair') this.ui.setGoal(this.ui.guests);
+    this.ui.hint(hint || (this.mode === 'fair' ? `Cut the cake into ${this.ui.guests} equal slices` : this.hintText()));
+  }
+
+  // ---------------------------------------------------------------- candles
+
+  lightCandles() {
+    if (!this.candles || this.matchRun) return;
+    this.audio.unlock();
+    this.audio.match();
+    this.ui.candlePhase('busy');
+    this.ui.hint('');
+    const cam = this.camera;
+    const v = new THREE.Vector3();
+    const order = [...this.candles.list].sort((a, b) => {
+      const pa = this.candles.wickWorld(a, v.clone()).project(cam).x;
+      const pb = this.candles.wickWorld(b, v.clone()).project(cam).x;
+      return pb - pa;
+    });
+    this.matchRun = { t: 0, order, i: 0, phase: 'in', from: null };
+    this.match.visible = true;
+    this.match.userData.flame.material.uniforms.uAmount.value = 0;
+  }
+
+  // The match travels from wick to wick, right to left.
+  updateMatch(dt) {
+    const m = this.matchRun;
+    if (!m) return;
+    m.t += dt;
+    const flame = this.match.userData.flame.material.uniforms;
+    flame.uTime.value = this.time;
+    flame.uAmount.value = Math.min(0.85, flame.uAmount.value + dt * 4);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion).setY(0).normalize();
+    const toCam = this.camera.position.clone().sub(this.mount.getWorldPosition(new THREE.Vector3())).setY(0).normalize();
+    const along = right.clone().multiplyScalar(0.75).add(toCam.clone().multiplyScalar(0.45)).add(new THREE.Vector3(0, 0.55, 0)).normalize();
+    this.match.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), along);
+    const hold = new THREE.Vector3();
+    const start = this.mount.localToWorld(new THREE.Vector3(0.2, this.cake.height + 0.08, 0.12));
+    if (m.phase === 'in') {
+      const target = this.candles.wickWorld(m.order[0], hold).add(new THREE.Vector3(0, 0.004, 0));
+      const k = ease(clamp01(m.t / 0.55));
+      this.match.position.lerpVectors(start, target, k);
+      if (k >= 1) {
+        m.phase = 'touch';
+        m.t = 0;
+      }
+    } else if (m.phase === 'touch') {
+      const c = m.order[m.i];
+      this.match.position.copy(this.candles.wickWorld(c, hold)).add(new THREE.Vector3(0, 0.004, 0));
+      if (m.t > 0.16) {
+        this.candles.light(c);
+        this.audio.ignite();
+        m.i++;
+        m.t = 0;
+        m.phase = m.i < m.order.length ? 'move' : 'out';
+        m.from = this.match.position.clone();
+      }
+    } else if (m.phase === 'move') {
+      const target = this.candles.wickWorld(m.order[m.i], hold).add(new THREE.Vector3(0, 0.004, 0));
+      const k = ease(clamp01(m.t / 0.26));
+      this.match.position.lerpVectors(m.from, target, k);
+      this.match.position.y += Math.sin(k * Math.PI) * 0.012;
+      if (k >= 1) {
+        m.phase = 'touch';
+        m.t = 0;
+      }
+    } else {
+      const k = ease(clamp01(m.t / 0.5));
+      this.match.position.lerpVectors(m.from, start.clone().add(new THREE.Vector3(0, 0.05, 0)), k);
+      if (m.t > 0.25 && !m.shook) {
+        m.shook = true;
+        this.smoke.puff(this.match.position.clone(), { life: 2.5, scale: 0.7 });
+      }
+      if (m.t > 0.25) flame.uAmount.value = Math.max(0, 0.85 - (m.t - 0.25) * 6);
+      if (k >= 1) {
+        this.match.visible = false;
+        this.matchRun = null;
+        if (this.state === 'candles') {
+          this.ui.candlePhase('lit');
+          this.ui.hint(matchMedia('(pointer: coarse)').matches ? 'Make a wish, then press and hold to blow' : 'Make a wish, then hold the button or the space bar to blow');
+        }
+      }
+    }
+  }
+
+  setBlow(on) {
+    if (on && (this.state !== 'candles' || !this.candles || !this.candles.anyLit)) return;
+    if (on === this.blowing) return;
+    this.blowing = on;
+    this.audio.unlock();
+    if (on) this.audio.blowStart();
+    else this.audio.blowStop();
+  }
+
+  async toggleMic() {
+    if (this.mic.on) {
+      this.mic.stop();
+      this.ui.setMic(false);
+      return;
+    }
+    try {
+      this.ui.setMic(false, 'Asking…');
+      await this.mic.start();
+      this.ui.setMic(true);
+      this.ui.hint('Blow into your microphone');
+    } catch {
+      this.mic.stop();
+      this.ui.setMic(false, 'No microphone');
+      this.ui.hint('The microphone is not available. Hold the button to blow instead');
+    }
+  }
+
+  skipCandles() {
+    this.audio.click();
+    this.matchRun = null;
+    this.match.visible = false;
+    if (this.candles) for (const c of this.candles.list) c.lit = false;
+    this.stopBlowing();
+    this.beginCutting();
+  }
+
+  stopBlowing() {
+    if (this.blowing) this.audio.blowStop();
+    this.blowing = false;
+    this.blowHeld = 0;
+    if (this.mic.on) {
+      this.mic.stop();
+      this.ui.setMic(false);
+    }
+  }
+
+  updateCandles(dt) {
+    const cs = this.candles;
+    let breath = 0;
+    if (this.state === 'candles' && cs) {
+      this.blowHeld += ((this.blowing ? 1 : 0) - this.blowHeld) * Math.min(1, dt * (this.blowing ? 6 : 9));
+      breath = Math.max(this.blowHeld, this.mic.on ? this.mic.read(dt) : 0);
+      if (this.mic.on && breath > 0.05 && !this.blowing) this.audio.blowLevel(breath * 0.6);
+      else if (this.blowing) this.audio.blowLevel(breath);
+      this.ui.blowMeter(breath);
+    }
+    if (cs) {
+      const out = cs.update(dt, this.time, breath, new THREE.Vector2(0.9, 0));
+      for (const c of out) {
+        this.smoke.puff(cs.wickWorld(c).add(new THREE.Vector3(0, 0.002, 0)));
+        this.audio.puff();
+      }
+      if (this.state === 'candles' && out.length && cs.allOut) this.celebrate();
+    }
+    // the room dims while the candles burn
+    const lit = cs ? cs.lit : 0;
+    const target = lit > 0 ? 1 : 0;
+    this.mood += (target - this.mood) * Math.min(1, dt * (target ? 1.6 : 0.9));
+    const m = this.mood;
+    const L = this.lights;
+    L.key.intensity = 6 * (1 - 0.74 * m);
+    L.rim.intensity = 0.9 * (1 - 0.6 * m);
+    L.fill.intensity = 0.45 * (1 - 0.65 * m);
+    L.hemi.intensity = 0.35 * (1 - 0.6 * m);
+    this.scene.environmentIntensity = 0.42 * (1 - 0.62 * m);
+    const g = cs ? cs.glow(L.candle.position, this.time) : 0;
+    L.candle.intensity = g * 0.012;
+  }
+
+  celebrate() {
+    this.stopBlowing();
+    this.ui.candlePhase('busy');
+    this.ui.hint('');
+    this.after(0.45, () => {
+      this.ui.banner('Happy birthday!');
+      this.audio.confetti();
+      const dur = this.audio.birthday();
+      const c = this.mount.getWorldPosition(new THREE.Vector3());
+      const n = Math.round(this.confetti.max / 4);
+      for (const [x, z] of [
+        [-0.45, 0.25],
+        [0.5, 0.2],
+        [-0.35, -0.35],
+        [0.4, -0.35],
+      ]) {
+        this.confetti.burst(new THREE.Vector3(x, 0.02, z), c, n);
+      }
+      for (let i = 0; i < 6; i++) this.sparkles.emit(c.clone().add(new THREE.Vector3(rand(-0.1, 0.1), this.cake.height + 0.05, rand(-0.1, 0.1))), 4, 0.4);
+      this.after(Math.min(2.4, dur * 0.25), () => {
+        if (this.state === 'candles') this.beginCutting('Now cut the cake!');
+      });
+    });
+  }
+
+  // Run fn after `sec` seconds of game time.
+  after(sec, fn) {
+    this.timers.push({ t: sec, fn });
+  }
+
+  runTimers(dt) {
+    for (let i = this.timers.length - 1; i >= 0; i--) {
+      const tm = this.timers[i];
+      tm.t -= dt;
+      if (tm.t <= 0) {
+        this.timers.splice(i, 1);
+        tm.fn();
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- fair slices
+
+  fairCheck() {
+    if (this.state !== 'playing' || this.lift) return;
+    const N = this.ui.guests;
+    const pieces = this.cake.pieces.map((p) => p.frac).sort((a, b) => b - a);
+    if (pieces.length < N) {
+      const more = N - pieces.length;
+      this.audio.miss();
+      this.ui.hint(`${pieces.length} ${pieces.length === 1 ? 'piece' : 'pieces'} so far. Cut ${more} more for ${N} guests`);
+      return;
+    }
+    let dev = 0;
+    for (let i = 0; i < pieces.length; i++) dev += i < N ? Math.abs(pieces[i] - 1 / N) : pieces[i];
+    const acc = Math.max(0, Math.round((1 - dev / 2) * 1000) / 10);
+    const stars = acc >= 96 ? 3 : acc >= 90 ? 2 : acc >= 80 ? 1 : 0;
+    const key = `mini-games.cake-cut.fair.${N}`;
+    const prev = Number(store(key)) || 0;
+    if (acc > prev) store(key, acc);
+    this.showLabels = true;
+    this.cancelCut();
+    const pct = (f) => `${(f * 100).toFixed(1)}%`;
+    const titles = ['Somebody got a big one', 'Close enough', 'Nicely shared', 'Perfectly fair!'];
+    this.audio.fanfare(0.4 + stars * 0.2);
+    if (stars === 3) {
+      const c = this.mount.getWorldPosition(new THREE.Vector3());
+      this.confetti.burst(new THREE.Vector3(-0.4, 0.02, 0.2), c, Math.round(this.confetti.max / 5));
+      this.confetti.burst(new THREE.Vector3(0.45, 0.02, 0.15), c, Math.round(this.confetti.max / 5));
+    }
+    this.state = 'result';
+    this.ui.showResult({
+      title: titles[stars],
+      big: `${acc}%`,
+      text: `${N} guests. Each fair share is ${pct(1 / N)}. Biggest slice ${pct(pieces[0])}, smallest ${pct(pieces[N - 1])}${pieces.length > N ? `, plus ${pieces.length - N} extra ${pieces.length - N === 1 ? 'bit' : 'bits'}` : ''}.`,
+      facts: [[`Best for ${N} guests`, `${Math.max(prev, acc)}%`]],
+      stars,
+      again: 'Another cake',
+      look: true,
+    });
+  }
+
+  look() {
+    this.audio.click();
+    this.state = 'playing';
+    this.ui.show('playing');
+    this.ui.hint('');
+  }
+
+  again() {
+    this.audio.click();
+    this.showLabels = false;
+    this.confetti.clear();
+    if (this.mode === 'rush') this.startRush();
+    else this.openDecorate();
+  }
+
+  updateLabels() {
+    if (!this.showLabels || (this.state !== 'result' && this.state !== 'playing')) {
+      if (this.labelsShown) this.ui.setLabels([]);
+      this.labelsShown = false;
+      return;
+    }
+    const N = this.ui.guests;
+    const list = [];
+    const v = new THREE.Vector3();
+    const { w, h } = this.layout;
+    for (const p of this.cake.pieces) {
+      if (p.state !== 'on') continue;
+      const c = p.inner;
+      v.set(c[0] + p.group.position.x, this.cake.topAt(c[0], c[1]) + 0.012, c[1] + p.group.position.z);
+      this.mount.localToWorld(v).project(this.camera);
+      const d = Math.abs(p.frac - 1 / N);
+      list.push({ x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h, text: `${(p.frac * 100).toFixed(1)}%`, cls: d < 0.012 ? 'good' : d < 0.03 ? 'ok' : 'off' });
+    }
+    this.ui.setLabels(list);
+    this.labelsShown = true;
+  }
+
+  showBests() {
+    const fair = Number(store(`mini-games.cake-cut.fair.${this.ui.guests}`)) || 0;
+    const rush = Number(store('mini-games.cake-cut.rush')) || 0;
+    this.ui.setBests({ fair, rush });
+  }
+
+  // ---------------------------------------------------------------- party rush
+
+  startRush() {
+    const pick = (a) => a[Math.floor(Math.random() * a.length)];
+    const recipe = pick(CAKES.filter((c) => !this.recipe || c.id !== this.recipe.id));
+    this.decor = { ...this.defaultDecor(recipe), message: '' };
+    this.decor.candles.kind = 'none';
+    this.buildCake({ candles: false });
+    this.rush = { time: 90, score: 0, streak: 0, bestStreak: 0, served: 0, perfect: 0, orders: [], nextOrder: 0.3, id: 1, lastServe: -10, perfectRun: 0, lastTick: 99 };
+    this.ui.clearOrders();
+    this.spawnOrder();
+    this.state = 'playing';
+    this.ui.show('playing');
+    this.ui.setRush({ time: 90, score: 0, mult: 1 });
+    this.ui.hint(matchMedia('(pointer: coarse)').matches ? 'Cut a slice the size a guest wants, then tap it to serve' : 'Cut a slice the size a guest wants, then click it to serve');
+  }
+
+  spawnOrder() {
+    const r = this.rush;
+    const sizes = [
+      { target: 1 / 12, label: 'A small slice', colour: '#f7c948' },
+      { target: 1 / 8, label: 'A slice', colour: '#f28aa5' },
+      { target: 1 / 6, label: 'A big slice', colour: '#7fb8e8' },
+    ];
+    const names = ['Ava', 'Leo', 'Mia', 'Sam', 'Noor', 'Kai', 'Zoe', 'Ben', 'Ivy', 'Raj', 'Lin', 'Omar', 'Ada', 'Tom', 'Uma', 'Eli'];
+    const used = new Set(r.orders.map((o) => o.name));
+    const name = names.filter((n) => !used.has(n))[Math.floor(Math.random() * (names.length - used.size))];
+    const size = sizes[Math.floor(Math.random() * sizes.length)];
+    // patience shortens as the party goes on
+    const patience = Math.max(14, 26 - (90 - r.time) * 0.1) + Math.random() * 4;
+    r.orders.push({ id: r.id++, name, ...size, patience, t: 0 });
+  }
+
+  updateRush(dt) {
+    const r = this.rush;
+    if (!r || this.mode !== 'rush' || this.state !== 'playing') return;
+    r.time -= dt;
+    const sec = Math.ceil(r.time);
+    if (sec <= 5 && sec >= 1 && sec < r.lastTick) {
+      r.lastTick = sec;
+      this.audio.tick();
+    }
+    for (let i = r.orders.length - 1; i >= 0; i--) {
+      const o = r.orders[i];
+      o.t += dt;
+      if (o.t >= o.patience) {
+        r.orders.splice(i, 1);
+        r.streak = 0;
+        r.perfectRun = 0;
+        this.audio.miss();
+        this.ui.callout(`${o.name} gave up`, 'Too slow', true);
+      }
+    }
+    r.nextOrder -= dt;
+    if (r.orders.length < 3 && (r.nextOrder <= 0 || r.orders.length === 0)) {
+      this.spawnOrder();
+      r.nextOrder = 3.5 + Math.random() * 3;
+    }
+    const mult = Math.min(4, 1 + Math.floor(r.streak / 3));
+    this.ui.setRush({ time: r.time, score: r.score, mult });
+    this.ui.renderOrders(r.orders);
+    // a fresh cake when this one is nearly gone
+    if (!this.lift && !this.cut && this.cake.remainingFrac() < 0.1) this.freshCake();
+    if (r.time <= 0) this.endRush();
+  }
+
+  freshCake() {
+    const pick = (a) => a[Math.floor(Math.random() * a.length)];
+    const recipe = pick(CAKES.filter((c) => c.id !== this.recipe.id));
+    this.decor = { ...this.defaultDecor(recipe), message: '' };
+    this.buildCake({ candles: false });
+    this.audio.whoosh(0.6);
+    this.ui.callout('Fresh cake!', recipe.name);
+  }
+
+  serveRush(piece) {
+    const r = this.rush;
+    if (!r.orders.length) {
+      this.ui.callout('Nobody is waiting', '', true);
+      return;
+    }
+    const f = piece.frac;
+    let best = r.orders[0];
+    for (const o of r.orders) if (Math.abs(f - o.target) / o.target < Math.abs(f - best.target) / best.target) best = o;
+    const q = 1 - Math.abs(f - best.target) / best.target;
+    r.orders.splice(r.orders.indexOf(best), 1);
+    r.served++;
+    let points = 0;
+    let grade;
+    if (q >= 0.9) {
+      grade = 'Perfect!';
+      points = 100;
+      r.perfect++;
+      r.perfectRun++;
+    } else if (q >= 0.75) {
+      grade = 'Great';
+      points = 70;
+      r.perfectRun = 0;
+    } else if (q >= 0.5) {
+      grade = 'Good';
+      points = 40;
+      r.perfectRun = 0;
+    } else {
+      grade = f > best.target ? 'Way too big!' : 'That is tiny!';
+      points = 10;
+      r.perfectRun = 0;
+    }
+    if (q >= 0.75) r.streak++;
+    else r.streak = 0;
+    r.bestStreak = Math.max(r.bestStreak, r.streak);
+    const mult = Math.min(4, 1 + Math.floor(Math.max(0, r.streak - 1) / 3));
+    const patienceBonus = Math.round(25 * Math.max(0, 1 - best.t / best.patience));
+    const quick = this.time - r.lastServe < 4 ? 20 : 0;
+    r.lastServe = this.time;
+    let total = (points + patienceBonus + quick) * mult;
+    let sub = `+${total}${mult > 1 ? ` · ×${mult} streak` : ''}`;
+    if (r.perfectRun > 0 && r.perfectRun % 3 === 0) {
+      total += 150;
+      sub = `+${total} · three perfect in a row!`;
+      this.audio.fanfare(0.6);
+      const c = this.plate.getWorldPosition(new THREE.Vector3());
+      for (let i = 0; i < 5; i++) this.sparkles.emit(c.clone().add(new THREE.Vector3(rand(-0.05, 0.05), 0.08, rand(-0.05, 0.05))), 5, 0.5);
+    }
+    r.score += total;
+    if (q >= 0.5) this.audio.success(q, r.streak);
+    else this.audio.miss();
+    this.ui.callout(`${grade}`, `${best.name}: ${sub}`, q < 0.5);
+  }
+
+  endRush() {
+    const r = this.rush;
+    this.cancelCut();
+    this.state = 'result';
+    const key = 'mini-games.cake-cut.rush';
+    const prev = Number(store(key)) || 0;
+    if (r.score > prev) store(key, r.score);
+    this.audio.fanfare(r.score > prev ? 1 : 0.6);
+    this.ui.clearOrders();
+    this.ui.showResult({
+      title: r.score > prev && prev > 0 ? 'New best!' : "Time's up!",
+      big: r.score.toLocaleString(),
+      text: r.served ? 'The party is fed. Well served!' : 'Nobody got any cake this time.',
+      facts: [
+        ['Guests served', String(r.served)],
+        ['Perfect slices', String(r.perfect)],
+        ['Best streak', String(r.bestStreak)],
+        ['Best score', Math.max(prev, r.score).toLocaleString()],
+      ],
+      again: 'Play again',
+    });
+  }
+
+  // ---------------------------------------------------------------- extras
+
+  wipe() {
+    this.smear = 0;
+    this.wipeShown = false;
+    this.audio.scrape();
+    this.ui.setWipe(false);
+    this.ui.hint('Blade wiped clean');
+  }
+
+  // Save what is on screen as a picture, on this device only.
+  photo() {
+    this.audio.unlock();
+    this.render();
+    let url;
+    try {
+      url = this.canvas.toDataURL('image/png');
+    } catch {
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cake-cut-${this.recipe.id}.png`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    this.audio.click();
+    this.ui.hint('Photo saved');
   }
 
   // Height of whatever a crumb would land on, in world space.
@@ -203,30 +849,99 @@ class App {
     cam.aspect = aspect;
     cam.fov = portrait ? 46 : 34;
     cam.updateProjectionMatrix();
-    const target = portrait ? new THREE.Vector3(0.01, 0.1, 0.1) : new THREE.Vector3(0.1, 0.12, 0.03);
-    const elev = THREE.MathUtils.degToRad(portrait ? 42 : 29);
-    // fit the stand and the plate: their spread across and up the screen
-    const halfV = THREE.MathUtils.degToRad(cam.fov / 2);
-    const halfH = Math.atan(Math.tan(halfV) * aspect);
-    const across = portrait ? 0.19 : 0.3;
-    const up = portrait ? 0.3 : 0.215;
-    const dist = Math.max(across / Math.sin(halfH), up / Math.sin(halfV));
-    this.view = { target, elev, dist, azim: portrait ? 0 : -0.12 };
+    this.baseFov = cam.fov;
+    this.frameViews();
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
     this.post.setSize(w, h, dpr);
-    this.post.setFocus(dist);
     this.placeBokeh();
+    this.blendView(0);
     if (this.state === 'paused') this.render();
   }
 
   // Hang the fairy lights in the strip of wall above the table's far edge.
   placeBokeh() {
+    this.view = this.views.play;
+    this.camera.clearViewOffset();
+    this.camera.aspect = this.layout.aspect;
+    this.camera.fov = this.baseFov;
+    this.camera.updateProjectionMatrix();
     this.placeCamera(0);
     const ray = new THREE.Raycaster();
     ray.setFromCamera(new THREE.Vector2(0, this.layout.portrait ? 0.8 : 0.74), this.camera);
     const hit = ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 3.0), new THREE.Vector3());
     if (hit) this.backdrop.userData.lights.position.y = hit.y;
+  }
+
+  // The play, candle and decorating views for this screen and this cake: a
+  // tall cake pulls the camera up and back.
+  frameViews() {
+    const { w, h, aspect, portrait } = this.layout;
+    const tall = Math.max(0, (this.cake ? this.cake.height : 0.1) - 0.11);
+    const target = portrait ? new THREE.Vector3(0.01, 0.1 + tall * 0.45, 0.1) : new THREE.Vector3(0.1, 0.12 + tall * 0.45, 0.03);
+    const elev = THREE.MathUtils.degToRad(portrait ? 42 : 29);
+    // fit the stand and the plate: their spread across and up the screen
+    const halfV = THREE.MathUtils.degToRad(this.baseFov / 2);
+    const halfH = Math.atan(Math.tan(halfV) * aspect);
+    const across = portrait ? 0.19 : 0.3;
+    const up = (portrait ? 0.3 : 0.215) + tall * 0.55;
+    const dist = Math.max(across / Math.sin(halfH), up / Math.sin(halfV));
+    const top = 0.16 + tall * 0.6;
+    this.views = {
+      play: { target, elev, dist, azim: portrait ? 0 : -0.12, sx: 0, sy: 0 },
+      // candles: closer, lower, the cake filling the screen
+      candles: portrait ? this.fitView(new THREE.Vector3(0, top + 0.005, 0), 30, 0.155, 0.17 + tall * 0.5, 0, Math.min(170, h * 0.2)) : this.fitView(new THREE.Vector3(0, top, 0), 21, 0.2, 0.155 + tall * 0.5, 0, 0),
+      // decorating: the cake alone, in the part of the screen the sheet leaves
+      decorate: portrait ? this.fitView(new THREE.Vector3(0, top + 0.01, 0), 27, 0.2, 0.16 + tall * 0.5, 0, Math.min(h * 0.54, 520) + 8) : this.fitView(new THREE.Vector3(0, top + 0.01, 0), 22, 0.23, 0.19 + tall * 0.5, Math.min(360, w * 0.5) + 24, 0),
+    };
+    this.view = this.views.play;
+  }
+
+  // A view of `target` that fits a box `across` by `up` into the part of the
+  // screen left of `sx` and above `sy` pixels of panel.
+  fitView(target, elevDeg, across, up, sx, sy) {
+    const { w, h } = this.layout;
+    const tv = Math.tan(THREE.MathUtils.degToRad(this.baseFov / 2));
+    const halfV = Math.atan((tv * (h - sy)) / h);
+    const halfH = Math.atan((tv * (w - sx)) / h);
+    const dist = Math.max(across / Math.sin(halfH), up / Math.sin(halfV));
+    return { target, elev: THREE.MathUtils.degToRad(elevDeg), dist, azim: 0, sx, sy };
+  }
+
+  // Ease between the play, candle and decorating views.
+  blendView(dt) {
+    const k = this.viewK || (this.viewK = { candles: 0, decorate: 0 });
+    const rate = REDUCED_MOTION.matches || dt === 0 ? 1 : Math.min(1, dt * 2.6);
+    const want = { candles: this.state === 'candles' || (this.state === 'paused' && this.pausedFrom === 'candles') ? 1 : 0, decorate: this.state === 'decorate' ? 1 : 0 };
+    for (const n of ['candles', 'decorate']) k[n] += (want[n] - k[n]) * rate;
+    const mix = (a, b, t) => ({
+      target: a.target.clone().lerp(b.target, t),
+      elev: a.elev + (b.elev - a.elev) * t,
+      dist: a.dist + (b.dist - a.dist) * t,
+      azim: a.azim + (b.azim - a.azim) * t,
+      sx: a.sx + (b.sx - a.sx) * t,
+      sy: a.sy + (b.sy - a.sy) * t,
+    });
+    const V = this.views;
+    this.view = mix(mix(V.play, V.candles, ease(k.candles)), V.decorate, ease(k.decorate));
+    // shift the picture with a view offset rather than turning the camera
+    const cam = this.camera;
+    const { w, h } = this.layout;
+    const { sx, sy } = this.view;
+    if (sx > 0.5 || sy > 0.5) {
+      cam.aspect = (w + sx) / (h + sy);
+      cam.fov = THREE.MathUtils.radToDeg(2 * Math.atan((Math.tan(THREE.MathUtils.degToRad(this.baseFov / 2)) * (h + sy)) / h));
+      cam.setViewOffset(w + sx, h + sy, sx, sy, w, h);
+    } else {
+      cam.clearViewOffset();
+      cam.aspect = w / h;
+      cam.fov = this.baseFov;
+    }
+    cam.updateProjectionMatrix();
+    if (Math.abs(this.view.dist - (this.focusDist || 0)) > 0.002) {
+      this.focusDist = this.view.dist;
+      this.post.setFocus(this.view.dist);
+    }
   }
 
   placeCamera(t) {
@@ -249,26 +964,34 @@ class App {
   startGame(mode) {
     this.audio.unlock();
     this.audio.click();
-    this.mode = mode;
-    this.state = 'playing';
-    this.ui.show('playing');
-    this.ui.cakeName(this.recipe.name);
-    this.ui.hint(this.hintText());
     this.audio.setPaused(false);
+    this.mode = mode;
+    this.ui.setMode(mode);
+    this.showLabels = false;
+    this.timers = [];
+    this.confetti.clear();
+    if (mode === 'rush') this.startRush();
+    else {
+      this.rush = null;
+      this.openDecorate();
+    }
   }
 
   hintText() {
     const touch = matchMedia('(pointer: coarse)').matches;
     if (this.tool === 'wire') return touch ? 'Drag to line up the wire, let go to cut' : 'Drag to line up the wire, release to cut';
-    if (this.tool === 'sword') return 'Swipe right across the cake';
+    if (this.tool === 'sword') return 'Swipe across the cake to slice it in one go';
     if (this.tool === 'server') return touch ? 'Tap a cut slice to serve it' : 'Click a cut slice to serve it';
     return touch ? 'Drag across the cake to cut · tap a slice to serve' : 'Drag across the cake to cut · click a slice to serve';
   }
 
   pause() {
-    if (this.state !== 'playing') return;
+    if (this.state !== 'playing' && this.state !== 'candles') return;
+    this.pausedFrom = this.state;
     this.state = 'paused';
     this.cancelCut();
+    this.stopBlowing();
+    this.ui.blowMeter(0);
     this.ui.show('paused');
     this.audio.setPaused(true);
     this.render();
@@ -277,8 +1000,9 @@ class App {
   resume() {
     if (this.state !== 'paused') return;
     this.audio.unlock();
-    this.state = 'playing';
-    this.ui.show('playing');
+    this.state = this.pausedFrom || 'playing';
+    this.ui.show(this.state);
+    if (this.state === 'playing' && this.mode === 'fair') this.ui.setGoal(this.ui.guests);
     this.audio.setPaused(false);
     this.lastFrame = performance.now();
   }
@@ -286,8 +1010,16 @@ class App {
   toMenu() {
     this.audio.click();
     this.cancelCut();
+    this.stopBlowing();
+    this.matchRun = null;
+    this.match.visible = false;
+    this.timers = [];
+    this.rush = null;
+    this.showLabels = false;
+    this.ui.clearOrders();
     this.state = 'menu';
     this.ui.show('menu');
+    this.showBests();
     this.audio.setPaused(false);
   }
 
@@ -363,12 +1095,20 @@ class App {
         else if (this.state === 'paused') this.resume();
       } else if (e.key === 'm' || e.key === 'M') this.toggleMute();
       else if (this.state === 'playing' && e.key >= '1' && e.key <= '5') this.ui.setTool(['chef', 'serrated', 'wire', 'sword', 'server'][Number(e.key) - 1]);
+      else if (this.state === 'candles' && e.key === ' ' && !e.repeat && e.target.id !== 'blow') {
+        e.preventDefault();
+        this.setBlow(true);
+      } else if (this.state === 'playing' && (e.key === 'w' || e.key === 'W') && this.smear > 0.05) this.wipe();
       else if (this.state === 'playing' && e.key === 'ArrowLeft') this.nudgeSpin(-1);
       else if (this.state === 'playing' && e.key === 'ArrowRight') this.nudgeSpin(1);
+    });
+    addEventListener('keyup', (e) => {
+      if (e.key === ' ' && e.target.id !== 'blow') this.setBlow(false);
     });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         this.pause();
+        this.stopBlowing();
         this.audio.pageHidden(true);
       } else {
         this.audio.pageHidden(false);
@@ -470,7 +1210,7 @@ class App {
           const s2 = this.cake.shapeCut([0, 0], [d[0], d[1]], { chord: true });
           if (s2) [p, q] = s2;
         }
-      } else if (Math.hypot(q[0] - c.p[0], q[1] - c.p[1]) < Math.hypot(p[0] - c.p[0], p[1] - c.p[1])) {
+      } else if (Math.hypot(p[0] - c.p[0], p[1] - c.p[1]) < Math.hypot(q[0] - c.p[0], q[1] - c.p[1])) {
         [p, q] = [q, p];
       }
       c.seg = [p, q];
@@ -532,7 +1272,11 @@ class App {
       }
       const len = Math.hypot(c.p[0] - c.a[0], c.p[1] - c.a[1]);
       if (len > 0.006) c.dir = [(c.p[0] - c.a[0]) / len, (c.p[1] - c.a[1]) / len];
-      if (c.tool === 'wire' || c.tool === 'sword') return;
+      if (c.tool === 'wire' || c.tool === 'sword') {
+        // line the chord up under the pointer's stroke
+        c.preview = len > 0.02 ? cake.shapeCut(c.a, c.p, { chord: true }) : null;
+        return;
+      }
       if (c.pending) return;
       const top = cake.topAt(c.p[0], c.p[1]) || c.planeY;
       const overCake = cake.topAt(c.p[0], c.p[1]) > 0 && !cake.isRemoved(c.p);
@@ -561,6 +1305,10 @@ class App {
         const moving = Math.min(1, c.speed * 6) * (overCake ? 1 : 0.2);
         this.audio.cutLevel(Math.max(moving, depthBelow > 0 && c.tipY > 0.002 ? 0.4 : 0), dt, Math.sin(c.saw * 2));
         this.smear = Math.min(1, this.smear + dt * feel.smear * (0.3 + moving));
+        if (this.smear > 0.45 && !this.wipeShown) {
+          this.wipeShown = true;
+          this.ui.setWipe(true);
+        }
         this.spawnCutCrumbs(c, dt, moving, feel);
       }
     } else if (c.phase === 'finish') {
@@ -591,6 +1339,10 @@ class App {
         const upto = [p[0] + ((q[0] - p[0]) / L) * Math.min(L, Math.max(0.001, s)), p[1] + ((q[1] - p[1]) / L) * Math.min(L, Math.max(0.001, s))];
         cake.setLive(p, upto, 0.0005);
         this.audio.cutLevel(0.9, dt);
+        if (!REDUCED_MOTION.matches && s > 0 && s < L) {
+          const at = this.mount.localToWorld(new THREE.Vector3(upto[0], cake.topAt(upto[0], upto[1]) || c.planeY, upto[1]));
+          this.sparkles.emit(at, 2, 0.25);
+        }
         if (k >= 1) {
           this.commitCut(c);
           this.audio.sparkle(6);
@@ -823,8 +1575,9 @@ class App {
     }
   }
 
-  onServed() {
+  onServed(piece) {
     this.ui.hint('');
+    if (this.mode === 'rush' && this.rush && this.state === 'playing') this.serveRush(piece);
   }
 
   // ---------------------------------------------------------------- tools
@@ -851,15 +1604,17 @@ class App {
       const len = Math.hypot(c.p[0] - c.a[0], c.p[1] - c.a[1]);
       pitch = this.knifePitch(c, len, tool.userData.reach || 0.15);
       if (c.tool === 'wire') {
-        const line = c.seg || [c.a, [c.a[0] + c.dir[0], c.a[1] + c.dir[1]]];
-        const mid = c.seg ? [(line[0][0] + line[1][0]) / 2, (line[0][1] + line[1][1]) / 2] : c.a;
-        p = mid;
+        const line = c.seg || c.preview;
+        p = line ? [(line[0][0] + line[1][0]) / 2, (line[0][1] + line[1][1]) / 2] : c.p;
+        if (line) dir = [line[1][0] - line[0][0], line[1][1] - line[0][1]];
         y = c.phase === 'finish' || c.phase === 'out' ? c.wireY ?? c.planeY + 0.05 : c.planeY + 0.05;
         if (c.phase === 'out') y = (c.wireY || 0) + c.ft * 0.4;
         pitch = 0;
-      } else if (c.tool === 'sword' && c.phase === 'press') {
-        y = c.planeY + 0.025;
-        pitch = 0.12;
+      } else if (c.tool === 'sword') {
+        if (c.phase === 'press') {
+          y = c.planeY + 0.025;
+          pitch = 0.12;
+        } else pitch = 0.32;
       }
       if (c.phase === 'out' && c.tool !== 'wire') y = c.tipY;
     } else {
@@ -901,6 +1656,7 @@ class App {
   update(realDt, dt) {
     this.time += dt;
     const t = this.time;
+    this.blendView(dt);
     this.placeCamera(t);
     // turntable with a little friction
     this.spin += this.spinVel * dt;
@@ -913,6 +1669,14 @@ class App {
     this.updateLift(dt);
     this.poseTools(dt);
     this.crumbs.update(dt);
+    this.runTimers(dt);
+    this.updateMatch(dt);
+    this.updateCandles(dt);
+    this.smoke.update(dt);
+    this.confetti.update(dt);
+    this.sparkles.update(dt);
+    this.updateRush(dt);
+    this.updateLabels();
     this.backdrop.userData.bokeh.uniforms.uTime.value = t;
     this.post.update(t);
   }
@@ -971,7 +1735,17 @@ class App {
         if (list[i]) this.startLift(list[i]);
         return !!list[i];
       },
-      setCake: (id) => this.setCake(id),
+      setCake: (id) => {
+        this.decor = this.defaultDecor(cakeById(id));
+        this.buildCake();
+      },
+      decor: (change) => this.onDecor(change),
+      // blow every candle out at once, as if the player had
+      blowOut: () => {
+        if (!this.candles) return;
+        for (const c of this.candles.list) c.resist = 0;
+        this.blowHeld = 1;
+      },
       pieces: () => this.cake.pieces.map((p) => ({ state: p.state, frac: p.frac })),
       inside: (x, z) => pointInPolygon([x, z], this.cake.outline.poly),
     };

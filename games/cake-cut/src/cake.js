@@ -52,6 +52,7 @@ export class Cake {
     this.slits = [];
     this.live = null; // the cut in progress
     this.decorations = [];
+    this.batches = [];
     this.board = createBoard(this.outline, recipe.shape);
     this.group.add(this.board);
     this.rebuild();
@@ -173,6 +174,7 @@ export class Cake {
       next.push(piece);
     }
     this.slits = slits.filter((s) => !this.isRemoved([(s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2]));
+    for (const d of this.decorations) if (d.piece && d.piece.state === 'on') this.group.add(d.object);
     for (const o of old) {
       o.group.removeFromParent();
       disposeGroup(o.group);
@@ -331,6 +333,50 @@ export class Cake {
     this.assignDecorations();
   }
 
+  // Many tiny things (sprinkles, pearls) drawn as one instanced batch per
+  // piece. Items: { x, z, y, s: [sx, sy, sz], q: Quaternion, c: Color|null }.
+  addBatch(batch) {
+    for (const it of batch.items) it.piece = null;
+    batch.meshes = new Map();
+    this.batches.push(batch);
+    this.assignDecorations();
+  }
+
+  // Pipe a message across the top tier, centred at (x, z) in cake space.
+  setMessage(texture, { x = 0, z = 0, width = 0.14, colour = '#ffffff' } = {}) {
+    const top = this.tiers[this.tiers.length - 1];
+    for (const t of this.tiers) {
+      const u = t.uniforms;
+      if (t !== top || !texture) {
+        u.uMsgOpt.value.x = 0;
+        continue;
+      }
+      u.uMsg.value = texture;
+      u.uMsgBox.value.set(x, z, width, width / (texture.userData.aspect || 4));
+      u.uMsgOpt.value.x = 1;
+      u.uMsgCol.value.set(colour);
+    }
+    if (this.messageTexture && this.messageTexture !== texture) this.messageTexture.dispose();
+    this.messageTexture = texture;
+  }
+
+  clearDecorations() {
+    for (const d of this.decorations) {
+      d.object.removeFromParent();
+      d.object.traverse((o) => {
+        if (o.isMesh && o.userData.ownGeometry) o.geometry.dispose();
+        if (o.isMesh && o.userData.ownMaterial) o.material.dispose();
+      });
+    }
+    this.decorations = [];
+    for (const b of this.batches) for (const m of b.meshes.values()) {
+      m.removeFromParent();
+      m.dispose();
+    }
+    this.batches = [];
+    for (const p of this.pieces) p.decorations = [];
+  }
+
   // Nudge toppings off a new cut line so the blade passes beside them.
   clearCutPath(p, q) {
     for (const d of this.decorations) {
@@ -348,8 +394,27 @@ export class Cake {
       }
       const push = d.radius - dist + 0.0015;
       d.p = [d.p[0] + (nx / l) * push, d.p[1] + (nz / l) * push];
-      d.object.position.x = d.p[0];
-      d.object.position.z = d.p[1];
+      d.object.position.x += (nx / l) * push;
+      d.object.position.z += (nz / l) * push;
+    }
+    // sprinkles in the blade's way are nudged aside
+    for (const b of this.batches) {
+      for (const it of b.items) {
+        if (it.piece && it.piece.state !== 'on') continue;
+        const dist = distToSegment([it.x, it.z], p, q);
+        if (dist > 0.0025) continue;
+        const c = closestOnSegment([it.x, it.z], p, q);
+        let nx = it.x - c[0];
+        let nz = it.z - c[1];
+        const l = Math.hypot(nx, nz) || 1;
+        if (l < 1e-6) {
+          nx = -(q[1] - p[1]);
+          nz = q[0] - p[0];
+        }
+        const k = (0.0027 - dist) / (Math.hypot(nx, nz) || 1);
+        it.x += nx * k;
+        it.z += nz * k;
+      }
     }
   }
 
@@ -364,6 +429,46 @@ export class Cake {
       } else if (d.object.parent !== this.group) this.group.add(d.object);
     }
     for (const p of this.pieces) p.decorations = this.decorations.filter((d) => d.piece === p);
+    this.assignBatches();
+  }
+
+  assignBatches() {
+    const on = this.pieces.filter((p) => p.state === 'on');
+    const m4 = new THREE.Matrix4();
+    const v = new THREE.Vector3();
+    const s = new THREE.Vector3();
+    for (const b of this.batches) {
+      const groups = new Map(on.map((p) => [p, []]));
+      for (const it of b.items) {
+        if (it.piece && it.piece.state !== 'on') continue;
+        const piece = on.find((p) => pointInPolygon([it.x, it.z], p.contour) && !p.holes.some((h) => pointInPolygon([it.x, it.z], h.poly)));
+        it.piece = piece || null;
+        if (piece) groups.get(piece).push(it);
+      }
+      for (const [piece, mesh] of b.meshes) {
+        if (piece.state === 'on') {
+          mesh.removeFromParent();
+          mesh.dispose();
+          b.meshes.delete(piece);
+        }
+      }
+      for (const [piece, items] of groups) {
+        if (!items.length) continue;
+        const mesh = new THREE.InstancedMesh(b.geometry, b.material, items.length);
+        items.forEach((it, i) => {
+          m4.compose(v.set(it.x, it.y, it.z), it.q, s.set(...it.s));
+          mesh.setMatrixAt(i, m4);
+          if (it.c) mesh.setColorAt(i, it.c);
+        });
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.userData.batch = true;
+        mesh.userData.decoration = true;
+        mesh.computeBoundingSphere();
+        piece.group.add(mesh);
+        b.meshes.set(piece, mesh);
+      }
+    }
   }
 
   // ------------------------------------------------------------ frame
@@ -378,6 +483,8 @@ export class Cake {
   }
 
   dispose() {
+    this.clearDecorations();
+    if (this.messageTexture) this.messageTexture.dispose();
     this.group.removeFromParent();
     disposeGroup(this.group);
     for (const t of this.tiers) t.materials.forEach((m) => m.dispose());
@@ -636,7 +743,9 @@ float bnoise(vec2 p) {
 
 function disposeGroup(group) {
   group.traverse((o) => {
-    if (o.isMesh && o.name !== 'board' && !o.userData.keepGeometry) o.geometry.dispose();
+    if (!o.isMesh || o.name === 'board' || o.userData.keepGeometry) return;
+    if (o.userData.batch) o.dispose();
+    else if (!o.userData.decoration) o.geometry.dispose();
   });
 }
 

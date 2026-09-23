@@ -226,17 +226,17 @@ export const CAKES = [
         r: 0.1,
         layers: [
           ['sponge', 0.028, '#f0d49a', '#4c2819'],
-          ['cream', 0.003, '#6b3a22'],
+          ['cream', 0.003, '#4e2819'],
           ['sponge', 0.028, '#f0d49a', '#4c2819'],
-          ['cream', 0.003, '#6b3a22'],
+          ['cream', 0.003, '#4e2819'],
           ['sponge', 0.028, '#f0d49a', '#4c2819'],
         ],
-        side: { kind: 'buttercream', color: '#6b3a22', t: 0.005 },
-        top: { kind: 'buttercream', color: '#6b3a22', t: 0.005 },
+        side: { kind: 'buttercream', color: '#4e2819', t: 0.005 },
+        top: { kind: 'buttercream', color: '#4e2819', t: 0.005 },
       },
     ],
     frost: 'all',
-    frosting: '#6b3a22',
+    frosting: '#4e2819',
     toppings: ['shards', 'pearls'],
     candles: 'regular',
   },
@@ -268,7 +268,7 @@ export const FROSTINGS = [
   { id: 'lemon', name: 'Lemon', color: '#f7e7a3' },
   { id: 'sky', name: 'Sky blue', color: '#b8d8f2' },
   { id: 'peach', name: 'Peach', color: '#f8cfae' },
-  { id: 'chocolate', name: 'Chocolate', color: '#6b3a22' },
+  { id: 'chocolate', name: 'Chocolate', color: '#4e2819' },
 ];
 
 export const TOPPINGS = [
