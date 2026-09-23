@@ -8,7 +8,55 @@ const tmp2 = new THREE.Vector3();
 const Y = new THREE.Vector3(0, 1, 0);
 
 function steel() {
-  return new THREE.MeshPhysicalMaterial({ color: 0xd9dde2, metalness: 1, roughness: 0.16, envMapIntensity: 1.4 });
+  return new THREE.MeshPhysicalMaterial({ color: 0xe4e7eb, metalness: 1, roughness: 0.14 });
+}
+
+// The tools sit right in front of the lens, where reflecting the dark sea
+// would turn polished steel black. They get their own little studio instead:
+// the dusk sky's colours with a few soft boxes (warm towards the sun, cool
+// overhead and behind the viewer) so the steel and the pearl head read.
+function createToolEnvironment(renderer) {
+  const scene = new THREE.Scene();
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    vertexShader: /* glsl */ `
+varying vec3 vDir;
+void main() {
+  vDir = normalize(position);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`,
+    fragmentShader: /* glsl */ `
+varying vec3 vDir;
+float box(vec3 d, vec3 c, vec2 size) {
+  vec3 z = normalize(c);
+  vec3 x = normalize(cross(abs(z.y) > 0.9 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0), z));
+  vec3 y = cross(z, x);
+  float f = dot(d, z);
+  if (f <= 0.0) return 0.0;
+  vec2 p = vec2(dot(d, x), dot(d, y)) / f;
+  vec2 q = abs(p) / size;
+  return (1.0 - smoothstep(0.7, 1.0, q.x)) * (1.0 - smoothstep(0.7, 1.0, q.y));
+}
+void main() {
+  vec3 d = normalize(vDir);
+  float h = d.y;
+  vec3 col = mix(vec3(0.12, 0.11, 0.17), vec3(0.30, 0.32, 0.52), smoothstep(-0.4, 0.7, h));
+  col = mix(col, vec3(0.62, 0.46, 0.44), exp(-abs(h) * 6.0) * 0.7);
+  col += vec3(2.2, 1.45, 0.85) * box(d, vec3(0.74, 0.25, -0.67), vec2(0.5, 0.25));
+  col += vec3(0.8, 0.85, 1.1) * box(d, vec3(-0.2, 1.0, 0.3), vec2(0.9, 0.4));
+  col += vec3(1.1, 1.05, 1.15) * box(d, vec3(-0.55, 0.35, 0.75), vec2(0.35, 0.6));
+  col += vec3(0.7, 0.6, 0.85) * box(d, vec3(0.6, -0.1, 0.8), vec2(0.35, 0.45));
+  col += vec3(0.6, 0.45, 0.75) * box(d, vec3(-1.0, 0.05, -0.2), vec2(0.15, 0.8));
+  gl_FragColor = vec4(col, 1.0);
+}`,
+  });
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(10, 48, 24), mat));
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const rt = pmrem.fromScene(scene, 0.01, 0.1, 100);
+  pmrem.dispose();
+  mat.dispose();
+  return rt.texture;
 }
 
 // Pin: built along +Y with the point at the origin.
@@ -23,12 +71,10 @@ function buildPin() {
   const head = new THREE.Mesh(
     new THREE.SphereGeometry(0.03, 32, 20),
     new THREE.MeshPhysicalMaterial({
-      color: new THREE.Color('#c81d25'),
-      roughness: 0.12,
+      color: new THREE.Color('#e3212b'),
+      roughness: 0.3,
       clearcoat: 1,
       clearcoatRoughness: 0.05,
-      sheen: 0.3,
-      sheenColor: new THREE.Color('#ff9a9a'),
       envMapIntensity: 1.2,
     }),
   );
@@ -111,18 +157,22 @@ function buildDart() {
   return g;
 }
 
-function setLayer(obj) {
-  obj.traverse((o) => o.layers.set(LAYER_NO_REFLECT));
+function prepare(obj, envMap) {
+  obj.traverse((o) => {
+    o.layers.set(LAYER_NO_REFLECT);
+    if (o.material) o.material.envMap = envMap;
+  });
 }
 
 export class ToolRig {
-  constructor(scene, camera) {
+  constructor(scene, camera, renderer) {
     this.scene = scene;
     this.camera = camera;
+    this.envMap = createToolEnvironment(renderer);
     this.pin = buildPin();
     this.dartHeld = buildDart();
-    setLayer(this.pin);
-    setLayer(this.dartHeld);
+    prepare(this.pin, this.envMap);
+    prepare(this.dartHeld, this.envMap);
     scene.add(this.pin, this.dartHeld);
     this.flying = [];
     this.tool = 'pin';
@@ -148,6 +198,12 @@ export class ToolRig {
     if (type !== 'mouse') this.ndc.copy(ndc);
     this.visible = true;
     this.restTimer = 0;
+  }
+
+  // a narrow portrait screen shows less of the scene, so the hand-held tool
+  // shrinks a little to keep from covering the balloons
+  handScale() {
+    return Math.min(1, Math.max(0.72, this.camera.aspect));
   }
 
   hide() {
@@ -228,8 +284,10 @@ export class ToolRig {
     // mouse: the tool trails the pointer slightly for weight
     const follow = this.pointerType === 'mouse' ? 1 - Math.exp(-realDt * 28) : 1;
     this.ndc.lerp(this.targetNdc, follow);
+    // with touch there is no hover: show the tool for the strike, then put it away
     if (this.pointerType !== 'mouse') {
       this.restTimer += realDt;
+      if (this.restTimer > 0.9 && this.jabTime < 0) this.visible = false;
     }
     this.fade += ((this.visible ? 1 : 0) - this.fade) * (1 - Math.exp(-realDt * 12));
 
@@ -253,7 +311,7 @@ export class ToolRig {
     this.pin.visible = pinOn && this.fade > 0.02;
     if (this.pin.visible) {
       this.pose(this.pin, this.ndc, dist);
-      this.pin.scale.setScalar(Math.max(0.001, this.fade));
+      this.pin.scale.setScalar(Math.max(0.001, this.fade) * this.handScale());
     }
     this.reload = Math.min(1, this.reload + realDt / 0.35);
     this.dartHeld.visible = !pinOn && this.fade > 0.02;
@@ -262,7 +320,7 @@ export class ToolRig {
       const n = this.ndc.clone();
       n.y -= slide * slide * 0.9;
       this.pose(this.dartHeld, n, 1.4, 0.8);
-      this.dartHeld.scale.setScalar(Math.max(0.001, this.fade) * 1.9);
+      this.dartHeld.scale.setScalar(Math.max(0.001, this.fade) * 1.9 * this.handScale());
     }
 
     // darts in flight

@@ -133,7 +133,7 @@ class App {
     pmrem.dispose();
 
     this.assets = createBalloonAssets(q);
-    this.tools = new ToolRig(scene, camera);
+    this.tools = new ToolRig(scene, camera, renderer);
     this.audio = new Audio();
     this.audio.listenerCam = camera;
     this.post = new Post(renderer, scene, camera, q);
@@ -245,23 +245,42 @@ class App {
 
   // ---------------------------------------------------------------- spawning
 
-  spawn({ golden = false, initial = false } = {}) {
-    const portrait = this.layout.aspect < 1;
+  // A place for a new balloon: its depth, size, side and height.
+  spawnSlot(golden, initial, portrait) {
     const depth = golden ? rand(20, 30) : portrait ? rand(18, 36) : rand(22, 46);
     const t = portrait ? (depth - 18) / 18 : (depth - 22) / 24;
     const size = golden ? rand(3.2, 3.8) : THREE.MathUtils.lerp(3.4, 5.6, t) + rand(-0.4, 0.5);
     const band = this.bandAt(depth);
-    const fromLeft = Math.random() < 0.68;
-    const dir = fromLeft ? 1 : -1;
+    const dir = Math.random() < 0.68 ? 1 : -1;
+    const minY = Math.max(0.21 * size + 1.4, band.yLow + size * 0.3);
+    const maxY = Math.max(minY + 0.5, band.yHigh - size * 1.1);
+    const x = initial ? rand(-band.halfW * 0.75, band.halfW * 0.75) : -dir * (band.halfW + size * 0.8);
+    return { depth, size, dir, x, y: rand(minY, maxY) };
+  }
+
+  spawn({ golden = false, initial = false } = {}) {
+    const portrait = this.layout.aspect < 1;
+    // try a few places and take the one furthest, on screen, from the others
+    const others = this.balloons.filter((b) => b.state === 'flying').map((b) => b.center().project(this.camera));
+    let slot = null;
+    let best = -1;
+    for (let k = 0; k < 6; k++) {
+      const c = this.spawnSlot(golden, initial, portrait);
+      const p = new THREE.Vector3(c.x, c.y + c.size * 0.6, -c.depth).project(this.camera);
+      p.x = THREE.MathUtils.clamp(p.x, -1, 1);
+      let gap = 4;
+      for (const o of others) gap = Math.min(gap, Math.hypot((p.x - o.x) * this.layout.aspect, p.y - o.y));
+      if (gap > best) {
+        best = gap;
+        slot = c;
+      }
+    }
+    const { depth, size, dir, x, y } = slot;
     const timed = this.mode === 'timed' && this.state === 'playing';
     const difficulty = timed ? 1 + (1 - this.roundTime / ROUND_SECONDS) * 0.7 : 1;
     let speed = (timed ? rand(2.2, 3.4) : rand(1.3, 2.3)) * difficulty;
     if (golden) speed *= 1.35;
     if (portrait) speed *= 0.7;
-    const minY = Math.max(0.21 * size + 1.4, band.yLow + size * 0.3);
-    const maxY = Math.max(minY + 0.5, band.yHigh - size * 1.1);
-    const x = initial ? rand(-band.halfW * 0.75, band.halfW * 0.75) : -dir * (band.halfW + size * 0.8);
-    const y = rand(minY, maxY);
     const r = Math.random();
     const pattern = r < 0.45 ? PATTERN.PILLS : r < 0.75 ? PATTERN.RIBBONS : PATTERN.DIAMONDS;
     const palette = Math.random() < 0.35 ? 0 : Math.floor(Math.random() * PALETTES.length);
@@ -360,6 +379,7 @@ class App {
   endRound() {
     this.state = 'results';
     this.tools.hide();
+    this.ui.hud(this.hudState());
     this.ui.results({ score: this.score, pops: this.pops, bestCombo: this.bestCombo });
   }
 
@@ -474,7 +494,7 @@ class App {
     const gained = b.points * mult;
     if (inPlay) this.score += gained;
     const special = b.golden || (this.combo > 0 && this.combo % 5 === 0) || (this.mode === 'relax' && this.pops % 10 === 0);
-    this.popFX.burst(b, localPoint, { special, camera: this.camera });
+    this.popFX.burst(b, localPoint, { special });
     if (special) this.triggerSlowmo();
 
     // floating score where the balloon was
@@ -625,7 +645,7 @@ class App {
     // balloons still popping keep their gondola until detached
     for (const b of this.balloons) if (b.gondolaFalling) b.updateFalling(dt, t);
 
-    this.popFX.update(dt, t, { x: 1.5 });
+    this.popFX.update(dt, t, { x: 1.5 }, realDt);
     this.tools.update(realDt, dt, (p) => {
       this.popFX.splash(p.x, p.z, 0.35, t);
       this.audio.splash({ size: 0.6, position: p });

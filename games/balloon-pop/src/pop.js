@@ -1,8 +1,8 @@
-// The burst. Modelled on high-speed footage of balloons popping: the skin
-// dimples under the point, a tear races out from the puncture with cracks
-// running ahead of it, the skin snaps back into ragged, curling shreds that
-// carry the balloon's own material, a puff of air and powder escapes, and
-// the pieces spin, flutter and drop into the sea.
+// The burst. The skin dimples under the point, a tear races out from the
+// puncture with fingers running ahead of it, and the envelope comes apart
+// into ragged pieces of its own fabric: small tatters round the hole, long
+// panel strips further away. The pieces are flung out, caught by the air,
+// then flutter and tumble down into the sea.
 import * as THREE from 'three';
 import {
   GORES,
@@ -33,7 +33,7 @@ function tearFingers(phi, seed) {
 class ShredField {
   constructor({ capacity, ripstop, gold, noise }) {
     this.capacity = capacity;
-    const geo = new THREE.PlaneGeometry(1, 1, 6, 4);
+    const geo = new THREE.PlaneGeometry(1, 1, 4, 12);
     this.uvRect = new Float32Array(capacity * 4);
     this.shred = new Float32Array(capacity * 4);
     this.shred2 = new Float32Array(capacity * 2);
@@ -46,7 +46,7 @@ class ShredField {
     const material = createEnvelopeMaterial({ ripstop, gold });
     material.flatShading = true;
     material.normalMap = null;
-    this.uniforms = { uGlow: { value: 0.8 } };
+    this.uniforms = { uGlow: { value: 0.8 }, uTime: { value: 0 } };
     patchEnvelopeMaterial(material, this.uniforms, { shred: true });
     this.mesh = new THREE.InstancedMesh(geo, material, capacity);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -68,6 +68,8 @@ class ShredField {
       curl: 0,
       curlTarget: 0.6,
       flutter: 0,
+      tumble: new THREE.Vector3(),
+      fall: 3,
       floatAge: 0,
       balloon: null,
       local: new THREE.Vector3(),
@@ -110,7 +112,8 @@ export class PopFX {
     this.spray = new ParticleSystem({ capacity: quality.tier === 'low' ? 600 : 1400, softness: 1.4, name: 'spray' });
     scene.add(this.dust.points, this.sparks.points, this.spray.points);
 
-    // Flash and shock-ring sprites (HDR so bloom picks them up).
+    // Flash sprites (HDR so bloom picks them up). The shock wave itself is a
+    // screen-space distortion in post.js.
     this.flashes = [];
     for (let i = 0; i < 4; i++) {
       const flash = new THREE.Sprite(
@@ -126,61 +129,7 @@ export class PopFX {
       flash.visible = false;
       flash.renderOrder = 20;
       scene.add(flash);
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(0.82, 1, 64, 1),
-        new THREE.ShaderMaterial({
-          uniforms: { uAlpha: { value: 0 } },
-          vertexShader: /* glsl */ `
-varying vec2 vUv;
-void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-          fragmentShader: /* glsl */ `
-uniform float uAlpha;
-varying vec2 vUv;
-void main() {
-  float r = length(vUv - 0.5) * 2.0;
-  float a = smoothstep(0.82, 0.93, r) * smoothstep(1.0, 0.94, r);
-  gl_FragColor = vec4(vec3(1.0, 0.92, 0.82) * 1.6, a * uAlpha);
-}`,
-          transparent: true,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-          side: THREE.DoubleSide,
-        }),
-      );
-      ring.visible = false;
-      ring.renderOrder = 21;
-      scene.add(ring);
-      // expanding "ghost" of the air that kept the balloon's shape
-      const ghost = new THREE.Mesh(
-        assets.envelopeGeometry,
-        new THREE.ShaderMaterial({
-          uniforms: { uAlpha: { value: 0 } },
-          vertexShader: /* glsl */ `
-varying vec3 vN;
-varying vec3 vV;
-void main() {
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  vN = normalize(normalMatrix * normal);
-  vV = normalize(-mv.xyz);
-  gl_Position = projectionMatrix * mv;
-}`,
-          fragmentShader: /* glsl */ `
-uniform float uAlpha;
-varying vec3 vN;
-varying vec3 vV;
-void main() {
-  float rim = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 3.0);
-  gl_FragColor = vec4(vec3(1.0, 0.86, 0.72) * rim * uAlpha, 1.0);
-}`,
-          transparent: true,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-          side: THREE.DoubleSide,
-        }),
-      );
-      ghost.visible = false;
-      scene.add(ghost);
-      this.flashes.push({ flash, ring, ghost, age: -1, size: 1 });
+      this.flashes.push({ flash, age: -1, size: 1 });
     }
     this.flashIndex = 0;
     this.light = new THREE.PointLight(0xffe2c0, 0, 40, 2);
@@ -200,7 +149,7 @@ void main() {
   }
 
   // Called when the tool's point touches the skin (the moment of rupture).
-  burst(balloon, localPoint, { special = false, camera }) {
+  burst(balloon, localPoint, { special = false } = {}) {
     balloon.beginPop(localPoint);
     const S = balloon.size;
     const field = balloon.golden ? this.gold : this.fabric;
@@ -214,26 +163,33 @@ void main() {
     const t1 = new THREE.Vector3().crossVectors(ax, Math.abs(ax.y) < 0.9 ? UP : new THREE.Vector3(1, 0, 0)).normalize();
     const t2 = new THREE.Vector3().crossVectors(ax, t1);
 
-    // Carve the envelope into ragged strips, a few per gore, finer near the
-    // puncture where the skin shatters into smaller pieces.
-    const rows = this.quality.tier === 'low' ? 5 : 7;
-    const perGore = 1;
+    // Carve the envelope along its panels: small tatters near the puncture
+    // where the fabric shatters, long strips on the far side.
+    const low = this.quality.tier === 'low';
+    const nearRows = low ? 7 : 11;
+    const farRows = low ? 2.5 : 3;
     const bodyScale = balloon.body.scale;
+    const angleTo = (u, v) => {
+      const fr = envelopeFrame(u, v);
+      const dirP = tmpV.copy(fr.p).sub(ENVELOPE_CENTER).normalize();
+      return { fr, dirP, ang: Math.acos(Math.max(-1, Math.min(1, dirP.dot(ax)))) };
+    };
     for (let g = 0; g < GORES; g++) {
-      for (let s = 0; s < perGore; s++) {
-        let v0 = 0.02;
-        while (v0 < 0.985) {
-          const dv = (0.6 + Math.random() * 0.8) / rows;
-          const v1 = Math.min(0.99, v0 + dv);
-          const du = 1 / GORES / perGore;
+      let v0 = 0.02;
+      while (v0 < 0.985) {
+        const near = 1 - angleTo((g + 0.5) / GORES, v0).ang / Math.PI;
+        const rows = farRows + (nearRows - farRows) * near ** 2.2;
+        const dv = (0.6 + Math.random() * 0.8) / rows;
+        const v1 = v0 + dv > 0.93 ? 0.99 : v0 + dv;
+        const split = near > 0.72 && Math.random() < 0.7 ? 2 : 1;
+        const du = 1 / GORES / split;
+        for (let s = 0; s < split; s++) {
           const u0 = g / GORES + s * du;
           const uc = u0 + du * 0.5;
           const vc = (v0 + v1) * 0.5;
-          const fr = envelopeFrame(uc, vc);
-          const dirP = tmpV.copy(fr.p).sub(ENVELOPE_CENTER).normalize();
-          const ang = Math.acos(Math.max(-1, Math.min(1, dirP.dot(ax))));
+          const { fr, dirP, ang } = angleTo(uc, vc);
           const phi = Math.atan2(dirP.dot(t2), dirP.dot(t1));
-          const reach = 1 + tearFingers(phi, seed);
+          const reach = 1 + tearFingers(phi, seed) * Math.sqrt(Math.sin(ang));
           const i = field.alloc();
           const it = field.items[i];
           it.state = 1;
@@ -244,25 +200,29 @@ void main() {
           it.localN.copy(fr.n);
           it.localTu.copy(fr.tu);
           const gw = goreWidthAt(vc);
-          it.w = Math.max(0.012, gw / perGore) * 1.08;
-          it.h = (v1 - v0) * PROFILE_LENGTH * 1.05;
+          it.w = Math.max(0.012, gw / split) * 1.06;
+          it.h = (v1 - v0) * PROFILE_LENGTH * 1.04;
           it.curl = 0;
-          it.curlTarget = 0.4 + Math.random() * 0.9;
+          // long strips roll less and flap more; small tatters crumple
+          const long = Math.min(1, it.h / it.w / 5);
+          it.curlTarget = (0.35 + Math.random() * 0.7) * (1 - long * 0.5);
           it.flutter = Math.random() * 10;
+          it.fall = 2.6 + Math.random() * 1.6 - long * 0.6;
+          it.tumble.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(4 + (1 - long) * 5);
           it.floatAge = 0;
           it.ang = ang;
           field.uvRect.set([u0, v0, du, v1 - v0], i * 4);
           field.shred.set([balloon.palette, balloon.pattern, Math.random(), 0], i * 4);
-          field.shred2.set([gw, 0], i * 2);
-          v0 = v1;
+          field.shred2.set([gw, long], i * 2);
         }
+        v0 = v1;
       }
     }
     field.uvRectAttr.needsUpdate = true;
     field.shred2Attr.needsUpdate = true;
     this.pending.push({ balloon, field, center, world: world.clone(), scale: bodyScale.clone() });
 
-    // Flash, shock ring, air ghost.
+    // Flash of the rupture.
     const slot = this.flashes[this.flashIndex];
     this.flashIndex = (this.flashIndex + 1) % this.flashes.length;
     slot.age = 0;
@@ -270,23 +230,14 @@ void main() {
     slot.special = special;
     slot.flash.position.copy(puncture);
     slot.flash.visible = true;
-    slot.ring.position.copy(center);
-    slot.ring.visible = true;
-    if (camera) slot.ring.quaternion.copy(camera.quaternion);
-    slot.ghost.position.copy(balloon.root.position);
-    slot.ghost.position.y += balloon.tilt.position.y;
-    slot.ghost.quaternion.copy(balloon.envelope.getWorldQuaternion(tmpQ));
-    slot.ghost.scale.copy(bodyScale);
-    slot.ghost.visible = true;
-    slot.ghostScale = bodyScale.clone();
     slot.gold = balloon.golden;
-    this.light.position.copy(puncture);
+    this.light.position.copy(puncture).addScaledVector(tmpV.copy(puncture).sub(center).normalize(), S * 0.35);
     this.lightAge = 0;
-    this.lightPower = balloon.golden ? 45 : 28;
+    this.lightPower = balloon.golden ? 20 : 11;
 
-    // Puff of air and powder from the rupture, plus a wider sigh of air.
+    // A puff of warm air and lint from the rupture.
     const col = new THREE.Color();
-    const n = this.quality.tier === 'low' ? 40 : 90;
+    const n = low ? 30 : 60;
     for (let k = 0; k < n; k++) {
       const dir = tmpV2.copy(tearDir).applyQuaternion(balloon.envelope.getWorldQuaternion(tmpQ));
       dir.x += (Math.random() - 0.5) * 1.4;
@@ -294,29 +245,15 @@ void main() {
       dir.z += (Math.random() - 0.5) * 1.4;
       dir.normalize();
       const sp = (2 + Math.random() * 6) * S * 0.35;
-      col.setRGB(0.95, 0.82, 0.78).multiplyScalar(0.55 + Math.random() * 0.3);
+      col.setRGB(1.0, 0.86, 0.76).multiplyScalar(0.6 + Math.random() * 0.3);
       this.dust.emit(puncture, dir.multiplyScalar(sp), {
         life: 0.5 + Math.random() * 0.7,
         size0: 0.05 * S,
         size1: (0.18 + Math.random() * 0.25) * S,
         color: col,
-        alpha: 0.05,
+        alpha: 0.035,
         drag: 3.5,
         gravity: -0.15,
-      });
-    }
-    for (let k = 0; k < n; k++) {
-      const dir = tmpV2.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
-      const p = tmpV.copy(center).addScaledVector(dir, S * 0.4);
-      col.setRGB(0.9, 0.78, 0.8).multiplyScalar(0.4);
-      this.dust.emit(p, dir.multiplyScalar(S * (0.8 + Math.random() * 1.2)), {
-        life: 0.6 + Math.random() * 0.5,
-        size0: 0.1 * S,
-        size1: 0.5 * S,
-        color: col,
-        alpha: 0.025,
-        drag: 4,
-        gravity: -0.1,
       });
     }
     if (balloon.golden || special) {
@@ -367,7 +304,8 @@ void main() {
     }
   }
 
-  update(dt, time, wind) {
+  // realDt drives the flash, which stays a split-second flash in slow motion.
+  update(dt, time, wind, realDt = dt) {
     this.time = time;
     // tear progress releases shreds as the front passes them
     for (let p = this.pending.length - 1; p >= 0; p--) {
@@ -381,10 +319,10 @@ void main() {
     this.updateField(this.fabric, dt, time, wind);
     this.updateField(this.gold, dt, time, wind);
 
-    // flashes / rings / ghosts
+    // flashes
     for (const f of this.flashes) {
       if (f.age < 0) continue;
-      f.age += dt;
+      f.age += realDt;
       const S = f.size;
       const fa = f.age;
       const flashLife = 0.06;
@@ -396,25 +334,10 @@ void main() {
         const g = f.gold ? 1.4 : 1;
         f.flash.material.color.setRGB(5 * k * k * g, 4 * k * k * g, 3 * k * k);
       } else f.flash.visible = false;
-      const ringLife = 0.28;
-      if (fa < ringLife) {
-        const k = fa / ringLife;
-        f.ring.visible = true;
-        f.ring.scale.setScalar(S * (0.6 + k * 1.1));
-        f.ring.material.uniforms.uAlpha.value = (1 - k) ** 3 * 0.06;
-      } else f.ring.visible = false;
-      // the air holds the balloon's shape for an instant, then disperses
-      const ghostLife = 0.22;
-      if (fa < ghostLife) {
-        const k = fa / ghostLife;
-        f.ghost.visible = true;
-        f.ghost.scale.copy(f.ghostScale).multiplyScalar(1 + k * 0.16);
-        f.ghost.material.uniforms.uAlpha.value = Math.min(1, fa / 0.03) * (1 - k) * (1 - k) * 0.16;
-      } else f.ghost.visible = false;
-      if (fa > 0.4) f.age = -1;
+      if (fa > flashLife) f.age = -1;
     }
     if (this.lightAge >= 0) {
-      this.lightAge += dt;
+      this.lightAge += realDt;
       const k = Math.max(0, 1 - this.lightAge / 0.16);
       this.light.intensity = this.lightPower * k * k;
       this.sea.uniforms.uFlash.value.set(this.light.position.x, this.light.position.y, this.light.position.z, 3 * k * k);
@@ -433,6 +356,7 @@ void main() {
 
   updateField(field, dt, time, wind) {
     const mesh = field.mesh;
+    field.uniforms.uTime.value = time;
     let dirty = false;
     let splashes = 0;
     for (let i = 0; i < field.capacity; i++) {
@@ -472,23 +396,22 @@ void main() {
       }
       if (it.state === 2) {
         it.age += dt;
-        // heavy air drag on a light sheet; gravity wins after the first moment
-        const drag = Math.exp(-dt * (it.age < 0.12 ? 4.5 : 1.3));
-        it.vel.multiplyScalar(drag);
-        it.vel.y -= 6.5 * dt;
-        // flutter: sideways oscillation while falling
-        const fl = Math.sin(time * 6 + it.flutter) * 1.2;
-        it.vel.x += (wind.x * 1.2 - it.vel.x) * dt * 0.4 + fl * dt;
-        it.vel.z += Math.cos(time * 5 + it.flutter) * dt;
+        // the air catches a light sheet almost at once; afterwards it falls
+        // at a gentle terminal speed, rocking and sliding like a leaf
+        const k = it.age < 0.14 ? 5.5 : 9.8 / it.fall;
+        it.vel.multiplyScalar(Math.exp(-dt * k));
+        it.vel.y -= 9.8 * dt;
+        const rock = Math.sin(time * 2.6 + it.flutter);
+        it.vel.x += (wind.x - it.vel.x) * dt * 0.3 + rock * 2.4 * dt;
+        it.vel.z += Math.cos(time * 2.1 + it.flutter * 1.7) * 1.6 * dt;
         it.pos.addScaledVector(it.vel, dt);
-        it.spin.multiplyScalar(Math.exp(-dt * 0.9));
+        it.spin.lerp(it.tumble, 1 - Math.exp(-dt * 1.4));
         tmpQ.setFromEuler(new THREE.Euler(it.spin.x * dt, it.spin.y * dt, it.spin.z * dt));
         it.quat.multiply(tmpQ);
-        // snap-back: curl up and contract within a few hundredths of a second
-        const c = 1 - Math.exp(-it.age * 22);
+        // released tension: the edges curl and the fabric gathers a little
+        const c = 1 - Math.exp(-it.age * 14);
         it.curl = it.curlTarget * c;
-        const shrink = 1 - 0.3 * c;
-        tmpS.set(it.scaleW * shrink, it.scaleH * (1 - 0.22 * c), 1);
+        tmpS.set(it.scaleW * (1 - 0.12 * c), it.scaleH * (1 - 0.06 * c), it.scaleW);
         if (it.pos.y <= 0.02) {
           it.state = 3;
           it.floatAge = 0;
@@ -510,7 +433,7 @@ void main() {
         it.curl += (0.15 - it.curl) * (1 - Math.exp(-dt * 2));
         it.pos.x += wind.x * 0.2 * dt;
         it.pos.y = 0.02 + Math.sin(time * 2 + it.flutter) * 0.02 - Math.max(0, it.floatAge - 2.5) * 0.12;
-        tmpS.set(it.scaleW * 0.58, it.scaleH * 0.7, 1);
+        tmpS.set(it.scaleW * 0.8, it.scaleH * 0.9, it.scaleW);
         if (it.floatAge > 4.5) {
           it.state = 0;
           mesh.setMatrixAt(i, ZERO);

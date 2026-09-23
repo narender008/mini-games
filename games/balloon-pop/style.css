@@ -479,8 +479,8 @@ svg .thick {
 
 .pick button {
   min-width: 64px;
-  height: 36px;
-  border-radius: 18px;
+  height: 44px;
+  border-radius: 22px;
   border: 0;
   background: transparent;
   color: var(--ink-soft);
@@ -509,7 +509,7 @@ svg .thick {
   color: var(--ink-soft);
   font-size: 14px;
   text-decoration: none;
-  padding: 8px;
+  padding: 12px;
 }
 
 .back:hover {
@@ -647,6 +647,62 @@ svg .thick {
 
   .actions {
     gap: 6px;
+  }
+}
+
+/* short landscape screens (phones on their side): fit the menu without scrolling */
+@media (max-height: 520px) and (min-aspect-ratio: 4/3) {
+  .panel {
+    width: min(640px, calc(100vw - 32px));
+    max-height: calc(100dvh - 16px);
+    padding: 16px 20px 12px;
+  }
+
+  .panel.small {
+    width: min(460px, calc(100vw - 32px));
+  }
+
+  .panel h1 {
+    font-size: 30px;
+    margin-bottom: 2px;
+  }
+
+  .panel h2 {
+    font-size: 24px;
+  }
+
+  .lede {
+    margin-bottom: 12px;
+    font-size: 14px;
+  }
+
+  .modes {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mode {
+    padding: 10px 14px;
+  }
+
+  .mode strong {
+    font-size: 17px;
+  }
+
+  .mode small {
+    font-size: 13px;
+  }
+
+  .pick {
+    margin: 10px auto 2px;
+  }
+
+  .best {
+    margin: 4px 0 0;
+  }
+
+  .back {
+    margin-top: 0;
+    padding: 10px;
   }
 }
 

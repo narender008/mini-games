@@ -276,7 +276,8 @@ export function patchEnvelopeMaterial(material, uniforms, { shred = false } = {}
       ? /* glsl */ `
 attribute vec4 aUvRect;
 attribute vec4 aShred;   // palette, pattern, seed, curl
-attribute vec2 aShred2;  // gore width, unused
+attribute vec2 aShred2;  // gore width, how long and thin the strip is
+uniform float uTime;
 varying vec2 vEnvUv;
 varying vec2 vGore;
 varying vec2 vLocalUv;
@@ -295,7 +296,7 @@ varying vec3 vObjPos;`;
 vec3 transformed = vec3(position);
 float curl = aShred.w;
 float seed = aShred.z;
-// roll the strip up around its long axis as the rubber snaps back
+// the cut edges roll in around the strip's long axis
 float kx = curl * 5.5 + 0.0001;
 float ang = transformed.x * kx;
 transformed.z += (1.0 - cos(ang)) / kx;
@@ -305,6 +306,10 @@ float tw = (fract(seed * 7.31) - 0.5) * curl * 2.2 * transformed.y;
 transformed.xz = mat2(cos(tw), -sin(tw), sin(tw), cos(tw)) * transformed.xz;
 transformed.z += sin(position.x * 17.0 + seed * 40.0) * sin(position.y * 13.0 + seed * 23.0) * 0.07 * curl;
 transformed.z += position.y * position.y * (fract(seed * 3.7) - 0.5) * curl * 1.6;
+// flapping in the airflow: a wave running along the strip, stronger on
+// long panels and towards the free end
+float flap = (0.12 + aShred2.y * 0.5) * min(curl * 3.0, 1.0);
+transformed.z += sin(position.y * (4.0 + aShred2.y * 5.0) - uTime * (7.0 + fract(seed * 5.3) * 5.0) + seed * 30.0) * flap * (0.9 + position.y);
 vEnvUv = aUvRect.xy + uv * aUvRect.zw;
 vGore = vec2(fract(vEnvUv.x * ${GORES.toFixed(1)}), aShred2.x);
 vLocalUv = uv;
@@ -371,7 +376,9 @@ if (uTear.w > 0.0) {
   vec3 t2 = cross(ax, t1);
   float phi = atan(dot(dirP, t2), dot(dirP, t1));
   float jag = texture2D(uNoise, vEnvUv * vec2(3.0, 1.6) + uTearSeed).a;
-  float radius = uTear.w * (1.0 + tearFingers(phi, uTearSeed)) + (jag - 0.5) * 0.22 * min(uTear.w, 1.0);
+  // fingers grow out of a round hole and fade again where the fronts meet
+  // at the far side, so they never converge into a pinwheel
+  float radius = uTear.w * (1.0 + tearFingers(phi, uTearSeed) * sqrt(sin(angT))) + (jag - 0.5) * 0.22 * min(uTear.w, 1.0);
   if (angT < radius) discard;
   tearEdge = smoothstep(0.0, 0.06, angT - radius);
 }`;

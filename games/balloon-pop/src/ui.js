@@ -95,6 +95,7 @@ export class UI {
     for (const p of ['menu', 'paused', 'results']) this.el[p].hidden = p !== name;
     this.el.hud.hidden = name === 'menu' || name === 'loading' || name === 'cover';
     document.body.dataset.state = name;
+    if (name !== 'playing') this.el.hint.classList.remove('show');
     const focus = { menu: 'play-relax', paused: 'resume', results: 'again' }[name];
     if (focus) requestAnimationFrame(() => $(focus).focus({ preventScroll: true }));
   }
@@ -132,6 +133,7 @@ export class UI {
   }
 
   floater(x, y, text, kind = '') {
+    if (document.body.dataset.state === 'cover') return;
     const d = document.createElement('div');
     d.className = `floater ${kind}`;
     d.textContent = text;
