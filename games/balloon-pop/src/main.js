@@ -180,8 +180,15 @@ class App {
     const g = this.spawn({ golden: true, initial: true });
     this.popFX.fabric.mesh.count = 1;
     this.popFX.gold.mesh.count = 1;
+    const putToolsAway = this.tools.warmUp();
     this.camera.updateMatrixWorld();
-    if (renderer.compileAsync) await renderer.compileAsync(scene, camera);
+    if (renderer.compileAsync) {
+      renderer.setRenderTarget(this.post.composer.readBuffer);
+      const compiled = renderer.compileAsync(scene, camera);
+      renderer.setRenderTarget(null);
+      await compiled;
+    }
+    putToolsAway();
     this.removeBalloon(g);
     this.popFX.fabric.mesh.count = this.popFX.fabric.capacity;
     this.popFX.gold.mesh.count = this.popFX.gold.capacity;
@@ -308,6 +315,7 @@ class App {
   removeBalloon(b) {
     const i = this.balloons.indexOf(b);
     if (i >= 0) this.balloons.splice(i, 1);
+    b.state = 'gone';
     b.dispose(this.scene);
   }
 
@@ -579,7 +587,7 @@ class App {
 
   popBalloon(b, localPoint, shot = 0) {
     const inPlay = this.state === 'playing';
-    const timed = this.mode === 'timed';
+    const timed = this.mode === 'timed' && inPlay;
     const r = this.streak.pop(this.realTime, shot);
     this.pops++;
     const gained = b.points * r.mult + r.bonus;

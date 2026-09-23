@@ -301,6 +301,23 @@ export class ToolRig {
     this.drawing = null;
   }
 
+  // Bring out every tool and one of each shot so the renderer can compile
+  // their shaders while loading. Returns a function that puts them away.
+  warmUp() {
+    const models = [this.pin, this.dartHeld, this.rifle.group, this.sling.group];
+    const shots = [
+      new THREE.Mesh(this.pelletGeometry, this.pelletMaterial()),
+      new THREE.Mesh(this.stoneGeometries[0], this.stoneMaterial),
+      createTracer('#ffe2b8', 7),
+    ];
+    for (const o of models) o.visible = true;
+    for (const o of shots) this.scene.add(o);
+    return () => {
+      for (const o of models) o.visible = false;
+      for (const o of shots) o.removeFromParent();
+    };
+  }
+
   ray(ndc) {
     this.raycaster.setFromCamera(ndc, this.camera);
     return this.raycaster.ray;
