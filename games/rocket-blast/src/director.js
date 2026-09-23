@@ -144,13 +144,16 @@ export class Director {
     const c0 = pick(options);
     const colorIndex = this.pickColor();
     const form = { enemies: [], vy: -speed, breakAt, broken: false, shift, shiftT: rand(0.8, 1.6), dir: Math.random() < 0.5 ? -1 : 1 };
-    for (const [dx, dy] of cells) {
+    // now and then one toy in a formation is a rare golden one
+    const golden = this.mode !== 'menu' && Math.random() < 0.12 ? Math.floor(Math.random() * cells.length) : -1;
+    cells.forEach(([dx, dy], i) => {
       const e = this.app.spawnEnemy({ x: this.colX(c0 + dx), y: top + dy * CELL, colorIndex });
       e.z = z;
       e.formation = form;
       e.gx = e.x;
+      if (i === golden) e.makeGolden();
       form.enemies.push(e);
-    }
+    });
     this.formations.push(form);
     return form;
   }
@@ -366,7 +369,7 @@ export class Director {
     const e = this.boss;
     const f = this.field;
     this.bossT += dt;
-    const home = f.halfH - e.size * 0.62 - 0.4;
+    const home = f.halfH - e.size * 0.5 - 1.6;
     const span = Math.max(0, f.halfW - e.size * 0.6 - 0.3);
     const tx = Math.sin(this.bossT * 0.55) * span;
     const ty = home + Math.sin(this.bossT * 1.4) * 0.3;
@@ -415,12 +418,13 @@ export class Director {
     this.hits++;
     let streak = (this.hits % 10) + 1;
     if (this.mode === 'little') {
-      this.addScore(1);
+      const stars = e.golden ? 5 : 1;
+      this.addScore(stars);
       const p = app.screenPos(e.x, e.y);
-      app.ui.flyStar(p.x, p.y);
+      for (let i = 0; i < stars; i++) setTimeout(() => app.ui.flyStar(p.x, p.y), i * 90);
     } else if (this.mode === 'big') {
-      streak = this.scoreHit(e.x, e.y, info, 10);
-      if (Math.random() < 0.06) app.powerups.spawn(e.x, e.y);
+      streak = this.scoreHit(e.x, e.y, info, e.golden ? 100 : 10);
+      if (Math.random() < 0.06 || e.golden) app.powerups.spawn(e.x, e.y);
     }
     if (this.hits % MEGA_EVERY[this.mode] === 0) app.megaStart();
     return streak;

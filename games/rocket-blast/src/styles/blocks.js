@@ -53,7 +53,7 @@ export class BlocksStyle {
     for (const e of enemies) {
       if (e.gone || e.scale <= 0.001) continue;
       enemyMatrix(e, M);
-      this.body.push(M, e.color, e.hitFlash * 0.8);
+      this.body.push(M, e.color, e.hitFlash * (e.boss ? 0.3 : 0.8));
       const open = eyeOpen(e);
       const big = 0.95 + (e.variant % 5) * 0.05;
       for (let i = 0; i < 2; i++) {
@@ -72,7 +72,7 @@ export class BlocksStyle {
         this.cheek.push(partMatrix(M, side * 0.3, -0.1, 0.402, 1, 0.7, 1, 0, P));
       }
       // mouth opens wider when the toy is squashed
-      const gape = 1 + Math.max(0, e.squash) * 1.5 + (e.dying ? 0.4 : 0);
+      const gape = 1 + Math.min(0.5, Math.max(0, e.squash) * 1.5) + (e.dying ? 0.4 : 0);
       this.mouth.push(partMatrix(M, 0, -0.14, 0.37, 1, gape, 1, 0, P));
       this.tongue.push(partMatrix(M, 0, -0.26 - (gape - 1) * 0.08, 0.38, 0.9, 0.45, 0.4, 0, P));
     }

@@ -168,11 +168,12 @@ varying float vAge;
 varying vec3 vColor;
 void main() {
   float a = 1.0 - vAge;
-  vec3 hot = vec3(1.0, 0.97, 0.88);
-  vec3 col = mix(hot * 3.0, vColor * 1.6, smoothstep(0.25, 1.0, vTip));
-  float edge = pow(vFres, 1.3);
-  float alpha = edge * a * a * mix(1.0, 0.7, vTip);
-  gl_FragColor = vec4(col * alpha, alpha);
+  // white-hot core, sunny yellow body, tips in the toy's own colour
+  vec3 col = mix(vec3(2.4, 2.1, 1.3), vec3(1.0, 0.62, 0.06), smoothstep(0.2, 0.5, vTip));
+  col = mix(col, vColor, smoothstep(0.6, 1.0, vTip));
+  float edge = smoothstep(0.05, 0.6, vFres);
+  float alpha = edge * a * a * mix(1.0, 0.85, vTip);
+  gl_FragColor = vec4(col, alpha);
 }`;
 
 class BurstMeshes {
@@ -186,7 +187,6 @@ class BurstMeshes {
       fragmentShader: burstFragment,
       transparent: true,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
     });
     this.mesh = new THREE.InstancedMesh(g, m, capacity);
@@ -265,6 +265,7 @@ export class FX {
     }
     this.nextLight = 0;
     this.fireworks = [];
+    this.heat = 0;
   }
 
   flashLight(x, y, color, peak) {
@@ -282,11 +283,19 @@ export class FX {
     const c = color || pick(COLORS);
     const warm = new THREE.Color(1, 0.72, 0.25);
     const tint = c.clone().lerp(warm, 0.35);
-    // hot flash and comic starburst layers
-    g.add({ x, y, z: 0.9, size: 4.2 * power, grow: 0.3, life: 0.22, frame: SPRITE.GLOW, r: 3, g: 2.6, b: 2, a: 1 });
-    g.add({ x, y, z: 0.8, size: 2.5 * power, grow: 0.9, life: 0.34, frame: SPRITE.BURST, rot: rand(0, 6.28), spin: rand(-2, 2), r: 3.2, g: 2.2, b: 0.8, a: 1 });
-    g.add({ x, y, z: 0.85, size: 1.7 * power, grow: 1.1, life: 0.28, frame: SPRITE.BURST2, rot: rand(0, 6.28), spin: rand(-3, 3), r: tint.r * 3, g: tint.g * 3, b: tint.b * 3, a: 1 });
-    g.add({ x, y, z: 0.7, size: 1.2 * power, grow: 4, life: 0.42, frame: SPRITE.RING, r: 2.2, g: 2, b: 1.6, a: 0.8 });
+    // Many blasts at once share one flash budget, so a big multi-hit never
+    // whites out the screen (gentle on small eyes).
+    const dim = 1 / (1 + this.heat * 0.45);
+    this.heat = Math.min(10, this.heat + 1);
+    // comic starburst layers, painted (not added) so they stay saturated on
+    // the brightest sky: an orange outer star, a yellow inner star...
+    const sm = this.smoke;
+    const rot = rand(0, 6.28);
+    sm.add({ x, y, z: 0.8, size: 2.3 * power, grow: 0.8, life: 0.3, frame: SPRITE.BURST, rot, spin: rand(-1.5, 1.5), r: 1, g: 0.42 + tint.g * 0.2, b: 0.08, a: 0.95, curve: 'out' });
+    sm.add({ x, y, z: 0.82, size: 1.6 * power, grow: 0.9, life: 0.26, frame: SPRITE.BURST2, rot: rot + 0.3, spin: rand(-2, 2), r: 1, g: 0.86, b: 0.3, a: 1, curve: 'out' });
+    // ...then a white-hot flash and a ring of light on top
+    g.add({ x, y, z: 0.9, size: 2.2 * power, grow: 0.4, life: 0.16, frame: SPRITE.GLOW, r: 2.4, g: 2.2, b: 1.8, a: dim });
+    g.add({ x, y, z: 0.7, size: 1.2 * power, grow: 4, life: 0.42, frame: SPRITE.RING, r: 1.6, g: 1.4, b: 1.1, a: 0.6 * dim });
     this.bursts.add(x, y, 0.5, 1.05 * power, tint.clone().multiplyScalar(1.2));
     // sparkles
     const ns = Math.round(10 * power);
@@ -297,11 +306,11 @@ export class FX {
       g.add({ x, y, z: 1, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp + 1.5, drag: 2.5, gravity: 3, size: rand(0.35, 0.7), life: rand(0.5, 0.9), frame: Math.random() < 0.5 ? SPRITE.SPARKLE : SPRITE.STAR, rot: rand(0, 6), spin: rand(-4, 4), r: sc.r * 2.5, g: sc.g * 2.5, b: sc.b * 2.5, a: 1, twinkle: 30 });
     }
     // soft coloured smoke
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 3; i++) {
       const a = rand(0, Math.PI * 2);
       const sp = rand(0.6, 1.6);
-      const cc = c.clone().lerp(new THREE.Color(1, 1, 1), 0.55);
-      this.smoke.add({ x: x + Math.cos(a) * 0.3, y: y + Math.sin(a) * 0.3, z: -0.2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp + 0.3, drag: 2, size: rand(0.9, 1.4) * power, grow: 1.6, rot: rand(0, 6), spin: rand(-0.6, 0.6), life: rand(0.7, 1.1), frame: i % 2 ? SPRITE.PUFF : SPRITE.PUFF2, r: cc.r, g: cc.g, b: cc.b, a: 0.45, fadeIn: 0.05 });
+      const cc = c.clone().lerp(new THREE.Color(1, 1, 1), 0.35);
+      this.smoke.add({ x: x + Math.cos(a) * 0.3, y: y + Math.sin(a) * 0.3, z: -0.2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp + 0.3, drag: 2, size: rand(0.9, 1.3) * power, grow: 1.5, rot: rand(0, 6), spin: rand(-0.6, 0.6), life: rand(0.6, 0.9), frame: i % 2 ? SPRITE.PUFF : SPRITE.PUFF2, r: cc.r, g: cc.g, b: cc.b, a: 0.32 * (0.4 + 0.6 * dim), fadeIn: 0.05 });
     }
     // lit treats
     const k = this.amount * power;
@@ -317,9 +326,9 @@ export class FX {
     throwOut(this.candy, 2, 0.6, () => pick(COLORS));
     throwOut(this.lolly, 1.2, 0.55, () => pick(COLORS));
     throwOut(this.confetti, 16, 1, () => pick(COLORS), [3, 8], [1.6, 2.4]);
-    this.flashLight(x, y, tint, 40 * power);
-    if (this.onKick) this.onKick(0.12 * power);
-    if (this.onShock) this.onShock(x, y, power);
+    this.flashLight(x, y, tint, 14 * power * dim);
+    if (this.onKick) this.onKick(0.12 * power * dim);
+    if (this.onShock && dim > 0.4) this.onShock(x, y, power);
   }
 
   // A gentle "boop" when an enemy reaches the bottom: no explosion, just a
@@ -361,6 +370,7 @@ export class FX {
   }
 
   update(dt) {
+    this.heat = Math.max(0, this.heat - dt * 6);
     for (const d of this.all) d.update(dt);
     this.bursts.update(dt);
     for (const s of this.lights) {
@@ -385,7 +395,7 @@ export class FX {
           this.glow.add({ x: f.x, y: f.y, z: -1, vx: Math.cos(th) * s * sp, vy: u * sp, vz: Math.sin(th) * s * sp * 0.3, drag: 1.6, gravity: 2.5, size: rand(0.22, 0.34), life: rand(1.1, 1.6), frame: SPRITE.SPARKLE, rot: rand(0, 6), r: f.c.r * 3, g: f.c.g * 3, b: f.c.b * 3, a: 1, twinkle: 22 });
         }
         this.glow.add({ x: f.x, y: f.y, z: -1, size: 5, grow: 0.5, life: 0.35, frame: SPRITE.GLOW, r: f.c.r * 1.5, g: f.c.g * 1.5, b: f.c.b * 1.5, a: 0.9 });
-        this.flashLight(f.x, f.y, f.c, 25);
+        this.flashLight(f.x, f.y, f.c, 10);
       }
     }
   }

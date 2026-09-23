@@ -31,7 +31,9 @@ void main() {
   vec4 t = texture2D(uMap, vUv);
   float a = t.a * vColor.a;
   if (a < 0.003) discard;
-  gl_FragColor = vec4(vColor.rgb * t.rgb * mix(1.0, a, uSoft), uSoft > 0.5 ? a : a);
+  // the atlas shapes are white, so only their alpha is used (the colour of
+  // fully transparent texels is black and would darken small mip levels)
+  gl_FragColor = vec4(vColor.rgb * mix(1.0, a, uSoft), a);
 }`;
 
 export class SpriteBatch {

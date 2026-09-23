@@ -39,7 +39,7 @@ void main() {
   float core = smoothstep(0.55, 0.0, along / max(0.3, uPower)) * smoothstep(width * 0.8, 0.0, abs(x));
   vec3 col = mix(uCool, uMid, smoothstep(0.0, 0.6, a));
   col = mix(col, uHot, core);
-  gl_FragColor = vec4(col * (1.2 + core * 3.0) * a, a);
+  gl_FragColor = vec4(col * (1.0 + core * 1.6), a);
 }`;
 
 export class Rocket {
@@ -61,7 +61,7 @@ export class Rocket {
   }
 
   build(noise) {
-    const white = paintMaterial('#f5f5f7', { roughness: 0.22, metalness: 0.08 });
+    const white = paintMaterial('#fbfaf7', { roughness: 0.2, metalness: 0.05 });
     const red = paintMaterial('#e3262c', { roughness: 0.26, metalness: 0.12 });
     this.white = white;
     this.red = red;
@@ -112,6 +112,17 @@ export class Rocket {
     trim.rotation.x = Math.PI / 2;
     trim.position.y = 0.65;
     this.body.add(trim);
+    // fine panel seams in the paint
+    const seam = new THREE.MeshStandardMaterial({ color: 0x9aa3ae, roughness: 0.5, metalness: 0.3 });
+    for (const [y, r] of [
+      [0.42, 0.553],
+      [-0.28, 0.567],
+    ]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.006, 6, 64), seam);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = y;
+      this.body.add(ring);
+    }
     // engine bell
     lathe(
       [
@@ -144,17 +155,18 @@ export class Rocket {
       this.body.add(pivot);
     }
     // porthole: chrome rim, a happy blue pilot, and a glass dome
+    // the porthole bulges out of the hull so its rim sits proud of the paint
     const port = new THREE.Group();
-    port.position.set(0, 0.12, 0.5);
+    port.position.set(0, 0.12, 0.585);
     this.body.add(port);
     const rim = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.06, 16, 48), chrome);
     port.add(rim);
     const back = new THREE.Mesh(new THREE.CircleGeometry(0.3, 32), new THREE.MeshStandardMaterial({ color: 0x0e2a55, roughness: 0.6 }));
-    back.position.z = -0.05;
+    back.position.z = 0.004;
     port.add(back);
     const face = new THREE.Mesh(new THREE.SphereGeometry(0.25, 32, 24), vinylMaterial({ color: '#43a6ff', roughness: 0.35, sss: 0.35 }));
     face.scale.set(1, 1, 0.6);
-    face.position.z = -0.04;
+    face.position.z = -0.02;
     port.add(face);
     const eyeWhite = vinylMaterial({ color: 0xffffff, roughness: 0.15, sss: 0.04, sheen: 0 });
     const pupilMat = new THREE.MeshPhysicalMaterial({ color: 0x0b0b12, roughness: 0.1, clearcoat: 1 });
@@ -216,7 +228,6 @@ export class Rocket {
       fragmentShader: flameFragment,
       transparent: true,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
     });
     const flameGeo = new THREE.PlaneGeometry(0.62, 1.5);
     flameGeo.translate(0, -0.75, 0);

@@ -42,6 +42,13 @@ export class Enemy {
     this.lookY = -1;
     this.formation = null;
     this.bottomPop = false;
+    this.golden = false;
+  }
+
+  // A rare golden toy: worth more and bursts into a shower of treats.
+  makeGolden() {
+    this.golden = true;
+    this.color.set('#ffc93a');
   }
 
   // A hit that does not destroy: a jelly wobble and a flash.

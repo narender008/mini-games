@@ -1,5 +1,13 @@
 // Rocket Blast: scene set-up, input, the frame loop, and the glue between
 // the rocket, the toys, the weapons, the worlds and the rules.
+//
+// URL switches for testing: ?play starts straight into a game;
+// ?mode=little|big|free, ?weapon=laser|rocket|bubble|rainbow,
+// ?world=sunny|night|storm|clouds|grass|space, ?style=blocks|aliens|robots
+// pick the starting choices; ?quality=high|medium|low, ?msaa=N and
+// ?tone=neutral|aces|agx tune rendering; ?cover hides the interface (for
+// the cover picture); ?debug exposes window.__rb
+// (freeze, thaw, step(ms), hitFirst, mega, pointer(x, y, down, type)).
 import * as THREE from 'three';
 import { QUERY, DEBUG, REDUCED_MOTION, CELL, load, save, rand, clamp, WEAPONS, WORLDS, STYLES, MODES } from './config.js';
 import { detectQuality, FrameGovernor } from './quality.js';
@@ -155,6 +163,7 @@ class App {
     this.lastFrame = performance.now();
     requestAnimationFrame((t) => this.frame(t));
     if (DEBUG) this.exposeDebug();
+    if (QUERY.has('cover')) document.body.classList.add('cover');
     if (QUERY.has('play')) this.startGame();
   }
 
@@ -271,6 +280,12 @@ class App {
     const combo = mode === 'big' ? this.director.combo.multiplier : 1;
     const power = (this.megaT > 0 ? 1.35 : 1) * (1 + Math.min(0.6, (combo - 1) * 0.1));
     this.fx.burst(e.x, e.y, e.color, power);
+    if (e.golden) {
+      this.fx.shower(e.x, e.y + 1.5, 1.6, 40);
+      this.audio.powerup();
+      const p = this.screenPos(e.x, e.y);
+      if (mode !== 'menu') this.ui.points(p.x, p.y - 30, 'Golden!', 'gold');
+    }
     const streak = this.director.onKill(e, info);
     this.audio.hit({ pan: this.panFor(e.x), streak, big: power });
   }
@@ -315,7 +330,10 @@ class App {
   }
 
   clearField() {
-    for (const e of this.enemies) e.gone = true;
+    for (const e of this.enemies) {
+      e.gone = true;
+      e.alive = false; // cancels any staggered hits still queued
+    }
     this.enemies.length = 0;
     this.weapons.clear();
     this.powerups.clear();
@@ -433,14 +451,13 @@ class App {
   // Free Blast: a tap or drag blasts whatever is under the finger.
   fingerBlast(x, y, tap) {
     const r = tap ? 1.9 : 1.2;
-    let any = false;
-    for (const e of this.enemies) {
-      if (!e.alive) continue;
-      if (Math.hypot(e.x - x, e.y - y) < r + e.size * 0.3) {
-        this.hit(e, x, y, { weapon: 'finger' });
-        any = true;
-      }
-    }
+    // nearest first, a beat apart, so each toy gets its own little party
+    const near = this.enemies.filter((e) => e.alive && Math.hypot(e.x - x, e.y - y) < r + e.size * 0.3).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+    near.forEach((e, i) => {
+      if (i === 0) this.hit(e, e.x, e.y, { weapon: 'finger' });
+      else setTimeout(() => this.hit(e, e.x, e.y, { weapon: 'finger' }), i * 70);
+    });
+    const any = near.length > 0;
     if (!any && tap) {
       this.fx.glow.add({ x, y, z: 0.8, size: 2.2, grow: 0.8, life: 0.3, frame: 1, rot: rand(0, 6), r: 2.4, g: 1.8, b: 0.7, a: 0.9 });
       this.fx.glow.add({ x, y, z: 0.8, size: 1, grow: 3, life: 0.4, frame: 3, r: 1.8, g: 1.6, b: 1.4, a: 0.7 });
@@ -475,6 +492,7 @@ class App {
   }
 
   shock(x, y, power) {
+    if (REDUCED_MOTION.matches) return;
     const p = new THREE.Vector3(x, y, 0).project(this.camera);
     this.post.shock(new THREE.Vector2(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5), 0.02 * power, Math.min(1.5, 0.7 * power));
   }
@@ -526,7 +544,9 @@ class App {
     r.gold = Math.max(this.megaT > 0 ? 1 : 0, r.gold - dt * 2);
 
     // weapons: auto-fire, except Big Kid fires while pressed
-    const firing = mode === 'big' ? this.pointer.down || this.keys.has(' ') : true;
+    // behind the start screen the rocket fires in short bursts so the sky
+    // stays full of toys
+    const firing = mode === 'big' ? this.pointer.down || this.keys.has(' ') : mode === 'menu' ? t % 2.4 < 0.5 : true;
     const ctx = this.weaponCtx(firing);
     this.weapons.update(dt, t, ctx);
 
@@ -546,6 +566,17 @@ class App {
       const d = this.director;
       this.ui.combo(d.combo.live(this.realTime), d.combo.multiplier, d.combo.remaining(this.realTime));
     } else if (this.powerups.items.length) this.powerups.update(dt, t, { rocket: r, bottom: -f.halfH, collect: () => {} });
+
+    // golden glitter on rare toys, and a golden aura round the rocket in MEGA
+    for (const e of this.enemies) {
+      if (e.golden && e.alive && Math.random() < dt * 14) {
+        this.glow.add({ x: e.x + rand(-0.55, 0.55), y: e.y + rand(-0.55, 0.55), z: 0.7, vy: 0.3, size: rand(0.25, 0.45), life: 0.6, frame: 2, rot: rand(0, 6), r: 2.6, g: 2.1, b: 0.9, twinkle: 18 });
+      }
+    }
+    if (this.megaT > 0) {
+      this.glow.add({ x: r.root.position.x, y: r.root.position.y + 0.1, z: -0.4, size: 3.6 + Math.sin(t * 9) * 0.25, life: 0, frame: 0, r: 1.3, g: 0.95, b: 0.25, a: 0.55 });
+      if (Math.random() < dt * 20) this.glow.add({ x: r.pos.x + rand(-0.9, 0.9), y: r.pos.y + rand(-1, 1.2), z: 0.8, vy: -1.2, size: rand(0.25, 0.4), life: 0.5, frame: 5, rot: rand(0, 6), r: 2.6, g: 2, b: 0.6, twinkle: 20 });
+    }
 
     // enemies
     const look = r.pos;

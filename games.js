@@ -20,4 +20,13 @@ window.MINI_GAMES = [
     imageAlt: 'A rainbow layer cake on a porcelain stand, cut open, with one slice served on a plate',
     tags: ['3D', 'All ages', 'Touch friendly'],
   },
+  {
+    slug: 'rocket-blast',
+    name: 'Rocket Blast',
+    description: 'Fly a happy toy rocket and blast googly-eyed toys into showers of stars and sweets. No losing, ever.',
+    path: 'games/rocket-blast/',
+    image: 'games/rocket-blast/cover.jpg',
+    imageAlt: 'A smiling toy rocket firing golden bolts at googly-eyed toy blocks bursting into stars and sweets in a blue sky',
+    tags: ['3D', 'Ages 2+', 'Touch friendly'],
+  },
 ];

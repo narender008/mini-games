@@ -5,12 +5,13 @@
 import * as THREE from 'three';
 import { SPRITE } from './textures.js';
 import { rand, pick } from './config.js';
+import { addGlow } from './materials.js';
 
 export const POWERS = {
-  rapid: { frame: SPRITE.BOLT, color: new THREE.Color('#ffd21a'), time: 10, name: 'Zoom zap!' },
-  triple: { frame: SPRITE.TRIPLE, color: new THREE.Color('#3fd0ff'), time: 10, name: 'Triple shot!' },
-  bomb: { frame: SPRITE.BOMB, color: new THREE.Color('#ff5a5a'), time: 0, name: 'Big boom!' },
-  double: { frame: SPRITE.X2, color: new THREE.Color('#b56bff'), time: 12, name: 'Double points!' },
+  rapid: { frame: SPRITE.BOLT, color: new THREE.Color('#ff8a00'), time: 10, name: 'Zoom zap!' },
+  triple: { frame: SPRITE.TRIPLE, color: new THREE.Color('#1f7bff'), time: 10, name: 'Triple shot!' },
+  bomb: { frame: SPRITE.BOMB, color: new THREE.Color('#ff2e55'), time: 0, name: 'Big boom!' },
+  double: { frame: SPRITE.X2, color: new THREE.Color('#9a3dff'), time: 12, name: 'Double points!' },
 };
 
 const tmpM = new THREE.Matrix4();
@@ -23,19 +24,21 @@ export class PowerUps {
   constructor({ scene, glow }) {
     this.glow = glow;
     this.items = [];
+    // a glossy candy-coloured glass marble; the symbol glows in front of it
     const mat = new THREE.MeshPhysicalMaterial({
       color: 0xffffff,
-      roughness: 0.05,
+      roughness: 0.06,
       metalness: 0,
       clearcoat: 1,
       clearcoatRoughness: 0.03,
       transparent: true,
-      opacity: 0.55,
-      iridescence: 0.6,
+      opacity: 0.92,
+      iridescence: 0.35,
       iridescenceIOR: 1.5,
-      envMapIntensity: 1.8,
+      envMapIntensity: 1.6,
       depthWrite: false,
     });
+    addGlow(mat, 0.45);
     this.mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.62, 32, 20), mat, 12);
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(36), 3);
     this.mesh.frustumCulled = false;
@@ -78,8 +81,8 @@ export class PowerUps {
       this.mesh.setColorAt(n, pw.color);
       this.items[n++] = p;
       const c = pw.color;
-      this.glow.add({ x, y: p.y, z: 0.2, size: 2.4 * pulse, life: 0, frame: SPRITE.GLOW, r: c.r * 0.9, g: c.g * 0.9, b: c.b * 0.9, a: 0.8 });
-      this.glow.add({ x, y: p.y, z: 1.0, size: 0.8, life: 0, frame: pw.frame, rot: Math.sin(t * 2 + p.phase) * 0.2, r: 2.4, g: 2.4, b: 2.4, a: 1 });
+      this.glow.add({ x, y: p.y, z: 0.2, size: 2.2 * pulse, life: 0, frame: SPRITE.GLOW, r: c.r * 0.8, g: c.g * 0.8, b: c.b * 0.8, a: 0.6 });
+      this.glow.add({ x, y: p.y, z: 1.0, size: 0.85, life: 0, frame: pw.frame, rot: Math.sin(t * 2 + p.phase) * 0.2, r: 3, g: 3, b: 3, a: 1 });
       if (Math.random() < 0.2) this.glow.add({ x: x + rand(-0.5, 0.5), y: p.y + rand(-0.5, 0.5), z: 1, vy: 0.4, size: rand(0.2, 0.35), life: 0.6, frame: SPRITE.SPARKLE, r: 2, g: 2, b: 2, twinkle: 20 });
     }
     this.items.length = n;

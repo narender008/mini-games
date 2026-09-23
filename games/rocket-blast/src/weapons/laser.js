@@ -19,7 +19,7 @@ export class Laser {
     // white-hot core fading to saturated gold at the rim, so a bolt reads
     // on the brightest sky as well as the darkest
     const mat = new THREE.ShaderMaterial({
-      uniforms: { uCore: { value: new THREE.Color(3.2, 2.7, 1.3) }, uRim: { value: new THREE.Color(2.6, 0.95, 0.05) } },
+      uniforms: { uCore: { value: new THREE.Color(2.4, 1.9, 0.7) }, uRim: { value: new THREE.Color(2.2, 0.62, 0.03) } },
       vertexShader: /* glsl */ `
 varying float vFacing;
 void main() {
