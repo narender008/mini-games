@@ -67,8 +67,13 @@ function shapeCells(name, turns) {
   return cells.map(([x, y]) => [x - minX, y - minY]);
 }
 
-export const MEGA_EVERY = { little: 10, free: 10, big: 25, menu: Infinity };
-const MEGA_TIME = 7;
+// hits needed for MEGA POWER!, counted only while MEGA is off (one Free Blast
+// tap pops a whole handful, so it needs more)
+export const MEGA_EVERY = { little: 10, free: 30, big: 25, menu: Infinity };
+// MEGA lasts this long, and the next one waits at least MEGA_GAP after it
+// ends, so it stays a treat rather than the normal state
+export const MEGA_TIME = 6;
+const MEGA_GAP = { little: 9, free: 9, big: 3, menu: Infinity };
 
 export class Director {
   constructor(app) {
@@ -83,6 +88,8 @@ export class Director {
     this.spawnTimer = 0.3;
     this.lastColor = -1;
     this.hits = 0;
+    this.megaHits = 0;
+    this.lastMega = -Infinity;
     this.score = 0;
     this.wave = 1;
     this.waveSpawned = 0;
@@ -295,7 +302,7 @@ export class Director {
     const alive = this.aliveCount();
     if (this.spawnTimer <= 0 && alive < target) {
       const speed = this.field.halfH > 6.5 ? 0.7 : 0.55;
-      if (this.spawnFormation({ speed })) this.spawnTimer = mega ? 0.3 : alive < 5 ? 0.7 : 1.9;
+      if (this.spawnFormation({ speed })) this.spawnTimer = mega ? 0.3 : alive < target * 0.8 ? 0.45 : 1.2;
       else this.spawnTimer = 0.4;
     }
   }
@@ -410,7 +417,7 @@ export class Director {
     const f = this.field;
     this.bossT += dt;
     const home = f.halfH - e.size * 0.5 - 1.6;
-    const span = Math.max(0, f.halfW - e.size * 0.6 - 0.3);
+    const span = Math.max(0, f.halfW - e.size * 0.7 - 0.9); // stay clear of the HUD corners
     const tx = Math.sin(this.bossT * 0.55) * span;
     const ty = home + Math.sin(this.bossT * 1.4) * 0.3;
     e.vx = (tx - e.x) * 2;
@@ -473,7 +480,11 @@ export class Director {
       streak = this.scoreHit(e.x, e.y, info, e.golden ? 100 : 10);
       if (Math.random() < 0.03 || e.golden) app.powerups.spawn(e.x, e.y);
     }
-    if (this.hits % MEGA_EVERY[this.mode] === 0) app.megaStart();
+    const rested = app.realTime - this.lastMega >= MEGA_TIME + MEGA_GAP[this.mode];
+    if (app.megaT <= 0 && ++this.megaHits >= MEGA_EVERY[this.mode] && rested) {
+      this.megaHits = 0;
+      app.megaStart();
+    }
     return streak;
   }
 
@@ -486,8 +497,20 @@ export class Director {
     const pts = (base * r.mult + r.bonus) * dbl;
     this.addScore(pts);
     const p = app.screenPos(x, y);
-    app.ui.points(p.x, p.y, `+${pts}`, r.mult >= 3 ? 'gold' : '');
-    if (r.tag) app.ui.points(p.x, p.y + 40, r.tag, 'pink');
+    // keep labels readable when hits come thick and fast: points shown at
+    // most every 0.15 s (summed), a "Quick!" at most every 0.8 s
+    const now = app.realTime;
+    this.ptsAcc = (this.ptsAcc || 0) + pts;
+    if (now - (this.ptsT ?? -1) > 0.15) {
+      app.ui.points(p.x, p.y, `+${this.ptsAcc}`, r.mult >= 3 ? 'gold' : '');
+      this.ptsAcc = 0;
+      this.ptsT = now;
+    }
+    const quick = r.tag === 'Quick!';
+    if (r.tag && (!quick || now - (this.quickT ?? -1) > 0.8)) {
+      if (quick) this.quickT = now;
+      app.ui.points(p.x, p.y + 40, r.tag, 'pink');
+    }
     if (r.milestone) {
       app.ui.callout(r.milestone, '', `${r.count} in a row!`);
       app.audio.milestone(r.level);

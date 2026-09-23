@@ -20,7 +20,7 @@ import { STYLE_CLASSES } from './styles/index.js';
 import { FX } from './fx.js';
 import { WeaponSystem } from './weapons/index.js';
 import { loadWorld } from './worlds/index.js';
-import { Director, MEGA_EVERY } from './director.js';
+import { Director, MEGA_EVERY, MEGA_TIME } from './director.js';
 import { PowerUps } from './powerups.js';
 import { Audio } from './audio.js';
 import { UI } from './ui.js';
@@ -355,7 +355,8 @@ class App {
   }
 
   megaStart() {
-    this.megaT = 7;
+    this.megaT = MEGA_TIME;
+    this.director.lastMega = this.realTime;
     this.rocket.gold = 1;
     this.ui.callout('MEGA POWER!', 'mega');
     this.audio.fanfare();
@@ -476,6 +477,8 @@ class App {
       enemies: this.enemies,
       bounds: { minX: -this.field.halfW, maxX: this.field.halfW, minY: -this.field.halfH, maxY: this.field.halfH },
       assist: this.director.mode === 'big' ? 0.25 : 1,
+      // toddler auto-fire is a touch slower so toys stay in the sky a while
+      pace: this.director.mode === 'little' ? 1.4 : 1,
       hit: (e, x, y, info) => this.hit(e, x, y, info),
       mega: ws.mega,
       rapid: ws.rapid,

@@ -41,7 +41,7 @@ export class WeaponSystem {
     this.cooldown -= dt;
     if (ctx.firing && this.cooldown <= 0) {
       w.fire(ctx, { mega: ctx.mega });
-      this.cooldown = w.interval(ctx.mega) * (ctx.rapid ? 0.55 : 1);
+      this.cooldown = w.interval(ctx.mega) * (ctx.rapid ? 0.55 : 1) * (ctx.mega ? 1 : ctx.pace ?? 1);
     }
     for (const [id, weapon] of Object.entries(this.weapons)) weapon.update(dt, t, { ...ctx, firing: ctx.firing && id === this.current, active: id === this.current });
   }
