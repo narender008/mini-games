@@ -3,6 +3,7 @@ const $ = (id) => document.getElementById(id);
 
 const BEST_KEY = 'mini-games.balloon-pop.best';
 const TOOL_KEY = 'mini-games.balloon-pop.tool';
+const TOOLS = ['pin', 'dart', 'rifle', 'sling'];
 
 function store(key, value) {
   try {
@@ -20,7 +21,15 @@ export class UI {
     this.el = {
       hud: $('hud'),
       score: $('score'),
-      combo: $('combo'),
+      streak: $('streak'),
+      streakCount: $('streak-count'),
+      streakMult: $('streak-mult'),
+      streakBar: $('streak-bar'),
+      callout: $('callout'),
+      calloutText: $('callout-text'),
+      calloutSub: $('callout-sub'),
+      celebrate: $('celebrate'),
+      reticle: $('reticle'),
       timer: $('timer'),
       timerWrap: $('timer-wrap'),
       menu: $('menu'),
@@ -34,10 +43,12 @@ export class UI {
       resBest: $('result-best'),
       resNew: $('result-new'),
       resPops: $('result-pops'),
-      resCombo: $('result-combo'),
+      resStreak: $('result-streak'),
       hint: $('hint'),
     };
-    this.tool = store(TOOL_KEY) === 'dart' ? 'dart' : 'pin';
+    const saved = store(TOOL_KEY);
+    this.tool = TOOLS.includes(saved) ? saved : 'pin';
+    this.last = {};
     const on = (id, fn) => $(id).addEventListener('click', (e) => {
       e.stopPropagation();
       fn();
@@ -75,6 +86,7 @@ export class UI {
   }
 
   setTool(tool, silent = false) {
+    if (!TOOLS.includes(tool)) tool = 'pin';
     this.tool = tool;
     store(TOOL_KEY, tool);
     document.querySelectorAll('[data-tool]').forEach((b) => {
@@ -95,24 +107,86 @@ export class UI {
     for (const p of ['menu', 'paused', 'results']) this.el[p].hidden = p !== name;
     this.el.hud.hidden = name === 'menu' || name === 'loading' || name === 'cover';
     document.body.dataset.state = name;
-    if (name !== 'playing') this.el.hint.classList.remove('show');
+    if (name !== 'playing') {
+      this.el.hint.classList.remove('show');
+      this.el.callout.className = '';
+      this.el.streak.classList.remove('live');
+      this.reticle(false);
+    }
     const focus = { menu: 'play-relax', paused: 'resume', results: 'again' }[name];
     if (focus) requestAnimationFrame(() => $(focus).focus({ preventScroll: true }));
   }
 
-  hud({ mode, score, combo, time }) {
-    this.el.score.textContent = mode === 'relax' ? `${score} popped` : score.toLocaleString();
-    this.el.combo.textContent = combo > 1 ? `×${combo}` : '';
-    this.el.combo.classList.toggle('hot', combo > 1);
-    this.el.timerWrap.hidden = mode !== 'timed';
+  // Called every frame while playing, so it only touches what changed.
+  hud({ mode, score, streak, mult, left, time }) {
+    const L = this.last;
+    const el = this.el;
+    const text = mode === 'relax' ? `${score} popped` : score.toLocaleString();
+    if (L.score !== text) el.score.textContent = L.score = text;
+    if (L.mode !== mode) {
+      L.mode = mode;
+      el.timerWrap.hidden = mode !== 'timed';
+      el.streak.dataset.mode = mode;
+    }
     if (mode === 'timed') {
       const s = Math.max(0, Math.ceil(time));
-      this.el.timer.textContent = String(s);
-      this.el.timerWrap.classList.toggle('low', s <= 10);
+      if (L.time !== s) {
+        L.time = s;
+        el.timer.textContent = String(s);
+        el.timerWrap.classList.toggle('low', s <= 10);
+      }
     }
+    const live = streak > 1;
+    if (L.live !== live) el.streak.classList.toggle('live', (L.live = live));
+    if (live && L.streak !== streak) {
+      el.streakCount.textContent = String(streak);
+      // restart the little bump on every pop
+      el.streak.classList.remove('bump');
+      void el.streak.offsetWidth;
+      el.streak.classList.add('bump');
+    }
+    L.streak = streak;
+    if (L.mult !== mult) {
+      L.mult = mult;
+      el.streakMult.textContent = `×${mult}`;
+      el.streak.dataset.heat = String(Math.min(mult, 6));
+    }
+    if (live) el.streakBar.style.transform = `scaleX(${left.toFixed(3)})`;
   }
 
-  results({ score, pops, bestCombo }) {
+  // A big word across the upper middle of the screen: 'chain' for Double,
+  // Triple and so on, 'milestone' for every fifth pop in a row, 'shot' for
+  // several balloons caught by one pellet or stone.
+  callout(text, sub = '', kind = 'chain') {
+    const el = this.el;
+    // a milestone outranks a chain word that is still showing
+    if (el.callout.classList.contains('milestone') && kind === 'chain' && performance.now() - this.calloutAt < 900) return;
+    this.calloutAt = performance.now();
+    el.calloutText.textContent = text;
+    el.calloutSub.textContent = sub;
+    el.callout.className = '';
+    void el.callout.offsetWidth;
+    el.callout.className = `show ${kind}`;
+  }
+
+  celebrate(level) {
+    const el = this.el.celebrate;
+    el.style.setProperty('--level', String(Math.min(level, 5)));
+    el.classList.remove('go');
+    void el.offsetWidth;
+    el.classList.add('go');
+  }
+
+  reticle(on, x = 0, y = 0, ready = true) {
+    const el = this.el.reticle;
+    const L = this.last;
+    if (L.reticle !== on) el.classList.toggle('on', (L.reticle = on));
+    if (!on) return;
+    el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+    if (L.ready !== ready) el.classList.toggle('busy', !(L.ready = ready));
+  }
+
+  results({ score, pops, bestStreak }) {
     const prev = this.best;
     const isNew = score > prev;
     if (isNew) store(BEST_KEY, score);
@@ -120,7 +194,7 @@ export class UI {
     this.el.resBest.textContent = Math.max(prev, score).toLocaleString();
     this.el.resNew.hidden = !isNew || score === 0;
     this.el.resPops.textContent = String(pops);
-    this.el.resCombo.textContent = `×${bestCombo}`;
+    this.el.resStreak.textContent = String(bestStreak);
     this.showBest();
     this.show('results');
   }

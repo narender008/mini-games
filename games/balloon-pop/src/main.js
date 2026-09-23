@@ -1,6 +1,6 @@
 // Balloon Pop: scene set-up, game rules, input and the frame loop.
 import * as THREE from 'three';
-import { SUN_DIR, KEY_LIGHT_DIR, PALETTES, PATTERN, QUERY, DEBUG, REDUCED_MOTION } from './config.js';
+import { SUN_DIR, KEY_LIGHT_DIR, QUERY, DEBUG, REDUCED_MOTION, pickColourway } from './config.js';
 import { installAtmosphereFog, createSkyLut } from './atmosphere.js';
 import { createCloudNoise, createWaveNormals } from './noise.js';
 import { Sky } from './sky.js';
@@ -11,6 +11,7 @@ import { sharedEnvelopeUniforms, ENVELOPE_CENTER } from './envelope.js';
 import { Balloon, createBalloonAssets } from './balloon.js';
 import { PopFX } from './pop.js';
 import { ToolRig } from './tools.js';
+import { Streak } from './streak.js';
 import { Audio } from './audio.js';
 import { Post } from './post.js';
 import { UI } from './ui.js';
@@ -38,9 +39,7 @@ class App {
     this.spawnCooldown = 0;
     this.score = 0;
     this.pops = 0;
-    this.combo = 0;
-    this.bestCombo = 0;
-    this.lastPopReal = -10;
+    this.streak = new Streak();
     this.realTime = 0;
     this.roundTime = ROUND_SECONDS;
     this.goldenAt = Infinity;
@@ -136,6 +135,15 @@ class App {
     this.tools = new ToolRig(scene, camera, renderer);
     this.audio = new Audio();
     this.audio.listenerCam = camera;
+    this.tools.audio = this.audio;
+    this.tools.aimProvider = (ndc) => this.aim(ndc);
+    this.tools.hitTest = (from, to, exclude) => this.segmentHits(from, to, exclude);
+    this.tools.onHit = (hit, shot) => this.shotHit(hit, shot);
+    this.tools.onPuff = (p, d) => this.popFX.puff(p, d);
+    this.tools.onSplash = (p, size) => {
+      this.popFX.splash(p.x, p.z, size, this.time);
+      this.audio.splash({ size: size * 1.5, position: p });
+    };
     this.post = new Post(renderer, scene, camera, q);
     this.popFX = new PopFX({
       scene,
@@ -281,9 +289,7 @@ class App {
     let speed = (timed ? rand(2.2, 3.4) : rand(1.3, 2.3)) * difficulty;
     if (golden) speed *= 1.35;
     if (portrait) speed *= 0.7;
-    const r = Math.random();
-    const pattern = r < 0.45 ? PATTERN.PILLS : r < 0.75 ? PATTERN.RIBBONS : PATTERN.DIAMONDS;
-    const palette = Math.random() < 0.35 ? 0 : Math.floor(Math.random() * PALETTES.length);
+    const { pattern, palette } = pickColourway();
     const b = new Balloon(this.assets, {
       size,
       golden,
@@ -335,19 +341,34 @@ class App {
     this.state = 'playing';
     this.score = 0;
     this.pops = 0;
-    this.combo = 0;
-    this.bestCombo = 0;
+    this.streak.reset();
     this.roundTime = ROUND_SECONDS;
     this.goldenAt = mode === 'timed' ? this.time + rand(14, 38) : this.time + rand(25, 45);
     this.ui.show('playing');
     this.ui.hud(this.hudState());
-    this.ui.hint(matchMedia('(pointer: coarse)').matches ? 'Tap a balloon to pop it' : 'Click a balloon to pop it');
+    this.ui.hint(this.hintText());
+    if (this.tools.aimed) this.tools.show();
     this.audio.setPaused(false);
   }
 
+  hintText() {
+    const touch = matchMedia('(pointer: coarse)').matches;
+    const t = this.tools.tool;
+    if (t === 'rifle') return touch ? 'Tap to fire at a balloon' : 'Click to fire at a balloon';
+    if (t === 'sling') return touch ? 'Hold to draw, let go to shoot' : 'Hold to draw, release to shoot';
+    return touch ? 'Tap a balloon to pop it' : 'Click a balloon to pop it';
+  }
+
   hudState() {
-    const comboLive = this.realTime - this.lastPopReal < 1.6 ? this.combo : 0;
-    return { mode: this.mode, score: this.mode === 'relax' ? this.pops : this.score, combo: comboLive, time: this.roundTime };
+    const now = this.realTime;
+    return {
+      mode: this.mode,
+      score: this.mode === 'relax' ? this.pops : this.score,
+      streak: this.streak.live(now),
+      mult: this.streak.multiplier,
+      left: this.streak.remaining(now),
+      time: this.roundTime,
+    };
   }
 
   pause() {
@@ -380,7 +401,7 @@ class App {
     this.state = 'results';
     this.tools.hide();
     this.ui.hud(this.hudState());
-    this.ui.results({ score: this.score, pops: this.pops, bestCombo: this.bestCombo });
+    this.ui.results({ score: this.score, pops: this.pops, bestStreak: this.streak.best });
   }
 
   toggleMute() {
@@ -393,6 +414,10 @@ class App {
     this.tools.setTool(t);
     this.audio.unlock();
     this.audio.click();
+    if (this.state === 'playing') {
+      this.ui.hint(this.hintText());
+      if (this.tools.aimed) this.tools.show();
+    }
   }
 
   // ---------------------------------------------------------------- input
@@ -405,16 +430,30 @@ class App {
     };
     c.addEventListener('pointerdown', (e) => {
       this.audio.unlock();
-      if (this.state !== 'playing') return;
+      if (this.state !== 'playing' || !e.isPrimary) return;
       e.preventDefault();
+      // keep the slingshot's release even if the finger slides off the canvas
+      if (this.tools.tool === 'sling') {
+        try {
+          c.setPointerCapture(e.pointerId);
+        } catch {
+          /* the pointer may already be gone */
+        }
+      }
       this.strike(ndc(e), e.pointerType);
     });
     c.addEventListener('pointermove', (e) => {
-      if (this.state !== 'playing') return;
+      if (this.state !== 'playing' || !e.isPrimary) return;
       this.tools.setPointer(ndc(e), e.pointerType);
     });
+    const release = (e) => {
+      if (!e.isPrimary) return;
+      this.tools.releaseDraw(this.state === 'playing' ? ndc(e) : null);
+    };
+    c.addEventListener('pointerup', release);
+    c.addEventListener('pointercancel', release);
     c.addEventListener('pointerleave', (e) => {
-      if (e.pointerType === 'mouse') this.tools.hide();
+      if (e.pointerType === 'mouse' && !this.tools.drawing) this.tools.hide();
     });
     c.addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('keydown', (e) => {
@@ -424,6 +463,8 @@ class App {
       } else if (e.key === 'm' || e.key === 'M') this.toggleMute();
       else if (e.key === '1') this.ui.setTool('pin');
       else if (e.key === '2') this.ui.setTool('dart');
+      else if (e.key === '3') this.ui.setTool('rifle');
+      else if (e.key === '4') this.ui.setTool('sling');
     });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
@@ -465,13 +506,58 @@ class App {
     };
   }
 
-  strike(ndc, pointerType) {
-    this.tools.setPointer(ndc, pointerType);
-    if (this.tools.tool === 'dart' && this.tools.reload < 1) return;
+  // The rifle and slingshot aim at whatever is under the reticle: they lock
+  // onto that balloon, or fly on towards the horizon.
+  aim(ndc) {
     const target = this.pick(ndc);
-    if (target && this.tools.tool === 'pin') target.balloon.touch(target.localPoint, 0.035);
-    this.tools.strike(ndc, target, () => this.contact(target));
-    if (this.tools.tool === 'pin') this.audio.jab();
+    if (target) return { point: target.worldPoint, target };
+    return { point: this.tools.aimPointFor(ndc, new THREE.Vector3()), target: null };
+  }
+
+  // Balloons crossed by a pellet or stone between two points, nearest first.
+  segmentHits(from, to, exclude) {
+    const dir = tmpV.subVectors(to, from);
+    const len = dir.length();
+    if (len < 1e-6) return [];
+    dir.divideScalar(len);
+    const ray = this.segRay || (this.segRay = new THREE.Raycaster());
+    ray.set(from, dir);
+    ray.far = len;
+    const live = this.balloons.filter((b) => b.state === 'flying' && !exclude.has(b));
+    if (!live.length) return [];
+    const found = new Map();
+    for (const h of ray.intersectObjects(live.map((b) => b.envelope), false)) {
+      const b = h.object.userData.balloon;
+      if (!found.has(b)) found.set(b, { d: h.distance, point: h.point.clone() });
+    }
+    // a little forgiveness, as with the pointer
+    const hit = new THREE.Vector3();
+    for (const b of live) {
+      if (found.has(b)) continue;
+      const p = ray.ray.intersectSphere(new THREE.Sphere(b.center(), b.size * 0.5), hit);
+      if (p && p.distanceTo(from) <= len) found.set(b, { d: p.distanceTo(from), point: p.clone() });
+    }
+    return [...found.entries()]
+      .sort((a, b) => a[1].d - b[1].d)
+      .map(([balloon, h]) => ({ balloon, worldPoint: h.point, localPoint: balloon.envelope.worldToLocal(h.point.clone()) }));
+  }
+
+  strike(ndc, pointerType) {
+    const tools = this.tools;
+    tools.setPointer(ndc, pointerType);
+    if (!tools.canFire()) return;
+    if (tools.tool === 'rifle') {
+      tools.fire(ndc);
+      return;
+    }
+    if (tools.tool === 'sling') {
+      tools.beginDraw(ndc);
+      return;
+    }
+    const target = this.pick(ndc);
+    if (target && tools.tool === 'pin') target.balloon.touch(target.localPoint, 0.035);
+    tools.strike(ndc, target, () => this.contact(target));
+    if (tools.tool === 'pin') this.audio.jab();
     else this.audio.whoosh(0.3);
   }
 
@@ -483,18 +569,23 @@ class App {
     this.popBalloon(b, target.localPoint);
   }
 
-  popBalloon(b, localPoint) {
+  // a pellet or stone has reached a balloon
+  shotHit(hit, shot) {
+    const b = hit.balloon;
+    if (b.state !== 'flying' || this.state === 'menu') return;
+    b.touch(hit.localPoint, 0.03);
+    this.popBalloon(b, hit.localPoint, shot);
+  }
+
+  popBalloon(b, localPoint, shot = 0) {
     const inPlay = this.state === 'playing';
-    const now = this.realTime;
-    this.combo = now - this.lastPopReal < 1.6 ? this.combo + 1 : 1;
-    this.lastPopReal = now;
-    this.bestCombo = Math.max(this.bestCombo, this.combo);
+    const timed = this.mode === 'timed';
+    const r = this.streak.pop(this.realTime, shot);
     this.pops++;
-    const mult = Math.min(5, this.combo);
-    const gained = b.points * mult;
+    const gained = b.points * r.mult + r.bonus;
     if (inPlay) this.score += gained;
-    const special = b.golden || (this.combo > 0 && this.combo % 5 === 0) || (this.mode === 'relax' && this.pops % 10 === 0);
-    this.popFX.burst(b, localPoint, { special });
+    const special = b.golden || r.milestone > 0 || (this.mode === 'relax' && this.pops % 10 === 0);
+    this.popFX.burst(b, localPoint, { special, streak: r.streak });
     if (special) this.triggerSlowmo();
 
     // floating score where the balloon was
@@ -502,15 +593,26 @@ class App {
     const p = c.clone().project(this.camera);
     const x = (p.x * 0.5 + 0.5) * this.layout.w;
     const y = (-p.y * 0.5 + 0.5) * this.layout.h;
-    if (this.mode === 'timed') {
+    if (timed) {
       this.ui.floater(x, y, `+${gained}`, b.golden ? 'gold' : '');
-      if (mult > 1) this.ui.floater(x, y + 34, `Combo ×${mult}`, 'combo');
+      if (r.tags.length) this.ui.floater(x, y + 34, `${r.tags[0]}!`, 'combo');
     } else {
-      this.ui.floater(x, y, b.golden ? 'Golden!' : 'Pop!', b.golden ? 'gold' : '');
+      this.ui.floater(x, y, b.golden ? 'Golden!' : r.tags.length ? `${r.tags[0]}!` : 'Pop!', b.golden ? 'gold' : r.tags.length ? 'combo' : '');
     }
-    if (b.golden && this.mode === 'timed') {
+    if (b.golden && timed) {
       this.roundTime += 3;
-      this.ui.floater(x, y + 34, '+3 s', 'gold');
+      this.ui.floater(x, y + 68, '+3 s', 'gold');
+    }
+    if (inPlay) {
+      if (r.shotCallout) this.ui.callout(r.shotCallout, timed ? `+${50 * (r.shot - 1)} bonus` : '', 'shot');
+      else if (r.milestone) this.ui.callout(r.callout, timed ? `${r.streak} in a row · +${r.streak * 10}` : `${r.streak} in a row`, 'milestone');
+      else if (r.callout) this.ui.callout(r.callout, timed && r.multUp ? `×${r.mult} multiplier` : '', 'chain');
+      else if (r.multUp && timed) this.ui.callout(`×${r.mult}`, 'multiplier', 'chain');
+      if (r.milestone) {
+        this.popFX.celebrate(c, b.size, r.milestone);
+        this.audio.fanfare(r.milestone);
+        this.ui.celebrate(r.milestone);
+      }
     }
     this.ui.hud(this.hudState());
   }
@@ -651,6 +753,9 @@ class App {
       this.audio.splash({ size: 0.6, position: p });
     });
     if (this.state !== 'playing') this.tools.hide();
+    const tl = this.tools;
+    const n = tl.ndc;
+    this.ui.reticle(tl.aimed && tl.visible && this.state === 'playing', (n.x * 0.5 + 0.5) * this.layout.w, (-n.y * 0.5 + 0.5) * this.layout.h, tl.canFire());
     this.post.update(dt, realDt, t, { slowmo: this.slowAmount });
     if (this.state === 'playing') this.ui.hud(this.hudState());
     sharedEnvelopeUniforms.uSunView.value.copy(SUN_DIR).transformDirection(cam.matrixWorldInverse);

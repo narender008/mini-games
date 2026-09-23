@@ -128,11 +128,14 @@ export class Audio {
     g.exponentialRampToValueAtTime(0.0001, t + attack + decay);
   }
 
-  pop({ size = 4, position, golden = false, special = false }) {
+  // `streak` is how many pops in a row: each one in a chain lifts the pop a
+  // semitone and adds a note of a rising pentatonic chime.
+  pop({ size = 4, position, golden = false, special = false, streak = 1 }) {
     if (!this.ready()) return;
     const ctx = this.ctx;
     const t = ctx.currentTime + 0.005;
-    const big = Math.min(1.6, Math.max(0.6, size / 4.5));
+    const lift = 2 ** (Math.min(streak - 1, 12) / 12);
+    const big = Math.min(1.6, Math.max(0.6, size / 4.5)) / lift;
     const out = ctx.createStereoPanner();
     out.pan.value = this.panFor(position);
     out.connect(this.shaper);
@@ -192,6 +195,25 @@ export class Audio {
       src.connect(bp).connect(g).connect(out);
       src.start(tk, offset);
       src.stop(tk + 0.05);
+    }
+    if (streak > 1) {
+      const scale = [0, 2, 4, 7, 9];
+      const n = streak - 2;
+      const semis = scale[n % 5] + 12 * Math.floor(n / 5);
+      const f = 523.25 * 2 ** (Math.min(semis, 30) / 12);
+      for (const [mul, gain] of [
+        [1, 0.1],
+        [2, 0.035],
+      ]) {
+        const o = ctx.createOscillator();
+        o.type = 'triangle';
+        o.frequency.value = f * mul;
+        const g = ctx.createGain();
+        this.env(g, t + 0.02, 0.004, gain, 0.5);
+        o.connect(g).connect(out);
+        o.start(t + 0.02);
+        o.stop(t + 0.6);
+      }
     }
     if (special) {
       // a deep boom under the slow-motion moment
@@ -295,6 +317,170 @@ export class Audio {
     src.connect(bp).connect(g).connect(this.master);
     src.start(t, offset);
     src.stop(t + duration + 0.05);
+  }
+
+  // A short brass-like fanfare for a milestone streak; grander each level.
+  fanfare(level = 1) {
+    if (!this.ready()) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime + 0.05;
+    const root = 392 * 2 ** (Math.min(level - 1, 4) * 2 / 12);
+    const notes = [0, 4, 7, 12].concat(level >= 3 ? [16] : []);
+    notes.forEach((semi, i) => {
+      const at = t + i * 0.075;
+      const last = i === notes.length - 1;
+      for (const detune of [-6, 6]) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = root * 2 ** (semi / 12);
+        o.detune.value = detune;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(900, at);
+        lp.frequency.linearRampToValueAtTime(3200, at + 0.05);
+        const g = ctx.createGain();
+        this.env(g, at, 0.012, last ? 0.07 : 0.05, last ? 0.9 : 0.16);
+        o.connect(lp).connect(g).connect(this.master);
+        g.connect(this.reverbSend);
+        o.start(at);
+        o.stop(at + (last ? 1.1 : 0.3));
+      }
+    });
+    // sparkle on top
+    for (let k = 0; k < 6 + level * 2; k++) {
+      const at = t + 0.2 + Math.random() * 0.5;
+      const o = ctx.createOscillator();
+      o.frequency.value = 2600 + Math.random() * 2600;
+      const g = ctx.createGain();
+      this.env(g, at, 0.002, 0.025, 0.25);
+      o.connect(g).connect(this.master);
+      g.connect(this.reverbSend);
+      o.start(at);
+      o.stop(at + 0.3);
+    }
+  }
+
+  // Air rifle: the spring's dull thwack, a sharp crack of air from the
+  // muzzle, and the pellet's quick zip away.
+  rifle() {
+    if (!this.ready()) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime + 0.002;
+    {
+      const { src, offset } = this.noiseSource();
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 1200;
+      const g = ctx.createGain();
+      this.env(g, t, 0.0006, 0.45, 0.035);
+      src.connect(hp).connect(g).connect(this.shaper);
+      src.start(t, offset);
+      src.stop(t + 0.1);
+    }
+    {
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(260, t);
+      o.frequency.exponentialRampToValueAtTime(70, t + 0.08);
+      const g = ctx.createGain();
+      this.env(g, t, 0.001, 0.5, 0.1);
+      o.connect(g).connect(this.shaper);
+      o.start(t);
+      o.stop(t + 0.2);
+    }
+    {
+      const { src, offset } = this.noiseSource();
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.Q.value = 4;
+      bp.frequency.setValueAtTime(5200, t + 0.01);
+      bp.frequency.exponentialRampToValueAtTime(1800, t + 0.16);
+      const g = ctx.createGain();
+      this.env(g, t + 0.01, 0.004, 0.08, 0.14);
+      src.connect(bp).connect(g).connect(this.master);
+      src.start(t + 0.01, offset);
+      src.stop(t + 0.25);
+    }
+  }
+
+  // Cocking the rifle: a metallic clack as the knob goes back, and again
+  // as it snaps home.
+  cock(stage = 0) {
+    if (!this.ready()) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const { src, offset } = this.noiseSource();
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = stage ? 3400 : 2400;
+    bp.Q.value = 6;
+    const g = ctx.createGain();
+    this.env(g, t, 0.0005, stage ? 0.2 : 0.14, 0.03);
+    src.connect(bp).connect(g).connect(this.master);
+    src.start(t, offset);
+    src.stop(t + 0.08);
+    const o = ctx.createOscillator();
+    o.type = 'square';
+    o.frequency.value = stage ? 1900 : 1400;
+    const og = ctx.createGain();
+    this.env(og, t, 0.0005, 0.03, 0.02);
+    o.connect(og).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.05);
+  }
+
+  // Slingshot: the latex creaks as it stretches...
+  slingDraw() {
+    if (!this.ready()) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const { src, offset } = this.noiseSource();
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 8;
+    bp.frequency.setValueAtTime(700, t);
+    bp.frequency.linearRampToValueAtTime(1300, t + 0.24);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.05, t + 0.08);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+    // a little rubbery flutter
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 34;
+    const lg = ctx.createGain();
+    lg.gain.value = 0.03;
+    lfo.connect(lg).connect(g.gain);
+    src.connect(bp).connect(g).connect(this.master);
+    src.start(t, offset);
+    src.stop(t + 0.32);
+    lfo.start(t);
+    lfo.stop(t + 0.32);
+  }
+
+  // ...then twangs as it lets go, and the stone whirs away.
+  slingRelease(power = 1) {
+    if (!this.ready()) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(190 + power * 60, t);
+    o.frequency.exponentialRampToValueAtTime(95, t + 0.18);
+    const g = ctx.createGain();
+    this.env(g, t, 0.002, 0.28, 0.2);
+    o.connect(g).connect(this.shaper);
+    o.start(t);
+    o.stop(t + 0.3);
+    const { src, offset } = this.noiseSource();
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 1500;
+    const sg = ctx.createGain();
+    this.env(sg, t, 0.0008, 0.22, 0.03);
+    src.connect(hp).connect(sg).connect(this.master);
+    src.start(t, offset);
+    src.stop(t + 0.08);
+    this.whoosh(0.35);
   }
 
   click() {

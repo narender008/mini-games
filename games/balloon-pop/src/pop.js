@@ -108,7 +108,7 @@ export class PopFX {
     scene.add(this.fabric.mesh, this.gold.mesh);
 
     this.dust = new ParticleSystem({ capacity: quality.tier === 'low' ? 400 : 900, softness: 2.2, name: 'dust' });
-    this.sparks = new ParticleSystem({ capacity: 500, additive: true, softness: 1.2, name: 'sparks' });
+    this.sparks = new ParticleSystem({ capacity: 1200, additive: true, softness: 1.2, name: 'sparks' });
     this.spray = new ParticleSystem({ capacity: quality.tier === 'low' ? 600 : 1400, softness: 1.4, name: 'spray' });
     scene.add(this.dust.points, this.sparks.points, this.spray.points);
 
@@ -149,7 +149,7 @@ export class PopFX {
   }
 
   // Called when the tool's point touches the skin (the moment of rupture).
-  burst(balloon, localPoint, { special = false } = {}) {
+  burst(balloon, localPoint, { special = false, streak = 1 } = {}) {
     balloon.beginPop(localPoint);
     const S = balloon.size;
     const field = balloon.golden ? this.gold : this.fabric;
@@ -276,7 +276,65 @@ export class PopFX {
     // screen-space shock + camera kick + sound
     if (this.onShock) this.onShock(center, S, special);
     if (this.onKick && !REDUCED_MOTION.matches) this.onKick(center, S);
-    if (this.audio) this.audio.pop({ size: S, position: center, golden: balloon.golden, special });
+    if (this.audio) this.audio.pop({ size: S, position: center, golden: balloon.golden, special, streak });
+  }
+
+  // A milestone streak: a fountain of coloured sparks and slow glitter from
+  // the balloon that made it, bigger for each level.
+  celebrate(center, size, level = 1) {
+    const col = new THREE.Color();
+    const hues = [0.02, 0.09, 0.14, 0.33, 0.52, 0.6, 0.78, 0.9];
+    const n = Math.min(260, 110 + level * 35);
+    for (let k = 0; k < n; k++) {
+      const dir = tmpV2.set(Math.random() - 0.5, Math.random() * 0.9 - 0.2, Math.random() - 0.5).normalize();
+      const p = tmpV.copy(center).addScaledVector(dir, size * 0.3 * Math.random());
+      col.setHSL(hues[k % hues.length], 1, 0.6).multiplyScalar(2.2 + Math.random() * 2);
+      this.sparks.emit(p, dir.multiplyScalar(size * (2 + Math.random() * 3.5)), {
+        life: 1 + Math.random() * 1.2,
+        size0: 0.06 * size,
+        size1: 0.012 * size,
+        color: col,
+        alpha: 1,
+        drag: 1.8,
+        gravity: 3,
+      });
+    }
+    // glitter that hangs and drifts down
+    for (let k = 0; k < 40 + level * 12; k++) {
+      const dir = tmpV2.set(Math.random() - 0.5, Math.random() - 0.3, Math.random() - 0.5).normalize();
+      col.setRGB(3.5, 2.8, 1.6).multiplyScalar(0.5 + Math.random() * 0.8);
+      this.sparks.emit(tmpV.copy(center), dir.multiplyScalar(size * (0.8 + Math.random() * 2.2)), {
+        life: 2 + Math.random() * 1.4,
+        size0: 0.03 * size,
+        size1: 0.02 * size,
+        color: col,
+        alpha: 1,
+        drag: 2.8,
+        gravity: 0.6,
+      });
+    }
+  }
+
+  // The little cloud of air and dust out of the rifle's muzzle.
+  puff(position, direction) {
+    const col = new THREE.Color();
+    for (let k = 0; k < 22; k++) {
+      const dir = tmpV2.copy(direction);
+      dir.x += (Math.random() - 0.5) * 0.7;
+      dir.y += (Math.random() - 0.5) * 0.7 + 0.1;
+      dir.z += (Math.random() - 0.5) * 0.7;
+      dir.normalize();
+      col.setRGB(1, 0.97, 0.94).multiplyScalar(0.85 + Math.random() * 0.25);
+      this.dust.emit(position, dir.multiplyScalar(0.4 + Math.random() * 1.6), {
+        life: 0.4 + Math.random() * 0.5,
+        size0: 0.008,
+        size1: 0.04 + Math.random() * 0.04,
+        color: col,
+        alpha: 0.42,
+        drag: 6,
+        gravity: -0.2,
+      });
+    }
   }
 
   splash(x, z, strength, time) {

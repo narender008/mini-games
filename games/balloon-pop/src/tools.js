@@ -1,7 +1,12 @@
 // The popping tools the player holds: a pearl-headed steel pin that follows
-// the pointer and jabs, and a steel-tipped dart that is thrown at the target.
+// the pointer and jabs, a steel-tipped dart that is thrown at the target, a
+// fairground air rifle that fires pellets, and a slingshot that lets fly a
+// stone. Pellets and stones carry on through what they hit, so one shot can
+// catch two balloons in a line.
 import * as THREE from 'three';
 import { LAYER_NO_REFLECT } from './sea.js';
+import { buildRifle } from './rifle.js';
+import { SlingshotModel, createStoneGeometry, stoneMaterial } from './slingshot.js';
 
 const tmp = new THREE.Vector3();
 const tmp2 = new THREE.Vector3();
@@ -164,6 +169,46 @@ function prepare(obj, envMap) {
   });
 }
 
+export const TOOLS = ['pin', 'dart', 'rifle', 'sling'];
+
+// A glowing streak drawn behind a fast pellet (or, faintly, a stone): a quad
+// that lies along the flight path and turns to face the camera.
+function createTracer(color, strength) {
+  const geo = new THREE.PlaneGeometry(1, 1);
+  geo.translate(-0.5, 0, 0); // head at x = 0, tail towards -x
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color(color).multiplyScalar(strength) }, uAlpha: { value: 1 } },
+    vertexShader: /* glsl */ `
+varying vec2 vUv;
+void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */ `
+uniform vec3 uColor;
+uniform float uAlpha;
+varying vec2 vUv;
+void main() {
+  float along = pow(vUv.x, 1.6);
+  float across = 1.0 - abs(vUv.y - 0.5) * 2.0;
+  float a = along * across * across * uAlpha;
+  gl_FragColor = vec4(uColor * a, a);
+}`,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    fog: false,
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.frustumCulled = false;
+  m.renderOrder = 22;
+  return m;
+}
+
+const tmpQ = new THREE.Quaternion();
+const tmpM = new THREE.Matrix4();
+const ax = new THREE.Vector3();
+const ay = new THREE.Vector3();
+const az = new THREE.Vector3();
+
 export class ToolRig {
   constructor(scene, camera, renderer) {
     this.scene = scene;
@@ -171,10 +216,19 @@ export class ToolRig {
     this.envMap = createToolEnvironment(renderer);
     this.pin = buildPin();
     this.dartHeld = buildDart();
-    prepare(this.pin, this.envMap);
-    prepare(this.dartHeld, this.envMap);
-    scene.add(this.pin, this.dartHeld);
+    this.rifle = buildRifle();
+    this.sling = new SlingshotModel();
+    for (const o of [this.pin, this.dartHeld, this.rifle.group, this.sling.group]) {
+      prepare(o, this.envMap);
+      o.visible = false;
+      scene.add(o);
+    }
+    this.stoneGeometries = [0, 1, 2].map(() => createStoneGeometry(0.0125));
+    this.stoneMaterial = stoneMaterial();
+    this.stoneMaterial.envMap = this.envMap;
+    this.pelletGeometry = new THREE.SphereGeometry(0.0028, 8, 6);
     this.flying = [];
+    this.projectiles = [];
     this.tool = 'pin';
     this.ndc = new THREE.Vector2(0.35, -0.35);
     this.targetNdc = this.ndc.clone();
@@ -186,10 +240,46 @@ export class ToolRig {
     this.raycaster = new THREE.Raycaster();
     this.restTimer = 0;
     this.pointerType = 'mouse';
+    // rifle: recoil spring and the cocking stroke after each shot
+    this.recoil = 0;
+    this.recoilVel = 0;
+    this.cock = 1;
+    // slingshot: the draw, and the bands' spring after a release
+    this.drawing = null;
+    this.pull = 0;
+    this.wobble = 0;
+    this.wobbleVel = 0;
+    this.slingReload = 1;
+    this.shotId = 0;
+    // where each is held, in camera space (metres, before hand scaling)
+    this.rifleHold = new THREE.Vector3(0.2, -0.2, -0.5);
+    this.slingHold = new THREE.Vector3(0.12, -0.165, -0.46);
+    // hooks set by the game
+    this.aimProvider = null; // (ndc) => { point, target }
+    this.hitTest = null; // (from, to, exclude) => hits nearest first
+    this.onHit = null; // (hit, shot) => void
+    this.onSplash = null; // (point, size) => void
+    this.onPuff = null; // (position, direction) => void
+    this.audio = null;
   }
 
   setTool(name) {
-    this.tool = name;
+    this.tool = TOOLS.includes(name) ? name : 'pin';
+    this.drawing = null;
+    this.pull = 0;
+  }
+
+  // The rifle and slingshot are held at the bottom of the view and aimed at
+  // a reticle, rather than carried to the pointer like the pin and dart.
+  get aimed() {
+    return this.tool === 'rifle' || this.tool === 'sling';
+  }
+
+  canFire() {
+    if (this.tool === 'dart') return this.reload >= 1;
+    if (this.tool === 'rifle') return this.cock >= 1;
+    if (this.tool === 'sling') return !this.drawing && this.slingReload >= 1;
+    return true;
   }
 
   setPointer(ndc, type) {
@@ -208,6 +298,7 @@ export class ToolRig {
 
   hide() {
     this.visible = false;
+    this.drawing = null;
   }
 
   ray(ndc) {
@@ -233,7 +324,49 @@ export class ToolRig {
     obj.quaternion.setFromUnitVectors(Y, tail);
   }
 
-  // Start a strike. `onContact` fires when the point meets the target.
+  // Hold a tool at a fixed place in front of the camera and point its +Z at
+  // `target`, upright with the camera.
+  holdAt(obj, offset, target) {
+    const cam = this.camera;
+    obj.position.copy(offset).applyMatrix4(cam.matrixWorld);
+    obj.up.set(0, 1, 0).applyQuaternion(cam.quaternion);
+    obj.lookAt(target);
+  }
+
+  // Where the held rifle or slingshot points: along the pointer ray, far
+  // enough out that the barrel looks aimed at the reticle.
+  aimPointFor(ndc, out = new THREE.Vector3()) {
+    const ray = this.ray(ndc);
+    const d = ray.direction;
+    const t = d.y < -0.01 ? Math.min(34, -ray.origin.y / d.y) : 34;
+    return out.copy(ray.origin).addScaledVector(d, t);
+  }
+
+  // Where the held rifle or slingshot points. Straight at the reticle near
+  // the middle of the view, but a target high on a tall phone screen would
+  // stand the rifle on end, so beyond ~18° the model turns less than the aim.
+  // The shot itself still flies from the muzzle to the reticle.
+  heldAim(ndc) {
+    const cam = this.camera;
+    const d = this.ray(ndc).direction.clone().transformDirection(cam.matrixWorldInverse);
+    const angle = Math.acos(Math.min(1, -d.z));
+    const cap = 0.31;
+    if (angle > cap) {
+      const a = cap + (angle - cap) * 0.4;
+      const side = Math.hypot(d.x, d.y) || 1;
+      d.set((d.x / side) * Math.sin(a), (d.y / side) * Math.sin(a), -Math.cos(a));
+    }
+    return d.multiplyScalar(34).applyMatrix4(cam.matrixWorld);
+  }
+
+  // Show the held tool, as at the start of play.
+  show() {
+    this.visible = true;
+    this.restTimer = 0;
+  }
+
+  // Start a pin jab or throw a dart. `onContact` fires when the point meets
+  // the target.
   strike(ndc, target, onContact) {
     this.ndc.copy(ndc);
     this.targetNdc.copy(ndc);
@@ -279,13 +412,287 @@ export class ToolRig {
     return -1;
   }
 
-  update(realDt, dt, onDartSplash) {
+  // Fire the air rifle at the pointer. Returns the shot id, or -1 while it
+  // is still being cocked.
+  fire(ndc) {
+    this.ndc.copy(ndc);
+    this.targetNdc.copy(ndc);
+    this.visible = true;
+    this.restTimer = 0;
+    if (this.tool !== 'rifle' || this.cock < 1) return -1;
+    this.updateHeld(0); // make sure the muzzle is where the rifle is drawn
+    const muzzle = this.rifle.muzzle.getWorldPosition(new THREE.Vector3());
+    const aim = this.aimProvider ? this.aimProvider(ndc) : { point: this.aimPointFor(ndc), target: null };
+    const shot = ++this.shotId;
+    const pellet = new THREE.Mesh(this.pelletGeometry, this.pelletMaterial());
+    pellet.layers.set(LAYER_NO_REFLECT);
+    this.scene.add(pellet);
+    const tracer = createTracer('#ffe2b8', 7);
+    tracer.layers.set(LAYER_NO_REFLECT);
+    this.scene.add(tracer);
+    const dist = muzzle.distanceTo(aim.point);
+    this.launch({
+      kind: 'pellet',
+      shot,
+      obj: pellet,
+      tracer,
+      from: muzzle,
+      aim,
+      duration: Math.max(0.02, dist / 150),
+      arc: 0,
+      speed: 150,
+      gravity: 0.6,
+    });
+    this.recoilVel += 3.4;
+    this.cock = 0;
+    this.cockClicks = 0;
+    const dir = aim.point.clone().sub(muzzle).normalize();
+    if (this.onPuff) this.onPuff(muzzle, dir);
+    if (this.audio) this.audio.rifle();
+    return shot;
+  }
+
+  pelletMaterial() {
+    if (!this._pellet) {
+      this._pellet = new THREE.MeshPhysicalMaterial({ color: 0x8e9296, metalness: 1, roughness: 0.3 });
+      this._pellet.envMap = this.envMap;
+    }
+    return this._pellet;
+  }
+
+  // Slingshot: press to draw, release to let go. A quick tap still shows a
+  // short draw before the stone flies.
+  beginDraw(ndc) {
+    this.ndc.copy(ndc);
+    this.targetNdc.copy(ndc);
+    this.visible = true;
+    this.restTimer = 0;
+    if (this.tool !== 'sling' || !this.canFire()) return false;
+    this.drawing = { t: 0, release: false };
+    if (this.audio) this.audio.slingDraw();
+    return true;
+  }
+
+  releaseDraw(ndc) {
+    if (!this.drawing) return;
+    if (ndc) this.targetNdc.copy(ndc);
+    this.drawing.release = true;
+  }
+
+  launchStone() {
+    const ndc = this.targetNdc.clone();
+    const from = this.sling.stoneWorldPosition(new THREE.Vector3());
+    const aim = this.aimProvider ? this.aimProvider(ndc) : { point: this.aimPointFor(ndc), target: null };
+    const shot = ++this.shotId;
+    const stone = new THREE.Mesh(this.stoneGeometries[shot % 3], this.stoneMaterial);
+    stone.layers.set(LAYER_NO_REFLECT);
+    stone.quaternion.copy(this.sling.stone.getWorldQuaternion(tmpQ));
+    this.scene.add(stone);
+    const tracer = createTracer('#e8e0f0', 0.5);
+    tracer.layers.set(LAYER_NO_REFLECT);
+    this.scene.add(tracer);
+    const power = 0.65 + 0.35 * this.pull;
+    const dist = from.distanceTo(aim.point);
+    const speed = 30 + 18 * power;
+    this.launch({
+      kind: 'stone',
+      shot,
+      obj: stone,
+      tracer,
+      from,
+      aim,
+      duration: Math.max(0.12, dist / speed),
+      arc: Math.min(3, 0.35 + dist * 0.045),
+      speed,
+      gravity: 9.8,
+      spin: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(40),
+    });
+    // the pouch snaps forward past the fork and the bands shiver
+    this.wobble = -this.pull * 0.24;
+    this.wobbleVel = 0;
+    this.pull = 0;
+    this.drawing = null;
+    this.slingReload = 0;
+    if (this.audio) this.audio.slingRelease(power);
+    return shot;
+  }
+
+  launch(p) {
+    p.pos = p.from.clone();
+    p.prev = p.from.clone();
+    p.vel = new THREE.Vector3();
+    p.t = 0;
+    p.age = 0;
+    p.travelled = 0;
+    p.state = 'aimed';
+    p.hit = new Set();
+    this.projectiles.push(p);
+  }
+
+  // Where a projectile is heading now: the locked balloon moves, so follow it.
+  aimNow(p, out) {
+    const tg = p.aim.target;
+    if (tg && tg.balloon.state === 'flying') return out.copy(tg.localPoint).applyMatrix4(tg.balloon.envelope.matrixWorld);
+    return out.copy(p.aim.point);
+  }
+
+  updateProjectiles(dt) {
     const cam = this.camera;
+    const aimNow = new THREE.Vector3();
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      p.age += dt;
+      p.prev.copy(p.pos);
+      let done = false;
+      if (p.state === 'aimed') {
+        p.t += dt / p.duration;
+        const k = Math.min(1, p.t);
+        this.aimNow(p, aimNow);
+        p.pos.lerpVectors(p.from, aimNow, k);
+        p.pos.y += p.arc * 4 * k * (1 - k);
+        this.sweep(p, p.aim.target ? p.aim.target.balloon : null);
+        if (k >= 1) {
+          const tg = p.aim.target;
+          if (tg && tg.balloon.state === 'flying' && !p.hit.has(tg.balloon)) {
+            p.hit.add(tg.balloon);
+            if (this.onHit) this.onHit({ balloon: tg.balloon, localPoint: tg.localPoint, worldPoint: aimNow.clone() }, p.shot);
+          }
+          // carry on through: fabric barely slows a pellet or a stone
+          p.state = 'free';
+          p.vel.subVectors(p.pos, p.prev).divideScalar(Math.max(dt, 1e-4));
+          if (p.vel.lengthSq() < 1) p.vel.subVectors(aimNow, p.from).normalize().multiplyScalar(p.speed);
+          p.vel.multiplyScalar(p.kind === 'stone' ? 0.85 : 0.95);
+        }
+      } else {
+        p.vel.y -= p.gravity * dt;
+        p.vel.multiplyScalar(Math.exp(-dt * (p.kind === 'stone' ? 0.08 : 0.02)));
+        p.pos.addScaledVector(p.vel, dt);
+        this.sweep(p, null);
+        if (p.pos.y <= 0.02) {
+          if (this.onSplash) this.onSplash(p.pos.clone(), p.kind === 'stone' ? 0.3 : 0.12);
+          done = true;
+        }
+        if (p.age > 4) done = true;
+      }
+      const step = p.pos.distanceTo(p.prev);
+      p.travelled += step;
+      const camDist = p.pos.distanceTo(cam.position);
+      p.obj.position.copy(p.pos);
+      if (p.kind === 'stone') {
+        p.obj.rotation.x += p.spin.x * dt;
+        p.obj.rotation.y += p.spin.y * dt;
+        p.obj.rotation.z += p.spin.z * dt;
+        // a toy's licence: the stone stays readable as it flies away
+        p.obj.scale.setScalar(1 + camDist * 0.05);
+      } else {
+        p.obj.scale.setScalar(1 + camDist * 0.08);
+      }
+      if (p.tracer) this.orientTracer(p, step, camDist);
+      if (done) {
+        p.obj.removeFromParent();
+        if (p.tracer) {
+          p.tracer.removeFromParent();
+          p.tracer.material.dispose();
+          p.tracer.geometry.dispose();
+        }
+        this.projectiles.splice(i, 1);
+      }
+    }
+  }
+
+  // Test the path just flown for balloons, nearest first; `skip` is the
+  // locked target, which is struck exactly when the shot arrives.
+  sweep(p, skip) {
+    if (!this.hitTest || p.pos.distanceToSquared(p.prev) < 1e-10) return;
+    const exclude = p.hit;
+    if (skip) exclude.add(skip);
+    const hits = this.hitTest(p.prev, p.pos, exclude);
+    if (skip) exclude.delete(skip);
+    for (const h of hits) {
+      p.hit.add(h.balloon);
+      if (this.onHit) this.onHit(h, p.shot);
+    }
+  }
+
+  orientTracer(p, step, camDist) {
+    const t = p.tracer;
+    if (step < 1e-5) {
+      t.visible = false;
+      return;
+    }
+    t.visible = true;
+    ax.subVectors(p.pos, p.prev).normalize();
+    az.subVectors(this.camera.position, p.pos).normalize();
+    ay.crossVectors(ax, az).normalize();
+    az.crossVectors(ax, ay);
+    tmpM.makeBasis(ax, ay, az);
+    t.quaternion.setFromRotationMatrix(tmpM);
+    t.position.copy(p.pos);
+    const len = Math.min(p.travelled, (p.kind === 'pellet' ? 1.5 : 0.8) + camDist * (p.kind === 'pellet' ? 0.07 : 0.03));
+    const width = (p.kind === 'pellet' ? 0.005 : 0.012) + camDist * (p.kind === 'pellet' ? 0.0045 : 0.003);
+    t.scale.set(len, width, 1);
+    t.material.uniforms.uAlpha.value = p.kind === 'pellet' ? Math.min(1, p.age * 30) : 0.5;
+  }
+
+  // The rifle and slingshot, held in front of the camera.
+  updateHeld(realDt) {
+    const s = this.handScale();
+    const fade = Math.max(0.001, this.fade);
+    const aim = this.heldAim(this.ndc);
+    // posed even while faded out, so a first tap on touch fires from the muzzle
+    const rifleOn = this.tool === 'rifle';
+    this.rifle.group.visible = rifleOn && this.fade > 0.02;
+    if (rifleOn) {
+      // recoil: a stiff spring that kicks the rifle back and the muzzle up
+      this.recoilVel += (-this.recoil * 420 - this.recoilVel * 26) * realDt;
+      this.recoil += this.recoilVel * realDt;
+      const h = this.rifleHold;
+      const offset = tmp.set(h.x * s, h.y - (1 - fade) * 0.2 + this.recoil * 0.05, h.z + this.recoil * 0.3);
+      this.holdAt(this.rifle.group, offset, aim);
+      this.rifle.group.rotateX(-this.recoil * 0.9);
+      this.rifle.group.rotateZ(this.recoil * 0.25);
+      this.rifle.group.scale.setScalar(s);
+      // cocking stroke: the knob slides back, then home
+      if (this.cock < 1) {
+        const before = this.cock;
+        this.cock = Math.min(1, this.cock + realDt / 0.42);
+        const c = this.cock;
+        const back = c < 0.25 ? 0 : c < 0.55 ? (c - 0.25) / 0.3 : c < 0.85 ? 1 - (c - 0.55) / 0.3 : 0;
+        this.rifle.bolt.position.z = this.rifle.boltRest - back * 0.055;
+        if (this.audio && before < 0.5 && c >= 0.5) this.audio.cock(0);
+        if (this.audio && before < 0.85 && c >= 0.85) this.audio.cock(1);
+      }
+    }
+    const slingOn = this.tool === 'sling';
+    this.sling.group.visible = slingOn && this.fade > 0.02;
+    this.slingReload = Math.min(1, this.slingReload + realDt / 0.45);
+    if (this.drawing) {
+      const d = this.drawing;
+      d.t += realDt;
+      const k = Math.min(1, d.t / 0.24);
+      this.pull = 1 - (1 - k) * (1 - k);
+      if (d.release && d.t >= 0.14) this.launchStone();
+    }
+    // bands: an underdamped spring, so the pouch overshoots and shivers
+    this.wobbleVel += (-this.wobble * 900 - this.wobbleVel * 9) * realDt;
+    this.wobble += this.wobbleVel * realDt;
+    if (slingOn) {
+      const h = this.slingHold;
+      const offset = tmp.set(h.x * s, h.y - (1 - fade) * 0.2, h.z);
+      this.holdAt(this.sling.group, offset, aim);
+      this.sling.group.rotateZ(-0.12);
+      this.sling.group.scale.setScalar(s);
+      this.sling.setDraw(this.pull, this.wobble, this.slingReload >= 1 || !!this.drawing);
+    }
+  }
+
+  update(realDt, dt, onDartSplash) {
     // mouse: the tool trails the pointer slightly for weight
     const follow = this.pointerType === 'mouse' ? 1 - Math.exp(-realDt * 28) : 1;
     this.ndc.lerp(this.targetNdc, follow);
-    // with touch there is no hover: show the tool for the strike, then put it away
-    if (this.pointerType !== 'mouse') {
+    // with touch there is no hover: show the pin or dart for the strike, then
+    // put it away. The rifle and slingshot stay in hand.
+    if (this.pointerType !== 'mouse' && !this.aimed) {
       this.restTimer += realDt;
       if (this.restTimer > 0.9 && this.jabTime < 0) this.visible = false;
     }
@@ -314,7 +721,7 @@ export class ToolRig {
       this.pin.scale.setScalar(Math.max(0.001, this.fade) * this.handScale());
     }
     this.reload = Math.min(1, this.reload + realDt / 0.35);
-    this.dartHeld.visible = !pinOn && this.fade > 0.02;
+    this.dartHeld.visible = this.tool === 'dart' && this.fade > 0.02;
     if (this.dartHeld.visible) {
       const slide = 1 - this.reload;
       const n = this.ndc.clone();
@@ -322,6 +729,9 @@ export class ToolRig {
       this.pose(this.dartHeld, n, 1.4, 0.8);
       this.dartHeld.scale.setScalar(Math.max(0.001, this.fade) * 1.9 * this.handScale());
     }
+    this.updateHeld(realDt);
+    // like the dart, shots fly in real time so slow motion never stalls a streak
+    this.updateProjectiles(realDt);
 
     // darts in flight
     for (let i = this.flying.length - 1; i >= 0; i--) {

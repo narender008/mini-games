@@ -147,27 +147,51 @@ export function createEnvelopeGeometry(segPerGore = 6, rows = 72) {
 // ---------------------------------------------------------------------------
 // Pattern shader
 
-const palette = [];
-for (const p of PALETTES) for (const hex of p) palette.push(linearColor(hex));
+// Palettes live in a tiny float texture (one row per palette) rather than a
+// uniform array, so adding colourways never runs a phone GPU out of uniforms.
+function createPaletteTexture() {
+  const data = new Float32Array(PALETTE_SIZE * PALETTES.length * 4);
+  PALETTES.forEach((p, row) =>
+    p.forEach((hex, i) => {
+      const c = linearColor(hex);
+      data.set([c.r, c.g, c.b, 1], (row * PALETTE_SIZE + i) * 4);
+    }),
+  );
+  const tex = new THREE.DataTexture(data, PALETTE_SIZE, PALETTES.length, THREE.RGBAFormat, THREE.FloatType);
+  tex.magFilter = tex.minFilter = THREE.NearestFilter;
+  tex.needsUpdate = true;
+  return tex;
+}
 
 // Uniforms shared by every envelope and shred material.
 export const sharedEnvelopeUniforms = {
-  uPal: { value: palette },
+  uPalTex: { value: createPaletteTexture() },
   uSunView: { value: new THREE.Vector3(0, 0, -1) },
   uSunColor: { value: linearColor('#ffc58a') },
   uNoise: { value: null },
 };
 
 export const ENVELOPE_GLSL = /* glsl */ `
-uniform vec3 uPal[${palette.length}];
+uniform sampler2D uPalTex;
 uniform vec3 uSunView;
 uniform vec3 uSunColor;
 const float ENV_GORES = ${GORES.toFixed(1)};
 const float ENV_LEN = ${PROFILE_LENGTH.toFixed(4)};
 
 vec3 envPal(float pal, float idx) {
-  int i = int(pal) * ${PALETTE_SIZE} + int(mod(idx, ${PALETTE_SIZE.toFixed(1)}));
-  return uPal[i];
+  return texelFetch(uPalTex, ivec2(int(mod(idx, ${PALETTE_SIZE.toFixed(1)})), int(pal + 0.5)), 0).rgb;
+}
+
+// Anti-aliased band between two heights.
+float envBand(float v, float a, float b) {
+  float w = fwidth(v) + 1e-4;
+  return smoothstep(a - w, a + w, v) * (1.0 - smoothstep(b - w, b + w, v));
+}
+
+// Anti-aliased two-colour split on a periodic value.
+float envStripe(float q) {
+  float w = fwidth(q) + 1e-4;
+  return smoothstep(-w, w, q);
 }
 
 // Rounded pill in gore space. X is the across-gore coordinate (edge at +-1),
@@ -226,6 +250,43 @@ vec4 envelopePattern(vec2 uv, vec2 gore, float pal, float pat, out float rough, 
     col = mix(col, c, dmask);
     col = mix(col, envPal(pal, 2.0), band);
     glow = max(dmask, band);
+  } else if (pat > 3.5 && pat < 4.5) {
+    // Jewel: solid gores in two shades of one gem, trim bands near the crown
+    // and above the mouth.
+    col = mod(gi, 2.0) < 0.5 ? envPal(pal, 0.0) : envPal(pal, 2.0);
+    float trim = max(envBand(v, 0.855, 0.885), envBand(v, 0.115, 0.14));
+    col = mix(col, envPal(pal, 3.0), trim);
+    glow = 0.5;
+    rough = 0.4;
+  } else if (pat > 4.5 && pat < 5.5) {
+    // Rainbow: every gore one step round the colour wheel.
+    float h = (gi + 0.5) / ENV_GORES;
+    vec3 c = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+    c = mix(vec3(0.06), c, 0.9);
+    col = c * c * 0.8;
+    col = mix(col, black * 1.5, envBand(v, 0.93, 1.1));
+    glow = 0.55;
+    rough = 0.4;
+  } else if (pat > 5.5 && pat < 6.5) {
+    // Two-tone chevrons: a V in every gore, stacked from mouth to crown.
+    float q = sin((v * 7.0 + abs(f - 0.5) * 1.2) * 6.2832);
+    col = mix(envPal(pal, 0.0), envPal(pal, 1.0), envStripe(q) * envBand(v, 0.16, 0.9));
+    glow = 0.5;
+    rough = 0.42;
+  } else if (pat > 6.5 && pat < 7.5) {
+    // Sunset pastels: warm at the mouth, cool at the crown, with alternate
+    // gores slightly out of step so the panels read.
+    float k = clamp(v * 3.6 + (mod(gi, 2.0) < 0.5 ? 0.0 : 0.22), 0.0, 3.999);
+    float i0 = floor(k);
+    col = mix(envPal(pal, i0), envPal(pal, i0 + 1.0), smoothstep(0.25, 0.75, fract(k)));
+    glow = 0.45;
+    rough = 0.44;
+  } else if (pat > 7.5 && pat < 8.5) {
+    // Candy swirl: stripes that spiral up round the whole envelope.
+    float q = sin((uv.x * ENV_GORES * 0.5 + v * 2.4) * 6.2832);
+    col = mix(envPal(pal, 0.0), envPal(pal, 1.0), envStripe(q));
+    glow = 0.5;
+    rough = 0.42;
   } else {
     // Gold lamé with black pills. Only part metallic: pure metal would
     // mirror the dark storm sky and look bronze-black, so the gold also
