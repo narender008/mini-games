@@ -288,12 +288,14 @@ export class Director {
 
   updateLittle(dt) {
     const n = this.cols();
-    const target = clamp(Math.round(n * 1.2), 10, 26);
+    // MEGA clears toys fast, so keep the sky topped up while it lasts
+    const mega = this.app.megaT > 0;
+    const target = clamp(Math.round(n * (mega ? 1.6 : 1.2)), 10, 32);
     this.spawnTimer -= dt;
     const alive = this.aliveCount();
     if (this.spawnTimer <= 0 && alive < target) {
       const speed = this.field.halfH > 6.5 ? 0.7 : 0.55;
-      if (this.spawnFormation({ speed })) this.spawnTimer = alive < 5 ? 0.7 : 1.9;
+      if (this.spawnFormation({ speed })) this.spawnTimer = mega ? 0.3 : alive < 5 ? 0.7 : 1.9;
       else this.spawnTimer = 0.4;
     }
   }
