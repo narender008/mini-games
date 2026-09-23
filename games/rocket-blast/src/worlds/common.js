@@ -141,7 +141,8 @@ void main() {
   float n2 = texture2D(uNoise, q * 2.3 + 0.37).r;
   float n3 = texture2D(uNoise, q * 5.1 + 0.71).a;
   float edge = 1.0 - r + (n - 0.5) * 0.7 + (n2 - 0.5) * 0.3 + (n3 - 0.5) * 0.12;
-  float dens = smoothstep(0.0, uSoft, edge);
+  // fade out before the quad's rim so noise never shows a round edge
+  float dens = smoothstep(0.0, uSoft, edge) * smoothstep(1.0, 0.82, r);
   if (dens < 0.004) discard;
   vec2 bump = (vec2(n, n2) - 0.5) * 1.1;
   vec3 N = normalize(vec3(p * 0.95 + bump, sqrt(max(0.0, 1.0 - r * r)) + 0.15));
