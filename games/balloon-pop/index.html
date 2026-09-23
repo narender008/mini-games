@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Balloon Pop · Mini Games</title>
+    <meta name="description" content="Pop photoreal hot-air balloons drifting over a dusk sea. Plays in the browser with mouse, touch or pen." />
+    <meta name="theme-color" content="#11163f" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../../vendor/three/build/three.module.js",
+          "three/addons/": "../../vendor/three/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body data-state="loading">
+    <canvas id="scene" aria-label="Balloon Pop: hot-air balloons drifting over the sea at dusk"></canvas>
+
+    <div id="loader" role="progressbar" aria-label="Loading Balloon Pop" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <svg class="loader-balloon" viewBox="0 0 64 80" aria-hidden="true">
+        <path d="M32 4C17 4 7 15 7 29c0 12 9 21 17 31l2 5h12l2-5c8-10 17-19 17-31C57 15 47 4 32 4Z" fill="#0d0b12" />
+        <path d="M24 7c-4 6-5 14-4 22h4c0-8 1-15 4-21Z" fill="#f3871f" />
+        <path d="M32 4c-2 7-2 16-2 25h4c0-9 0-18-2-25Z" fill="#8540f2" />
+        <path d="M40 7c3 6 4 13 4 21h4c1-8 0-16-4-22Z" fill="#2f7bff" />
+        <path d="M22 35c1 9 4 17 6 25h3c-1-8-2-17-5-25Z M42 35c-1 9-4 17-6 25h-3c1-8 2-17 5-25Z" fill="#f3871f" />
+        <rect x="27" y="68" width="10" height="7" rx="1.5" fill="#8a5a33" />
+      </svg>
+      <p class="loader-title">Balloon Pop</p>
+      <div class="bar"><span id="loader-fill"></span></div>
+      <p id="loader-text">Loading…</p>
+    </div>
+
+    <header id="hud" hidden>
+      <a class="chip home" href="../../index.html" aria-label="Back to all games">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Games</span>
+      </a>
+      <div class="scoreboard" aria-live="polite">
+        <span id="score">0</span>
+        <span id="combo"></span>
+      </div>
+      <div id="timer-wrap" class="timer" hidden><span id="timer">60</span><small>s</small></div>
+      <div class="actions">
+        <div class="toolswitch" role="radiogroup" aria-label="Popping tool">
+          <button type="button" data-tool="pin" role="radio" aria-checked="true" title="Pin (1)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="17" cy="7" r="3.2" class="fillc" /><path d="M15 9L4 20" /></svg>
+            <span class="sr">Pin</span>
+          </button>
+          <button type="button" data-tool="dart" role="radio" aria-checked="false" title="Dart (2)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l7-7" /><path d="M11 13l3-3" class="thick" /><path d="M14 10l3-3m-3 3 1 4m-1-4-4-1m7-2 3-3m-3 3 1 3m-1-3-3-1" /></svg>
+            <span class="sr">Dart</span>
+          </button>
+        </div>
+        <button type="button" id="mute" class="icon" aria-pressed="false" aria-label="Mute sound" title="Sound (M)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg>
+        </button>
+        <button type="button" id="pause-btn" class="icon" aria-label="Pause" title="Pause (Esc)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" class="thick" /></svg>
+        </button>
+      </div>
+    </header>
+
+    <p id="hint" aria-live="polite"></p>
+
+    <section id="menu" class="panel" hidden aria-labelledby="menu-title">
+      <h1 id="menu-title">Balloon Pop</h1>
+      <p class="lede">Hot-air balloons drift over the sea at dusk. Tap or click one to pop it.</p>
+      <div class="modes">
+        <button type="button" id="play-relax" class="mode">
+          <strong>Relax</strong>
+          <small>Pop as many as you like. No timer.</small>
+        </button>
+        <button type="button" id="play-timed" class="mode alt">
+          <strong>60-second challenge</strong>
+          <small>Score points, chain combos, find the golden balloon.</small>
+        </button>
+      </div>
+      <div class="pick" role="radiogroup" aria-label="Pop with">
+        <span>Pop with</span>
+        <button type="button" data-tool="pin" role="radio" aria-checked="true">Pin</button>
+        <button type="button" data-tool="dart" role="radio" aria-checked="false">Dart</button>
+      </div>
+      <p class="best">Best challenge score: <span id="best">—</span></p>
+      <a class="back" href="../../index.html">← All games</a>
+    </section>
+
+    <section id="paused" class="panel small" hidden aria-labelledby="paused-title">
+      <h2 id="paused-title">Paused</h2>
+      <div class="row">
+        <button type="button" id="resume" class="primary">Resume</button>
+        <button type="button" id="pause-menu">Menu</button>
+      </div>
+    </section>
+
+    <section id="results" class="panel small" hidden aria-labelledby="results-title">
+      <h2 id="results-title">Time’s up!</h2>
+      <p id="result-new" class="newbest" hidden>New best score!</p>
+      <p class="big" id="result-score">0</p>
+      <dl class="stats">
+        <div><dt>Best</dt><dd id="result-best">0</dd></div>
+        <div><dt>Balloons</dt><dd id="result-pops">0</dd></div>
+        <div><dt>Top combo</dt><dd id="result-combo">×1</dd></div>
+      </dl>
+      <div class="row">
+        <button type="button" id="again" class="primary">Play again</button>
+        <button type="button" id="results-relax">Relax</button>
+        <button type="button" id="results-menu">Menu</button>
+      </div>
+    </section>
+
+    <div id="floaters" aria-hidden="true"></div>
+
+    <noscript><p class="noscript">Balloon Pop needs JavaScript to run.</p></noscript>
+    <script type="module" src="src/boot.js"></script>
+  </body>
+</html>
