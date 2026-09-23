@@ -9,7 +9,7 @@ import { NOISE } from './glsl.js';
 export const TOOLS = ['chef', 'serrated', 'wire', 'sword', 'server'];
 
 // Brushed steel that can carry a smear of frosting and a few crumbs.
-function bladeSteel({ roughness = 0.27, colour = '#c8cdd3' } = {}) {
+function bladeSteel({ roughness = 0.33, colour = '#c8cdd3' } = {}) {
   const m = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(colour),
     metalness: 1,
@@ -221,7 +221,9 @@ function buildWire() {
   const span = 0.32;
   const tall = 0.17;
   const steel = steelMat();
-  const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.00035, 0.00035, span, 6), steel);
+  // thicker than a real cake wire (about 0.4 mm) so it still reads on a
+  // phone screen, and polished bright
+  const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.00075, 0.00075, span, 8), new THREE.MeshPhysicalMaterial({ color: new THREE.Color('#f2f4f7'), metalness: 1, roughness: 0.12 }));
   wire.rotation.z = Math.PI / 2;
   g.add(wire);
   const path = new THREE.CurvePath();

@@ -1113,6 +1113,270 @@ body[data-state='result'] #scene {
 
 /* ------------------------------------------------------------ phones */
 
+/* ------------------------------------------------------------ switches */
+
+.mode.little,
+.mode.free {
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.mode.little {
+  border-color: rgba(173, 222, 140, 0.5);
+  background: linear-gradient(180deg, rgba(143, 212, 106, 0.22), rgba(242, 199, 127, 0.14));
+}
+
+.mode .opts {
+  display: grid;
+  align-content: center;
+  padding: 6px 12px 6px 2px;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+
+.switch .knob {
+  position: relative;
+  flex: none;
+  width: 36px;
+  height: 22px;
+  border-radius: 11px;
+  border: 1px solid var(--glass-edge);
+  background: rgba(255, 255, 255, 0.14);
+  transition: background 0.2s;
+}
+
+.switch .knob::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--ink);
+  transition: transform 0.2s;
+}
+
+.switch[aria-checked='true'] {
+  color: var(--ink);
+}
+
+.switch[aria-checked='true'] .knob {
+  background: rgba(242, 199, 127, 0.8);
+}
+
+.switch[aria-checked='true'] .knob::after {
+  transform: translateX(14px);
+}
+
+.switch[hidden],
+.toggles[hidden],
+.serve[hidden] {
+  display: none;
+}
+
+.toggles {
+  display: grid;
+  justify-content: center;
+  gap: 2px;
+  margin: 4px 0 2px;
+}
+
+/* ------------------------------------------------------------ serve */
+
+.serve {
+  position: fixed;
+  z-index: 10;
+  right: calc(18px + var(--safe-r));
+  bottom: calc(96px + var(--safe-b));
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  border: 2px solid rgba(242, 199, 127, 0.75);
+  background: radial-gradient(circle at 50% 35%, rgba(255, 246, 230, 0.97), rgba(240, 212, 168, 0.95));
+  color: #2a1a12;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  touch-action: manipulation;
+  animation:
+    serve-in 0.35s ease,
+    serve-bob 1.6s ease-in-out 0.35s infinite;
+}
+
+.serve svg {
+  width: 52px;
+  height: 52px;
+  stroke-width: 1.4;
+}
+
+.serve svg .plate {
+  fill: #fffaf2;
+  stroke: #c9a15c;
+}
+
+.serve svg .well {
+  stroke: #e3c890;
+}
+
+.serve svg .slice {
+  fill: #d98ca0;
+  stroke: #7a3b2a;
+}
+
+.serve svg .icing {
+  fill: #fbeee2;
+  stroke: none;
+}
+
+@keyframes serve-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+@keyframes serve-bob {
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.toolswitch button.pulse {
+  animation: tool-pulse 0.9s ease 2;
+}
+
+@keyframes tool-pulse {
+  50% {
+    background: rgba(242, 199, 127, 0.55);
+    transform: scale(1.12);
+  }
+}
+
+/* ------------------------------------------------------------ little ones */
+
+/* the grown-up controls: small, dim and tucked into the top-left corner */
+body[data-mode='little'] #hud .title,
+body[data-mode='little'] #photo,
+body[data-mode='little'] #new-cake,
+body[data-mode='little'] .wipe,
+body[data-mode='little'] #spin-left,
+body[data-mode='little'] #spin-right,
+body[data-mode='little'] #mic,
+body[data-mode='little'] #skip-candles {
+  display: none !important;
+}
+
+body[data-mode='little'] #hud {
+  gap: 6px;
+}
+
+body[data-mode='little'] .actions {
+  margin-left: 0;
+  gap: 6px;
+}
+
+body[data-mode='little'] #hud .chip,
+body[data-mode='little'] #hud .icon {
+  height: 36px;
+  opacity: 0.6;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body[data-mode='little'] #hud .icon {
+  width: 36px;
+}
+
+body[data-mode='little'] #hud .chip.home {
+  padding: 0 8px 0 6px;
+}
+
+body[data-mode='little'] #hud .chip.home span {
+  display: none;
+}
+
+#hud .holding {
+  opacity: 1 !important;
+  background: rgba(242, 199, 127, 0.65);
+  transition: background 0.8s linear;
+}
+
+/* big, friendly targets for small hands */
+body[data-mode='little'] .toolswitch {
+  gap: 6px;
+  padding: 6px;
+  border-radius: 34px;
+}
+
+body[data-mode='little'] .toolswitch button {
+  min-width: 78px;
+  height: 76px;
+  border-radius: 28px;
+  opacity: 0.8;
+}
+
+body[data-mode='little'] .toolswitch button svg {
+  width: 34px;
+  height: 34px;
+}
+
+body[data-mode='little'] .toolswitch button .lbl {
+  font-size: 13px;
+}
+
+body[data-mode='little'] .serve {
+  bottom: calc(118px + var(--safe-b));
+  width: 124px;
+  height: 124px;
+  font-size: 17px;
+}
+
+body[data-mode='little'] .serve svg {
+  width: 72px;
+  height: 72px;
+}
+
+body[data-mode='little'] .bigbtn.blow {
+  gap: 18px;
+  min-width: min(340px, calc(100vw - 40px));
+  min-height: 136px;
+  justify-content: center;
+  padding: 0 52px 0 40px;
+  border-radius: 68px;
+  font-size: 40px;
+}
+
+body[data-mode='little'] .bigbtn.blow svg {
+  width: 58px;
+  height: 58px;
+}
+
+body[data-mode='little'] #hint {
+  bottom: calc(112px + var(--safe-b));
+  font-size: 19px;
+}
+
+body[data-mode='little'][data-state='candles'] #hint {
+  bottom: calc(172px + var(--safe-b));
+}
+
 @media (max-aspect-ratio: 9/10) {
   .sheet {
     top: auto;
@@ -1203,6 +1467,30 @@ body[data-state='result'] #scene {
   /* the candle buttons wrap onto two rows here */
   body[data-state='candles'] #hint {
     bottom: calc(140px + var(--safe-b));
+  }
+  body[data-mode='little'] .toolswitch button {
+    min-width: 60px;
+    height: 68px;
+    padding: 0 2px;
+  }
+  body[data-mode='little'] .toolswitch button svg {
+    width: 30px;
+    height: 30px;
+  }
+  body[data-mode='little'] .serve {
+    bottom: calc(104px + var(--safe-b));
+    width: 108px;
+    height: 108px;
+  }
+  body[data-mode='little'] #hint {
+    bottom: calc(100px + var(--safe-b));
+  }
+  /* clear of the big plate button */
+  body[data-mode='little']:has(#serve:not([hidden])) #hint {
+    bottom: calc(222px + var(--safe-b));
+  }
+  .mode .opts {
+    padding-right: 8px;
   }
 }
 

@@ -412,6 +412,26 @@ export class Audio {
     notes.forEach((k, i) => this.tone({ t: t + i * 0.07, freq: midi(76 + up + k), peak: 0.07, decay: 0.5 }));
   }
 
+  // a slice hopping out of the cake: a rising bloop and two bright notes
+  pop() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const o = this.tone({ t, freq: 480, peak: 0.12, attack: 0.003, decay: 0.2 });
+    o.frequency.exponentialRampToValueAtTime(1150, t + 0.1);
+    this.tone({ t: t + 0.11, freq: midi(84), peak: 0.05, decay: 0.3 });
+    this.tone({ t: t + 0.18, freq: midi(91), peak: 0.045, decay: 0.4 });
+  }
+
+  // a slice landing on its plate: a little ta-da and a patter of claps
+  cheer() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    [0, 4, 7, 12].forEach((k, i) => this.tone({ t: t + i * 0.06, freq: midi(79 + k), type: 'triangle', peak: 0.07, decay: 0.5 }));
+    for (let i = 0; i < 12; i++) {
+      this.burst({ t: t + 0.08 + Math.random() * 0.7, type: 'bandpass', freq: 1300 + Math.random() * 1400, q: 1.1, peak: 0.045, attack: 0.001, decay: 0.035 });
+    }
+  }
+
   miss() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;

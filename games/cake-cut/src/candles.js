@@ -353,8 +353,9 @@ export class Candles {
   }
 
   // Advance flames. `blow` is 0..1 of breath strength; `lean` a screen-space
-  // direction the flames bend towards. Returns candles that went out.
-  update(dt, time, blow, lean) {
+  // direction the flames bend towards; `rate` how quickly breath puts a
+  // flame out. Returns candles that went out.
+  update(dt, time, blow, lean, rate = 1.1) {
     const out = [];
     for (const c of this.list) {
       const u = c.flame.material.uniforms;
@@ -362,7 +363,7 @@ export class Candles {
       const target = c.lit ? 1 : 0;
       c.amount += (target - c.amount) * Math.min(1, dt * (c.lit ? 4 : 14));
       if (c.lit && blow > 0.05) {
-        c.blown += dt * blow * blow * 1.1;
+        c.blown += dt * blow * blow * rate;
         if (c.blown > c.resist) {
           c.lit = false;
           c.out = true;

@@ -29,6 +29,7 @@ const FILES = [
   'src/candles.js',
   'src/fx.js',
   'src/ui.js',
+  'src/slices.js',
 ];
 
 async function fetchWithProgress(files, onBytes) {

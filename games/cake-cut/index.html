@@ -116,6 +116,11 @@
       <button type="button" id="skip-candles" class="chip ghost">Skip</button>
     </div>
 
+    <button type="button" id="serve" class="serve" hidden aria-label="Serve the slice onto the plate" title="Serve the slice">
+      <svg viewBox="0 0 48 48" aria-hidden="true"><ellipse cx="24" cy="31" rx="20" ry="8.5" class="plate" /><ellipse cx="24" cy="30" rx="13" ry="5" class="well" /><path d="M14 27.5 32 20.5l1.5 7.5-17 2.8z" class="slice" /><path d="M14 27.5 32 20.5l1.8 1.3L15.6 29z" class="icing" /></svg>
+      <span>Serve</span>
+    </button>
+
     <button type="button" id="wipe" class="chip wipe" hidden title="Wipe the blade clean (W)">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15c3-1 5 1 8 0s5-3 8-2" /><path d="M4 11c3-1 5 1 8 0s5-3 8-2" /></svg><span>Wipe blade</span>
     </button>
@@ -130,10 +135,20 @@
       <h1 id="menu-title">Cake Cut</h1>
       <p class="lede">Decorate a birthday cake, blow out the candles, then cut it open and serve the slices.</p>
       <div class="modes">
-        <button type="button" id="play-free" class="mode">
-          <strong>Free play</strong>
-          <small>Decorate, celebrate and cut at your own pace. No score.</small>
-        </button>
+        <div class="mode little">
+          <button type="button" id="play-little" class="mode-main">
+            <strong>Little ones</strong>
+            <small>For toddlers. Blow out the candles, tap the cake for a slice and watch it served.</small>
+          </button>
+          <div class="opts"><button type="button" class="switch" role="switch" data-opt="autoServe" aria-checked="false"><span class="knob" aria-hidden="true"></span><span>Auto-serve</span></button></div>
+        </div>
+        <div class="mode free">
+          <button type="button" id="play-free" class="mode-main">
+            <strong>Free play</strong>
+            <small>Decorate, celebrate and cut at your own pace. No score.</small>
+          </button>
+          <div class="opts"><button type="button" class="switch" role="switch" data-opt="easy" aria-checked="false"><span class="knob" aria-hidden="true"></span><span>Easy slices</span></button></div>
+        </div>
         <div class="mode fair">
           <button type="button" id="play-fair" class="mode-main">
             <strong>Fair slices</strong>
@@ -215,6 +230,10 @@
 
     <section id="paused" class="panel small" hidden aria-labelledby="paused-title">
       <h2 id="paused-title">Paused</h2>
+      <div class="toggles" id="pause-toggles">
+        <button type="button" class="switch" role="switch" data-opt="easy" aria-checked="false"><span class="knob" aria-hidden="true"></span><span>Easy slices</span></button>
+        <button type="button" class="switch" role="switch" data-opt="autoServe" aria-checked="false"><span class="knob" aria-hidden="true"></span><span>Auto-serve</span></button>
+      </div>
       <div class="row">
         <button type="button" id="resume" class="primary">Resume</button>
         <button type="button" id="pause-menu">Menu</button>

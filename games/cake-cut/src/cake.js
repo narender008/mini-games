@@ -24,6 +24,8 @@ const SLIT_HALF = 0.0012; // half the width of the gap a blade leaves
 const GAP = 0.0016; // how far a separated piece drifts from its neighbours
 const REVEAL = 0.017; // how far a newly cut piece slides out to show its inside
 const REVEAL_HOLD = 1.5; // seconds it stays out before settling back
+const POP_OUT = 0.034; // how far an easy slice pops out of the cake
+const POP_HOP = 0.03; // how high it hops on the way
 const UP = new THREE.Vector3(0, 1, 0);
 
 export class Cake {
@@ -53,6 +55,7 @@ export class Cake {
     this.pieces = [];
     this.slits = [];
     this.live = null; // the cut in progress
+    this.quiet = false; // easy slices: pieces pop out instead of the reveal slide
     this.decorations = [];
     this.batches = [];
     this.board = createBoard(this.outline, recipe.shape);
@@ -134,6 +137,29 @@ export class Cake {
     return false;
   }
 
+  // A cut from the rim at angle `a` (cake space) in to the centre, as
+  // [rim, centre].
+  radial(a) {
+    const far = this.outline.extent * 2;
+    const seg = clipSegment([0, 0], [Math.cos(a) * far, Math.sin(a) * far], this.outline);
+    return seg ? [seg[1], [0, 0]] : null;
+  }
+
+  // The piece that holds the wedge whose middle is at angle `a`.
+  pieceAtAngle(a) {
+    const r = this.radius * 0.55;
+    const probe = [Math.cos(a) * r, Math.sin(a) * r];
+    return this.pieces.find((p) => p.state === 'on' && pointInPolygon(probe, p.contour));
+  }
+
+  // Pop a piece out of the cake: a hop outward along `a`, a wiggle, and it
+  // stays out, ready to serve.
+  popOut(piece, a) {
+    piece.dir = [Math.cos(a), Math.sin(a)];
+    piece.reveal = 0;
+    piece.pop = { t: 0, done: false };
+  }
+
   // Commit a cut. `info` carries how the tool leaves the faces: rough (0 for
   // a wire, up to 1 for a serrated blade) and smear (frosting on the blade).
   addCut(p, q, info = {}) {
@@ -173,8 +199,10 @@ export class Cake {
         offset: prev ? prev.offset.clone() : new THREE.Vector3(),
         target: new THREE.Vector3(),
         prevFrac: prev ? prev.frac : null,
-        dir: [0, 0],
+        dir: prev && prev.pop ? prev.dir : [0, 0],
         reveal: 0,
+        // a slice that has popped out stays out
+        pop: prev ? prev.pop : null,
         decorations: [],
       };
       next.push(piece);
@@ -195,13 +223,17 @@ export class Cake {
     const onCake = this.pieces.filter((p) => p.state === 'on');
     const biggest = onCake.reduce((m, p) => (!m || p.frac > m.frac ? p : m), null);
     for (const p of onCake) {
+      if (p.pop) {
+        p.group.position.copy(p.offset);
+        continue;
+      }
       const c = p.centroid;
       const d = Math.hypot(c[0], c[1]);
       const still = onCake.length === 1 || (p === biggest && p.frac > 0.5) || d < 1e-4;
       p.dir = still ? [0, 0] : [c[0] / d, c[1] / d];
       // a piece the blade has just cut free slides out to show its layers
       const fresh = p.prevFrac !== null && Math.abs(p.prevFrac - p.frac) > 1e-3;
-      p.reveal = !still && fresh && p.frac < 0.5 ? REVEAL_HOLD + 0.8 : 0;
+      p.reveal = !still && fresh && p.frac < 0.5 && !this.quiet ? REVEAL_HOLD + 0.8 : 0;
       p.target.set(p.dir[0] * GAP, 0, p.dir[1] * GAP);
       p.group.position.copy(p.offset);
     }
@@ -488,6 +520,10 @@ export class Cake {
     const slow = 1 - Math.exp(-dt * 7);
     for (const p of this.pieces) {
       if (p.state !== 'on') continue;
+      if (p.pop) {
+        this.updatePop(p, dt);
+        continue;
+      }
       if (p.reveal > 0) {
         // out, hold, then ease back to its place
         p.reveal = Math.max(0, p.reveal - dt);
@@ -497,6 +533,44 @@ export class Cake {
       }
       p.offset.lerp(p.target, p.reveal > 0 ? slow : k);
       p.group.position.copy(p.offset);
+    }
+  }
+
+  updatePop(p, dt) {
+    const P = p.pop;
+    const g = p.group;
+    const out = GAP + POP_OUT;
+    p.offset.set(p.dir[0] * out, 0, p.dir[1] * out);
+    p.target.copy(p.offset);
+    if (P.done) {
+      g.position.copy(p.offset);
+      return;
+    }
+    P.t += dt;
+    const t = P.t;
+    const k = Math.min(1, t / 0.34);
+    const slide = out * k * k * (3 - 2 * k);
+    // a hop out and a small second bounce
+    let hop = 0;
+    if (t < 0.34) hop = POP_HOP * Math.sin(Math.PI * k);
+    else if (t < 0.52) hop = POP_HOP * 0.22 * Math.sin((Math.PI * (t - 0.34)) / 0.18);
+    // a squash where it lands
+    const sq = t > 0.3 && t < 0.56 ? 1 - 0.08 * Math.sin((Math.PI * (t - 0.3)) / 0.26) : 1;
+    // then a wiggle about its own middle
+    const w = t > 0.5 ? 0.13 * Math.sin((t - 0.5) * 24) * Math.exp(-(t - 0.5) * 4.2) : 0;
+    // rotating the group about the cake's centre carries the piece's middle
+    // c round to R(c); shift it back so it turns on the spot
+    const c = p.centroid;
+    const rx = c[0] * Math.cos(w) + c[1] * Math.sin(w);
+    const rz = -c[0] * Math.sin(w) + c[1] * Math.cos(w);
+    g.rotation.y = w;
+    g.scale.y = sq;
+    g.position.set(p.dir[0] * slide + c[0] - rx, hop, p.dir[1] * slide + c[1] - rz);
+    if (t > 1.45) {
+      P.done = true;
+      g.rotation.y = 0;
+      g.scale.y = 1;
+      g.position.copy(p.offset);
     }
   }
 

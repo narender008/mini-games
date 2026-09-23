@@ -1,5 +1,7 @@
 // DOM overlay: menu, decorating sheet, HUD, candle controls, orders,
-// results and hints.
+// results and hints. In the Little ones mode the grown-up controls (back to
+// Games, the menu) only work when pressed and held, so a small child's taps
+// cannot end the game.
 const $ = (id) => document.getElementById(id);
 
 const TOOL_KEY = 'mini-games.cake-cut.tool';
@@ -50,6 +52,10 @@ export class UI {
       banner: $('banner'),
       wipe: $('wipe'),
       newCake: $('new-cake'),
+      serve: $('serve'),
+      pauseToggles: $('pause-toggles'),
+      home: document.querySelector('#hud .home'),
+      pauseBtn: $('pause-btn'),
     };
     this.mode = 'free';
     const saved = store(TOOL_KEY);
@@ -63,6 +69,7 @@ export class UI {
           fn(e);
         });
     };
+    on('play-little', () => this.h.start('little'));
     on('play-free', () => this.h.start('free'));
     on('play-fair', () => this.h.start('fair'));
     on('play-rush', () => this.h.start('rush'));
@@ -70,7 +77,25 @@ export class UI {
     on('guests-up', () => this.setGuests(this.guests + 1));
     on('resume', () => this.h.resume());
     on('pause-menu', () => this.h.menu());
-    on('pause-btn', () => this.h.pause());
+    on('pause-btn', (e) => {
+      // a tap is not enough in Little ones; the keyboard still works
+      if (this.mode === 'little' && e.detail !== 0) return;
+      this.h.pause();
+    });
+    on('serve', () => this.h.serve());
+    document.querySelectorAll('[data-opt]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.h.option(b.dataset.opt);
+      }),
+    );
+    this.el.home.addEventListener('click', (e) => {
+      if (this.mode === 'little' && e.detail !== 0) e.preventDefault();
+    });
+    this.holdGuard(this.el.home, () => {
+      location.href = this.el.home.href;
+    });
+    this.holdGuard(this.el.pauseBtn, () => this.h.pause());
     on('mute', () => this.h.toggleMute());
     on('spin-left', () => this.h.rotate(-1));
     on('spin-right', () => this.h.rotate(1));
@@ -129,12 +154,42 @@ export class UI {
         this.setTool(b.dataset.tool);
       }),
     );
-    for (const el of [this.el.hud, this.el.menu, this.el.paused, this.el.tray, this.el.decorate, this.el.result, this.el.candlebar, this.el.fairbar, this.el.wipe]) {
+    for (const el of [this.el.hud, this.el.menu, this.el.paused, this.el.tray, this.el.decorate, this.el.result, this.el.candlebar, this.el.fairbar, this.el.wipe, this.el.serve]) {
       el.addEventListener('pointerdown', (e) => e.stopPropagation());
     }
     this.buildDecorate(cakes, frostings, toppings);
     this.setTool(this.tool, true);
     this.setGuests(this.guests, true);
+  }
+
+  // Press and hold `el` for a moment to run `fn` (Little ones only).
+  holdGuard(el, fn) {
+    let timer = 0;
+    const cancel = () => {
+      clearTimeout(timer);
+      timer = 0;
+      el.classList.remove('holding');
+    };
+    el.addEventListener('pointerdown', () => {
+      if (this.mode !== 'little') return;
+      cancel();
+      el.classList.add('holding');
+      timer = setTimeout(() => {
+        cancel();
+        fn();
+      }, 800);
+    });
+    el.addEventListener('pointerup', () => {
+      if (!timer) return;
+      cancel();
+      this.hint('Grown-ups: press and hold');
+    });
+    el.addEventListener('pointerleave', cancel);
+    el.addEventListener('pointercancel', cancel);
+    // a long press on a link would otherwise open the browser's link menu
+    el.addEventListener('contextmenu', (e) => {
+      if (this.mode === 'little') e.preventDefault();
+    });
   }
 
   // ------------------------------------------------------------ menu
@@ -226,6 +281,33 @@ export class UI {
 
   setMode(mode) {
     this.mode = mode;
+    document.body.dataset.mode = mode;
+    $('blow').querySelector('span').textContent = mode === 'little' ? 'Blow!' : 'Hold to blow';
+    if (this.opts) this.setOptions(this.opts);
+  }
+
+  // The Easy slices and Auto-serve switches, wherever they appear.
+  setOptions(opts) {
+    this.opts = opts;
+    document.querySelectorAll('[data-opt]').forEach((b) => b.setAttribute('aria-checked', String(!!opts[b.dataset.opt])));
+    const box = this.el.pauseToggles;
+    box.querySelector('[data-opt="easy"]').hidden = this.mode !== 'free';
+    box.querySelector('[data-opt="autoServe"]').hidden = !(this.mode === 'little' || (this.mode === 'free' && opts.easy));
+    box.hidden = this.mode !== 'free' && this.mode !== 'little';
+  }
+
+  // The big plate button, shown while a slice is waiting to be served.
+  setServe(show) {
+    this.el.serve.hidden = !show || this.state !== 'playing';
+  }
+
+  // Flash a tool in the tray, as when the wire hands over to the server.
+  pulseTool(tool) {
+    const b = document.querySelector(`[data-tool="${tool}"]`);
+    if (!b) return;
+    b.classList.remove('pulse');
+    void b.offsetWidth;
+    b.classList.add('pulse');
   }
 
   show(name) {
@@ -239,12 +321,15 @@ export class UI {
     this.el.fairbar.hidden = !(name === 'playing' && this.mode === 'fair');
     this.el.orders.hidden = !(inGame && this.mode === 'rush');
     this.el.rushHud.hidden = !(inGame && this.mode === 'rush');
-    this.el.newCake.hidden = this.mode === 'rush' || name === 'candles';
-    if (name !== 'playing') this.setWipe(false);
+    this.el.newCake.hidden = this.mode === 'rush' || this.mode === 'little' || name === 'candles';
+    if (name !== 'playing') {
+      this.setWipe(false);
+      this.el.serve.hidden = true;
+    }
     if (name !== 'playing' && name !== 'result') this.setLabels([]);
     document.body.dataset.state = name;
     if (name !== 'playing' && name !== 'candles') this.el.hint.classList.remove('show');
-    const focus = { menu: 'play-free', paused: 'resume', result: 'result-again' }[name];
+    const focus = { menu: 'play-little', paused: 'resume', result: 'result-again' }[name];
     if (focus) requestAnimationFrame(() => $(focus).focus({ preventScroll: true }));
   }
 

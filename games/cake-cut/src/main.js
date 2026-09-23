@@ -14,12 +14,18 @@ import { Mic } from './mic.js';
 import { Audio } from './audio.js';
 import { Post } from './post.js';
 import { UI, store } from './ui.js';
+import { EasySlices } from './slices.js';
 
 const BOARD = 0.004; // cake board thickness
 const MOUNT_Y = STAND_TOP + BOARD;
 const rand = (a, b) => a + Math.random() * (b - a);
 const ease = (t) => t * t * (3 - 2 * t);
 const clamp01 = (t) => Math.max(0, Math.min(1, t));
+const EASY_KEY = 'mini-games.cake-cut.easy';
+const AUTO_KEY = 'mini-games.cake-cut.autoserve';
+// how far a knife's blade reaches to one side of its edge, halved: lying
+// flat under a slice, the blade is shifted by this to sit centred under it
+const SERVE_SIDE = { chef: 0.016, serrated: 0.015, sword: 0.018 };
 
 // How each tool cuts.
 const TOOL_FEEL = {
@@ -56,6 +62,11 @@ class App {
     this.sheet = { x: 0, y: 0 };
     this.showLabels = false;
     this.rush = null;
+    // Easy slices is off unless a player turns it on; Little ones always
+    // slices this way
+    this.opts = { easy: store(EASY_KEY) === '1', autoServe: store(AUTO_KEY) === '1' };
+    this.easy = null; // easy-slice state for the cake on the stand
+    this.roll = null; // a new cake rolling in
   }
 
   async init() {
@@ -142,12 +153,15 @@ class App {
         wipe: () => this.wipe(),
         again: () => this.again(),
         look: () => this.look(),
+        option: (name) => this.setOption(name),
+        serve: () => this.easyAction({ kind: 'serve' }),
       },
       { cakes: CAKES, frostings: FROSTINGS, toppings: TOPPINGS },
     );
     this.ui.micAvailable = Mic.available();
     this.tool = this.ui.tool;
     this.ui.setMuted(this.audio.muted);
+    this.ui.setOptions(this.opts);
     this.showBests();
 
     this.decor = this.defaultDecor(cakeById(QUERY.get('cake') || CAKES[0].id));
@@ -225,11 +239,14 @@ class App {
     };
   }
 
-  buildCake({ candles = true } = {}) {
+  buildCake({ candles = true, keepPlates = false } = {}) {
     const d = this.decor;
-    this.clearServed();
+    if (!keepPlates) this.clearServed();
     this.setCake(d.cake, { frosting: d.frosting });
     this.applyDecor(candles);
+    this.easy = this.easyWanted() ? { slices: new EasySlices(), job: null, queue: [], ready: [] } : null;
+    this.cake.quiet = !!this.easy;
+    this.ui.setServe(false);
     if (this.views) {
       this.frameViews();
       this.placeBokeh();
@@ -312,7 +329,8 @@ class App {
     else this.applyDecor();
   }
 
-  surprise() {
+  // Everything picked at random, as the Surprise me button does.
+  randomDecor() {
     const pick = (a) => a[Math.floor(Math.random() * a.length)];
     const recipe = pick(CAKES);
     const d = this.defaultDecor(recipe);
@@ -322,6 +340,20 @@ class App {
     d.candles.kind = pick(['regular', 'number', 'regular']);
     d.candles.count = 1 + Math.floor(Math.random() * 8);
     d.candles.number = 1 + Math.floor(Math.random() * 60);
+    return d;
+  }
+
+  // A surprise cake for a small child: a few candles, or one small number.
+  littleDecor() {
+    const d = this.randomDecor();
+    d.candles.count = 2 + Math.floor(Math.random() * 4);
+    d.candles.number = 1 + Math.floor(Math.random() * 9);
+    return d;
+  }
+
+  surprise() {
+    const d = this.randomDecor();
+    const recipe = cakeById(d.cake);
     this.decor = d;
     this.ui.setDecor(d, recipe);
     this.audio.unlock();
@@ -344,6 +376,7 @@ class App {
   beginCutting(hint) {
     this.state = 'playing';
     this.ui.show('playing');
+    if (this.easy) this.ui.setServe(this.easy.ready.length > 0);
     if (this.mode === 'fair') this.ui.setGoal(this.ui.guests);
     this.ui.hint(hint || (this.mode === 'fair' ? `Cut the cake into ${this.ui.guests} equal slices` : this.hintText()));
   }
@@ -430,7 +463,16 @@ class App {
   }
 
   setBlow(on) {
+    this.blowPressed = on;
     if (on && (this.state !== 'candles' || !this.candles || !this.candles.anyLit)) return;
+    if (!on && this.blowing && this.mode === 'little' && this.time < this.blowMin) {
+      // a small child's quick tap still gives a good long puff
+      this.after(this.blowMin - this.time, () => {
+        if (!this.blowPressed) this.setBlow(false);
+      });
+      return;
+    }
+    if (on) this.blowMin = this.time + 0.7;
     if (on === this.blowing) return;
     this.blowing = on;
     this.audio.unlock();
@@ -486,7 +528,7 @@ class App {
       this.ui.blowMeter(breath);
     }
     if (cs) {
-      const out = cs.update(dt, this.time, breath, new THREE.Vector2(0.9, 0));
+      const out = cs.update(dt, this.time, breath, new THREE.Vector2(0.9, 0), this.mode === 'little' ? 2.6 : 1.1);
       for (const c of out) {
         this.smoke.puff(cs.wickWorld(c).add(new THREE.Vector3(0, 0.002, 0)));
         this.audio.puff();
@@ -529,7 +571,7 @@ class App {
       }
       for (let i = 0; i < 6; i++) this.sparkles.emit(c.clone().add(new THREE.Vector3(rand(-0.1, 0.1), this.cake.height + 0.05, rand(-0.1, 0.1))), 4, 0.4);
       this.after(Math.min(2.4, dur * 0.25), () => {
-        if (this.state === 'candles') this.beginCutting('Now cut the cake!');
+        if (this.state === 'candles') this.beginCutting(this.mode === 'little' ? 'Tap the cake for a slice!' : 'Now cut the cake!');
       });
     });
   }
@@ -977,7 +1019,10 @@ class App {
     this.showLabels = false;
     this.timers = [];
     this.confetti.clear();
+    this.endRoll();
+    this.dropLift();
     if (mode === 'rush') this.startRush();
+    else if (mode === 'little') this.startLittle();
     else {
       this.rush = null;
       // back to the player's own cake after a party rush
@@ -989,8 +1034,58 @@ class App {
     }
   }
 
+  // ---------------------------------------------------------------- little ones
+
+  startLittle() {
+    this.rush = null;
+    if (!this.savedDecor) this.savedDecor = this.decor;
+    this.decor = this.littleDecor();
+    this.buildCake();
+    this.littleCandles();
+  }
+
+  // The cake arrives with its candles already lit and one big Blow button.
+  littleCandles() {
+    const cs = this.candles;
+    if (!cs) return this.beginCutting('Tap the cake for a slice!');
+    this.state = 'candles';
+    this.ui.show('candles');
+    this.ui.candlePhase('lit');
+    this.ui.hint('Blow out the candles!');
+    cs.list.forEach((c, i) =>
+      this.after(0.2 + i * 0.12, () => {
+        if (this.candles !== cs) return;
+        cs.light(c);
+        this.audio.ignite();
+      }),
+    );
+  }
+
+  setOption(name) {
+    this.audio.unlock();
+    this.audio.click();
+    const o = this.opts;
+    o[name] = !o[name];
+    store(name === 'easy' ? EASY_KEY : AUTO_KEY, o[name] ? '1' : '0');
+    this.ui.setOptions(o);
+    if (name !== 'easy' || this.mode !== 'free' || !this.cake) return;
+    if (o.easy && !this.easy) {
+      // easy slices need a cake that has not been cut some other way
+      if (this.cake.cuts.length || this.cake.removed.length) this.ui.hint('Easy slices starts with the next cake');
+      else {
+        this.easy = { slices: new EasySlices(), job: null, queue: [], ready: [] };
+        this.cake.quiet = true;
+      }
+    } else if (!o.easy && this.easy) {
+      this.easy = null;
+      this.cake.quiet = false;
+      this.ui.setServe(false);
+    }
+  }
+
   hintText() {
     const touch = matchMedia('(pointer: coarse)').matches;
+    if (this.easy) return touch ? 'Tap the cake to cut a slice · tap the slice to serve it' : 'Click the cake to cut a slice · click the slice to serve it';
     if (this.tool === 'wire') return touch ? 'Drag to line up the wire, let go to cut' : 'Drag to line up the wire, release to cut';
     if (this.tool === 'sword') return 'Swipe across the cake to slice it in one go';
     if (this.tool === 'server') return touch ? 'Tap a cut slice to serve it' : 'Click a cut slice to serve it';
@@ -1014,6 +1109,7 @@ class App {
     this.audio.unlock();
     this.state = this.pausedFrom || 'playing';
     this.ui.show(this.state);
+    if (this.state === 'playing' && this.easy) this.ui.setServe(this.easy.ready.length > 0);
     if (this.state === 'playing' && this.mode === 'fair') this.ui.setGoal(this.ui.guests);
     this.audio.setPaused(false);
     this.lastFrame = performance.now();
@@ -1027,6 +1123,7 @@ class App {
     this.match.visible = false;
     this.timers = [];
     this.rush = null;
+    this.endRoll();
     this.showLabels = false;
     this.ui.clearOrders();
     this.state = 'menu';
@@ -1065,7 +1162,14 @@ class App {
     };
     c.addEventListener('pointerdown', (e) => {
       this.audio.unlock();
-      if (this.state !== 'playing' || !e.isPrimary) return;
+      if (!e.isPrimary) return;
+      if (this.state === 'candles' && this.mode === 'little') {
+        // a small child can tap anywhere to blow
+        e.preventDefault();
+        this.setBlow(true);
+        return;
+      }
+      if (this.state !== 'playing') return;
       e.preventDefault();
       try {
         c.setPointerCapture(e.pointerId);
@@ -1076,6 +1180,10 @@ class App {
       this.pointer.ndc.copy(ndc(e));
       this.pointer.inside = true;
       this.pointer.px = [e.clientX, e.clientY];
+      if (this.easy) {
+        this.easyDown = { ndc: this.pointer.ndc.clone(), px: [e.clientX, e.clientY], moved: 0 };
+        return;
+      }
       this.press(this.pointer.ndc);
     });
     c.addEventListener('pointermove', (e) => {
@@ -1087,15 +1195,24 @@ class App {
         const d = Math.hypot(e.clientX - this.pointer.px[0], e.clientY - this.pointer.px[1]);
         if (d > 9) this.cut.pending = false;
       }
+      if (this.easyDown) this.easyDown.moved = Math.max(this.easyDown.moved, Math.hypot(e.clientX - this.easyDown.px[0], e.clientY - this.easyDown.px[1]));
     });
     const release = (e) => {
       if (!e.isPrimary) return;
-      if (this.state === 'playing') this.releaseCut();
+      if (this.state === 'candles' && this.mode === 'little') this.setBlow(false);
+      if (this.easyDown) {
+        const d = this.easyDown;
+        this.easyDown = null;
+        if (this.state === 'playing' && this.easy) this.easyGesture(d.ndc, d.moved > 14 ? this.pointer.ndc.clone() : null);
+      } else if (this.state === 'playing') this.releaseCut();
       if (e.pointerType !== 'mouse') this.pointer.inside = false;
     };
     c.addEventListener('pointerup', release);
     c.addEventListener('pointercancel', (e) => {
-      if (e.isPrimary) this.cancelCut();
+      if (!e.isPrimary) return;
+      this.easyDown = null;
+      if (this.state === 'candles' && this.mode === 'little') this.setBlow(false);
+      this.cancelCut();
     });
     c.addEventListener('pointerleave', (e) => {
       if (e.pointerType === 'mouse' && !this.cut) this.pointer.inside = false;
@@ -1191,6 +1308,8 @@ class App {
 
   cancelCut() {
     if (!this.cut) return;
+    // an easy slice's cut that was interrupted is made again
+    if (this.cut.auto && this.cut.phase === 'finish' && this.easy && this.easy.job) this.easy.job.i = Math.max(0, this.easy.job.i - 1);
     this.cake.setLive(null);
     this.audio.cutStop(false);
     this.cut = null;
@@ -1363,9 +1482,10 @@ class App {
         }
       } else {
         // push the blade the rest of the way down, then commit
-        c.tipY = Math.max(0.0012, c.tipY - dt * 0.8);
+        c.tipY = Math.max(0.0012, c.tipY - dt * (c.auto ? 0.36 : 0.8));
         const [p, q] = c.seg;
         cake.setLive(p, q, Math.min(c.tipY, c.planeY - 0.0005));
+        if (c.auto) this.autoCutFx(c, dt, feel);
         if (c.tipY <= 0.0012 + 1e-6) {
           this.commitCut(c);
           c.phase = 'out';
@@ -1382,7 +1502,25 @@ class App {
   knifePitch(c, len, reach) {
     const depth = Math.max(0, c.planeY - c.tipY);
     const run = Math.max(0.004, Math.min(len, reach));
-    return THREE.MathUtils.clamp(Math.atan2(depth + 0.02, run), THREE.MathUtils.degToRad(14), THREE.MathUtils.degToRad(70));
+    const pitch = THREE.MathUtils.clamp(Math.atan2(depth + 0.02, run), THREE.MathUtils.degToRad(14), THREE.MathUtils.degToRad(70));
+    // A stroke away from the viewer brings the handle back towards the
+    // camera, where at the usual pitch it lines up with the line of sight
+    // and fills the picture. Stand the knife up steeply instead, the handle
+    // well above the camera's line.
+    const f = this.handleTowardCamera(c.dir);
+    if (f <= 0) return pitch;
+    const steep = Math.min(THREE.MathUtils.degToRad(80), this.view.elev + THREE.MathUtils.degToRad(40));
+    return pitch + (Math.max(pitch, steep) - pitch) * f;
+  }
+
+  // 0..1: how directly a blade pointing along `dir` (cake space) has its
+  // handle towards the camera.
+  handleTowardCamera(dir) {
+    const q = this.mount.getWorldQuaternion(new THREE.Quaternion());
+    const d = new THREE.Vector3(dir[0], 0, dir[1]).applyQuaternion(q);
+    const toCam = new THREE.Vector3().subVectors(this.camera.position, this.view.target).setY(0).normalize();
+    const k = -d.dot(toCam);
+    return THREE.MathUtils.smoothstep(k, 0.35, 0.85);
   }
 
   spawnCutCrumbs(c, dt, moving, feel) {
@@ -1412,9 +1550,279 @@ class App {
     }
   }
 
+  // ---------------------------------------------------------------- easy slices
+
+  easyWanted() {
+    return this.mode === 'little' || (this.mode === 'free' && this.opts.easy);
+  }
+
+  // A tap (b null) or a swipe from a to b, in screen coordinates. A tap on
+  // a slice that is waiting is a serve; anything else on or near the cake
+  // cuts a slice where it went. In Little ones nothing a child does is
+  // wasted: a tap on the plate serves and a tap beside the cake still cuts.
+  easyGesture(a, b) {
+    const cake = this.cake;
+    const R = cake.radius;
+    const top = cake.height;
+    const pa = this.pointOnCake(a, top);
+    if (!pa) return;
+    if (!b) {
+      const item = this.readyAt(a);
+      if (item) return this.easyAction({ kind: 'serve', item });
+      if (this.easy.ready.length && this.onPlate(a)) return this.easyAction({ kind: 'serve' });
+    }
+    let p = pa;
+    if (b) {
+      const pb = this.pointOnCake(b, top);
+      const seg = pb && clipSegment(pa, pb, cake.outline);
+      if (seg) {
+        const mid = [(seg[0][0] + seg[1][0]) / 2, (seg[0][1] + seg[1][1]) / 2];
+        // a swipe right through the middle goes by where it started
+        if (Math.hypot(mid[0], mid[1]) > R * 0.25) p = mid;
+        else p = Math.hypot(pa[0], pa[1]) > R * 0.2 ? pa : pb;
+      } else if (pb) p = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2];
+    }
+    const r = Math.hypot(p[0], p[1]);
+    if (r > R * (this.mode === 'little' ? 3 : 1.7)) return;
+    // right in the middle: the slice nearest the viewer
+    const angle = r < R * 0.15 ? this.frontAngle() : Math.atan2(p[1], p[0]);
+    this.easyAction({ kind: 'cut', angle });
+  }
+
+  // The direction of the viewer from the middle of the cake, in cake space.
+  frontAngle() {
+    const local = this.mount.worldToLocal(this.camera.position.clone());
+    return Math.atan2(local.z, local.x);
+  }
+
+  // A popped slice under the pointer, if any.
+  readyAt(ndc) {
+    const cake = this.cake;
+    for (const item of this.easy.ready) {
+      const p = cake.pieceAtAngle(item.mid);
+      if (!p) continue;
+      const top = cake.topAt(p.inner[0], p.inner[1]);
+      // its top, or its side facing the viewer
+      for (const y of [top, top * 0.5]) {
+        const q = this.pointOnCake(ndc, y);
+        if (!q) continue;
+        const local = [q[0] - p.offset.x, q[1] - p.offset.z];
+        const c = p.centroid;
+        if (pointInPolygon(local, p.contour) || Math.hypot(local[0] - c[0], local[1] - c[1]) < cake.radius * 0.35) return item;
+      }
+    }
+    return null;
+  }
+
+  onPlate(ndc) {
+    const ray = this.ray || (this.ray = new THREE.Raycaster());
+    ray.setFromCamera(ndc, this.camera);
+    const hit = ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -PLATE_TOP), new THREE.Vector3());
+    return !!hit && Math.hypot(hit.x - this.plate.position.x, hit.z - this.plate.position.z) < 0.09;
+  }
+
+  easyBusy() {
+    return !!(this.cut || this.lift || this.easy.job || this.roll);
+  }
+
+  // Every tap counts: one made while a slice is still being cut or served
+  // is done straight after.
+  easyAction(act) {
+    const E = this.easy;
+    if (!E || this.state !== 'playing') return;
+    if (act.kind === 'serve' && !E.ready.length && !E.job) return;
+    this.audio.unlock();
+    if (this.easyBusy()) {
+      if (E.queue.length < 3) E.queue.push(act);
+      return;
+    }
+    this.runEasy(act);
+  }
+
+  runEasy(act) {
+    const E = this.easy;
+    if (act.kind === 'serve') {
+      const item = act.item && E.ready.includes(act.item) ? act.item : E.ready[0];
+      if (item) this.serveEasy(item);
+      return;
+    }
+    const wedge = E.slices.pick(act.angle);
+    if (!wedge) {
+      if (E.ready.length) this.serveEasy(E.ready[0]);
+      return;
+    }
+    E.slices.take(wedge);
+    E.job = { wedge, cuts: wedge.cuts.map((a) => this.cake.radial(a)).filter(Boolean), i: 0 };
+    this.ui.hint('');
+  }
+
+  updateEasy(dt) {
+    const E = this.easy;
+    if (!E || this.state !== 'playing') return;
+    const job = E.job;
+    if (job && !(this.cut && this.cut.phase !== 'out')) {
+      if (job.i < job.cuts.length) {
+        if (!this.cut) this.startAutoCut(job.cuts[job.i++]);
+      } else {
+        // the last cut is in: out it pops while the blade lifts away
+        E.job = null;
+        this.popWedge(job.wedge);
+      }
+    }
+    for (const item of E.ready) item.wait += dt;
+    if (this.opts.autoServe && E.ready.length && E.ready[0].wait > 1.1 && !this.easyBusy()) this.serveEasy(E.ready[0]);
+    if (E.queue.length && !this.easyBusy()) this.runEasy(E.queue.shift());
+  }
+
+  // The tool in hand cuts one edge of the slice, from the rim in to the
+  // middle, pressing down through the cake.
+  startAutoCut(seg) {
+    const tool = this.tool;
+    const [rim, centre] = seg;
+    const len = Math.hypot(centre[0] - rim[0], centre[1] - rim[1]);
+    const top = this.cake.height;
+    this.cut = {
+      tool,
+      a: rim,
+      p: centre,
+      seg: [rim, centre],
+      planeY: top,
+      tipY: top + TOOL_FEEL[tool].hover,
+      sMin: 0,
+      pending: false,
+      entered: true,
+      dir: [(centre[0] - rim[0]) / len, (centre[1] - rim[1]) / len],
+      phase: 'finish',
+      ft: 0,
+      saw: 0,
+      speed: 0.3,
+      auto: true,
+    };
+    this.audio.cutStart(tool);
+    if (tool === 'sword') this.audio.whoosh(1);
+  }
+
+  // Sound, crumbs and frosting on the blade while a knife presses down.
+  autoCutFx(c, dt, feel) {
+    c.saw += dt * 14;
+    this.audio.cutLevel(0.7, dt, Math.sin(c.saw * 2));
+    this.smear = Math.min(this.mode === 'little' ? 0.5 : 1, this.smear + dt * feel.smear * 0.6);
+    if (!feel.crumbs) return;
+    c.crumbClock = (c.crumbClock || 0) - dt * feel.crumbs * 26;
+    const sponge = new THREE.Color(this.recipe.tiers[0].layers[0][2]);
+    const [p, q] = c.seg;
+    const mountQ = this.mount.getWorldQuaternion(new THREE.Quaternion());
+    while (c.crumbClock < 0) {
+      c.crumbClock += 1;
+      const k = Math.random();
+      const x = p[0] + (q[0] - p[0]) * k;
+      const z = p[1] + (q[1] - p[1]) * k;
+      const world = this.mount.localToWorld(new THREE.Vector3(x + rand(-0.002, 0.002), this.cake.topAt(x, z) + 0.001, z + rand(-0.002, 0.002)));
+      this.crumbs.spawn(world, new THREE.Vector3(rand(-0.12, 0.12), rand(0.08, 0.3), rand(-0.12, 0.12)).applyQuaternion(mountQ), sponge, 0.0013);
+    }
+  }
+
+  // The finished wedge hops out of the cake, wiggles and sparkles.
+  popWedge(wedge) {
+    const cake = this.cake;
+    const piece = cake.pieceAtAngle(wedge.mid);
+    // a wedge is at most one and a half slices; anything bigger means the
+    // cuts did not free it
+    if (!piece || piece.frac > 0.3) return;
+    cake.popOut(piece, wedge.mid);
+    this.audio.pop();
+    this.audio.sparkle(5);
+    const R = cake.radius;
+    const x = Math.cos(wedge.mid) * R * 0.8;
+    const z = Math.sin(wedge.mid) * R * 0.8;
+    const at = this.mount.localToWorld(new THREE.Vector3(x, cake.topAt(x, z) + 0.012, z));
+    for (let i = 0; i < 6; i++) this.sparkles.emit(at.clone().add(new THREE.Vector3(rand(-0.03, 0.03), rand(0, 0.03), rand(-0.03, 0.03))), 7, 0.4);
+    this.easy.ready.push({ mid: wedge.mid, wait: 0 });
+    this.ui.setServe(true);
+    if (!this.opts.autoServe && !this.easy.told) {
+      this.easy.told = true;
+      this.ui.hint(matchMedia('(pointer: coarse)').matches ? 'Tap the slice to serve it' : 'Click the slice to serve it');
+    }
+  }
+
+  // Serve a waiting slice with the tool in hand. A wire cannot lift
+  // anything, so it hands over to the cake server.
+  serveEasy(item) {
+    const E = this.easy;
+    E.ready.splice(E.ready.indexOf(item), 1);
+    this.ui.setServe(E.ready.length > 0);
+    const piece = this.cake.pieceAtAngle(item.mid);
+    if (!piece) return;
+    if (piece.pop && !piece.pop.done) {
+      piece.pop.t = 99;
+      this.cake.updatePop(piece, 0);
+    }
+    if (this.tool === 'wire') this.ui.pulseTool('server');
+    this.startLift(piece, { tool: this.tool === 'wire' ? 'server' : this.tool, easy: true });
+  }
+
+  afterEasyServe() {
+    // the full plate goes off to a guest and a clean one comes
+    this.after(1.2, () => {
+      if (this.plate.userData.slice && !this.lift) this.sendAway(this.plate);
+    });
+    if (!this.cake.pieces.some((p) => p.state === 'on')) this.after(1.9, () => this.rollNewCake());
+  }
+
+  // The whole cake is served: the stand rolls away and comes back with a new
+  // cake on it. In Little ones it is another surprise, candles lit.
+  rollNewCake() {
+    if (this.roll || !this.easy || this.state !== 'playing') return;
+    this.cancelCut();
+    this.roll = { t: 0, phase: 'out' };
+    this.audio.whoosh(0.7);
+    this.ui.setServe(false);
+  }
+
+  updateRoll(dt) {
+    const R = this.roll;
+    if (!R) return;
+    R.t += dt;
+    const tt = this.turntable;
+    if (R.phase === 'out') {
+      const k = ease(clamp01(R.t / 0.5));
+      tt.position.x = -1.1 * k;
+      // crumbs on the board go with it
+      this.crumbs.mesh.position.x = tt.position.x;
+      if (k >= 1) {
+        if (this.mode === 'little') this.decor = this.littleDecor();
+        this.buildCake({ candles: this.mode === 'little', keepPlates: true });
+        this.crumbs.mesh.position.x = 0;
+        R.phase = 'in';
+        R.t = 0;
+        this.audio.whoosh(0.8);
+      }
+    } else {
+      // ease out with a small overshoot, like a trolley coming to a stop
+      const k = clamp01(R.t / 0.9);
+      const c1 = 1.4;
+      const e = 1 + (c1 + 1) * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2);
+      tt.position.x = -1.1 * (1 - e);
+      if (k >= 1) {
+        this.endRoll();
+        this.audio.clink(0.4);
+        if (this.mode === 'little' && this.candles) this.littleCandles();
+        else this.ui.hint(this.hintText());
+      }
+    }
+  }
+
+  endRoll() {
+    this.roll = null;
+    this.turntable.position.x = 0;
+    this.crumbs.mesh.position.x = 0;
+  }
+
   // ---------------------------------------------------------------- serving
 
-  startLift(piece) {
+  // Lift a piece onto the plate. The cake server does it, unless an easy
+  // slice is served with a knife or the sword in hand (`tool`).
+  startLift(piece, { tool = 'server', easy = false } = {}) {
     if (this.lift) return;
     const cake = this.cake;
     cake.detach(piece);
@@ -1451,6 +1859,8 @@ class App {
     if (this.plate.userData.slice) this.sendAway(this.plate);
     this.lift = {
       piece,
+      tool,
+      easy,
       carrier,
       from,
       fromQ,
@@ -1462,13 +1872,25 @@ class App {
     };
   }
 
+  // Abandon a slice still on its way to the plate, as when a new game starts.
+  dropLift() {
+    const L = this.lift;
+    if (!L) return;
+    L.carrier.removeFromParent();
+    this.tools[L.tool].visible = false;
+    this.lift = null;
+  }
+
   // Move a plate of cake off to the side and bring a fresh plate.
   sendAway(plate) {
     const slice = plate.userData.slice;
     plate.userData.slice = null;
+    // out of the plate before it is cloned: cloning copies userData through
+    // JSON, and a piece's userData points back at itself
+    if (slice) slice.removeFromParent();
     const away = this.plate.clone();
     this.scene.add(away);
-    if (slice) away.attach(slice);
+    if (slice) away.add(slice);
     this.served.push({ group: away, t: 0, from: away.position.clone() });
     this.plate.position.copy(this.plateHome).add(new THREE.Vector3(-0.35, 0, 0.2));
     this.plate.userData.enter = 0;
@@ -1508,14 +1930,15 @@ class App {
     if (!L) return;
     L.t += dt;
     const t = L.t;
-    const server = this.tools.server;
+    const server = this.tools[L.tool];
+    const knife = L.tool !== 'server';
     server.visible = true;
     const car = L.carrier;
     const T1 = 0.4;
     const T2 = 0.75;
     const T3 = 1.35;
     const T4 = 1.7;
-    const T5 = 2.05;
+    const T5 = knife ? 2.2 : 2.05;
     const lifted = new THREE.Vector3();
     if (t < T1) {
       car.position.copy(L.from);
@@ -1544,29 +1967,39 @@ class App {
       if (!L.clinked) {
         L.clinked = true;
         this.audio.clink(0.8);
+        if (L.easy) {
+          // a little cheer as it lands
+          this.audio.cheer();
+          const c = this.plate.getWorldPosition(new THREE.Vector3());
+          for (let i = 0; i < 5; i++) this.sparkles.emit(c.clone().add(new THREE.Vector3(rand(-0.05, 0.05), 0.06 + rand(0, 0.03), rand(-0.05, 0.05))), 6, 0.45);
+        }
       }
     }
-    // the server rides under the piece, then slides out
+    // The tool rides under the piece, then slides out. The server's blade
+    // is built flat; a knife is laid on its side, its tip reaching in to the
+    // point of the slice and its blade centred under it.
     const toolQ = new THREE.Quaternion();
     const inward = L.out.clone().negate();
     const yaw = Math.atan2(-inward.z, inward.x);
-    toolQ.setFromEuler(new THREE.Euler(0, yaw, 0.08, 'YZX'));
-    const under = car.position.clone().add(new THREE.Vector3(0, -0.0015, 0));
+    toolQ.setFromEuler(knife ? new THREE.Euler(-Math.PI / 2, yaw, 0, 'YZX') : new THREE.Euler(0, yaw, 0.08, 'YZX'));
+    const seat = new THREE.Vector3();
+    if (knife) seat.copy(inward).multiplyScalar(0.05).addScaledVector(new THREE.Vector3(0, 1, 0).applyQuaternion(toolQ), -SERVE_SIDE[L.tool]);
+    const under = car.position.clone().add(new THREE.Vector3(0, knife ? -0.0013 : -0.0015, 0));
     if (t < T1) {
       const k = ease(t / T1);
-      server.position.copy(under).addScaledVector(L.out, 0.12 * (1 - k));
+      server.position.copy(under).add(seat).addScaledVector(L.out, (knife ? 0.13 : 0.12) * (1 - k));
       server.quaternion.copy(toolQ);
     } else if (t < T4) {
-      server.position.copy(under);
-      // the server keeps its direction relative to the slice as it turns
+      // the tool keeps its direction relative to the slice as it turns
       const rel = new THREE.Quaternion().copy(car.quaternion).multiply(L.fromQ.clone().invert());
+      server.position.copy(under).add(seat.clone().applyQuaternion(rel));
       server.quaternion.copy(rel).multiply(toolQ);
       server.userData.rel = rel;
     } else {
       const k = ease(clamp01((t - T4) / (T5 - T4)));
       const rel = server.userData.rel || new THREE.Quaternion();
       const back = L.out.clone().applyQuaternion(rel);
-      server.position.copy(under).addScaledVector(back, 0.14 * k);
+      server.position.copy(under).add(seat.clone().applyQuaternion(rel)).addScaledVector(back, (knife ? 0.27 : 0.14) * k);
       server.position.y += 0.02 * k;
       server.quaternion.copy(rel).multiply(toolQ);
     }
@@ -1575,7 +2008,7 @@ class App {
       this.plate.userData.slice = car;
       server.visible = false;
       this.lift = null;
-      this.onServed(L.piece);
+      this.onServed(L.piece, L);
     }
   }
 
@@ -1587,9 +2020,10 @@ class App {
     }
   }
 
-  onServed(piece) {
+  onServed(piece, L) {
     this.ui.hint('');
     if (this.mode === 'rush' && this.rush && this.state === 'playing') this.serveRush(piece);
+    if (L && L.easy && this.easy) this.afterEasyServe();
   }
 
   // ---------------------------------------------------------------- tools
@@ -1599,7 +2033,7 @@ class App {
     const c = this.cut;
     const show = this.state === 'playing' && (c || (this.pointer.inside && this.pointer.type === 'mouse')) && !this.lift;
     for (const [name, t] of Object.entries(tools)) {
-      if (name === 'server' && this.lift) continue;
+      if (this.lift && name === this.lift.tool) continue;
       t.visible = show && name === (c ? c.tool : this.tool);
     }
     if (!show) return;
@@ -1626,7 +2060,11 @@ class App {
         if (c.phase === 'press') {
           y = c.planeY + 0.025;
           pitch = 0.12;
-        } else pitch = 0.32;
+        } else {
+          // slashing with the hilt towards the viewer: stand it up
+          const f = this.handleTowardCamera(dir);
+          pitch = 0.32 + Math.max(0, Math.min(THREE.MathUtils.degToRad(80), this.view.elev + THREE.MathUtils.degToRad(40)) - 0.32) * f;
+        }
       }
       if (c.phase === 'out' && c.tool !== 'wire') y = c.tipY;
     } else {
@@ -1675,8 +2113,10 @@ class App {
     this.spinVel *= Math.exp(-dt * 5);
     if (Math.abs(this.spinVel) < 0.01) this.spinVel = 0;
     this.turntable.rotation.y = this.spin;
+    this.updateRoll(dt);
     this.turntable.updateMatrixWorld();
     if (this.state === 'playing') this.updateCut(dt);
+    this.updateEasy(dt);
     this.cake.update(dt);
     this.updateLift(dt);
     this.poseTools(dt);
@@ -1758,7 +2198,11 @@ class App {
         for (const c of this.candles.list) c.resist = 0;
         this.blowHeld = 1;
       },
-      pieces: () => this.cake.pieces.map((p) => ({ state: p.state, frac: p.frac })),
+      pieces: () => this.cake.pieces.map((p) => ({ state: p.state, frac: p.frac, pop: !!p.pop })),
+      // easy slices: cut the slice at an angle (radians, cake space), serve
+      easyCut: (angle) => this.easyAction({ kind: 'cut', angle }),
+      serve: () => this.easyAction({ kind: 'serve' }),
+      front: () => this.frontAngle(),
       inside: (x, z) => pointInPolygon([x, z], this.cake.outline.poly),
     };
   }
