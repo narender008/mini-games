@@ -1,6 +1,12 @@
-// All sound is synthesised with Web Audio: no audio files. A blade through
-// sponge is soft filtered noise with a fine crackle of crumbs; porcelain
-// rings with a few bright partials; the birthday song is a little music box.
+// All sound is synthesised with Web Audio: no audio files. Everything that
+// touches the cake is soft, low-passed noise: a moist squish as a blade goes
+// in, a gentle swish through sponge and cream, soft rasps for the serrated
+// knife, a quiet zip for the wire and a faint patter of crumbs. Porcelain is
+// a few mellow partials; the birthday song is a little music box.
+//
+// Every one-shot rises and falls on a smooth curve that starts and ends at
+// exactly zero, and every source starts when its envelope does, so nothing
+// clicks. The Happy Birthday moment is the loudest thing in the game.
 const STORE_KEY = 'mini-games.cake-cut.muted';
 
 function readMuted() {
@@ -12,6 +18,7 @@ function readMuted() {
 }
 
 const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
+const rand = (a, b) => a + Math.random() * (b - a);
 
 // Happy Birthday (traditional), as [midi note, beats] from the pickup.
 const BIRTHDAY = [
@@ -22,6 +29,19 @@ const BIRTHDAY = [
 ];
 // bass note at the start of each bar (3/4, after a one-beat pickup)
 const BIRTHDAY_BASS = [48, 43, 43, 48, 48, 41, 43, 48];
+// a major pentatonic run for sparkles, so they always sound in tune
+const PENTA = [81, 83, 85, 88, 90, 93, 95];
+
+// How each tool sounds in the cake: the swish's centre, width and top end,
+// and its level at full speed.
+const BLADE = {
+  chef: { freq: 750, q: 0.7, lp: 2000, peak: 0.17 },
+  serrated: { freq: 900, q: 0.9, lp: 2300, peak: 0.17 },
+  sword: { freq: 800, q: 0.7, lp: 2000, peak: 0.14 },
+  server: { freq: 650, q: 0.7, lp: 1800, peak: 0.13 },
+  wire: { freq: 500, q: 1.4, lp: 2600, peak: 0.2 },
+};
+const WIRE_PLUNGE = 0.6; // seconds, as in main.js
 
 export class Audio {
   constructor() {
@@ -29,7 +49,7 @@ export class Audio {
     this.muted = readMuted();
     this.suspendedByPage = false;
     this.cut = null;
-    this.crackleClock = 0;
+    this.crumbClock = 0;
   }
 
   unlock() {
@@ -46,41 +66,76 @@ export class Audio {
     const ctx = this.ctx;
     this.master = ctx.createGain();
     this.master.gain.value = this.muted ? 0 : 0.9;
+    // a gentle glue compressor and a soft top, never a hard limiter
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -12;
-    comp.knee.value = 10;
-    comp.ratio.value = 4;
-    comp.attack.value = 0.003;
-    comp.release.value = 0.2;
-    this.master.connect(comp).connect(ctx.destination);
+    comp.threshold.value = -16;
+    comp.knee.value = 12;
+    comp.ratio.value = 3;
+    comp.attack.value = 0.01;
+    comp.release.value = 0.25;
+    const top = ctx.createBiquadFilter();
+    top.type = 'lowpass';
+    top.frequency.value = 9000;
+    top.Q.value = 0.5;
+    // and no rumble or DC below hearing
+    const floor = ctx.createBiquadFilter();
+    floor.type = 'highpass';
+    floor.frequency.value = 30;
+    floor.Q.value = 0.5;
+    this.master.connect(floor).connect(comp).connect(top).connect(ctx.destination);
 
-    // a small warm room
-    const len = Math.floor(ctx.sampleRate * 1.3);
-    const ir = ctx.createBuffer(2, len, ctx.sampleRate);
+    // a small warm room: darker noise that loses its top end as it dies
+    const sr = ctx.sampleRate;
+    const len = Math.floor(sr * 1.2);
+    const ir = ctx.createBuffer(2, len, sr);
     for (let ch = 0; ch < 2; ch++) {
       const d = ir.getChannelData(ch);
+      let lp = 0;
       for (let i = 0; i < len; i++) {
-        const t = i / ctx.sampleRate;
-        d[i] = (Math.random() * 2 - 1) * Math.exp(-t * 5.5) * (t < 0.006 ? t / 0.006 : 1);
+        const t = i / sr;
+        const k = 0.35 + 0.5 * Math.exp(-t * 6);
+        lp += k * (Math.random() * 2 - 1 - lp);
+        const tail = i > len * 0.85 ? 0.5 + 0.5 * Math.cos((Math.PI * (i - len * 0.85)) / (len * 0.15)) : 1;
+        d[i] = lp * Math.exp(-t * 5.5) * (t < 0.008 ? t / 0.008 : 1) * tail;
       }
     }
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = ir;
     this.send = ctx.createGain();
-    this.send.gain.value = 0.22;
-    this.send.connect(this.reverb).connect(this.master);
+    this.send.gain.value = 0.2;
+    const sendLp = ctx.createBiquadFilter();
+    sendLp.type = 'lowpass';
+    sendLp.frequency.value = 3500;
+    this.send.connect(sendLp).connect(this.reverb).connect(this.master);
 
-    this.noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const n = sr * 2;
+    this.noise = ctx.createBuffer(1, n, sr);
     const nd = this.noise.getChannelData(0);
-    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
-    // brown-ish noise for breath and room tone
-    this.brown = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    for (let i = 0; i < n; i++) nd[i] = Math.random() * 2 - 1;
+    // pink noise (Paul Kellet's filter): soft and airy, for swishes
+    this.pink = ctx.createBuffer(1, n, sr);
+    const pd = this.pink.getChannelData(0);
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < n; i++) {
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + w * 0.0555179;
+      b1 = 0.99332 * b1 + w * 0.0750759;
+      b2 = 0.969 * b2 + w * 0.153852;
+      b3 = 0.8665 * b3 + w * 0.3104856;
+      b4 = 0.55 * b4 + w * 0.5329522;
+      b5 = -0.7616 * b5 - w * 0.016898;
+      pd[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11;
+      b6 = w * 0.115926;
+    }
+    // brown noise: muffled and round, for squishes, breath and room tone
+    this.brown = ctx.createBuffer(1, n, sr);
     const bd = this.brown.getChannelData(0);
     let last = 0;
-    for (let i = 0; i < bd.length; i++) {
+    for (let i = 0; i < n; i++) {
       last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
       bd[i] = last * 3.5;
     }
+    for (const b of [this.pink, this.brown]) removeDC(b.getChannelData(0));
 
     this.bus = ctx.createGain();
     this.bus.connect(this.master);
@@ -115,46 +170,81 @@ export class Audio {
     return this.ctx && this.ctx.state === 'running' && !this.muted;
   }
 
-  src(buffer = this.noise, offset = Math.random()) {
+  // A looping noise source that starts at `t`, somewhere random in the loop.
+  src(buffer = this.noise, t = this.ctx.currentTime) {
     const s = this.ctx.createBufferSource();
     s.buffer = buffer;
     s.loop = true;
     s.loopStart = 0;
     s.loopEnd = buffer.duration;
-    s.start(this.ctx.currentTime, offset * buffer.duration * 0.9);
+    s.start(t, Math.random() * buffer.duration * 0.9);
     return s;
   }
 
-  env(gain, t, peak, attack, decay) {
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(peak, t + attack);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
-  }
-
-  // a short filtered noise burst
-  burst({ t = this.ctx.currentTime, type = 'bandpass', freq = 2000, q = 1, peak = 0.3, attack = 0.002, decay = 0.05, dest = this.bus, sweep = 0 }) {
-    const n = this.src();
+  filter(type, freq, q = 0.7) {
     const f = this.ctx.createBiquadFilter();
     f.type = type;
-    f.frequency.setValueAtTime(freq, t);
-    if (sweep) f.frequency.exponentialRampToValueAtTime(Math.max(40, freq * sweep), t + attack + decay);
+    f.frequency.value = freq;
     f.Q.value = q;
-    const g = this.ctx.createGain();
-    this.env(g, t, peak, attack, decay);
-    n.connect(f).connect(g).connect(dest);
-    n.stop(t + attack + decay + 0.05);
+    return f;
   }
 
-  tone({ t = this.ctx.currentTime, freq, type = 'sine', peak = 0.2, attack = 0.004, decay = 0.4, dest = this.bus, detune = 0 }) {
+  // A gain that stays silent until its envelope runs.
+  silent() {
+    const g = this.ctx.createGain();
+    g.gain.value = 0;
+    return g;
+  }
+
+  // A one-shot envelope from exactly 0 back to exactly 0: a raised-cosine
+  // rise over `attack`, then a smooth exponential fall over `decay` that
+  // tapers the last of it to nothing.
+  env(gain, t, peak, attack, decay) {
+    attack = Math.max(0.003, attack);
+    const total = attack + decay;
+    const n = Math.max(32, Math.min(4096, Math.ceil(total * 2000)));
+    const curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const s = (i / (n - 1)) * total;
+      let v;
+      if (s < attack) v = 0.5 - 0.5 * Math.cos((Math.PI * s) / attack);
+      else {
+        const u = (s - attack) / decay;
+        v = Math.exp(-4 * u) * (u > 0.75 ? 0.5 + 0.5 * Math.cos((Math.PI * (u - 0.75)) / 0.25) : 1);
+      }
+      curve[i] = v * peak;
+    }
+    curve[n - 1] = 0;
+    gain.gain.setValueCurveAtTime(curve, t, total);
+    return t + total;
+  }
+
+  // a short filtered noise burst; `lp` adds a low-pass after the filter
+  burst({ t = this.ctx.currentTime, buffer = this.noise, type = 'bandpass', freq = 2000, q = 1, peak = 0.3, attack = 0.004, decay = 0.05, dest = this.bus, sweep = 0, lp = 0 }) {
+    const n = this.src(buffer, t);
+    const f = this.filter(type, freq, q);
+    f.frequency.setValueAtTime(freq, t);
+    if (sweep) f.frequency.exponentialRampToValueAtTime(Math.max(40, freq * sweep), t + attack + decay);
+    const g = this.silent();
+    const end = this.env(g, t, peak, attack, decay);
+    let out = n.connect(f);
+    if (lp) out = out.connect(this.filter('lowpass', lp, 0.5));
+    out.connect(g).connect(dest);
+    n.stop(end + 0.02);
+  }
+
+  // a tone; `glide` bends it to that frequency over `glideTime`
+  tone({ t = this.ctx.currentTime, freq, type = 'sine', peak = 0.2, attack = 0.004, decay = 0.4, dest = this.bus, detune = 0, glide = 0, glideTime = 0.08 }) {
     const o = this.ctx.createOscillator();
     o.type = type;
     o.frequency.setValueAtTime(freq, t);
+    if (glide) o.frequency.exponentialRampToValueAtTime(glide, t + glideTime);
     o.detune.value = detune;
-    const g = this.ctx.createGain();
-    this.env(g, t, peak, attack, decay);
+    const g = this.silent();
+    const end = this.env(g, t, peak, attack, decay);
     o.connect(g).connect(dest);
     o.start(t);
-    o.stop(t + attack + decay + 0.05);
+    o.stop(end + 0.02);
     return o;
   }
 
@@ -166,12 +256,9 @@ export class Audio {
     this.roomGain.gain.value = 1;
     this.roomGain.connect(this.master);
     const n = this.src(this.brown);
-    const f = ctx.createBiquadFilter();
-    f.type = 'lowpass';
-    f.frequency.value = 320;
     const g = ctx.createGain();
-    g.gain.value = 0.035;
-    n.connect(f).connect(g).connect(this.roomGain);
+    g.gain.value = 0.03;
+    n.connect(this.filter('lowpass', 300)).connect(g).connect(this.roomGain);
   }
 
   // ------------------------------------------------------------ cutting
@@ -181,34 +268,37 @@ export class Audio {
   cutStart(kind) {
     if (!this.ctx) return;
     this.cutStop(false);
-    const ctx = this.ctx;
-    const t = ctx.currentTime;
-    const n = this.src();
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = kind === 'wire' ? 5200 : kind === 'serrated' ? 2600 : 1500;
-    bp.Q.value = kind === 'wire' ? 4 : 0.7;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = kind === 'wire' ? 9000 : 3800;
-    const g = ctx.createGain();
-    g.gain.value = 0.0001;
-    n.connect(bp).connect(lp).connect(g).connect(this.bus);
-    const voice = { kind, n, bp, g, extra: [] };
-    if (kind === 'wire') {
-      // the taut wire sings faintly
-      const o = ctx.createOscillator();
-      o.type = 'triangle';
-      o.frequency.value = 1320;
-      const og = ctx.createGain();
-      og.gain.value = 0.0001;
-      o.connect(og).connect(this.bus);
-      o.start(t);
-      voice.extra.push({ o, og });
+    const t = this.ctx.currentTime;
+    const b = BLADE[kind] || BLADE.chef;
+    // the stroke through sponge and cream: soft pink noise, low-passed
+    const n = this.src(this.pink, t);
+    const bp = this.filter('bandpass', b.freq, b.q);
+    const g = this.silent();
+    n.connect(bp).connect(this.filter('lowpass', b.lp, 0.5)).connect(g).connect(this.bus);
+    this.cut = { kind, b, n, bp, g, t0: t, level: 0 };
+    // a wire slips in cleanly; blades squish into the frosting
+    if (kind !== 'wire') this.squish(t, kind === 'sword' ? 0.6 : 1);
+  }
+
+  // The blade entering the cake: a soft, moist, muffled squish. Two grains
+  // of pink noise through a resonant low-pass that closes as the blade
+  // sinks, the second smaller, with a tiny wet bubble beneath.
+  squish(t = this.ctx.currentTime, strength = 1) {
+    for (const [dt, from, to, q, peak, attack, decay] of [
+      [0, 1500, 380, 2.5, 0.38, 0.015, 0.15],
+      [0.045, 950, 300, 3, 0.18, 0.01, 0.1],
+    ]) {
+      const at = t + dt;
+      const n = this.src(this.pink, at);
+      const f = this.filter('lowpass', from, q);
+      f.frequency.setValueAtTime(from, at);
+      f.frequency.exponentialRampToValueAtTime(to, at + attack + decay);
+      const g = this.silent();
+      const end = this.env(g, at, peak * strength, attack, decay);
+      n.connect(f).connect(g).connect(this.bus);
+      n.stop(end + 0.02);
     }
-    // the squish of the blade entering the frosting
-    this.burst({ t, type: 'lowpass', freq: 900, q: 0.8, peak: 0.12, attack: 0.01, decay: 0.12, sweep: 0.5 });
-    this.cut = voice;
+    this.tone({ t: t + 0.02, freq: 240, glide: 150, glideTime: 0.09, peak: 0.04 * strength, attack: 0.012, decay: 0.1 });
   }
 
   // Called every frame while cutting: level 0..1 from how fast the blade is
@@ -217,83 +307,103 @@ export class Audio {
     const v = this.cut;
     if (!v || !this.ctx) return;
     const t = this.ctx.currentTime;
-    let l = Math.min(1, level);
-    if (v.kind === 'serrated') l *= 0.35 + 0.65 * Math.abs(saw);
-    const peak = v.kind === 'wire' ? 0.05 : v.kind === 'sword' ? 0.2 : 0.16;
-    v.g.gain.setTargetAtTime(0.0001 + l * peak, t, 0.03);
-    v.bp.frequency.setTargetAtTime((v.kind === 'wire' ? 5200 : v.kind === 'serrated' ? 2200 : 1300) * (0.8 + 0.5 * l), t, 0.05);
-    for (const e of v.extra) e.og.gain.setTargetAtTime(0.0001 + l * 0.012, t, 0.05);
-    // crumbs tearing: tiny clicks, more for a serrated blade, none for wire
-    const rate = v.kind === 'wire' ? 0 : (v.kind === 'serrated' ? 70 : 35) * l;
-    this.crackleClock -= dt * rate;
-    while (this.crackleClock < 0) {
-      this.crackleClock += 0.5 + Math.random();
+    const l = Math.max(0, Math.min(1, level));
+    const b = v.b;
+    if (v.kind === 'wire') {
+      // a clean, quiet zip: the band rises as the wire runs down
+      const k = Math.min(1, (t - v.t0) / WIRE_PLUNGE);
+      v.g.gain.setTargetAtTime(l * b.peak * (0.5 + 0.5 * k), t, 0.04);
+      v.bp.frequency.setTargetAtTime(b.freq + 1100 * k, t, 0.05);
+      return;
+    }
+    let target = l * b.peak;
+    let freq = b.freq * (0.85 + 0.35 * l);
+    if (v.kind === 'serrated') {
+      // soft, rhythmic rasps: louder mid-stroke, a shade higher pushing
+      // than pulling
+      const s = Math.abs(saw);
+      target *= 0.2 + 0.8 * s * s;
+      freq = b.freq * (0.9 + 0.3 * l) + 120 * saw;
+    }
+    v.g.gain.setTargetAtTime(target, t, v.kind === 'serrated' ? 0.025 : 0.06);
+    v.bp.frequency.setTargetAtTime(freq, t, 0.06);
+    this.crumbs(l * (v.kind === 'serrated' ? 1.6 : v.kind === 'server' ? 0.8 : 1), dt);
+  }
+
+  // Crumbs breaking away: a faint, soft patter.
+  crumbs(amount, dt) {
+    if (!this.ctx) return;
+    this.crumbClock -= dt * 16 * amount;
+    const t = this.ctx.currentTime;
+    while (this.crumbClock < 0) {
+      this.crumbClock += 0.5 + Math.random();
       this.burst({
-        t: t + Math.random() * 0.02,
-        type: 'highpass',
-        freq: 1800 + Math.random() * 2500,
-        q: 0.5,
-        peak: 0.02 + Math.random() * 0.05,
-        attack: 0.0008,
-        decay: 0.004 + Math.random() * 0.01,
+        t: t + Math.random() * 0.03,
+        buffer: this.pink,
+        type: 'bandpass',
+        freq: rand(1100, 2400),
+        q: 1.2,
+        lp: 3500,
+        peak: rand(0.04, 0.08),
+        attack: 0.004,
+        decay: rand(0.025, 0.05),
       });
     }
   }
 
-  // The blade stops: a soft knock if it met the board.
+  // The blade stops: a light tap if it met the board.
   cutStop(board = true) {
     const v = this.cut;
     if (!v || !this.ctx) return;
     const t = this.ctx.currentTime;
-    v.g.gain.setTargetAtTime(0.0001, t, 0.04);
-    v.n.stop(t + 0.3);
-    for (const e of v.extra) {
-      e.og.gain.setTargetAtTime(0.0001, t, 0.04);
-      e.o.stop(t + 0.3);
-    }
+    v.g.gain.setTargetAtTime(0, t, 0.035);
+    v.n.stop(t + 0.4);
     this.cut = null;
     if (board) this.boardTap();
   }
 
+  // the blade meeting the cake board: a light, dull tap
   boardTap() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.tone({ t, freq: 190, peak: 0.12, attack: 0.002, decay: 0.09 });
-    this.burst({ t, type: 'bandpass', freq: 1400, q: 1.2, peak: 0.06, attack: 0.001, decay: 0.03 });
+    this.tone({ t, freq: 230, glide: 150, glideTime: 0.05, peak: 0.1, attack: 0.004, decay: 0.08 });
+    this.burst({ t, buffer: this.pink, type: 'lowpass', freq: 1800, q: 0.7, peak: 0.08, attack: 0.003, decay: 0.03 });
   }
 
   // ------------------------------------------------------------ serving
 
+  // a tool sliding under a slice: a soft shuffle
   scrape() {
     if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-    this.burst({ t, type: 'bandpass', freq: 3000, q: 1.4, peak: 0.07, attack: 0.03, decay: 0.28, sweep: 0.7 });
+    this.burst({ buffer: this.pink, type: 'bandpass', freq: 650, q: 0.8, lp: 1600, peak: 0.11, attack: 0.06, decay: 0.3, sweep: 1.4 });
   }
 
+  // air moving: a soft rising swell
   whoosh(strength = 0.5) {
     if (!this.ctx) return;
-    this.burst({ type: 'bandpass', freq: 600, q: 0.9, peak: 0.12 * strength, attack: 0.08, decay: 0.3, sweep: 2.5 });
+    this.burst({ buffer: this.pink, type: 'bandpass', freq: 320, q: 0.7, lp: 1500, peak: 0.16 * strength, attack: 0.1, decay: 0.32, sweep: 2.6 });
   }
 
-  // porcelain: a knock and a few bright, slowly dying partials
+  // porcelain set down gently: a soft knock and a few mellow partials
   clink(strength = 1) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.burst({ t, type: 'bandpass', freq: 3500, q: 2, peak: 0.08 * strength, attack: 0.001, decay: 0.02 });
-    const base = 1850 + Math.random() * 120;
+    this.tone({ t, freq: 320, glide: 220, glideTime: 0.05, peak: 0.04 * strength, attack: 0.003, decay: 0.07 });
+    this.burst({ t, buffer: this.pink, type: 'lowpass', freq: 2200, q: 0.7, peak: 0.03 * strength, attack: 0.003, decay: 0.02 });
+    const base = 1480 + Math.random() * 80;
     for (const [k, a, d] of [
-      [1, 0.05, 0.9],
-      [2.32, 0.035, 0.6],
-      [3.86, 0.022, 0.45],
-      [5.4, 0.012, 0.3],
+      [1, 0.04, 0.8],
+      [2.46, 0.016, 0.45],
+      [3.9, 0.005, 0.22],
     ]) {
-      this.tone({ t, freq: base * k, peak: a * strength, attack: 0.001, decay: d });
+      this.tone({ t, freq: base * k, peak: a * strength, attack: 0.004, decay: d });
     }
   }
 
+  // a soft UI tap
   click() {
     if (!this.ctx) return;
-    this.burst({ type: 'bandpass', freq: 2400, q: 3, peak: 0.08, attack: 0.001, decay: 0.03 });
+    this.tone({ freq: 720, glide: 560, glideTime: 0.04, peak: 0.05, attack: 0.003, decay: 0.05 });
   }
 
   // ------------------------------------------------------------ candles
@@ -301,49 +411,47 @@ export class Audio {
   match() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.burst({ t, type: 'highpass', freq: 2500, q: 0.7, peak: 0.12, attack: 0.005, decay: 0.12 });
-    for (let i = 0; i < 6; i++) this.burst({ t: t + 0.04 + Math.random() * 0.12, type: 'highpass', freq: 3000, peak: 0.05, attack: 0.001, decay: 0.01 });
+    this.burst({ t, buffer: this.pink, type: 'bandpass', freq: 2200, q: 0.8, lp: 5000, peak: 0.1, attack: 0.008, decay: 0.12 });
+    for (let i = 0; i < 6; i++) {
+      this.burst({ t: t + 0.04 + Math.random() * 0.12, buffer: this.pink, type: 'bandpass', freq: 2600, q: 1.2, lp: 5000, peak: 0.03, attack: 0.003, decay: 0.014 });
+    }
     this.ignite(t + 0.1, 0.6);
   }
 
   ignite(t = this.ctx ? this.ctx.currentTime : 0, strength = 0.35) {
     if (!this.ctx) return;
-    this.burst({ t, type: 'lowpass', freq: 400, q: 0.5, peak: 0.2 * strength, attack: 0.03, decay: 0.3, sweep: 2.2 });
+    this.burst({ t, buffer: this.brown, type: 'lowpass', freq: 380, q: 0.5, peak: 0.26 * strength, attack: 0.035, decay: 0.3, sweep: 2 });
   }
 
   // A held breath across the candles.
   blowStart() {
     if (!this.ctx || this.breath) return;
-    const ctx = this.ctx;
-    const n = this.src(this.noise);
-    const f = ctx.createBiquadFilter();
-    f.type = 'bandpass';
-    f.frequency.value = 900;
-    f.Q.value = 0.6;
-    const g = ctx.createGain();
-    g.gain.value = 0.0001;
-    n.connect(f).connect(g).connect(this.bus);
+    const n = this.src(this.pink);
+    const f = this.filter('bandpass', 550, 0.5);
+    const g = this.silent();
+    n.connect(f).connect(this.filter('lowpass', 1500, 0.5)).connect(g).connect(this.bus);
     this.breath = { n, f, g };
   }
 
   blowLevel(level) {
     if (!this.breath) return;
     const t = this.ctx.currentTime;
-    this.breath.g.gain.setTargetAtTime(0.0001 + level * 0.1, t, 0.06);
-    this.breath.f.frequency.setTargetAtTime(700 + level * 900, t, 0.1);
+    this.breath.g.gain.setTargetAtTime(level * 0.16, t, 0.07);
+    this.breath.f.frequency.setTargetAtTime(480 + level * 420, t, 0.1);
   }
 
   blowStop() {
     if (!this.breath) return;
     const t = this.ctx.currentTime;
-    this.breath.g.gain.setTargetAtTime(0.0001, t, 0.08);
-    this.breath.n.stop(t + 0.5);
+    this.breath.g.gain.setTargetAtTime(0, t, 0.08);
+    this.breath.n.stop(t + 0.7);
     this.breath = null;
   }
 
+  // a candle going out
   puff() {
     if (!this.ctx) return;
-    this.burst({ type: 'lowpass', freq: 700, q: 0.7, peak: 0.08, attack: 0.005, decay: 0.12, sweep: 0.4 });
+    this.burst({ buffer: this.brown, type: 'lowpass', freq: 650, q: 0.7, peak: 0.14, attack: 0.012, decay: 0.14, sweep: 0.45 });
   }
 
   // ------------------------------------------------------------ party
@@ -360,8 +468,8 @@ export class Audio {
         [1, 1, 1.4],
         [2, 0.3, 0.8],
         [3.01, 0.12, 0.5],
-        [4.2, 0.06, 0.25],
-      ]) this.tone({ t, freq: f * k, peak: peak * a, attack: 0.003, decay: d });
+        [4.2, 0.05, 0.25],
+      ]) this.tone({ t, freq: f * k, peak: peak * a, attack: 0.004, decay: d });
     };
     let t = start;
     for (const [n, b] of BIRTHDAY) {
@@ -377,30 +485,33 @@ export class Audio {
     return t - ctx.currentTime + 0.8;
   }
 
+  // two party poppers and paper settling
   confetti() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     for (const d of [0, 0.09]) {
-      this.burst({ t: t + d, type: 'bandpass', freq: 1800, q: 0.8, peak: 0.35, attack: 0.001, decay: 0.06 });
-      this.tone({ t: t + d, freq: 140, peak: 0.12, attack: 0.001, decay: 0.08 });
+      this.burst({ t: t + d, buffer: this.pink, type: 'bandpass', freq: 1300, q: 0.7, lp: 5000, peak: 0.3, attack: 0.003, decay: 0.07 });
+      this.tone({ t: t + d, freq: 140, glide: 90, glideTime: 0.06, peak: 0.14, attack: 0.003, decay: 0.08 });
     }
-    // paper settling
-    for (let i = 0; i < 14; i++) this.burst({ t: t + 0.15 + Math.random() * 1.4, type: 'highpass', freq: 4000, peak: 0.012, attack: 0.01, decay: 0.05 });
+    for (let i = 0; i < 14; i++) {
+      this.burst({ t: t + 0.15 + Math.random() * 1.4, buffer: this.pink, type: 'bandpass', freq: 2800, q: 0.8, lp: 6000, peak: 0.012, attack: 0.012, decay: 0.05 });
+    }
   }
 
-  sparkle(count = 5) {
+  // a soft twinkle, always in tune
+  sparkle(count = 5, t = this.ctx ? this.ctx.currentTime : 0) {
     if (!this.ctx) return;
-    const t = this.ctx.currentTime;
     for (let i = 0; i < count; i++) {
-      this.tone({ t: t + i * 0.045 + Math.random() * 0.02, freq: 2200 + Math.random() * 2600, peak: 0.03, attack: 0.002, decay: 0.35 });
+      const n = PENTA[Math.floor(Math.random() * PENTA.length)];
+      this.tone({ t: t + i * 0.05 + Math.random() * 0.02, freq: midi(n), peak: 0.022, attack: 0.006, decay: 0.4 });
     }
   }
 
   ding() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.tone({ t, freq: 1568, peak: 0.08, decay: 0.8 });
-    this.tone({ t, freq: 1568 * 2.76, peak: 0.02, decay: 0.3 });
+    this.tone({ t, freq: 1568, peak: 0.07, decay: 0.8 });
+    this.tone({ t, freq: 1568 * 2.76, peak: 0.012, decay: 0.25 });
   }
 
   // a served slice: higher and brighter for better slices and longer streaks
@@ -412,36 +523,41 @@ export class Audio {
     notes.forEach((k, i) => this.tone({ t: t + i * 0.07, freq: midi(76 + up + k), peak: 0.07, decay: 0.5 }));
   }
 
-  // a slice hopping out of the cake: a rising bloop and two bright notes
+  // A slice hopping out of the cake: a soft, round "boop" that bends up,
+  // a smaller bubble after it and a breath of air.
   pop() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    const o = this.tone({ t, freq: 480, peak: 0.12, attack: 0.003, decay: 0.2 });
-    o.frequency.exponentialRampToValueAtTime(1150, t + 0.1);
-    this.tone({ t: t + 0.11, freq: midi(84), peak: 0.05, decay: 0.3 });
-    this.tone({ t: t + 0.18, freq: midi(91), peak: 0.045, decay: 0.4 });
+    this.tone({ t, freq: 300, glide: 620, glideTime: 0.07, peak: 0.17, attack: 0.008, decay: 0.16 });
+    this.tone({ t, freq: 600, glide: 1240, glideTime: 0.07, peak: 0.025, attack: 0.008, decay: 0.08 });
+    this.tone({ t: t + 0.09, freq: 470, glide: 900, glideTime: 0.06, peak: 0.08, attack: 0.008, decay: 0.12 });
+    this.burst({ t, buffer: this.brown, type: 'lowpass', freq: 500, q: 0.7, peak: 0.1, attack: 0.008, decay: 0.08 });
   }
 
-  // a slice landing on its plate: a little ta-da and a patter of claps
+  // A slice landing on its plate: a little marimba ta-da and a twinkle.
   cheer() {
     if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-    [0, 4, 7, 12].forEach((k, i) => this.tone({ t: t + i * 0.06, freq: midi(79 + k), type: 'triangle', peak: 0.07, decay: 0.5 }));
-    for (let i = 0; i < 12; i++) {
-      this.burst({ t: t + 0.08 + Math.random() * 0.7, type: 'bandpass', freq: 1300 + Math.random() * 1400, q: 1.1, peak: 0.045, attack: 0.001, decay: 0.035 });
-    }
+    const t = this.ctx.currentTime + 0.04;
+    [72, 76, 79, 84].forEach((n, i) => {
+      const at = t + i * 0.075;
+      const last = i === 3;
+      this.tone({ t: at, freq: midi(n), peak: last ? 0.085 : 0.065, attack: 0.005, decay: last ? 0.7 : 0.35 });
+      // the mallet: a quiet, short fourth partial
+      this.tone({ t: at, freq: midi(n) * 3.98, peak: 0.008, attack: 0.004, decay: 0.05 });
+    });
+    this.tone({ t: t + 0.225, freq: midi(76), peak: 0.03, attack: 0.01, decay: 0.6 });
+    this.tone({ t: t + 0.225, freq: midi(79), peak: 0.03, attack: 0.01, decay: 0.6 });
+    this.sparkle(3, t + 0.3);
   }
 
   miss() {
     if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-    const o = this.tone({ t, freq: 330, type: 'triangle', peak: 0.08, decay: 0.35 });
-    o.frequency.exponentialRampToValueAtTime(200, t + 0.3);
+    this.tone({ freq: 330, glide: 200, glideTime: 0.3, type: 'triangle', peak: 0.07, decay: 0.35 });
   }
 
   tick() {
     if (!this.ctx) return;
-    this.tone({ freq: 1200, peak: 0.05, attack: 0.001, decay: 0.05 });
+    this.tone({ freq: 1200, peak: 0.04, attack: 0.003, decay: 0.05 });
   }
 
   fanfare(level = 1) {
@@ -450,7 +566,15 @@ export class Audio {
     const base = 72 + Math.min(level, 4) * 2;
     [0, 4, 7, 12, 16].forEach((k, i) => {
       this.tone({ t: t + i * 0.08, freq: midi(base + k), type: 'triangle', peak: 0.08, decay: 0.6 });
-      this.tone({ t: t + i * 0.08, freq: midi(base + k), type: 'sawtooth', peak: 0.012, decay: 0.3 });
+      this.tone({ t: t + i * 0.08, freq: midi(base + k) * 2, peak: 0.012, decay: 0.3 });
     });
   }
+}
+
+// Take out any slow drift so a looped noise buffer has no DC in it.
+function removeDC(d) {
+  let sum = 0;
+  for (let i = 0; i < d.length; i++) sum += d[i];
+  const m = sum / d.length;
+  for (let i = 0; i < d.length; i++) d[i] -= m;
 }
