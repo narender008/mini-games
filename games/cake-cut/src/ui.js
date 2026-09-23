@@ -391,7 +391,7 @@ export class UI {
       d.append(s);
     }
     this.el.callouts.append(d);
-    setTimeout(() => d.remove(), 1450);
+    setTimeout(() => d.remove(), 2250);
   }
 
   // ------------------------------------------------------------ results

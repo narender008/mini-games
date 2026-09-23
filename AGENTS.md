@@ -9,6 +9,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 - Shared libraries are vendored once, pinned and unmodified, under `vendor/<lib>/` with their licence, and loaded through an import map in the game's `index.html`. Record version and checksums in `vendor/<lib>/README.md` and `LICENSES.md`.
 - Art and sound must be procedural or CC0, noted in `LICENSES.md`. Reference images supplied for a design are not committed.
 - Balloon Pop debug switches: `?debug` exposes `window.__bp` (freeze, step(ms), popFirst, spawn), `?cover` hides UI, `?quality=high|medium|low`, `?msaa=N`, `?shadows=0`. See `games/balloon-pop/src/main.js` and `src/quality.js`.
+- Cake Cut debug switches: `?debug` exposes `window.__cc` (freeze, thaw, step(ms), cut, stroke, lift, setCake, decor, blowOut, pieces), `?cover` hides UI, `?cake=<id>`, plus `?quality=`, `?msaa=`, `?shadows=0`, `?ao=0`, `?dof=0`. See the end of `games/cake-cut/src/main.js` and `src/quality.js`.
 
 ## Maintaining this file
 

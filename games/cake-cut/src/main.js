@@ -108,7 +108,7 @@ class App {
     this.crumbs = new Crumbs(q.crumbs, (x, z) => this.supportAt(x, z));
     scene.add(this.crumbs.mesh);
     this.smoke = new Smoke(scene);
-    this.confetti = new Confetti(REDUCED_MOTION.matches ? Math.round(q.confetti / 3) : q.confetti, (x, z) => this.supportAt(x, z));
+    this.confetti = new Confetti(REDUCED_MOTION.matches ? Math.round(q.confetti / 3) : q.confetti, (x, z) => this.supportAt(x, z, true));
     scene.add(this.confetti.mesh);
     this.sparkles = new Sparkles();
     scene.add(this.sparkles.points);
@@ -518,13 +518,14 @@ class App {
       const dur = this.audio.birthday();
       const c = this.mount.getWorldPosition(new THREE.Vector3());
       const n = Math.round(this.confetti.max / 4);
+      // party poppers held up round the table
       for (const [x, z] of [
-        [-0.45, 0.25],
-        [0.5, 0.2],
-        [-0.35, -0.35],
-        [0.4, -0.35],
+        [-0.36, 0.22],
+        [0.4, 0.18],
+        [-0.3, -0.3],
+        [0.34, -0.3],
       ]) {
-        this.confetti.burst(new THREE.Vector3(x, 0.02, z), c, n);
+        this.confetti.burst(new THREE.Vector3(x, 0.16, z), c, n);
       }
       for (let i = 0; i < 6; i++) this.sparkles.emit(c.clone().add(new THREE.Vector3(rand(-0.1, 0.1), this.cake.height + 0.05, rand(-0.1, 0.1))), 4, 0.4);
       this.after(Math.min(2.4, dur * 0.25), () => {
@@ -563,8 +564,9 @@ class App {
     }
     let dev = 0;
     for (let i = 0; i < pieces.length; i++) dev += i < N ? Math.abs(pieces[i] - 1 / N) : pieces[i];
-    const acc = Math.max(0, Math.round((1 - dev / 2) * 1000) / 10);
-    const stars = acc >= 96 ? 3 : acc >= 90 ? 2 : acc >= 80 ? 1 : 0;
+    // every bit of cake given to the wrong guest counts against the score
+    const acc = Math.max(0, Math.round((1 - dev) * 1000) / 10);
+    const stars = acc >= 95 ? 3 : acc >= 88 ? 2 : acc >= 75 ? 1 : 0;
     const key = `mini-games.cake-cut.fair.${N}`;
     const prev = Number(store(key)) || 0;
     if (acc > prev) store(key, acc);
@@ -638,6 +640,7 @@ class App {
   startRush() {
     const pick = (a) => a[Math.floor(Math.random() * a.length)];
     const recipe = pick(CAKES.filter((c) => !this.recipe || c.id !== this.recipe.id));
+    if (!this.savedDecor) this.savedDecor = this.decor;
     this.decor = { ...this.defaultDecor(recipe), message: '' };
     this.decor.candles.kind = 'none';
     this.buildCake({ candles: false });
@@ -815,11 +818,15 @@ class App {
     this.ui.hint('Photo saved');
   }
 
-  // Height of whatever a crumb would land on, in world space.
-  supportAt(x, z) {
+  // Height of whatever a crumb would land on, in world space. Confetti
+  // (`onTop`) also settles on the top of the cake.
+  supportAt(x, z, onTop = false) {
     const r = Math.hypot(x, z);
     if (r < 0.155) {
       const local = this.mount.worldToLocal(new THREE.Vector3(x, MOUNT_Y, z));
+      if (onTop && this.cake && this.cake.outline.sdf(local.x, local.z) < -0.002 && !this.cake.isRemoved([local.x, local.z])) {
+        return MOUNT_Y + this.cake.topAt(local.x, local.z);
+      }
       const onBoard = this.cake && this.cake.outline.sdf(local.x, local.z) < 0.014;
       return onBoard ? MOUNT_Y : STAND_TOP;
     }
@@ -973,6 +980,11 @@ class App {
     if (mode === 'rush') this.startRush();
     else {
       this.rush = null;
+      // back to the player's own cake after a party rush
+      if (this.savedDecor) {
+        this.decor = this.savedDecor;
+        this.savedDecor = null;
+      }
       this.openDecorate();
     }
   }

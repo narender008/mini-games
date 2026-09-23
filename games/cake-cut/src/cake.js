@@ -22,6 +22,8 @@ import { createExteriorMaterial, createInteriorMaterial, createSlitUniforms, tie
 
 const SLIT_HALF = 0.0012; // half the width of the gap a blade leaves
 const GAP = 0.0016; // how far a separated piece drifts from its neighbours
+const REVEAL = 0.017; // how far a newly cut piece slides out to show its inside
+const REVEAL_HOLD = 1.5; // seconds it stays out before settling back
 const UP = new THREE.Vector3(0, 1, 0);
 
 export class Cake {
@@ -89,7 +91,8 @@ export class Cake {
     const ux = dx / len;
     const uz = dz / len;
     if (chord) {
-      const far = this.outline.extent * 3;
+      // reach right across the cake from wherever the stroke began
+      const far = Math.hypot(a[0], a[1]) + this.outline.extent * 2;
       const seg = clipSegment([a[0] - ux * far, a[1] - uz * far], [a[0] + ux * far, a[1] + uz * far], this.outline);
       return seg && Math.hypot(seg[1][0] - seg[0][0], seg[1][1] - seg[0][1]) > 0.01 ? seg : null;
     }
@@ -169,6 +172,9 @@ export class Cake {
         group: new THREE.Group(),
         offset: prev ? prev.offset.clone() : new THREE.Vector3(),
         target: new THREE.Vector3(),
+        prevFrac: prev ? prev.frac : null,
+        dir: [0, 0],
+        reveal: 0,
         decorations: [],
       };
       next.push(piece);
@@ -191,8 +197,12 @@ export class Cake {
     for (const p of onCake) {
       const c = p.centroid;
       const d = Math.hypot(c[0], c[1]);
-      if (onCake.length === 1 || (p === biggest && p.frac > 0.5) || d < 1e-4) p.target.set(0, 0, 0);
-      else p.target.set((c[0] / d) * GAP, 0, (c[1] / d) * GAP);
+      const still = onCake.length === 1 || (p === biggest && p.frac > 0.5) || d < 1e-4;
+      p.dir = still ? [0, 0] : [c[0] / d, c[1] / d];
+      // a piece the blade has just cut free slides out to show its layers
+      const fresh = p.prevFrac !== null && Math.abs(p.prevFrac - p.frac) > 1e-3;
+      p.reveal = !still && fresh && p.frac < 0.5 ? REVEAL_HOLD + 0.8 : 0;
+      p.target.set(p.dir[0] * GAP, 0, p.dir[1] * GAP);
       p.group.position.copy(p.offset);
     }
     this.assignDecorations();
@@ -475,9 +485,17 @@ export class Cake {
 
   update(dt) {
     const k = 1 - Math.exp(-dt * 14);
+    const slow = 1 - Math.exp(-dt * 7);
     for (const p of this.pieces) {
       if (p.state !== 'on') continue;
-      p.offset.lerp(p.target, k);
+      if (p.reveal > 0) {
+        // out, hold, then ease back to its place
+        p.reveal = Math.max(0, p.reveal - dt);
+        const out = Math.min(1, p.reveal / 0.8);
+        const d = GAP + REVEAL * out * out * (3 - 2 * out);
+        p.target.set(p.dir[0] * d, 0, p.dir[1] * d);
+      }
+      p.offset.lerp(p.target, p.reveal > 0 ? slow : k);
       p.group.position.copy(p.offset);
     }
   }

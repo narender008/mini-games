@@ -206,6 +206,8 @@ export class Smoke {
 const CONFETTI_COLOURS = ['#f25f7a', '#f7c948', '#5ec2e8', '#8fd46a', '#b58be8', '#ff9d4d', '#fdf6ec', '#e6c07a'];
 
 // Paper and foil confetti that tumbles, flutters down and settles.
+const H_DRAG = 1.6; // sideways drag on confetti
+
 export class Confetti {
   constructor(max, supportAt) {
     this.max = max;
@@ -230,10 +232,10 @@ export class Confetti {
     for (let k = 0; k < n; k++) {
       const i = this.next;
       this.next = (this.next + 1) % this.max;
-      const speed = 2.2 + Math.random() * 1.6;
-      const v = new THREE.Vector3((dir.x / flat) * 0.9 + (Math.random() - 0.5) * 0.9, 2.2 + Math.random() * 1.4, (dir.z / flat) * 0.9 + (Math.random() - 0.5) * 0.9)
-        .normalize()
-        .multiplyScalar(speed);
+      // aimed so the paper spreads from short of the target to beyond it
+      const reach = flat * H_DRAG * (0.45 + Math.random() * 1.1);
+      const side = (Math.random() - 0.5) * 0.9;
+      const v = new THREE.Vector3((dir.x / flat) * reach - (dir.z / flat) * side, 1.5 + Math.random() * 1.1, (dir.z / flat) * reach + (dir.x / flat) * side);
       this.items[i] = {
         p: from.clone(),
         v,
@@ -257,18 +259,27 @@ export class Confetti {
 
   update(dt) {
     if (!this.items.length) return;
+    this.tick = (this.tick || 0) + 1;
     for (let i = 0; i < this.items.length; i++) {
       const c = this.items[i];
       if (!c) continue;
       c.age += dt;
+      // paper resting up on the cake falls again if its slice is taken away
+      if (c.rest && c.p.y > 0.12 && (i + this.tick) % 8 === 0 && this.supportAt(c.p.x, c.p.z) + 0.003 < c.p.y) {
+        c.rest = false;
+        c.v.set(0, 0, 0);
+      }
       if (!c.rest) {
         c.v.y -= 9.8 * dt;
         // paper falls slowly: strong drag, and it flutters side to side
-        const drag = c.v.y < 0 ? 5.5 : 1.2;
-        c.v.multiplyScalar(Math.exp(-dt * drag));
+        c.v.y *= Math.exp(-dt * (c.v.y < 0 ? 26 : 2.2));
+        const h = Math.exp(-dt * H_DRAG);
+        c.v.x *= h;
+        c.v.z *= h;
         c.p.addScaledVector(c.v, dt);
-        c.p.x += Math.sin(c.age * 7 + c.phase) * 0.12 * dt;
-        c.p.z += Math.cos(c.age * 5 + c.phase) * 0.1 * dt;
+        const flutter = c.v.y < 0 ? 1 : 0.3;
+        c.p.x += Math.sin(c.age * 6 + c.phase) * 0.16 * flutter * dt;
+        c.p.z += Math.cos(c.age * 4.3 + c.phase) * 0.13 * flutter * dt;
         c.rot.x += c.spin.x * dt;
         c.rot.y += c.spin.y * dt;
         c.rot.z += c.spin.z * dt;
