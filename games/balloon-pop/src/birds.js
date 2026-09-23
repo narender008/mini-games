@@ -63,7 +63,7 @@ transformed.x -= abs(flap) * aWing * 0.08;`,
 
   reset(first = false) {
     // enter from the right, fly left, far out over the water
-    const z = -170 - Math.random() * 90;
+    const z = -130 - Math.random() * 60;
     this.center.set(first ? 20 + Math.random() * 25 : 150 + Math.random() * 40, 34 + Math.random() * 22, z);
     this.speed = 5.5 + Math.random() * 2;
   }
@@ -81,7 +81,7 @@ transformed.x -= abs(flap) * aWing * 0.08;`,
         this.center.z + o.z,
       );
       this.dummy.rotation.set(0, Math.PI, Math.sin(t * 0.7 + i) * 0.08);
-      this.dummy.scale.setScalar(1.25);
+      this.dummy.scale.setScalar(2.6);
       this.dummy.updateMatrix();
       this.mesh.setMatrixAt(i, this.dummy.matrix);
     }

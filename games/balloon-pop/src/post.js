@@ -1,5 +1,6 @@
 // Post-processing: HDR render, shock-wave refraction from each pop, bloom,
-// filmic (ACES) tone mapping, then a light vignette and film grain.
+// filmic (ACES) tone mapping, then a colour grade that gives back the
+// saturation ACES takes from a sunset, a light vignette and film grain.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -56,7 +57,9 @@ const FinishShader = {
     tDiffuse: { value: null },
     uTime: { value: 0 },
     uGrain: { value: 0.035 },
-    uVignette: { value: 0.32 },
+    uVignette: { value: 0.16 },
+    uSaturation: { value: 1.08 },
+    uWarmSaturation: { value: 1.65 },
     uAspect: { value: 1 },
   },
   vertexShader: DistortShader.vertexShader,
@@ -65,11 +68,17 @@ uniform sampler2D tDiffuse;
 uniform float uTime;
 uniform float uGrain;
 uniform float uVignette;
+uniform float uSaturation;
+uniform float uWarmSaturation;
 uniform float uAspect;
 varying vec2 vUv;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233)) + uTime * 7.13) * 43758.5453); }
 void main() {
   vec4 c = texture2D(tDiffuse, vUv);
+  // ACES greys out the bright warm glow most, so warm tones get more back
+  float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+  float warm = smoothstep(0.02, 0.2, c.r - c.b);
+  c.rgb = clamp(mix(vec3(l), c.rgb, mix(uSaturation, uWarmSaturation, warm)), 0.0, 1.0);
   vec2 d = vUv - 0.5;
   d.x *= mix(1.0, uAspect, 0.5);
   float v = 1.0 - uVignette * smoothstep(0.25, 0.95, length(d) * 1.2);
