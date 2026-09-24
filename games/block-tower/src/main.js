@@ -960,6 +960,19 @@ class App {
     const slot = this.challenges.active && held.turns % 2 === 0 ? this.challenges.snap(rec.shapeId, target.x, target.y) : null;
     if (slot) target.x = slot.x;
     held.snap = slot;
+    // the block travels in a straight line to its target, so keep it above
+    // everything between here and there, and lift it clear before it moves
+    // sideways: otherwise a quick drag past the build cuts its corner
+    const size = SHAPES[rec.shapeId].size;
+    const turned = held.turns % 2 === 1;
+    const half = turned ? size[0] / 2 : size[1] / 2;
+    const halfW = turned ? size[1] / 2 : size[0] / 2;
+    const cur = rec.h.body.translation();
+    const lo = Math.min(cur.x, target.x);
+    const hi = Math.max(cur.x, target.x);
+    const clear = this.footTop((lo + hi) / 2, (hi - lo) / 2 + halfW, size[2] / 2, rec.h) + half + 0.006;
+    target.y = Math.max(target.y, clear);
+    if (cur.y < clear - 0.003) target.x = cur.x;
     this.physics.drive(rec.h, target, this.holdQuat(this._q));
   }
 
