@@ -173,8 +173,6 @@ const RENDER = {
   },
 };
 
-export const INSTRUMENTS = Object.keys(RENDER);
-
 export class Instruments {
   constructor(ctx) {
     this.ctx = ctx;

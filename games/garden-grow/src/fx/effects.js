@@ -25,6 +25,7 @@ export class Effects {
     this.clods = new Clods(scene, Math.round(60 + 90 * this.k), floorAt);
     this.sprites = new SpriteBatch(scene, { capacity: 160, renderOrder: 9 });
     this.drops = new Drops(scene, { capacity: 512, groundAt: floorAt, renderOrder: 8 });
+    this.drops.uniforms.uFar.value = 2.5;
   }
 
   get reduced() {
@@ -74,12 +75,15 @@ export class Effects {
 
   // a splash of droplets (they land and throw up tiny crowns of their own)
   splash(pos) {
-    const n = Math.round(14 * this.k * (this.reduced ? 0.6 : 1)) + 4;
+    const n = Math.round(22 * this.k * (this.reduced ? 0.6 : 1)) + 6;
     const up = this.reduced ? 0.7 : 1;
     for (let i = 0; i < n; i++) {
+      // a crown: most drops fly out low and wide, a few jump high
       const a = Math.random() * Math.PI * 2;
-      const out = 0.15 + Math.random() * 0.45;
-      this.drops.emit(pos.x, pos.y + 0.003, pos.z, Math.cos(a) * out * up, (0.55 + Math.random() * 0.8) * up, Math.sin(a) * out * up, 0.0004 + Math.random() * 0.0006, 3, LAND_SPLASH, 0, 1.2);
+      const high = Math.random() < 0.25;
+      const out = high ? 0.1 + Math.random() * 0.2 : 0.3 + Math.random() * 0.5;
+      const vy = high ? 0.9 + Math.random() * 0.6 : 0.45 + Math.random() * 0.5;
+      this.drops.emit(pos.x, pos.y + 0.003, pos.z, Math.cos(a) * out * up, vy * up, Math.sin(a) * out * up, 0.0006 + Math.random() * 0.0009, 2.5, LAND_SPLASH, 0, 1.8);
     }
   }
 
@@ -111,25 +115,6 @@ export class Effects {
       p.fadeIn = 0.06 + Math.random() * 0.2;
       p.twinkle = this.reduced ? 0 : 14 + Math.random() * 10;
     }
-    this.glow(pos, color, 0.035, 0.6);
-  }
-
-  // a soft round glow of light (added, not laid over)
-  glow(pos, color, size, strength) {
-    tmpC.set(color);
-    const p = this.sprites.spawn();
-    p.x = pos.x;
-    p.y = pos.y;
-    p.z = pos.z;
-    p.size = size;
-    p.grow = 0.6;
-    p.life = 0.6;
-    p.frame = FRAME.soft;
-    p.r = (tmpC.r * 0.6 + 0.4) * strength;
-    p.g = (tmpC.g * 0.6 + 0.4) * strength;
-    p.b = (tmpC.b * 0.6 + 0.4) * strength;
-    p.add = 1;
-    p.fadeIn = 0.05;
   }
 
   update(dt) {

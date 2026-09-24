@@ -131,11 +131,11 @@ export function hedge({ z, x0, x1, h = 1.7, depth = 0.8 }, rnd, cards, density =
   const nrm = g.attributes.normal;
   const P = new THREE.Vector3();
   const N = new THREE.Vector3();
-  const per = Math.round(5 * density);
+  const per = Math.round(4 * density);
   for (let i = 0; i < cols - 1; i++) {
     for (let k = 0; k < per; k++) {
-      // mostly along the top edges, a few on the face
-      const j = rnd() < 0.25 ? 1 + Math.floor(rnd() * 3) : 3 + Math.floor(rnd() * 4);
+      // only along the top edges, where they break the clipped outline
+      const j = 3 + Math.floor(rnd() * 3);
       const f = rnd();
       const a = j * cols + i;
       const b = (j + 1 < rows ? j + 1 : j) * cols + i;
@@ -223,46 +223,108 @@ function bendPath(from, to, n, wander, rnd) {
   return pts;
 }
 
+// A lumpy low-poly mass inside a crown, textured like the hedge and shaded
+// dark, so the gaps between leaf cards show deep foliage rather than sky.
+function crownCore(c, r, rnd) {
+  const g = new THREE.IcosahedronGeometry(1, 2);
+  const p = g.attributes.position;
+  const col = new Float32Array(p.count * 3);
+  const seed = rnd() * 40;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i);
+    const y = p.getY(i);
+    const z = p.getZ(i);
+    const k = 0.55 + 0.15 * noise2(x * 2.1 + seed, z * 2.1 + y * 1.3);
+    p.setXYZ(i, c.x + x * r.x * k, c.y + y * r.y * k, c.z + z * r.z * k);
+    const v = 0.35 + 0.3 * (y * 0.5 + 0.5);
+    col.set([v, v, v * 0.95], i * 3);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  const uv = g.attributes.uv;
+  for (let i = 0; i < p.count; i++) uv.setXY(i, (p.getX(i) * 0.7 + p.getZ(i) * 0.7) / 3, p.getY(i) / 3);
+  return g;
+}
+
 // A tree: 'birch' (slender, white, airy) or 'broad' (apple or oak: short
-// trunk, three main limbs, a big dome). Returns { trunk: [geos], bark }
-// and adds the crown to `cards`.
-export function tree({ x, z, h = 7, kind = 'broad' }, rnd, cards, density = 1) {
+// trunk, three main limbs, a big dome). Returns { trunk: [geos], bark, core }
+// and adds the crown's leaf cards to `cards`.
+export function tree({ x, z, h = 7, kind = 'broad', lod = 1 }, rnd, cards, density = 1) {
   const trunk = [];
+  const core = [];
   const base = new THREE.Vector3(x, -0.1, z);
   const birch = kind === 'birch';
   const top = new THREE.Vector3(x + (rnd() - 0.5) * 0.6, h * (birch ? 0.92 : 0.45), z + (rnd() - 0.5) * 0.4);
-  trunk.push(limb(bendPath(base, top, birch ? 8 : 5, birch ? 0.25 : 0.2, rnd), birch ? 0.14 : 0.3, birch ? 0.03 : 0.18));
+  trunk.push(limb(bendPath(base, top, birch ? 8 : 5, birch ? 0.25 : 0.2, rnd), birch ? 0.14 : 0.3, birch ? 0.03 : 0.18, lod < 1 ? 5 : 7));
   const blobs = [];
   if (birch) {
     for (let i = 0; i < 5; i++) {
       const y = h * (0.45 + i * 0.11);
-      blobs.push({ c: new THREE.Vector3(x + (rnd() - 0.5) * 0.9, y, z + (rnd() - 0.5) * 0.9), r: new THREE.Vector3(1.1 + rnd() * 0.5, 1.0 + rnd() * 0.4, 1.1 + rnd() * 0.5) });
+      blobs.push({ c: new THREE.Vector3(x + (rnd() - 0.5) * 0.9, y, z + (rnd() - 0.5) * 0.9), r: new THREE.Vector3(1.2 + rnd() * 0.5, 1.0 + rnd() * 0.4, 1.2 + rnd() * 0.5) });
     }
   } else {
     for (let i = 0; i < 3; i++) {
       const a = (i / 3) * Math.PI * 2 + rnd();
-      const end = new THREE.Vector3(x + Math.cos(a) * h * 0.26, h * (0.72 + rnd() * 0.1), z + Math.sin(a) * h * 0.2);
-      trunk.push(limb(bendPath(top, end, 5, 0.3, rnd), 0.15, 0.05, 6));
-      blobs.push({ c: end.clone(), r: new THREE.Vector3(1.9 + rnd() * 0.5, 1.5 + rnd() * 0.4, 1.8 + rnd() * 0.5) });
+      const end = new THREE.Vector3(x + Math.cos(a) * h * 0.24, h * (0.62 + rnd() * 0.08), z + Math.sin(a) * h * 0.2);
+      if (lod >= 1) trunk.push(limb(bendPath(top, end, 5, 0.3, rnd), 0.15, 0.05, 6));
+      blobs.push({ c: end.clone(), r: new THREE.Vector3(h * 0.27 + rnd() * 0.5, h * 0.22 + rnd() * 0.4, h * 0.26 + rnd() * 0.5) });
     }
-    blobs.push({ c: new THREE.Vector3(x, h * 0.8, z), r: new THREE.Vector3(2.2, 1.6, 2.0) });
+    blobs.push({ c: new THREE.Vector3(x, h * 0.76, z), r: new THREE.Vector3(h * 0.31, h * 0.24, h * 0.29) });
   }
+  for (const b of blobs) core.push(crownCore(b.c, b.r, rnd));
   const tile = birch ? 1 : 2;
-  const count = Math.round((birch ? 380 : 620) * density);
+  const count = Math.round((birch ? 480 : 700) * density * lod);
   const P = new THREE.Vector3();
   for (let i = 0; i < count; i++) {
     const b = blobs[i % blobs.length];
-    // points biased to the outside of each blob, where the leaves are
+    // leaves live on the outside of each blob
     const d = rv(rnd).normalize();
-    const rr = Math.pow(rnd(), 0.35);
+    // most cards are dense leaf clusters filling the crown; loose sprays
+    // sit on the outside and break up the silhouette
+    const outer = rnd() < 0.35;
+    const rr = outer ? 0.92 + 0.14 * rnd() : 0.6 + 0.32 * Math.pow(rnd(), 0.6);
     P.set(d.x * b.r.x * rr, d.y * b.r.y * rr, d.z * b.r.z * rr).add(b.c);
-    const n = new THREE.Vector3((P.x - b.c.x) / b.r.x, (P.y - b.c.y) / b.r.y + 0.35, (P.z - b.c.z) / b.r.z).normalize();
-    const s = (birch ? 0.55 : 0.75) * (0.8 + rnd() * 0.45);
-    // inner leaves sit in the crown's shade, top leaves catch the sky
-    const shade = (0.45 + 0.55 * rr) * (0.85 + 0.25 * Math.max(0, n.y)) * (0.9 + rnd() * 0.2);
-    cards.add(P.clone(), n.clone().add(rv(rnd).multiplyScalar(0.8)), rnd() * 6.28, s, s, tile, n, shade);
+    const n = new THREE.Vector3((P.x - b.c.x) / b.r.x, (P.y - b.c.y) / b.r.y + 0.3, (P.z - b.c.z) / b.r.z).normalize();
+    const s = (outer ? (birch ? 0.6 : 0.8) : birch ? 0.8 : 1.05) * (0.8 + rnd() * 0.4) / Math.sqrt(lod);
+    // sky-lit on top, shaded underneath and inside; muted so the crown reads as one mass
+    const shade = (0.42 + 0.38 * (n.y * 0.5 + 0.5)) * (0.7 + 0.3 * rr) * (0.92 + rnd() * 0.14);
+    cards.add(P.clone(), n.clone().add(rv(rnd).multiplyScalar(outer ? 0.5 : 0.3)), rnd() * 6.28, s, s, outer ? tile : 0, n, shade);
   }
-  return { trunk, bark: birch ? 0 : 1 };
+  return { trunk, bark: birch ? 0 : 1, core };
+}
+
+// A climbing rose trained up a fence: canes fanning out from one root,
+// leaf-and-flower cards pressed flat against the boards and trellis.
+// Returns the cane geometries (bark); cards go into `cards`.
+export function climbingRose({ x, z, w = 1.8, h = 1.5 }, rnd, cards, density = 1) {
+  const canes = [];
+  const tips = [];
+  for (let i = 0; i < 7; i++) {
+    const t = (i + 0.5) / 7;
+    const tip = new THREE.Vector3(x + (t - 0.5) * w * (0.8 + rnd() * 0.3), h * (0.7 + rnd() * 0.3), z);
+    tips.push(tip);
+    const path = [];
+    const bx = x + (rnd() - 0.5) * 0.1;
+    for (let k = 0; k <= 7; k++) {
+      const f = k / 7;
+      path.push(new THREE.Vector3(bx + (tip.x - bx) * Math.sin((f * Math.PI) / 2), f * tip.y, z + 0.02 + Math.sin(f * 4 + i) * 0.012));
+    }
+    canes.push(limb(path, 0.009, 0.004, 5));
+  }
+  const n = Math.round(260 * density);
+  const P = new THREE.Vector3();
+  const N = new THREE.Vector3(0, 0.2, 1).normalize();
+  for (let i = 0; i < n; i++) {
+    const tip = tips[i % tips.length];
+    // foliage thickens towards the top, where the canes are tied in
+    const f = 0.2 + Math.pow(rnd(), 0.6) * 0.85;
+    P.set(x + (tip.x - x) * Math.sin((Math.min(1, f) * Math.PI) / 2) + (rnd() - 0.5) * 0.3, Math.min(h + 0.08, tip.y * f + (rnd() - 0.5) * 0.18), z + 0.03 + rnd() * 0.07);
+    if (P.y < 0.25) continue;
+    const s = 0.28 + rnd() * 0.16;
+    const shade = (0.62 + 0.25 * Math.min(1, P.y / h)) * (0.88 + rnd() * 0.18);
+    cards.add(P.clone(), N.clone().add(rv(rnd).multiplyScalar(0.45)), rnd() * 6.28, s, s, 3, N, shade);
+  }
+  return canes;
 }
 
 // ---------------------------------------------------------------- far away
@@ -295,7 +357,7 @@ export function treeLine({ z, x0, x1, hMin = 7, hMax = 14, bend = 0.004 }, rnd) 
       [top, 1.1],
     ]) {
       pos.push(x, y, zz);
-      uv.push(x / 6, y / 6);
+      uv.push(x / 9, y / 9);
       col.push(k, k, k);
       nor.push(0, 0.41, 0.91);
     }

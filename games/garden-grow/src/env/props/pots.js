@@ -98,6 +98,17 @@ export function terracottaPot(zone, rnd, { kind = 'rolled', saucer = true, age =
   const ph = [rnd() * 6.28, rnd() * 6.28];
   const wob = (a, y) => (0.0014 * Math.sin(a * 2 + ph[0]) + 0.0009 * Math.sin(a * 3 + ph[1])) * (0.4 + (0.6 * y) / H);
   const g = lathe(prof, seg, { vScale: H, wobble: wob });
+  // across the flat rim and down the inside, keep v moving (by distance) so
+  // the texture is not smeared radially across the rim top
+  {
+    const uv = g.attributes.uv;
+    const cols = seg + 1;
+    let v = 0.985;
+    for (let row = inner - 1; row < prof.length; row++) {
+      if (row > inner - 1) v -= Math.hypot(prof[row][0] - prof[row - 1][0], prof[row][1] - prof[row - 1][1]) / H;
+      for (let i = 0; i < cols; i++) uv.setY(row * cols + i, v);
+    }
+  }
   // age: newer pots are brighter and oranger, old ones duller
   const tint = [1.06 - age * 0.14, 1.02 - age * 0.12, 1.0 - age * 0.1];
   const bodyTop = prof[inner - 5][1];

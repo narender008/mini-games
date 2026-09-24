@@ -202,6 +202,17 @@ export function makeKit(quality) {
           vertexColors: true,
         });
       }),
+    canopy: () =>
+      once('canopy', () => {
+        const t = TX.canopyTextures();
+        return new THREE.MeshStandardMaterial({
+          map: t.map,
+          normalMap: t.normalMap,
+          normalScale: new THREE.Vector2(1, 1),
+          roughness: 0.85,
+          vertexColors: true,
+        });
+      }),
     bark: (kind = 1) =>
       once(`bark${kind}`, () => {
         const t = TX.barkTextures(kind);

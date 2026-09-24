@@ -142,8 +142,8 @@ export function bodyDetail() {
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       let sum = 0;
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) sum += hs[((y + dy + h) % h) * w + ((x + dx + w) % w)];
-      soft[y * w + x] = sum / 9;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) sum += hs[((y + dy + h) % h) * w + ((x + dx + w) % w)];
+      soft[y * w + x] = sum / 25;
     }
   }
   const map = dataTexture(data, w, h);

@@ -159,7 +159,7 @@ vec4 sa2 = texture2D(uSoilA, su2);
 vec4 sb1 = texture2D(uSoilB, su1);
 vec4 sb2 = texture2D(uSoilB, su2);
 // pick whichever sample stands higher, varied by a slow noise: no visible tiling
-float smac = gFbm(sxz * 1.6);
+float smac = gNoise(sxz * 1.6) * 0.62 + gNoise(sxz * 4.1 + 7.7) * 0.38;
 float sbw = smoothstep(-0.05, 0.05, sa2.a - sa1.a + (smac - 0.5) * 0.8);
 vec3 sAlb = mix(sa1.rgb, sa2.rgb, sbw);
 vec4 sB = mix(sb1, sb2, sbw);
@@ -175,20 +175,20 @@ sAlb *= 1.0 + 0.12 * sHole.w;
 // water: damp soil darkens and deepens, standing water lingers in hollows
 vec2 sWet = wetAt(sxz);
 float swn = gNoise(sxz * 19.0) * 0.6 + gNoise(sxz * 53.0) * 0.4;
-float sDamp = smoothstep(0.0, 1.0, clamp(sWet.x * 1.3 - (swn - 0.5) * 0.5 * (1.0 - sWet.x), 0.0, 1.0));
+float sDamp = smoothstep(0.0, 1.0, clamp(sWet.x * 1.6 - (swn - 0.5) * 0.5 * (1.0 - sWet.x) * min(1.0, sWet.x * 4.0), 0.0, 1.0));
 sDamp = max(sDamp, sHole.z * 0.45);
 float sPool = smoothstep(0.35, 0.9, sWet.y) * smoothstep(0.22, 0.08, sH + (swn - 0.5) * 0.12) * 0.7;
-sAlb = mix(sAlb, pow(sAlb, vec3(1.22)) * 0.5, sDamp);
+sAlb = mix(sAlb, pow(sAlb, vec3(1.3)) * 0.44, sDamp);
 diffuseColor.rgb = sAlb;
-float sRough = mix(sB.z, 0.55, sDamp);
-sRough = mix(sRough, 0.28, sPool);
+float sRough = mix(sB.z, 0.72, sDamp);
+sRough = mix(sRough, 0.25, sPool);
 // tiny wet facets catch the light
 vec3 sgr = gHash3(floor(sxz * 380.0));
 float sGlint = step(0.985, sgr.x) * smoothstep(0.3, 0.7, sWet.y) * step(0.12, sH);
 sRough = mix(sRough, 0.06, sGlint);
 float sAO = mix(1.0, sB.w, 0.85) * (1.0 - 0.3 * sHole.z);
 // a damp surface drinks the light: less sky sheen, except off the standing water
-float sSpec = mix(1.0, 0.75, sDamp * (1.0 - sPool));
+float sSpec = mix(1.0, 0.5, sDamp * (1.0 - sPool));
 vec3 sNg = normalize(vSoilN);
 vec3 sNw = normalize(vec3(sNg.x + sN.x * 1.25 - sHole.x, sNg.y, sNg.z + sN.y * 1.25 - sHole.y) + vec3(sgr.y - 0.5, 0.0, sgr.z - 0.5) * sGlint * 0.6);
 `;
@@ -196,10 +196,10 @@ vec3 sNw = normalize(vec3(sNg.x + sN.x * 1.25 - sHole.x, sNg.y, sNg.z + sN.y * 1
 // Dry, dusty soil is very matte even at grazing angles (its crumbs shade
 // their own sheen); water brings the gloss back.
 const SOIL_SPEC = /* glsl */ `
-float sWetK = max(sDamp, sPool);
+float sWetK = max(sDamp * 0.35, sPool);
 material.specularColor *= mix(0.55, 1.0, sWetK);
 material.specularColorBlended *= mix(0.55, 1.0, sWetK);
-material.specularF90 = mix(0.3, 0.6, sWetK) + sGlint * 0.4;
+material.specularF90 = mix(0.3, 0.8, sWetK) + sGlint * 0.5;
 `;
 
 export function soilSurfaceMaterial(maps, uniforms, { tile, pot }) {
@@ -278,7 +278,7 @@ export function lumpMaterial(maps, uniforms, stone) {
         lRough = mix(lRough, 0.25, lWet.y * ${stone ? '0.5' : '0.2'});`,
       )
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = lRough;')
-      .replace('#include <aomap_fragment>', '#include <aomap_fragment>\nreflectedLight.indirectDiffuse *= lAO;');
+      .replace('#include <aomap_fragment>', `#include <aomap_fragment>\nreflectedLight.indirectDiffuse *= lAO;\nreflectedLight.indirectSpecular *= lAO * ${stone ? 'mix(0.55, 1.0, lDamp)' : '1.0'};`);
   };
   m.customProgramCacheKey = () => (stone ? 'gg-stone' : 'gg-lump');
   return m;

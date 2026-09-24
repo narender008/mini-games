@@ -393,13 +393,13 @@ export function mandible({ len, w, h, curve = 0, upper = true, base, tip, mouth,
 
 // Both eyes (glossy dark spheres) with a thin lid ring, in head space.
 // `eyes` = [{ p: Vector3 (centre, head space), n: Vector3 (outward) }].
-export function eyesPiece(eyes, r, ringColor, irisColor) {
+export function eyesPiece(eyes, r, ringColor, irisColor, seg = 20) {
   const out = [];
   const ci = new THREE.Color(irisColor);
   const cr = new THREE.Color(ringColor);
   const up = new THREE.Vector3(0, 0, 1);
   for (const e of eyes) {
-    const sph = new THREE.SphereGeometry(r, 20, 14);
+    const sph = new THREE.SphereGeometry(r, seg, Math.round(seg * 0.7));
     const q = piece();
     q.p = Array.from(sph.attributes.position.array);
     q.n = Array.from(sph.attributes.normal.array);
@@ -409,7 +409,7 @@ export function eyesPiece(eyes, r, ringColor, irisColor) {
     const m = new THREE.Matrix4().makeTranslation(e.p.x, e.p.y, e.p.z);
     out.push(transformPiece(q, m));
     // lid ring: a torus sitting where the eye meets the feathers
-    const tor = new THREE.TorusGeometry(r * 0.93, r * 0.2, 6, 24);
+    const tor = new THREE.TorusGeometry(r * 0.93, r * 0.2, 6, Math.round(seg * 1.2));
     const t = piece();
     t.p = Array.from(tor.attributes.position.array);
     t.n = Array.from(tor.attributes.normal.array);

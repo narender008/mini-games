@@ -11,7 +11,7 @@ body {
   --moss-deep: #335423;
   --cream: #fbf7ec;
   --focus: #f3b93a;
-  --glass: color-mix(in srgb, rgba(30, 38, 70, 0.56) calc(var(--night) * 100%), rgba(251, 248, 238, 0.6));
+  --glass: color-mix(in srgb, rgba(30, 38, 70, 0.56) calc(var(--night) * 100%), rgba(251, 247, 236, 0.66));
   --glass-strong: color-mix(in srgb, rgba(30, 38, 70, 0.86) calc(var(--night) * 100%), rgba(252, 249, 241, 0.86));
   --glass-panel: color-mix(in srgb, rgba(30, 38, 70, 0.72) calc(var(--night) * 100%), rgba(252, 249, 241, 0.74));
   --edge: color-mix(in srgb, rgba(200, 212, 255, 0.22) calc(var(--night) * 100%), rgba(255, 255, 255, 0.78));
@@ -383,7 +383,7 @@ svg {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   gap: clamp(12px, 2.8vmin, 30px);
   padding-top: calc(var(--tap) + 8px);
   pointer-events: none;
@@ -403,7 +403,7 @@ svg {
   width: min(760px, 110%);
   height: min(620px, 96%);
   transform: translate(-50%, -52%);
-  background: radial-gradient(closest-side, rgba(253, 250, 238, 0.5), rgba(253, 250, 238, 0.22) 55%, rgba(253, 250, 238, 0));
+  background: radial-gradient(closest-side, rgba(253, 250, 238, 0.36), rgba(253, 250, 238, 0.14) 55%, rgba(253, 250, 238, 0));
   pointer-events: none;
   z-index: -1;
 }
@@ -815,8 +815,18 @@ body:not([data-mode='big']) #dock {
 }
 
 @media (hover: hover) {
-  .tool:not([aria-checked='true']):hover {
+  .tool:not([aria-checked='true']):hover,
+  .tile:not([aria-checked='true']):hover {
     background: var(--well);
+    box-shadow: inset 0 0 0 1px var(--edge), 0 3px 8px rgba(34, 48, 18, 0.14);
+  }
+
+  .mode:not([aria-checked='true']):hover {
+    background: var(--glass-strong);
+  }
+
+  .packet:not([aria-checked='true']):hover {
+    transform: translateY(-4px);
   }
 }
 
@@ -1695,12 +1705,12 @@ body:not([data-state='playing']) #marks {
   }
 
   .logo {
-    font-size: clamp(36px, min(12vw, 6.8vh), 88px);
+    font-size: clamp(36px, min(12vw, 6.2vh), 88px);
   }
 
   .play {
-    width: clamp(78px, min(26vw, 14vh), 156px);
-    height: clamp(78px, min(26vw, 14vh), 156px);
+    width: clamp(78px, min(26vw, 12.6vh), 156px);
+    height: clamp(78px, min(26vw, 12.6vh), 156px);
   }
 
   .modes {
@@ -1712,7 +1722,7 @@ body:not([data-state='playing']) #marks {
   }
 
   .mode svg {
-    width: min(60%, 7.6vh);
+    width: min(60%, 6.6vh);
   }
 
   .pickers[data-where='menu'] {
@@ -1792,7 +1802,8 @@ body:not([data-state='playing']) #marks {
   }
 
   #settings .sheet {
-    width: min(100%, 480px);
+    width: auto;
+    max-width: 100%;
     max-height: 78%;
     animation-name: sheet-up;
   }
@@ -1805,12 +1816,17 @@ body:not([data-state='playing']) #marks {
   }
 
   .journal {
-    height: 100%;
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    max-height: 100%;
     max-width: 560px;
   }
 
   .pages {
     display: block;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     border-radius: 10px;
     touch-action: pan-y;
@@ -1963,6 +1979,22 @@ body:not([data-state='playing']) #marks {
       opacity: 0;
     }
   }
+}
+
+/* body.lite (low quality tier): no backdrop blur, a little more opaque glass */
+body.lite {
+  --glass: color-mix(in srgb, rgba(30, 38, 70, 0.78) calc(var(--night) * 100%), rgba(250, 246, 234, 0.86));
+  --glass-panel: var(--glass-strong);
+}
+
+.lite .glass,
+.lite .glass-strong,
+.lite .round,
+.lite .chip,
+.lite .mode,
+.lite .pickers[data-where='menu'] {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* ?cover: the garden alone, for the cover picture */

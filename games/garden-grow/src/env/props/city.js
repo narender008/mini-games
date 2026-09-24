@@ -128,7 +128,7 @@ roughnessFactor = mix(roughnessFactor, 0.12, ggGlass);`,
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
-totalEmissiveRadiance += vec3(1.0, 0.66, 0.34) * ggLit * uNight * 2.2;`,
+totalEmissiveRadiance += vec3(1.0, 0.62, 0.3) * ggLit * uNight * 1.1;`,
       );
   };
   mat.customProgramCacheKey = () => 'gg-houses';
@@ -208,8 +208,8 @@ export function cityBelow(layout, rnd, kit, quality) {
         x += w;
       }
       // street trees in front, garden trees behind
-      for (let k = 0; k < 2; k++) {
-        if (rnd() < 0.7) trees.push({ x: x - rnd() * n * 5, z: row.z + row.face * (4 + rnd() * 2), h: 7 + rnd() * 4, r: 2.2 + rnd() * 1.2 });
+      for (let k = 0; k < 3; k++) {
+        if (rnd() < 0.75) trees.push({ x: x - rnd() * n * 5, z: row.z + row.face * (4 + rnd() * 2), h: 7 + rnd() * 4, r: 2.2 + rnd() * 1.2 });
         if (rnd() < 0.8) trees.push({ x: x - rnd() * n * 5, z: row.z - row.face * (d + 5 + rnd() * 8), h: 6 + rnd() * 5, r: 2.5 + rnd() * 1.5 });
       }
       x += 10 + rnd() * 6;
@@ -301,7 +301,7 @@ export function cityBelow(layout, rnd, kit, quality) {
   group.add(ground);
 
   // ---- hills on the horizon
-  const hills = new THREE.Mesh(treeLine({ z: -320, x0: -420, x1: 420, hMin: 18, hMax: 42, bend: 0.0006 }, rnd), kit.hedge());
+  const hills = new THREE.Mesh(treeLine({ z: -320, x0: -420, x1: 420, hMin: 18, hMax: 42, bend: 0.0006 }, rnd), kit.canopy());
   hills.position.y = STREET;
   group.add(hills);
 

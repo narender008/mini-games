@@ -127,6 +127,6 @@ function eyespot(P, x, y, rx, ry, rot, dorsal) {
   P.blob(x, y, rx * 1.35, ry * 1.3, rot, dorsal ? '#8a3c56' : '#a0606e', 0.01, 0.85);
   P.blob(x, y - ry * 0.12, rx * 1.2, ry * 1.12, rot, '#2c1c1a', 0.003);
   P.blob(x, y - ry * 0.1, rx * 1.05, ry * 0.98, rot, '#e6c65a', 0.004);
-  P.blob(x, y - ry * 0.05, rx * 0.7, ry * 0.7, rot, '#d9e6c4', 0.006);
-  P.blob(x - rx * 0.1, y - ry * 0.2, rx * 0.35, ry * 0.25, rot, '#f2f4ea', 0.006, 0.8);
+  P.blob(x, y - ry * 0.05, rx * 0.7, ry * 0.7, rot, '#c8dcaa', 0.008);
+  P.blob(x - rx * 0.1, y - ry * 0.2, rx * 0.3, ry * 0.2, rot, '#e2ead2', 0.01, 0.35);
 }

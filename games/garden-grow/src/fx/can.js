@@ -16,6 +16,7 @@ const CARRY_TILT = -0.1; // held just a little nose-down while carried
 const JET_SPEED = 1.15; // m/s out of the rose at full flow
 const JET_RATE = 62; // drops per second per hole: enough for an unbroken thread
 const DRAG = 1.8;
+const SPRAY = 0.35; // stray droplets per jet drop: the fine spray round a rose
 
 const tmpV = new THREE.Vector3();
 const tmpW = new THREE.Vector3();
@@ -75,7 +76,8 @@ export class WateringCan {
       h.dir.normalize();
     }
     this.fullRate = this.holes.length * JET_RATE;
-    this.drops = new Drops(scene, { capacity: Math.ceil(this.fullRate * 0.75 + 600), groundAt, gain: 1 });
+    this.drops = new Drops(scene, { capacity: Math.ceil(this.fullRate * 0.75 * (1 + SPRAY) + 700), groundAt, gain: 1 });
+    this.drops.uniforms.uFar.value = 2.4;
     this.drops.crownScale = REDUCED_MOTION.matches ? 0.6 : 1;
     this.landX = 0;
     this.landZ = 0;
@@ -340,7 +342,16 @@ export class WateringCan {
         const vz = (d.z + (Math.random() - 0.5) * jit) * s + vel.z * 0.85;
         const flags = LAND_REPORT | (Math.random() < 0.35 ? LAND_SPLASH : 0);
         const glint = -(0.5 + Math.random() * Math.random() * 1.8);
-        this.drops.emit(p.x - vel.x * age, p.y - vel.y * age, p.z - vel.z * age, vx, vy, vz, 0.0005 + Math.random() * 0.00025, DRAG, flags, weight, glint, age);
+        const px = p.x - vel.x * age;
+        const py = p.y - vel.y * age;
+        const pz = p.z - vel.z * age;
+        this.drops.emit(px, py, pz, vx, vy, vz, 0.0005 + Math.random() * 0.00025, DRAG, flags, weight, glint, age);
+        if (Math.random() < SPRAY) {
+          // a stray droplet flung a little off the jet's line
+          const sj = 0.16;
+          const ss = s * (0.75 + Math.random() * 0.35);
+          this.drops.emit(px, py, pz, (d.x + (Math.random() - 0.5) * sj) * ss + vel.x * 0.85, (d.y + (Math.random() - 0.5) * sj) * ss + vel.y * 0.85, (d.z + (Math.random() - 0.5) * sj) * ss + vel.z * 0.85, 0.00022 + Math.random() * 0.0002, DRAG * 1.5, 0, 0, 0.8 + Math.random() * 1.2, age);
+        }
       }
     }
   }

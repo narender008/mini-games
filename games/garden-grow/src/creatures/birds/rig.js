@@ -5,7 +5,7 @@
 // BirdRig is one bird, posed by writing its `pose` fields then apply().
 import * as THREE from 'three';
 import { birdFields, sculptMesh, surfacePoint, mandible, eyesPiece, toGeometry, tarsusGeometry, footGeometry } from './sculpt.js';
-import { buildWing, buildTail } from './feathers.js';
+import { buildWing, buildTail, wingCovers } from './feathers.js';
 import { plumageMaterial, featherMaterial, beakMaterial, eyeMaterial, legMaterial } from './materials.js';
 
 const MM = 0.001;
@@ -13,16 +13,22 @@ const D2R = Math.PI / 180;
 const v3 = (a) => new THREE.Vector3(a[0], a[1], a[2]).multiplyScalar(MM);
 
 export class SpeciesAssets {
-  constructor(sp) {
+  // detail: 1 for the full mesh, less on slower devices (fewer segments)
+  constructor(sp, { detail = 1 } = {}) {
     this.sp = sp;
-    const fields = birdFields(sp);
+    // the body's cover feathers are placed from the folded wing
+    const covers = sp.covers || wingCovers(sp, birdFields({ ...sp, covers: [] }).core);
+    const fields = birdFields({ ...sp, covers });
     this.fields = fields;
     this.hip = v3(sp.hip);
     this.neck = v3(sp.neck);
     this.posture = sp.posture * D2R;
 
-    this.body = sculptMesh({ fields, part: 'body', center: sp.bodyCenter, axis: sp.bodyAxis, up: [0, sp.bodyAxis[2], -sp.bodyAxis[1]], segU: 72, segV: 56, repeat: [7, 4], pivot: sp.hip });
-    this.head = sculptMesh({ fields, part: 'head', center: sp.headCenter, axis: sp.headAxis, up: [0, 1, 0], segU: 56, segV: 44, repeat: [5, 3], pivot: sp.neck });
+    // the body's poles: the front one inside the head, the rear one under the tail
+    const ax = new THREE.Vector3(...sp.headCenter).sub(new THREE.Vector3(...sp.bodyCenter)).normalize();
+    const seg = (n) => Math.max(8, Math.round((n * detail) / 2) * 2);
+    this.body = sculptMesh({ fields, part: 'body', center: sp.bodyCenter, axis: ax.toArray(), up: [0, ax.z, -ax.y], segU: seg(72), segV: seg(56), repeat: [7, 4], pivot: sp.hip });
+    this.head = sculptMesh({ fields, part: 'head', center: sp.headCenter, axis: sp.headAxis, up: [0, 1, 0], segU: seg(56), segV: seg(44), repeat: [5, 3], pivot: sp.neck });
 
     // eyes on the head surface, slightly sunk in
     const eyes = [];
@@ -35,7 +41,7 @@ export class SpeciesAssets {
       eyes.push({ p: c, n: n.clone() });
     }
     this.eyeSpots = eyes;
-    this.eyes = toGeometry(eyesPiece(eyes, sp.eye.r * MM, sp.eye.ring, sp.eye.iris));
+    this.eyes = toGeometry(eyesPiece(eyes, sp.eye.r * MM, sp.eye.ring, sp.eye.iris, seg(20)));
 
     // beak: base on the face, pointing along `dir` pitched a little down
     const bd = sp.beak;
@@ -52,6 +58,11 @@ export class SpeciesAssets {
     this.shoulder = v3(sp.wing.shoulder);
     this.tailBase = v3(sp.tail.base);
     this.tailRest = sp.tail.pitch * D2R;
+    // tail cock that lines the tail up with a level (flying) body
+    this.tailLevel = -(this.posture + this.tailRest);
+    // tucked for flight, the tarsus lies back along the belly
+    const tk = new THREE.Vector3(0, 0.12, -1).normalize().multiplyScalar(0.017);
+    this.tuckDir = tk.applyAxisAngle(new THREE.Vector3(1, 0, 0), -this.posture);
 
     const lg = sp.legs;
     this.tarsus = tarsusGeometry(lg.r[0], lg.r[1], lg.color, lg.scale);
@@ -61,6 +72,7 @@ export class SpeciesAssets {
 
     this.mats = {
       plumage: plumageMaterial(sp),
+      fuzz: plumageMaterial(sp, { fuzz: true }),
       feathers: featherMaterial(sp),
       beak: beakMaterial(),
       eye: eyeMaterial(),
@@ -105,6 +117,12 @@ export class BirdRig {
     this.body.add(this.head);
     this.headMesh = mesh(A.head, M.plumage);
     this.head.add(this.headMesh);
+    // soft feather-tip outline, shown when the camera is close
+    this.fuzz = [new THREE.Mesh(A.body, M.fuzz), new THREE.Mesh(A.head, M.fuzz)];
+    for (const f of this.fuzz) f.receiveShadow = shadows;
+    this.body.add(this.fuzz[0]);
+    this.head.add(this.fuzz[1]);
+    this.setFuzz(false);
     this.eyes = mesh(A.eyes, M.eye, false);
     this.eyes.receiveShadow = false;
     this.head.add(this.eyes);
@@ -166,6 +184,8 @@ export class BirdRig {
       wingDroop: 0, // folded wings let down a little (flicks)
       tuck: 0, // legs tucked for flight
       feetDown: 0, // feet reaching forward to land
+      hopFeet: 0, // toes pointing down in a hop
+      headDrop: 0, // neck reaching down and forward (pecking)
     };
   }
 
@@ -183,6 +203,7 @@ export class BirdRig {
     _q.setFromEuler(_e);
     _q2.copy(this.body.quaternion).invert();
     this.head.quaternion.copy(_q2).multiply(_q);
+    this.head.position.set(A.neck.x - A.hip.x, A.neck.y - A.hip.y + p.headDrop, A.neck.z - A.hip.z - p.headDrop * 0.6);
     const hs = 1 / s;
     this.head.scale.set(hs * (1 + p.fluff * 0.04), hs * (1 + p.fluff * 0.04), hs * (1 + p.fluff * 0.04));
     // beak
@@ -204,7 +225,7 @@ export class BirdRig {
       // tucked: the foot folds back under the belly
       _f.copy(leg.footPos);
       if (p.tuck > 0) {
-        _v.set(0, -0.004, -0.017).applyQuaternion(this.body.quaternion).add(_a);
+        _v.copy(A.tuckDir).applyQuaternion(this.body.quaternion).add(_a);
         _f.lerp(_v, p.tuck);
       }
       if (p.feetDown > 0) {
@@ -220,10 +241,16 @@ export class BirdRig {
       const toeOut = leg.side * 0.12;
       if (p.tuck > 0.01) {
         // toes curl back along the tarsus
-        _e.set(-p.tuck * 1.9 + p.pitch * p.tuck, p.yaw + toeOut, 0, 'YXZ');
-      } else _e.set(-p.feetDown * 0.5, toeOut, 0, 'YXZ');
+        _e.set(p.tuck * (Math.PI * 0.5 + 0.35) + p.pitch * p.tuck - p.tuck * A.posture, p.yaw + toeOut * (1 - p.tuck), 0, 'YXZ');
+      } else _e.set(-p.feetDown * 0.5 + p.hopFeet * 0.35, toeOut, 0, 'YXZ');
       leg.foot.quaternion.setFromEuler(_e);
     }
+  }
+
+  setFuzz(on) {
+    if (this.fuzzOn === on) return;
+    this.fuzzOn = on;
+    for (const f of this.fuzz) f.visible = on;
   }
 
   // world position of the body centre (for picking and sound)

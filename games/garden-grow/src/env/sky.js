@@ -121,7 +121,6 @@ export class Atmosphere {
     this.oc = { v: 0, from: 0, to: 0, k: 1, dur: 1 };
     this.viewAz = 0;
     this.skyAvg = new THREE.Vector3();
-    this.keyDir = new THREE.Vector3();
     this.keyColor = new THREE.Color();
     this.lastShadowDir = new THREE.Vector3();
 
@@ -142,7 +141,7 @@ export class Atmosphere {
     if (this.k >= 1) {
       copyFlat(this.to, this.cur);
       this.compute();
-      this.envDirty = true;
+      this.refreshEnv();
     }
   }
 
@@ -156,7 +155,7 @@ export class Atmosphere {
     if (o.k >= 1) {
       o.v = o.to;
       this.compute();
-      this.envDirty = true;
+      this.refreshEnv();
     }
   }
 
@@ -354,9 +353,13 @@ export class Atmosphere {
     }
     acc.multiplyScalar(1 / 3);
     this.state.horizonColor.setRGB(acc.x, acc.y, acc.z);
-    // haze over a few tens of metres is paler than the horizon itself
+    // haze over a few tens of metres: as bright as the horizon but leaning
+    // to the colour of the whole sky, so far trees go cool and distant
+    // rather than muddy when the low sun is behind them
     const l = LUM(acc.x, acc.y, acc.z);
-    acc.lerp(_w.setScalar(l), 0.3).multiplyScalar(P.fogGain);
+    const a = this.skyAvg;
+    const k = l / Math.max(1e-6, LUM(a.x, a.y, a.z));
+    acc.lerp(_w.set(a.x * k, a.y * k, a.z * k), P.fogSky).multiplyScalar(P.fogGain);
     this.fog.color.setRGB(acc.x, acc.y, acc.z);
     this.fog.density = P.fog * (1 + 1.2 * this.oc.v);
     this.state.fogDensity = this.fog.density;

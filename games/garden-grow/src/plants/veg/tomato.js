@@ -13,7 +13,7 @@ import { normalMapFromHeight, fbm, noise2 } from '../../shared.js';
 import { vegLeaf, vegStem, rigidSway } from './mats.js';
 import { petalMaterial } from '../materials.js';
 import { buildLeaf } from './leaf.js';
-import { Wobble, hookCurve, shareGeometry, disposeShared, toWorld, grow } from './kit.js';
+import { Wobble, hookCurve, shareGeometry, disposeShared, toWorld, grow, readyMorphs } from './kit.js';
 
 const STEM_UV = [0.005, 0.02, 0.07, 0.98];
 const LEAF_UV = [0.09, 0, 1, 1];
@@ -314,9 +314,9 @@ function materials() {
 const RIPE = [
   [0, '#4f8a26'],
   [0.3, '#8fb04a'],
-  [0.48, '#cdb248'],
-  [0.64, '#e8862c'],
-  [0.82, '#e0421e'],
+  [0.48, '#d4a83a'],
+  [0.64, '#ea7a22'],
+  [0.82, '#e0381a'],
   [1, '#c9200f'],
 ].map(([k, c]) => [k, new THREE.Color(c)]);
 function ripeColor(k, out) {
@@ -333,6 +333,9 @@ const _q2 = new THREE.Quaternion();
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _v3 = new THREE.Vector3();
+const _dir = new THREE.Vector3();
+const _side = new THREE.Vector3();
+const _start = new THREE.Vector3();
 const _s = new THREE.Vector3();
 const _m = new THREE.Matrix4();
 const _c = new THREE.Color();
@@ -395,7 +398,7 @@ export function createTomato({ seed = 1, quality } = {}) {
     const g2 = shareGeometry(geo);
     const fa = new THREE.InstancedBufferAttribute(new Float32Array(count * 2), 2);
     g2.setAttribute('aVegFlex', fa);
-    const m = new THREE.InstancedMesh(g2, mat, count);
+    const m = readyMorphs(new THREE.InstancedMesh(g2, mat, count));
     m.castShadow = shadows;
     m.frustumCulled = false;
     m.userData.src = geo;
@@ -429,10 +432,10 @@ export function createTomato({ seed = 1, quality } = {}) {
     yaw: yaw0 + (j * 2.4 + 1.2) + (rng() - 0.5) * 0.3,
     bud: 0.64 + 0.06 * j,
     set: 0.8 + 0.045 * j,
-    ripe0: 0.87 + 0.06 * j,
+    ripe0: 0.87 + 0.05 * j,
     flowers: Array.from({ length: FPT }, (_, f) => ({
       side: f % 2 ? 1 : -1,
-      at: 0.4 + (0.55 * f) / Math.max(1, FPT - 1),
+      at: 0.48 + (0.5 * f) / Math.max(1, FPT - 1),
       size: 0.85 + rng() * 0.3,
       spin: rng() * 6,
       lag: rng() * 0.02,
@@ -564,10 +567,10 @@ export function createTomato({ seed = 1, quality } = {}) {
       const lift = pick && pick.truss === j ? tug : 0;
       along(Math.min(tr.s, Lr), _v, _v2);
       const node = _v3.copy(_v);
-      const dir = new THREE.Vector3(Math.sin(tr.yaw), 0, Math.cos(tr.yaw));
+      const dir = _dir.set(Math.sin(tr.yaw), 0, Math.cos(tr.yaw));
       const pp = stems.points[tube];
       const pn = pp.length - 1;
-      const reach = 0.075 * grown;
+      const reach = 0.095 * grown;
       for (let i = 0; i <= pn; i++) {
         const t = i / pn;
         const up = 0.022 * Math.sin(Math.PI * t * 0.9) - (0.012 + 0.045 * heavy - lift * 0.03) * t * t;
@@ -576,12 +579,12 @@ export function createTomato({ seed = 1, quality } = {}) {
       const nodeFlex = stemFlex(tr.s);
       const pedFlex = (m) => nodeFlex + 0.4 * (m / 0.4) * (m / 0.4);
       stems.set(tube, (t) => (grown > 0.01 ? lerp(0.0016, 0.001, t) : 0), pp, pedFlex);
-      const side = new THREE.Vector3().crossVectors(Y, dir).normalize();
+      const side = _side.crossVectors(Y, dir).normalize();
       for (let f = 0; f < FPT; f++) {
         const fl = tr.flowers[f];
         const k = Math.round(fl.at * pn * 100) / 100;
         const i0 = Math.min(pn - 1, Math.floor(k));
-        const start = new THREE.Vector3().copy(pp[i0]).lerp(pp[i0 + 1], k - i0);
+        const start = _start.copy(pp[i0]).lerp(pp[i0 + 1], k - i0);
         const ped = stems.points[tube + 1 + f];
         const plen = 0.017 * grown;
         for (let i = 0; i <= 3; i++) {
@@ -673,7 +676,7 @@ export function createTomato({ seed = 1, quality } = {}) {
     fGeo.setAttribute('aVegFlex', new THREE.InstancedBufferAttribute(new Float32Array(FPT * 2), 2));
     const cGeo = shareGeometry(calyxGeometry());
     const fr = new THREE.InstancedMesh(fGeo, mats.fruit, FPT);
-    const cx = new THREE.InstancedMesh(cGeo, mats.sepal, FPT);
+    const cx = readyMorphs(new THREE.InstancedMesh(cGeo, mats.sepal, FPT));
     for (let f = 0; f < FPT; f++) {
       const idx = j * FPT + f;
       fruits.getMatrixAt(idx, _m);
@@ -744,6 +747,8 @@ export function createTomato({ seed = 1, quality } = {}) {
   // ---------------------------------------------------------- targets
 
   const tg = Array.from({ length: 2 + NT * 2 }, () => ({ pos: new THREE.Vector3(), normal: new THREE.Vector3(0, 1, 0), plant: null, kind: 'leaf', color: '#46782c' }));
+
+  apply(); // valid from the first frame, before Plants flushes it
 
   return {
     object,

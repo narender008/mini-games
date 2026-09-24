@@ -81,9 +81,9 @@ export function wingLayout(sp) {
       pointy: true,
       tipStart: 0.55,
       len: P * primLen[k],
-      width: P * 0.15,
+      width: P * 0.165,
       outer: 0.3,
-      spread: { base, psi: 24 + k * 7.4, elev: 2 + k * 0.4 },
+      spread: { base, psi: 30 + k * 5.4, elev: 2 + k * 0.4 },
       fold: aim(0.05 * P + k * 0.008 * P, 0.56 * D + k * 0.04 * D, P * primLen[k], tipT + (1 - primLen[k]) * 0.5 * D, 0.42 - k * 0.03),
     });
   }
@@ -176,6 +176,43 @@ export function wingLayout(sp) {
     fold: { s0: -0.05 * P, t0: 0.28 * D, beta: 4, layer: 1.3 },
   });
   return list;
+}
+
+// The folded wing's chart: (s back along the wing, t down from its top
+// edge) -> rest-space [y, z] in mm.
+export function chartPoint(sp, s, t) {
+  const w = sp.wing;
+  const ang = w.chart.angle * D2R;
+  const hlen = w.chart.hlen ?? w.primary;
+  const hs = Math.max(0, Math.min(1, s / hlen));
+  const y = w.chart.origin[0] + Math.sin(ang) * s - Math.cos(ang) * t + (w.chart.hump ?? 0) * 4 * hs * (1 - hs);
+  const z = w.chart.origin[1] - Math.cos(ang) * s - Math.sin(ang) * t;
+  return [y, z];
+}
+
+// Feathers of the body that overlap the folded wing: scapulars along its
+// top edge and breast-side feathers over the bend of the wing. Placed from
+// the wing chart so they sit a couple of millimetres proud of the core.
+export function wingCovers(sp, core) {
+  const w = sp.wing;
+  const P = w.primary;
+  const D = 0.46 * P * (w.depth ?? 1);
+  const lat = (y, z) => {
+    for (let x = 40; x >= 0; x -= 0.25) if (core(x * MM, y * MM, z * MM) < 0) return x;
+    return 0;
+  };
+  const a = chartPoint(sp, 0.1 * P, 3);
+  const b = chartPoint(sp, 0.62 * P, 3);
+  const cy = (a[0] + b[0]) / 2;
+  const cz = (a[1] + b[1]) / 2;
+  const len = Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const pitch = Math.atan2(a[0] - b[0], a[1] - b[1]) / D2R;
+  const rx = 7 * (w.coverScale ?? 1);
+  const scap = { c: [lat(cy, cz) + 2.3 - rx, cy, cz], r: [rx, 6.5 * (w.coverScale ?? 1), len / 2 + 4], pitch };
+  const f = chartPoint(sp, -1, 0.45 * D);
+  const brx = 8 * (w.coverScale ?? 1);
+  const breast = { c: [lat(f[0], f[1]) + 2.5 - brx, f[0], f[1]], r: [brx, 0.5 * D, 6], pitch: -w.chart.angle };
+  return [scap, breast];
 }
 
 // Millimetre sizes per feather type, for painting the atlas.
@@ -369,9 +406,9 @@ export function buildWing(sp, fields) {
     const s = fo.s0 + bl * Math.cos(beta) + off * Math.sin(beta);
     const t = fo.t0 + bl * Math.sin(beta) - off * Math.cos(beta);
     // the chart bows up to follow the curve of the back
-    const hs = Math.max(0, Math.min(1, s / humpLen));
-    let y = O.y + Sd.y * s + Td.y * t + hump * 4 * hs * (1 - hs);
-    const z = O.z + Sd.z * s + Td.z * t;
+    const cp2 = chartPoint(sp, s, t);
+    let y = cp2[0];
+    const z = cp2[1];
     // tuck the top edge under the back feathers and the front under the breast
     const edge = dorsalAt(z) - margin;
     const D = 0.46 * sp.wing.primary * (sp.wing.depth ?? 1);

@@ -28,6 +28,7 @@ uniform vec3 uSunDir;
 uniform vec3 uSunCol;
 uniform vec3 uEnv;
 uniform float uGain;
+uniform float uFar; // extra presence for drops too small to resolve (far off)
 varying vec4 vGeo; // across (px), along (px), streak length (px), core radius (px)
 varying vec3 vCol;
 varying float vA;
@@ -66,7 +67,8 @@ vec3 dropLight(vec3 p, float glint, float seed) {
   float cg = dot(-uSunDir, V); // 1: looking into the sun through the drop
   float f = max(cg, 0.0);
   float fwd = 3.2 * pow(f, 8.0) + 0.5 * f * f;
-  float flick = 0.45 + 0.55 * sin(uTime * 29.0 + seed * 91.0);
+  // wobbling drops flash now and then as a facet catches the sun
+  float flick = 0.3 + 1.7 * pow(0.5 + 0.5 * sin(uTime * 23.0 + seed * 91.0), 6.0);
   float ang = acos(clamp(cg, -1.0, 1.0));
   float b = (ang - 2.398) / 0.034; // primary rainbow: red at 137.4, violet at 139.4 degrees
   vec3 bow = clamp(vec3(1.2 - abs(b - 0.1) * 1.6, 1.1 - abs(b - 0.55) * 1.8, 1.2 - abs(b - 1.05) * 1.6), 0.0, 1.0);
@@ -121,6 +123,9 @@ void main() {
   // the shutter spreads a drop along its streak; a thread is not thinned
   float motion = mix(dPx / (len + dPx), 1.0, thread);
   float cover = min(1.0, dPx / (1.5 * max(dPx * 0.5, 0.65))) * motion;
+  // a real lens softens many fine drops into a visible shower; lend the
+  // unresolved ones a little more presence so the fan reads at a distance
+  cover = min(1.0, cover * mix(1.0, uFar, smoothstep(1.2, 0.35, dPx)));
   // fade drops that come very close to the lens
   cover *= smoothstep(0.12, 0.3, w);
   vA = cover;
@@ -138,6 +143,7 @@ export function streakMaterial(vertexShader, extraUniforms = {}) {
     uSunCol: { value: new THREE.Color(3, 3, 3) },
     uEnv: { value: new THREE.Color(0.3, 0.3, 0.3) },
     uGain: { value: 1 },
+    uFar: { value: 1 },
     ...extraUniforms,
   };
   return new THREE.ShaderMaterial({

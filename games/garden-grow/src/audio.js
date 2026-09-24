@@ -6,9 +6,10 @@
 // garden's ambience lives in ambience.js and the music in music.js.
 //
 // Everything is soft. Every sound starts and ends at exactly zero, levels
-// peak well below full scale, the master is conservative (a gentle
-// compressor and a soft top-end roll-off) and Bedtime (setCalm) makes it
-// all quieter and darker still.
+// peak well below full scale, the master is conservative (a soft top-end
+// roll-off, a gentle compressor and a safety limiter at about -6 dBFS), a
+// whole bed sprouting at once ripples instead of stacking up, and Bedtime
+// (setCalm) makes it all quieter and darker still.
 import { load, save, VISITORS } from './config.js';
 import { Music } from './music.js';
 import { Ambience } from './ambience.js';
@@ -18,6 +19,7 @@ import { birdPhrase } from './sound/birds.js';
 import { toBuffer, white, pinkify, removeDC } from './sound/synth.js';
 
 const MASTER = 0.8;
+const MAKEUP_LIMIT = 0.676;
 const TOP = 9000; // the master's top-end roll-off (Hz); lower in Bedtime
 const TOP_CALM = 4200;
 
@@ -26,13 +28,13 @@ const PENTA = [72, 74, 76, 79, 81, 84, 86, 88, 91, 93];
 
 // One-shot levels (rendered sounds are normalised to a peak of 1).
 const LEVEL = {
-  click: 0.14,
+  click: 0.07,
   select: 0.061,
   swish: 0.06,
   page: 0.16,
-  plant: 0.7,
+  plant: 0.5,
   pour: 0.24,
-  drip: 0.37,
+  drip: 0.15,
   crack: 0.2,
   sprout: 0.18,
   sproutNote: 0.085,
@@ -45,7 +47,7 @@ const LEVEL = {
   harvest: 0.6,
   pick: 0.22,
   vase: 0.155,
-  basket: 0.8,
+  basket: 0.45,
   visitor: 0.078,
   poke: 0.047,
   bird: 0.127,
@@ -65,6 +67,29 @@ const CHIMES = {
   night: ['musicbox', [88, 91, 96], [0, 0.16, 0.32]],
 };
 
+// Crowd control, per sound: [gap between repeats (s), most at once]. A
+// whole bed sprouting or blooming together becomes a soft ripple (for
+// blooms, a rising arpeggio) instead of one loud stack.
+const CROWD = {
+  tap: [0.05, 2],
+  select: [0.08, 2],
+  page: [0.15, 2],
+  plant: [0.09, 4],
+  drip: [0.05, 4],
+  crack: [0.07, 4],
+  sprout: [0.1, 4],
+  unfurl: [0.08, 3],
+  bud: [0.1, 4],
+  bloom: [0.11, 6],
+  burst: [0.16, 3],
+  harvest: [0.12, 3],
+  pick: [0.12, 3],
+  place: [0.12, 3],
+  visitor: [0.45, 2],
+  poke: [0.06, 3],
+  rainbow: [2, 1],
+};
+
 const clampPan = (p) => Math.max(-0.85, Math.min(0.85, p || 0));
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
@@ -79,6 +104,8 @@ export class Audio {
     this.wantMusic = false;
     this.amb = { night: 0, rain: 0, wind: 0, bees: 0, birds: 0 };
     this.birdPool = {};
+    this.crowd = {};
+    this.singing = {};
   }
 
   // Create or resume the context: must run inside a user gesture the first time.
@@ -88,7 +115,7 @@ export class Audio {
       if (!AC) return;
       this.attach(new AC({ latencyHint: 'interactive' }));
     }
-    if (this.ctx.state !== 'running' && !this.hidden) this.ctx.resume();
+    if (this.ctx.state !== 'running' && !this.hidden) this.ctx.resume().catch(() => {});
   }
 
   // Build the graph on a context. The game calls unlock(); the dev bench
@@ -98,7 +125,7 @@ export class Audio {
     this.live = !(typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext);
     const sr = ctx.sampleRate;
 
-    // master: mute -> calm -> no rumble -> soft top -> gentle glue -> out
+    // master: mute -> calm -> no rumble -> soft top -> gentle glue -> limiter -> out
     this.master = ctx.createGain();
     this.master.gain.value = this.muted ? 0 : MASTER;
     this.calmGain = ctx.createGain();
@@ -116,11 +143,21 @@ export class Audio {
     comp.ratio.value = 3;
     comp.attack.value = 0.01;
     comp.release.value = 0.25;
-    // the compressor adds its own makeup gain (about +4.8 dB here): take it
+    // and a safety limiter so that, however much stacks up, nothing goes
+    // past about -6 dBFS
+    const limit = ctx.createDynamicsCompressor();
+    limit.threshold.value = -6;
+    limit.knee.value = 0;
+    limit.ratio.value = 20;
+    limit.attack.value = 0.002;
+    limit.release.value = 0.15;
+    // each adds its own makeup gain (+4.8 dB and +3.4 dB here): take it
     // back off, so ordinary levels pass at unity and only peaks are squeezed
     const trim = ctx.createGain();
     trim.gain.value = 0.575;
-    this.master.connect(this.calmGain).connect(floor).connect(this.top).connect(comp).connect(trim).connect(ctx.destination);
+    const trim2 = ctx.createGain();
+    trim2.gain.value = MAKEUP_LIMIT;
+    this.master.connect(this.calmGain).connect(floor).connect(this.top).connect(comp).connect(trim).connect(limit).connect(trim2).connect(ctx.destination);
 
     // a little outdoor space: a dark, airy reverb from decaying noise
     const len = Math.floor(sr * 1.6);
@@ -196,8 +233,8 @@ export class Audio {
   pageHidden(hidden) {
     this.hidden = hidden;
     if (!this.ctx) return;
-    if (hidden) this.ctx.suspend();
-    else this.ctx.resume();
+    if (hidden) this.ctx.suspend().catch(() => {});
+    else this.ctx.resume().catch(() => {});
   }
 
   startMusic() {
@@ -298,10 +335,29 @@ export class Audio {
     return this.voice(pan, wet, dest).buf(buffer, t, gain, rate);
   }
 
+  // When a sound may play: [time, gain] — at once, or, if the same sound
+  // was just asked for, a moment later and a little softer; null if too
+  // many are already waiting.
+  slot(name) {
+    if (!this.ready()) return null;
+    const [gap, max] = CROWD[name] || [0.06, 4];
+    const now = this.ctx.currentTime;
+    const c = this.crowd[name] || (this.crowd[name] = { next: 0, n: 0 });
+    if (c.next <= now) {
+      c.next = now;
+      c.n = 0;
+    }
+    if (c.n >= max) return null;
+    const t = c.next + (c.n ? rnd(0, gap * 0.3) : 0);
+    c.next += gap;
+    c.n++;
+    return [t, 1 / Math.sqrt(c.n)];
+  }
+
   // one rendered sound, a random variation of it
-  one(name, pan, gain, wet = 0.15, rate = rnd(0.96, 1.04)) {
-    if (!this.ready()) return;
-    this.voice(pan, wet).buf(this.bank.get(name), this.ctx.currentTime, gain, rate);
+  one(name, key, pan, gain, wet = 0.15, rate = rnd(0.96, 1.04)) {
+    const s = this.slot(key);
+    if (s) this.voice(pan, wet).buf(this.bank.get(name), s[0], gain * s[1], rate);
   }
 
   // A looped sound that runs for the whole game once started, faded in and
@@ -324,11 +380,14 @@ export class Audio {
     return { g, p, on: false, pan: 0, next: 0 };
   }
 
-  // fade a continuous voice in or out and keep it where the pointer is
+  // Fade a continuous voice in or out and keep it where the pointer is.
+  // Cheap to call every frame; without a pan it stays where it was.
   hold(v, on, pan, level, up = 0.08, down = 0.16) {
     const t = this.ctx.currentTime;
-    v.pan = clampPan(pan);
-    v.p.pan.setTargetAtTime(v.pan, t, 0.08);
+    if (pan !== undefined && Math.abs(clampPan(pan) - v.pan) > 0.01) {
+      v.pan = clampPan(pan);
+      v.p.pan.setTargetAtTime(v.pan, t, 0.08);
+    }
     if (on === v.on) return false;
     v.on = on;
     v.g.gain.setTargetAtTime(on ? level : 0, t, on ? up : down);
@@ -337,7 +396,7 @@ export class Audio {
 
   birdBuffer(kind) {
     const pool = this.birdPool[kind] || (this.birdPool[kind] = []);
-    if (pool.length < 6 && (pool.length < 2 || Math.random() < 0.5)) {
+    if (pool.length < 5 && (pool.length < 2 || Math.random() < 0.5)) {
       const b = toBuffer(this.ctx, birdPhrase(this.ctx.sampleRate, Math.floor(Math.random() * 1e9), kind));
       pool.push(b);
       return b;
@@ -352,52 +411,46 @@ export class Audio {
 
   // a soft wooden tap
   click() {
-    this.one('tap', 0, LEVEL.click, 0.08);
+    this.one('tap', 'tap', 0, LEVEL.click, 0.08);
   }
 
   // two soft marimba notes, rising
   select() {
-    if (!this.ready()) return;
-    const t = this.ctx.currentTime;
-    const v = this.voice(0, 0.2);
-    v.buf(this.bank.get('tap'), t, LEVEL.click * 0.7);
-    v.note('marimba', 79, t, LEVEL.select * 0.85);
-    v.note('marimba', 84, t + 0.075, LEVEL.select);
+    this.marimbas('tap', [79, 84], [0, 0.075], [0.85, 1]);
   }
 
   // a panel opening: paper sliding and a little rise
   open() {
-    if (!this.ready()) return;
-    const t = this.ctx.currentTime;
-    const v = this.voice(0, 0.2);
-    v.buf(this.bank.get('swishUp'), t, LEVEL.swish);
-    v.note('marimba', 76, t + 0.04, LEVEL.select * 0.7);
-    v.note('marimba', 81, t + 0.11, LEVEL.select * 0.8);
+    this.marimbas('swishUp', [76, 81], [0.04, 0.11], [0.7, 0.8]);
   }
 
   close() {
-    if (!this.ready()) return;
-    const t = this.ctx.currentTime;
+    this.marimbas('swishDown', [81, 76], [0.03, 0.1], [0.7, 0.65]);
+  }
+
+  marimbas(under, notes, times, levels) {
+    const s = this.slot('select');
+    if (!s) return;
+    const [t, k] = s;
     const v = this.voice(0, 0.2);
-    v.buf(this.bank.get('swishDown'), t, LEVEL.swish * 0.9);
-    v.note('marimba', 81, t + 0.03, LEVEL.select * 0.7);
-    v.note('marimba', 76, t + 0.1, LEVEL.select * 0.65);
+    v.buf(this.bank.get(under), t, (under === 'tap' ? LEVEL.click * 0.7 : LEVEL.swish) * k);
+    notes.forEach((m, i) => v.note('marimba', m, t + times[i], LEVEL.select * levels[i] * k));
   }
 
   // a book page turning
   page() {
-    this.one('page', 0, LEVEL.page, 0.12);
+    this.one('page', 'page', 0, LEVEL.page, 0.12);
   }
 
   // ------------------------------------------------------------ the garden
 
   plant(pan = 0) {
-    this.one('pat', pan, LEVEL.plant, 0.08);
+    this.one('pat', 'plant', pan, LEVEL.plant, 0.08);
   }
 
   // The watering can's shower on leaves and soil, faded in and out; the
   // last few drops fall from the rose when it stops.
-  pour(on, pan = 0) {
+  pour(on, pan) {
     if (!this.ctx) return;
     const v = this.pourVoice || (this.pourVoice = this.loopVoice('pour', 0.1));
     if (!this.hold(v, !!on, pan, LEVEL.pour, 0.08, 0.15) || on || !this.ready()) return;
@@ -408,101 +461,112 @@ export class Audio {
   }
 
   drip(pan = 0) {
-    this.one('drip', pan, LEVEL.drip, 0.12, rnd(0.9, 1.1));
+    this.one('drip', 'drip', pan, LEVEL.drip, 0.12, rnd(0.9, 1.1));
   }
 
   crack(pan = 0) {
-    this.one('crack', pan, LEVEL.crack, 0.05);
+    this.one('crack', 'crack', pan, LEVEL.crack, 0.05);
   }
 
   // a soft round pop, then two little rising kalimba notes
   sprout(pan = 0) {
-    if (!this.ready()) return;
-    const t = this.ctx.currentTime;
+    const s = this.slot('sprout');
+    if (!s) return;
+    const [t, k] = s;
     const v = this.voice(pan, 0.2);
-    v.buf(this.bank.get('sprout'), t, LEVEL.sprout, rnd(0.95, 1.05));
+    v.buf(this.bank.get('sprout'), t, LEVEL.sprout * k, rnd(0.95, 1.05));
     const [a, b] = pick([[79, 84], [76, 81], [81, 86], [74, 79]]);
-    v.note('kalimba', a, t + 0.07, LEVEL.sproutNote * 0.8);
-    v.note('kalimba', b, t + 0.15, LEVEL.sproutNote);
+    v.note('kalimba', a, t + 0.07, LEVEL.sproutNote * 0.8 * k);
+    v.note('kalimba', b, t + 0.15, LEVEL.sproutNote * k);
   }
 
   unfurl(pan = 0) {
-    this.one('rustle', pan, LEVEL.unfurl, 0.1);
+    this.one('rustle', 'unfurl', pan, LEVEL.unfurl, 0.1);
   }
 
   bud(pan = 0) {
-    if (!this.ready()) return;
-    this.voice(pan, 0.2).note('boop', pick([76, 79, 81]), this.ctx.currentTime, LEVEL.bud);
+    const s = this.slot('bud');
+    if (s) this.voice(pan, 0.2).note('boop', pick([76, 79, 81]), s[0], LEVEL.bud * s[1]);
   }
 
   // Petals opening: a warm kalimba note that walks up the pentatonic scale
   // with n, a faint music-box octave above it and a breath of petals.
   bloom(pan = 0, n = 0) {
-    if (!this.ready()) return;
-    const t = this.ctx.currentTime;
+    const s = this.slot('bloom');
+    if (!s) return;
+    const [t, k] = s;
     const m = PENTA[((Math.floor(n) % PENTA.length) + PENTA.length) % PENTA.length];
     const v = this.voice(pan, 0.3);
-    v.note('kalimba', m, t, LEVEL.bloom);
-    v.note('musicbox', m + 12, t + 0.025, LEVEL.bloom * 0.14);
-    v.buf(this.bank.get('petals'), t, LEVEL.petals);
+    v.note('kalimba', m, t, LEVEL.bloom * k);
+    v.note('musicbox', m + 12, t + 0.025, LEVEL.bloom * 0.14 * k);
+    v.buf(this.bank.get('petals'), t, LEVEL.petals * k);
   }
 
   // a joyful petal burst: an airy whoosh and a shimmer climbing up
   burst(pan = 0) {
-    if (!this.ready()) return;
-    const t = this.ctx.currentTime;
+    const s = this.slot('burst');
+    if (!s) return;
+    const [t, k] = s;
     const v = this.voice(pan, 0.35);
-    v.buf(this.bank.get('whoosh'), t, LEVEL.burst);
-    [84, 88, 91, 93, 96].forEach((m, i) => v.note('celesta', m, t + 0.08 + i * 0.045 + rnd(0, 0.01), LEVEL.shimmer * (1 - i * 0.1)));
+    v.buf(this.bank.get('whoosh'), t, LEVEL.burst * k);
+    [84, 88, 91, 93, 96].forEach((m, i) => v.note('celesta', m, t + 0.08 + i * 0.045 + rnd(0, 0.01), LEVEL.shimmer * (1 - i * 0.1) * k));
   }
 
   harvestPop(pan = 0) {
-    this.one('carrot', pan, LEVEL.harvest, 0.08, rnd(0.94, 1.06));
+    this.one('carrot', 'harvest', pan, LEVEL.harvest, 0.08, rnd(0.94, 1.06));
   }
 
   pick(pan = 0) {
-    this.one('snip', pan, LEVEL.pick, 0.08);
+    this.one('snip', 'pick', pan, LEVEL.pick, 0.08);
   }
 
   // 'vase': the stem slips into the water and touches the glass;
   // 'basket': a soft wicker thump
   place(kind) {
-    if (kind === 'vase') this.one('vase', 0.25, LEVEL.vase, 0.2, 1);
-    else this.one('basket', -0.25, LEVEL.basket, 0.08);
+    if (kind === 'vase') this.one('vase', 'place', 0.25, LEVEL.vase, 0.2, 1);
+    else this.one('basket', 'place', -0.25, LEVEL.basket, 0.08);
   }
 
   // A new visitor: a small happy chime, a little different for each group.
   visitor(kind) {
-    if (!this.ready()) return;
+    const s = this.slot('visitor');
+    if (!s) return;
+    const [t0, k] = s;
     const group = (VISITORS[kind] && VISITORS[kind].group) || kind;
     const [inst, notes, times] = CHIMES[group] || CHIMES.butterfly;
-    const t = this.ctx.currentTime + 0.02;
+    const t = t0 + 0.02;
     const v = this.voice(0, 0.4);
-    notes.forEach((m, i) => v.note(inst, m, t + times[i], LEVEL.visitor * (0.85 + 0.15 * (i / notes.length))));
-    const end = t + times[times.length - 1] + 0.12;
-    v.note('musicbox', pick([96, 100]), end, LEVEL.visitor * 0.25);
+    notes.forEach((m, i) => v.note(inst, m, t + times[i], LEVEL.visitor * (0.85 + 0.15 * (i / notes.length)) * k));
+    v.note('musicbox', pick([96, 100]), t + times[times.length - 1] + 0.12, LEVEL.visitor * 0.25 * k);
   }
 
-  // tapping a creature or a plant: a soft sparkle
+  // tapping a creature or a plant: a soft sparkle, two notes going up
   poke(pan = 0) {
-    if (!this.ready()) return;
-    const t = this.ctx.currentTime;
+    const s = this.slot('poke');
+    if (!s) return;
+    const [t, k] = s;
+    const high = [88, 91, 93, 96, 98];
+    const i = Math.floor(Math.random() * 4);
     const v = this.voice(pan, 0.3);
-    const i = 5 + Math.floor(Math.random() * 4);
-    v.note('musicbox', PENTA[i] + 12 * (i < 7 ? 1 : 0), t, LEVEL.poke);
-    v.note('musicbox', PENTA[Math.min(PENTA.length - 1, i + 1)] + 12 * (i < 6 ? 1 : 0), t + 0.055, LEVEL.poke * 0.8);
+    v.note('musicbox', high[i], t, LEVEL.poke * k);
+    v.note('musicbox', high[i + 1], t + 0.055, LEVEL.poke * 0.8 * k);
   }
 
-  // one phrase of real-sounding birdsong from a visiting bird
+  // One phrase of real-sounding birdsong from a visiting bird. A bird
+  // cannot sing two songs at once: while its phrase lasts, it stays quiet.
   bird(kind = 'robin', pan = 0) {
     if (!this.ready()) return;
-    this.voice(pan, 0.12).buf(this.birdBuffer(kind), this.ctx.currentTime, LEVEL.bird, rnd(0.98, 1.02));
+    const now = this.ctx.currentTime;
+    if (now < (this.singing[kind] || 0)) return;
+    const buf = this.birdBuffer(kind);
+    this.singing[kind] = now + buf.duration + 0.4;
+    this.voice(pan, 0.12).buf(buf, now, LEVEL.bird, rnd(0.98, 1.02));
   }
 
   // ------------------------------------------------------------ wands
 
   // The sun wand: a warm shimmering chord, with tiny sparkles while it beams.
-  sunWand(on, pan = 0) {
+  sunWand(on, pan) {
     if (!this.ctx) return;
     const v = this.sunVoice || (this.sunVoice = this.makeSun());
     this.hold(v, !!on, pan, LEVEL.sun, 0.2, 0.35);
@@ -525,7 +589,8 @@ export class Audio {
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
     lp.frequency.value = 2400;
-    for (const [m, det, a] of [[60, -4, 1], [60, 4, 1], [67, -3, 0.7], [67, 3, 0.7], [76, 0, 0.45], [84, 2, 0.25]]) {
+    // unequal, barely detuned pairs: a slow gentle chorus rather than a throb
+    for (const [m, det, a] of [[60, -2, 1], [60, 2.5, 0.45], [67, -1.5, 0.7], [67, 2, 0.3], [76, 0, 0.45], [84, 1, 0.25]]) {
       const o = ctx.createOscillator();
       o.frequency.value = 440 * Math.pow(2, (m - 69) / 12);
       o.detune.value = det;
@@ -542,7 +607,7 @@ export class Audio {
   }
 
   // The rain wand: soft local rain from its little cloud, and drips.
-  rainWand(on, pan = 0) {
+  rainWand(on, pan) {
     if (!this.ctx) return;
     const v = this.rainVoice || (this.rainVoice = this.loopVoice('rain', 0.15));
     this.hold(v, !!on, pan, LEVEL.rainWand, 0.15, 0.3);
@@ -564,9 +629,10 @@ export class Audio {
   // The rainbow: a soft harp glissando up the pentatonic scale over a warm
   // swelling chord, and a last shimmer at the top.
   rainbow() {
-    if (!this.ready()) return;
+    const s = this.slot('rainbow');
+    if (!s) return;
     const ctx = this.ctx;
-    const t = ctx.currentTime + 0.03;
+    const t = s[0] + 0.03;
     const v = this.voice(0, 0.45);
     const notes = [72, 74, 76, 79, 81, 84, 86, 88, 91, 93, 96];
     let at = t;

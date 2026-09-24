@@ -318,6 +318,7 @@ const val = (p, v) => (typeof p === 'function' ? p(v) : p);
 //   crinkle   random crumples (m), noise frequency crinkleF
 //   shift(v)  moves a whole row along the sheet's +z (rolled leaves nest)
 //   notch     pulls the middle of the tip back (fraction of L; notchW wide)
+//   tipCurl   an extra roll over the last part (from tipAt), e.g. rose rims
 // `M` places the sheet; `uv` = [u0, u1, v0, v1] atlas region; `color(s, v, o)`
 // may set o.r/g/b (s is -1..1 across); otherwise `rgb`.
 export function sheet(b, M, p) {
@@ -337,11 +338,14 @@ export function sheet(b, M, p) {
   let y = 0;
   let z = 0;
   // everything that only depends on the row is worked out once per row
+  const tipCurl = p.tipCurl ?? 0;
+  const tipAt = p.tipAt ?? 0.65;
+  const tc = (v) => (tipCurl && v > tipAt ? tipCurl * ((v - tipAt) / (1 - tipAt)) ** 2 : 0);
   for (let j = 0; j <= rows; j++) {
     const v = j / rows;
-    const th = curl * Math.pow(v, curlPow) + bend0;
+    const th = curl * Math.pow(v, curlPow) + bend0 + tc(v);
     if (j > 0) {
-      const thm = curl * Math.pow((j - 0.5) / rows, curlPow) + bend0;
+      const thm = curl * Math.pow((j - 0.5) / rows, curlPow) + bend0 + tc((j - 0.5) / rows);
       y += ds * Math.cos(thm);
       z += ds * Math.sin(thm);
     }
@@ -458,8 +462,11 @@ export function midribZ(p, rows, outZ) {
   const ds = p.L / rows;
   let z = 0;
   outZ[0] = 0;
+  const tipCurl = p.tipCurl ?? 0;
+  const tipAt = p.tipAt ?? 0.65;
   for (let j = 1; j <= rows; j++) {
-    z += ds * Math.sin(curl * Math.pow((j - 0.5) / rows, curlPow) + bend0);
+    const v = (j - 0.5) / rows;
+    z += ds * Math.sin(curl * Math.pow(v, curlPow) + bend0 + (tipCurl && v > tipAt ? tipCurl * ((v - tipAt) / (1 - tipAt)) ** 2 : 0));
     outZ[j] = z;
   }
   return outZ;
@@ -754,3 +761,90 @@ export function paintNormal(w, h, height, strength = 2) {
 }
 
 export { noise2, fbm };
+
+// A flower stalk from `base`, `len` long: it leans `lean` radians (spread
+// along it) towards azimuth `az`, bends a further `nod` over its last
+// `nodLen` metres (a nodding bud), and wanders a little.
+export function stalkPath(path, { base = [0, 0, 0], len, lean = 0, az = 0, nod = 0, nodLen = 0.05, nodAz = az, wig = 0.002, seed = 0, n = 18 }) {
+  const lx = Math.cos(az);
+  const lz = Math.sin(az);
+  const nx = Math.cos(nodAz);
+  const nz = Math.sin(nodAz);
+  const ds = Math.max(1e-4, len) / (n - 1);
+  const nl = Math.min(len * 0.6, nodLen);
+  let x = base[0];
+  let y = base[1];
+  let z = base[2];
+  return path.set(n, (k, nn, out) => {
+    if (k > 0) {
+      const s = (k - 0.5) * ds;
+      const lb = lean * (s / Math.max(1e-4, len));
+      const q = sat((s - (len - nl)) / Math.max(1e-4, nl));
+      const nb = nod * q * q * (3 - 2 * q);
+      const w = wig * Math.sin(s * 31 + seed) * 8;
+      const bx = lx * lb + nx * nb - lz * w;
+      const bz = lz * lb + nz * nb + lx * w;
+      const a = Math.hypot(bx, bz);
+      const sa = a > 1e-6 ? Math.sin(a) / a : 1;
+      x += ds * bx * sa;
+      y += ds * Math.cos(a);
+      z += ds * bz * sa;
+    }
+    out[0] = x;
+    out[1] = y;
+    out[2] = z;
+  });
+}
+
+// Fine hairs along a path: small double-sided quads standing out from the
+// surface (poppy and sunflower stems, buds). Uses the plain atlas region.
+export function hairs(b, path, count, { len = 0.0025, width = 0.00016, radius = 0.0015, uv = [0.72, 0.85, 0, 1], rgb = [1, 1, 1], seed = 1, from = 0, to = 1, up = 0.4 } = {}) {
+  const L = path.length();
+  let h = seed * 97.13;
+  const rnd = () => {
+    h = (h * 16807 + 0.5) % 2147483647;
+    return (h % 10000) / 10000;
+  };
+  const at = { p: [0, 0, 0], t: [0, 1, 0] };
+  for (let i = 0; i < count; i++) {
+    const s = L * mix(from, to, rnd());
+    path.at(s, at);
+    const a = rnd() * TAU;
+    // a direction around the stem, tipped towards the stem's tip
+    const t = at.t;
+    let ox = -t[2];
+    let oy = 0;
+    let oz = t[0];
+    let ol = Math.hypot(ox, oy, oz);
+    if (ol < 1e-4) {
+      ox = 1;
+      oz = 0;
+      ol = 1;
+    }
+    ox /= ol;
+    oz /= ol;
+    const bx = t[1] * oz - t[2] * oy;
+    const by = t[2] * ox - t[0] * oz;
+    const bz = t[0] * oy - t[1] * ox;
+    const c = Math.cos(a);
+    const sn = Math.sin(a);
+    const dx = ox * c + bx * sn;
+    const dy = oy * c + by * sn;
+    const dz = oz * c + bz * sn;
+    const px = at.p[0] + dx * radius;
+    const py = at.p[1] + dy * radius;
+    const pz = at.p[2] + dz * radius;
+    const l = len * (0.6 + 0.8 * rnd());
+    const ex = (dx + t[0] * up) * l;
+    const ey = (dy + t[1] * up) * l;
+    const ez = (dz + t[2] * up) * l;
+    // width across: perpendicular to the hair and the stem
+    const wx = (dy * t[2] - dz * t[1]) * width;
+    const wy = (dz * t[0] - dx * t[2]) * width;
+    const wz = (dx * t[1] - dy * t[0]) * width;
+    const v0 = b.vertex(px - wx, py - wy, pz - wz, dx, dy, dz, uv[0], uv[2], rgb[0], rgb[1], rgb[2], -1, 0.3);
+    const v1 = b.vertex(px + wx, py + wy, pz + wz, dx, dy, dz, uv[1], uv[2], rgb[0], rgb[1], rgb[2], -1, 0.3);
+    const v2 = b.vertex(px + ex, py + ey, pz + ez, dx, dy, dz, (uv[0] + uv[1]) / 2, uv[3], rgb[0], rgb[1], rgb[2], -1, 0.3);
+    b.tri(v0, v1, v2);
+  }
+}

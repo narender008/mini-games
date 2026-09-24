@@ -273,6 +273,11 @@ export function butterflyAssets(kind, quality) {
   const F = spec.span / 2.03;
   const atlas = buildAtlas(ws, tier === 'high' ? 1024 : 512);
   const wingMat = wingMaterial(atlas, { roughness: spec.wingRough ?? 0.7, translucency: spec.translucency ?? 1, sheen: spec.sheen ?? 0.04 });
+  // pale moth wings catch the moonlight: a faint glow of their own at night
+  if (spec.moth) {
+    wingMat.emissiveMap = atlas.map;
+    wingMat.emissive.setScalar(0);
+  }
   const shells = spec.moth ? (tier === 'low' ? 5 : 9) : tier === 'low' ? 3 : 6;
   const body = merge(furGeometry(bodyPieces(spec, F), shells));
   const bodyMat = furMaterial({ roughness: 0.85, rootDark: 0.72, tipLight: spec.moth ? 0.12 : 0.04, sheen: spec.moth ? 0.5 : 0.2 });

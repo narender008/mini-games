@@ -14,13 +14,13 @@ import { normalMapFromHeight, fbm, noise2 } from '../../shared.js';
 import { vegLeaf, vegStem } from './mats.js';
 import { petalMaterial } from '../materials.js';
 import { buildLeaf } from './leaf.js';
-import { Wobble, hookCurve, shareGeometry, disposeShared, toWorld, grow } from './kit.js';
+import { Wobble, hookCurve, shareGeometry, disposeShared, toWorld, grow, readyMorphs } from './kit.js';
 
 const STEM_UV = [0.004, 0.02, 0.05, 0.98];
 const LEAF_UV = [0.07, 0, 1, 1];
-const NODES = 6;
-const NODE0 = 0.07;
-const NODE_STEP = 0.075;
+const NODES = 8;
+const NODE0 = 0.06;
+const NODE_STEP = 0.06;
 const FRUIT_NODE = 2;
 const PUMPKIN_D = 0.24; // diameter when fully grown
 const PUMPKIN_H = 0.17;
@@ -72,8 +72,9 @@ function leafTextures() {
       let d = along > 0 ? off * (1.2 + along * 3) : r;
       const step = 0.065;
       const k = Math.round((along - off * 1.1) / step);
-      if (k > 0 && k < 7 && along > 0.03) d = Math.min(d, Math.abs(along - off * 1.1 - k * step) * 0.7 * (1 + off * 6));
-      return d;
+      let side = 1;
+      if (k > 0 && k < 7 && along > 0.03) side = Math.abs(along - off * 1.1 - k * step) * 0.7 * (1 + off * 6);
+      return [d, side];
     };
     const cc = new THREE.Color();
     const dark = new THREE.Color().setRGB(0.15, 0.3, 0.1);
@@ -98,11 +99,11 @@ function leafTextures() {
         return;
       }
       const n = fbm(x * 7, v * 7, 4);
-      const d = veinD(x, v);
+      const [d, sd] = veinD(x, v);
       cc.copy(dark).lerp(mid, 0.35 + 0.65 * n);
       // silvery mottling along the main veins, pale veins themselves
       const mott = Math.max(0, 1 - d * 22) * (0.5 + 0.5 * noise2(x * 40, v * 40));
-      cc.lerp(pale, Math.max(Math.max(0, 1 - d * 110) * 0.85, mott * 0.35));
+      cc.lerp(pale, Math.max(Math.max(0, 1 - d * 110) * 0.8, mott * 0.3, Math.max(0, 1 - sd * 160) * 0.3));
       const edge = r / radius(th);
       cc.multiplyScalar(1 - Math.max(0, edge - 0.9) * 1.2);
       const hair = noise2(x * 500, v * 500);
@@ -117,10 +118,9 @@ function leafTextures() {
       (u, v) => {
         if (u < x0) return 0.5 + 0.1 * Math.sin(u * 700);
         const x = (u - x0) / (1 - x0);
-        const d = veinD(x, v);
-        // veins stand proud underneath and sink above: sunk here, with a
-        // blistered, puckered blade between
-        return Math.sqrt(Math.min(1, d * 12)) * 0.8 + fbm(x * 40, v * 40, 2) * 0.15;
+        const [d, sd] = veinD(x, v);
+        // veins sink into the upper side, the blade between is puckered
+        return Math.sqrt(Math.min(1, d * 12)) * 0.6 + Math.sqrt(Math.min(1, sd * 30)) * 0.12 + fbm(x * 40, v * 40, 2) * 0.12;
       },
       3,
     );
@@ -209,7 +209,7 @@ function stalkTexture() {
 
 function leafGeometry() {
   return once('pumpkin-leaf-geo', () => {
-    const L = 0.21;
+    const L = 0.23;
     return buildLeaf({
       flexLen: 0.35,
       spine: {
@@ -239,7 +239,7 @@ function leafGeometry() {
           foldScale: 0.55,
           foldWidth: 0.4,
           // a gently wavy blade
-          shape: (u, v, k) => k * 0.006 * Math.sin(u * 9 + v * 4) * Math.sin(v * 7),
+          shape: (u, v, k) => k * 0.003 * Math.sin(u * 9 + v * 4) * Math.sin(v * 7),
         },
       ],
     });
@@ -291,8 +291,8 @@ function flowerGeometry() {
       const rib = Math.pow(Math.abs(Math.cos(a * 5)), 10);
       // green calyx tube, then deep gold, a little deeper along the ribs
       const base = t < 0.18 ? 1 - t / 0.18 : 0;
-      c[i * 3] = lerp(0.9 - rib * 0.1, 0.22, base);
-      c[i * 3 + 1] = lerp(0.36 + t * 0.14 - rib * 0.1, 0.33, base);
+      c[i * 3] = lerp(0.86 - rib * 0.12, 0.2, base);
+      c[i * 3 + 1] = lerp(0.26 + t * 0.12 - rib * 0.08, 0.3, base);
       c[i * 3 + 2] = lerp(0.0, 0.03, base);
     }
     g.setAttribute('color', new THREE.BufferAttribute(c, 3));
@@ -379,10 +379,10 @@ function seedGeometry() {
 function materials() {
   return once('pumpkin-mats', () => {
     const lt = leafTextures();
-    const leaf = vegLeaf('pumpkin', { map: lt.map, normalMap: lt.normalMap, normalScale: 1.2, alphaTest: 0.5, translucency: 0.45, roughness: 0.72 });
+    const leaf = vegLeaf('pumpkin', { map: lt.map, normalMap: lt.normalMap, normalScale: 0.8, alphaTest: 0.5, translucency: 0.45, roughness: 0.72 });
     const coty = vegLeaf('pumpkin-coty', { color: '#6f9f45', translucency: 0.4, roughness: 0.5 });
     const vine = vegStem('pumpkin-vine', { color: '#6d8a3e', roughness: 0.8 });
-    const flower = petalMaterial({ color: '#ffffff', vertexColors: true, translucency: 0.7, roughness: 0.8 });
+    const flower = petalMaterial({ color: '#ffffff', vertexColors: true, translucency: 0.35, roughness: 0.8 });
     const prev = flower.onBeforeCompile;
     flower.onBeforeCompile = (shader, r) => {
       prev(shader, r);
@@ -436,6 +436,7 @@ const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
+const _side = new THREE.Vector3();
 const _s = new THREE.Vector3();
 const _m = new THREE.Matrix4();
 const X = new THREE.Vector3(1, 0, 0);
@@ -485,7 +486,7 @@ export function createPumpkin({ seed = 1, quality } = {}) {
     const g2 = shareGeometry(geo);
     const fa = new THREE.InstancedBufferAttribute(new Float32Array(count * 2), 2);
     g2.setAttribute('aVegFlex', fa);
-    const m = new THREE.InstancedMesh(g2, mat, count);
+    const m = readyMorphs(new THREE.InstancedMesh(g2, mat, count));
     m.castShadow = shadows;
     m.frustumCulled = false;
     m.userData.src = geo;
@@ -516,7 +517,7 @@ export function createPumpkin({ seed = 1, quality } = {}) {
       s: NODE0 + k * NODE_STEP,
       side: k % 2 ? 1 : -1,
       yaw: (rng() - 0.5) * 0.8,
-      size: lerp(0.55, 1, Math.min(1, k / 2)) * (0.88 + rng() * 0.2),
+      size: lerp(0.55, 1.05, Math.min(1, k / 2)) * (0.85 + rng() * 0.25),
       tilt: 0.25 + rng() * 0.25,
       coil: rng() * 6,
     });
@@ -648,7 +649,7 @@ export function createPumpkin({ seed = 1, quality } = {}) {
       // tendril: out from the node, coiling
       const tp = stems.points[1 + k];
       const tl = 0.09 * smooth(0.02, 0.12, past) * smooth(0.4, 0.46, g);
-      const side = _v2.clone().cross(Y).normalize().multiplyScalar(-nd.side);
+      const side = _side.copy(_v2).cross(Y).normalize().multiplyScalar(-nd.side);
       for (let i = 0; i < tp.length; i++) {
         const t = i / (tp.length - 1);
         const coil = Math.max(0, t - 0.35) / 0.65;
@@ -683,7 +684,7 @@ export function createPumpkin({ seed = 1, quality } = {}) {
       const bloom = smooth(0.68 + j * 0.03, 0.76 + j * 0.03, g);
       const fade = smooth(0.86, 0.92, g);
       along(Math.min(nd.s, Lr), _v, _v2);
-      const side = _v2.clone().cross(Y).normalize().multiplyScalar(nd.side);
+      const side = _side.copy(_v2).cross(Y).normalize().multiplyScalar(nd.side);
       const sp = stems.points[tube];
       const h = 0.15 * bud;
       for (let i = 0; i < sp.length; i++) {
@@ -706,7 +707,7 @@ export function createPumpkin({ seed = 1, quality } = {}) {
     // the female flower sits on the little fruit, which swells after it fades
     const nd = nodes[FRUIT_NODE];
     along(Math.min(nd.s, Lr), nodePos, _v2);
-    const side = _v2.clone().cross(Y).normalize().multiplyScalar(fruitSide);
+    const side = _side.copy(_v2).cross(Y).normalize().multiplyScalar(fruitSide);
     const exists = Lr > nd.s + 0.03 && g > 0.6;
     const swell = picked ? 0 : smooth(0.8, 0.96, g);
     const size = lerp(0.14, 1, swell);
@@ -794,6 +795,8 @@ export function createPumpkin({ seed = 1, quality } = {}) {
   // ---------------------------------------------------------- targets
 
   const tg = Array.from({ length: 6 }, () => ({ pos: new THREE.Vector3(), normal: new THREE.Vector3(0, 1, 0), plant: null, kind: 'leaf', color: '#3d6b26' }));
+
+  apply(); // valid from the first frame, before Plants flushes it
 
   return {
     object,

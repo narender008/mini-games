@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { clamp, smooth, damp } from '../config.js';
 import { BUTTERFLY_KINDS, butterflyAssets } from './butterflies.js';
-import { refind, chooseTarget, keepInside, clearLens, offscreenPoint, offscreen, wanderPoint, wave, basis, ease, VOLUME } from './flight.js';
+import { follow, refind, chooseTarget, keepInside, clearLens, offscreenPoint, offscreen, wanderPoint, wave, basis, ease, VOLUME } from './flight.js';
 
 const TAU = Math.PI * 2;
 const CLOSED = 1.54; // wing angle (rad above flat) with the wings together
@@ -17,6 +17,8 @@ const _p = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _e = new THREE.Euler(0, 0, 0, 'YXZ');
 const UP = new THREE.Vector3(0, 1, 0);
+// cupped flowers: perch on the rim rather than down among the petals
+const CUP = { tulip: 0.02, poppy: 0.013, rose: 0.008, moonflower: 0.01 };
 
 export class Butterfly {
   constructor(kind, host, { still = false } = {}) {
@@ -127,6 +129,7 @@ export class Butterfly {
   update(dt, t, world) {
     this.age += dt;
     const night = world.night || 0;
+    if (this.spec.moth) this.a.wingMat.emissive.setScalar(0.16 * night);
     // day visitors go to roost at night, the moth goes home at dawn
     if (this.purpose !== 'leave' && (this.spec.nocturnal ? night < 0.35 : night > 0.65)) this.stay = Math.min(this.stay, this.age);
     if (this.state === 'fly') this.fly(dt, t, world);
@@ -137,7 +140,8 @@ export class Butterfly {
   }
 
   // follow the current landing spot as its plant sways; false when gone
-  track(world) {
+  // the plants hand out targets a few times a second: glide between them
+  track(world, dt = 0) {
     if (!this.tgtPlant) return false;
     const t = refind(world.targets, this.tgtPlant, this.tgtKind, this.tgtPos);
     if (!t) {
@@ -146,9 +150,7 @@ export class Butterfly {
       return false;
     }
     this.tgt = t;
-    this.tgtPos.copy(t.pos);
-    if (t.normal) this.tgtN.copy(t.normal).normalize();
-    else this.tgtN.copy(UP);
+    follow(this.tgtPos, this.tgtN, t.pos, t.normal || UP, dt);
     return true;
   }
 
@@ -182,7 +184,7 @@ export class Butterfly {
     const s = this.spec;
     const host = this.host;
     if (this.purpose === 'enter') this.next(world);
-    if (this.purpose === 'visit' && !this.track(world)) this.next(world);
+    if (this.purpose === 'visit' && !this.track(world, dt)) this.next(world);
     if (this.purpose === 'visit') {
       // approach from just above the flower's face
       this.goal.copy(this.tgtPos).addScaledVector(this.tgtN, 0.07).addScaledVector(UP, 0.02);
@@ -270,7 +272,29 @@ export class Butterfly {
     // face along the approach, on the flower's surface
     _f.copy(this.vel);
     if (_f.lengthSq() < 1e-6) _f.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    // on a flower that faces sideways, rest head-up as butterflies do
+    if (Math.abs(this.tgtN.y) < 0.55) _f.copy(UP).addScaledVector(_f, 0.2);
+    else {
+      // on an upturned bloom, settle side-on to the camera where possible,
+      // so the wings are seen in profile or from above, not edge-on
+      const cam = this.host?.camera;
+      if (cam) {
+        _u.setFromMatrixColumn(cam.matrixWorld, 0);
+        _u.y = 0;
+        if (_u.lengthSq() > 1e-6) {
+          _u.normalize();
+          if (_u.dot(_f) < 0) _u.negate();
+          _f.normalize().multiplyScalar(0.35).add(_u);
+        }
+      }
+    }
     this.setHeading(_f);
+  }
+
+  // hinge height over the landing spot (higher on cupped flowers)
+  standHeight() {
+    const sp = this.tgtPlant?.species;
+    return this.a.stand + (CUP[typeof sp === 'string' ? sp : sp?.id] || 0);
   }
 
   // heading in the flower's tangent plane from a direction
@@ -282,7 +306,7 @@ export class Butterfly {
   }
 
   landing(dt, t, world) {
-    if (!this.track(world)) {
+    if (!this.track(world, dt)) {
       this.takeOff();
       this.next(world);
       return;
@@ -290,7 +314,7 @@ export class Butterfly {
     this.timer += dt;
     const k = Math.min(1, this.timer / this.landDur);
     const e = ease(k);
-    _p.copy(this.tgtPos).addScaledVector(this.tgtN, this.a.stand);
+    _p.copy(this.tgtPos).addScaledVector(this.tgtN, this.standHeight());
     this.pos.lerpVectors(this.landFrom, _p, e).addScaledVector(this.tgtN, Math.sin(Math.PI * k) * 0.018);
     this.setHeading(this.heading);
     basis(this.heading, this.tgtN, this.qWant);
@@ -310,7 +334,7 @@ export class Butterfly {
   }
 
   perched(dt, t, world) {
-    if (!this.track(world)) {
+    if (!this.track(world, dt)) {
       this.takeOff();
       this.next(world);
       return;
@@ -319,7 +343,7 @@ export class Butterfly {
     const turn = Math.sin(t * 0.27 + this.seed) * 0.12 * dt;
     this.heading.applyAxisAngle(this.tgtN, turn);
     this.setHeading(this.heading);
-    this.pos.copy(this.tgtPos).addScaledVector(this.tgtN, this.a.stand);
+    this.pos.copy(this.tgtPos).addScaledVector(this.tgtN, this.standHeight());
     basis(this.heading, this.tgtN, this.qWant);
     this.object.quaternion.slerp(this.qWant, 1 - Math.exp(-6 * dt));
     // slow opening and closing of the wings

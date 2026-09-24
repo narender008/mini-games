@@ -26,7 +26,7 @@ export class Ground {
     this.deck = null;
     this.pickMeshes = [];
     this.layout = null;
-    this.density = 1;
+    this.density = quality.grass ?? 1;
   }
 
   build(layout) {

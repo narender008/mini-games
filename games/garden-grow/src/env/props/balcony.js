@@ -157,8 +157,6 @@ export function railing(r, rnd, quality) {
   const glow = halos(f.points);
   glow.visible = false;
   group.add(glow);
-  const twinkle = f.points.map(() => rnd() * 6.28);
-  void twinkle;
   let level = -1;
   return {
     metal: merge(metal),

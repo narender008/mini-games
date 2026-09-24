@@ -518,7 +518,7 @@ export function roseHoles() {
       const y = 0.0262 + 0.0028 * (1 - r * r);
       const pos = new THREE.Vector3(fx, y, fz).applyQuaternion(q).add(SPOUT_TIP);
       // the domed face fans the jets out
-      const dir = new THREE.Vector3(fx * 13, 1, fz * 13).normalize().applyQuaternion(q);
+      const dir = new THREE.Vector3(fx * 17, 1, fz * 17).normalize().applyQuaternion(q);
       out.push({ pos, dir, lift: 0 });
     }
   }

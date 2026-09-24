@@ -312,7 +312,7 @@ class Daisy extends FlowerBase {
         o.t = 0.8;
       },
       true,
-      true,
+      false,
     );
     // white rays: they push out of the bud upright, then spread flat
     if (emerge <= 0) return;
@@ -330,8 +330,8 @@ class Daisy extends FlowerBase {
         nu: 4,
         nv: 9,
         width: (v) => (v < 0.12 ? 0.35 + (v / 0.12) * 0.5 : 0.85 + 0.15 * Math.sin(((v - 0.12) / 0.88) * Math.PI * 0.9)) * (v > 0.9 ? Math.sqrt(Math.max(0, 1 - ((v - 0.9) / 0.1) ** 2)) * 0.4 + 0.6 : 1),
-        bend0: -mix(0.05, 1.5 + rr[2] * 0.12, spread),
-        curl: mix(0.5, -0.25 + rr[1] * 0.2, spread),
+        bend0: -mix(0.45, 1.5 + rr[2] * 0.12, spread),
+        curl: mix(0.25, -0.25 + rr[1] * 0.2, spread),
         curlPow: 1.3,
         twist: rr[0] * 0.5 * spread,
         wrap: mix(90, 45, spread),

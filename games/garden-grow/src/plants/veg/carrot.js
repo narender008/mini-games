@@ -10,7 +10,7 @@ import { SeedBed } from './soil.js';
 import { TubeSet, leafGrid, staticTube, mergeGeometries, setPlantAttr, makeRelative, crumbGeometry } from './geom.js';
 import { carrotFrondTexture, carrotRootTextures, CARROT_STEM_UV, CARROT_PINNA_UV, soilTextures, once } from './tex.js';
 import { vegLeaf, vegStem } from './mats.js';
-import { Wobble, hookCurve, shareGeometry, disposeShared, toWorld, grow } from './kit.js';
+import { Wobble, hookCurve, shareGeometry, disposeShared, toWorld, grow, readyMorphs } from './kit.js';
 
 const ROOT_LEN = 0.165;
 const ROOT_R = 0.0135;
@@ -147,7 +147,7 @@ function rootParts() {
     }
     const radius = (k) => {
       const s = ss[Math.round(k * SEG)];
-      const x = clamp(s / 0.05, 0, 1);
+      const x = clamp(s / 0.03, 0, 1);
       const shoulder = Math.sqrt(x * (2 - x));
       const taper = Math.pow(Math.max(0, 1 - Math.pow(s, 1.55)), 0.8);
       const rings = 1 - 0.018 * Math.max(0, Math.sin(s * 190));
@@ -194,7 +194,7 @@ function rootParts() {
       const c = pts[Math.round(k * SEG)];
       const r = radius(k);
       const a = rnd() * Math.PI * 2;
-      const size = 0.0012 + rnd() * rnd() * 0.0028;
+      const size = 0.0009 + rnd() * rnd() * 0.0019;
       const m = new THREE.Matrix4().compose(
         new THREE.Vector3(c.x + Math.cos(a) * (r + size * 0.2), c.y, c.z + Math.sin(a) * (r + size * 0.2)),
         new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd() * 6, rnd() * 6, rnd() * 6)),
@@ -205,8 +205,9 @@ function rootParts() {
     const { map, normalMap } = carrotRootTextures();
     const rootMat = new THREE.MeshPhysicalMaterial({ map, normalMap, normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.48, sheen: 0.25, sheenRoughness: 0.5, sheenColor: new THREE.Color(0.9, 0.6, 0.35) });
     const hairMat = new THREE.MeshStandardMaterial({ color: '#d9b98e', roughness: 0.8, side: THREE.DoubleSide });
+    // dry soil clinging to the root reads lighter than the damp bed
     const soil = soilTextures();
-    const crumbMat = new THREE.MeshStandardMaterial({ map: soil.map, color: '#8a6a52', roughness: 0.95, flatShading: true });
+    const crumbMat = new THREE.MeshStandardMaterial({ color: '#8c7159', normalMap: soil.normalMap, roughness: 1 });
     return { geo, hairs, crumbs: cl, crumbGeo: crumbGeometry(9), rootMat, hairMat, crumbMat };
   });
 }
@@ -278,7 +279,7 @@ export function createCarrot({ seed = 1, quality } = {}) {
   const frondGeo = shareGeometry(frond.geo);
   const flexAttr = new THREE.InstancedBufferAttribute(new Float32Array(F * 2), 2);
   frondGeo.setAttribute('aVegFlex', flexAttr);
-  const fronds = new THREE.InstancedMesh(frondGeo, leafMat, F);
+  const fronds = readyMorphs(new THREE.InstancedMesh(frondGeo, leafMat, F));
   fronds.castShadow = shadows;
   fronds.receiveShadow = true;
   fronds.frustumCulled = false;
@@ -309,6 +310,7 @@ export function createCarrot({ seed = 1, quality } = {}) {
   rootGroup.add(rootMesh, hairMesh, cling);
   rootGroup.rotation.y = rng() * Math.PI * 2;
   object.add(rootGroup);
+  rootGroup.visible = false;
 
   const wobble = new Wobble({ stiffness: 42, damping: 3.2, amount: 0.12 });
   const hookDir = [Math.cos(rng() * 6.28), Math.sin(rng() * 6.28)];
@@ -320,7 +322,7 @@ export function createCarrot({ seed = 1, quality } = {}) {
   let rootTopY = 0;
 
   function rootTop(gg) {
-    return lerp(-0.003, 0.009, smooth(0.6, 1, gg));
+    return lerp(-0.003, 0.012, smooth(0.6, 1, gg));
   }
 
   function apply() {
@@ -409,7 +411,7 @@ export function createCarrot({ seed = 1, quality } = {}) {
     item.userData = {
       kind: 'carrot',
       size: { length: ROOT_LEN + FROND_LEN, root: ROOT_LEN, width: ROOT_R * 2 },
-      velocity: new THREE.Vector3(0, 0.55, 0),
+      velocity: new THREE.Vector3(0, 0.8, 0),
       dispose: () => {
         disposeShared(frondGeo, frond.geo);
         fronds.dispose();
@@ -427,22 +429,22 @@ export function createCarrot({ seed = 1, quality } = {}) {
     let lift;
     let shake;
     let heave;
-    if (t < 0.32) {
-      lift = 0.0035 * ease(t / 0.32);
+    if (t < 0.22) {
+      lift = 0.0035 * ease(t / 0.22);
       shake = 0.06;
-      heave = 0.25 * ease(t / 0.32);
-    } else if (t < 0.48) {
-      lift = lerp(0.0035, 0.0018, ease((t - 0.32) / 0.16));
+      heave = 0.25 * ease(t / 0.22);
+    } else if (t < 0.33) {
+      lift = lerp(0.0035, 0.0018, ease((t - 0.22) / 0.11));
       shake = 0.025;
       heave = 0.15;
-    } else if (t < 0.86) {
-      const k = ease((t - 0.48) / 0.38);
+    } else if (t < 0.6) {
+      const k = ease((t - 0.33) / 0.27);
       lift = lerp(0.0018, 0.014, k);
       shake = 0.08;
       heave = lerp(0.15, 0.7, k);
     } else {
       // pop: the soil lets go and the root slides out
-      const k = easeOut(clamp((t - 0.86) / 0.16, 0, 1));
+      const k = easeOut(clamp((t - 0.6) / 0.12, 0, 1));
       lift = lerp(0.014, out, k);
       shake = 0.03 * (1 - k);
       heave = lerp(0.7, 0.3, k);
@@ -451,7 +453,7 @@ export function createCarrot({ seed = 1, quality } = {}) {
     bed.lift = heave;
     bed.g = -1;
     bed.set(g);
-    bed.hole.visible = t > 0.9;
+    bed.hole.visible = t > 0.64;
     rootGroup.position.y = rootTopY + lift;
     crownY = rootTopY + lift - 0.0015;
     // the carrot rocks as it is worked loose
@@ -462,7 +464,7 @@ export function createCarrot({ seed = 1, quality } = {}) {
     rootGroup.rotation.z = aerial.rotation.z;
     rootGroup.position.x = -Math.sin(aerial.rotation.z) * lift;
     placeFronds(t);
-    if (t >= 1.02 && !freed) {
+    if (t >= 0.72 && !freed) {
       freed = true;
       aerial.rotation.set(0, 0, 0);
       const item = buildItem();
@@ -476,6 +478,8 @@ export function createCarrot({ seed = 1, quality } = {}) {
   // ---------------------------------------------------------- targets
 
   const tg = [0, 1, 2].map(() => ({ pos: new THREE.Vector3(), normal: new THREE.Vector3(0, 1, 0), plant: null, kind: 'leaf', color: '#4f7f31' }));
+
+  apply(); // valid from the first frame, before Plants flushes it
 
   return {
     object,

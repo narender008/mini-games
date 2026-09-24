@@ -19,7 +19,7 @@ const DAY = {
   mieG: 0.78, // how tightly the haze glows round the sun
   sky: 3.2, // sky brightness (scattering strength) relative to the sun
   sat: 1.3, // sky saturation
-  ms: 0.0, // extra even glow from light scattered many times
+  ms: 0, // extra even glow from light scattered many times
   tint: [1, 1, 1],
   glow: [0, 0, 0], // twilight glow towards the sun
   belt: [0, 0, 0], // pink band opposite the sun
@@ -34,7 +34,7 @@ const DAY = {
   moonKey: 0, // 0: the key light is the sun, 1: the moon
   key: 1, // sun key light scale
   keyMinEl: 6, // lowest the key light goes (shadows need a light above the ground)
-  keySat: 0.85,
+  keySat: 0.85, // colour of the key light: < 1 whiter, > 1 warmer than the physical sun
   moonKeyI: 0,
   env: 0.5, // environment (sky) light
   hemi: 0.15, // hemisphere fill, as a fraction of the sky's own light
@@ -46,8 +46,9 @@ const DAY = {
   cloudLit: 1, // sunlight on clouds
   cloudSat: 1, // warmth of that light (1 = physical)
   cloudAmb: 0.75, // skylight on clouds
-  fog: 0.009,
-  fogGain: 0.85,
+  fog: 0.008,
+  fogGain: 0.4,
+  fogSky: 0.35, // how far the haze leans from the horizon's colour to the whole sky's
   shadowRadius: 1.6,
   shadowIntensity: 1,
 };
@@ -64,7 +65,7 @@ export const PRESETS = {
     exposure: 1.5,
     bloom: 0.18,
     clouds: 0.38,
-    fog: 0.01,
+    fog: 0.008,
     shadowRadius: 1.2,
   },
   // the hero look: low warm sun behind-left, backlit flowers, long shadows
@@ -72,9 +73,10 @@ export const PRESETS = {
   golden: {
     ...DAY,
     sun: [-34.5, 12.75],
-    turb: 1.7,
+    turb: 1.45,
     mieG: 0.84,
     tint: [1.04, 0.98, 0.95],
+    glow: rgb('#ffb06a', 0.3), // warm haze low towards the sun
     key: 1.07,
     keySat: 1.25,
     exposure: 2,
@@ -84,8 +86,8 @@ export const PRESETS = {
     cloudLit: 0.85,
     cloudSat: 1.7,
     cloudAmb: 0.5,
-    fog: 0.01,
-    fogGain: 0.8,
+    fog: 0.009,
+    fogGain: 0.38,
     env: 0.62,
     shadowRadius: 2,
   },
@@ -97,7 +99,7 @@ export const PRESETS = {
     turb: 2,
     mieG: 0.78,
     sky: 12,
-    tint: [0.95, 0.9, 1.25],
+    tint: [0.92, 0.9, 1.32],
     glow: rgb('#ffa56b', 0.2),
     belt: rgb('#f0a6c0', 0.07),
     nightZen: rgb('#2a44a8', 0.07),
@@ -107,9 +109,9 @@ export const PRESETS = {
     moonGlow: 0.01,
     stars: 0.08,
     night: 0.45,
-    key: 0.3,
+    key: 0.26,
     keyMinEl: 4,
-    keySat: 0.65,
+    keySat: 0.45,
     env: 2.2,
     hemi: 0.4,
     exposure: 1.8,
@@ -120,8 +122,9 @@ export const PRESETS = {
     cloudLit: 2.5,
     cloudSat: 1.3,
     cloudAmb: 1.8,
-    fog: 0.012,
-    fogGain: 0.8,
+    fog: 0.01,
+    fogGain: 0.42,
+    fogSky: 0.75,
     shadowRadius: 3,
     shadowIntensity: 0.55,
   },
@@ -154,7 +157,7 @@ export const PRESETS = {
     cirrus: 0.2,
     cloudLit: 1,
     cloudAmb: 1.6,
-    fog: 0.012,
+    fog: 0.011,
     fogGain: 0.9,
     shadowRadius: 2.6,
     shadowIntensity: 0.7,

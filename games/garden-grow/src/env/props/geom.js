@@ -155,14 +155,14 @@ export function plankGeo(len, h, t, { r = 0.004, b = 0.003, seg = 1 } = {}) {
   const hw = t / 2 - r - b;
   const hh = h / 2 - r - b;
   const shape = new THREE.Shape();
-  roundRect(shape, -hw - r, -hh - r, (hw + r) * 2, (hh + r) * 2, r, seg);
+  roundRect(shape, -hw - r, -hh - r, (hw + r) * 2, (hh + r) * 2, r);
   const g = new THREE.ExtrudeGeometry(shape, { depth: len - 2 * b, bevelEnabled: b > 0, bevelThickness: b, bevelSize: b, bevelSegments: 1, curveSegments: seg });
   g.translate(0, 0, -(len - 2 * b) / 2);
   g.rotateY(Math.PI / 2); // length along x
   return g;
 }
 
-function roundRect(shape, x, y, w, h, r, seg) {
+function roundRect(shape, x, y, w, h, r) {
   if (r <= 0.0005) {
     shape.moveTo(x, y);
     shape.lineTo(x + w, y);
@@ -180,7 +180,6 @@ function roundRect(shape, x, y, w, h, r, seg) {
   shape.quadraticCurveTo(x, y + h, x, y + h - r);
   shape.lineTo(x, y + r);
   shape.quadraticCurveTo(x, y, x + r, y);
-  void seg;
 }
 
 // Nudges vertices a little (seeded), for hand-made unevenness. Vertices at

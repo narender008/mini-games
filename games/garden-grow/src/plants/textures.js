@@ -109,6 +109,8 @@ export function leafAtlas(o) {
     plain2: [0.38, 0.55, 0.22],
     teeth: 0,
     toothDepth: 0.06,
+    lobes: 0,
+    lobeDepth: 0.6,
     size: [256, 512],
     ...o,
   };
@@ -162,12 +164,21 @@ export function leafAtlas(o) {
     out[0] = c[0];
     out[1] = c[1];
     out[2] = c[2];
-    if (o.teeth) {
-      // serrated margin: teeth cut by alpha (the blade is a little wider)
+    if (o.teeth || o.lobes) {
+      // serrated or lobed margin, cut by alpha (the blade is a little wider)
       const d = Math.abs(x - 0.5) * 2;
-      const t = v * o.teeth;
-      const saw = t - Math.floor(t);
-      const inset = o.toothDepth * (0.25 + 0.75 * saw) * sm(0.03, 0.12, v) * (1 - sm(0.94, 1, v) * 0.5);
+      let inset = 0;
+      if (o.lobes) {
+        // lobes sweep forwards; the sinuses between them run in towards the midrib
+        const t = (v - 0.12 * d) * o.lobes + (x < 0.5 ? 0.35 : 0);
+        const f = t - Math.floor(t);
+        inset = o.lobeDepth * Math.pow(1 - Math.sin(Math.PI * f), 1.6) * sm(0.02, 0.15, v) * (1 - sm(0.85, 1, v));
+      }
+      if (o.teeth) {
+        const t = v * o.teeth + (o.lobes ? d * 2 : 0);
+        const saw = t - Math.floor(t);
+        inset += o.toothDepth * (0.25 + 0.75 * saw) * sm(0.03, 0.12, v) * (1 - sm(0.94, 1, v) * 0.5);
+      }
       out[3] = d < 1 - inset ? 1 : 0;
     }
   });
@@ -242,7 +253,25 @@ export function compositeAtlas(o) {
     out[2] = Math.hypot(x, y);
     return out;
   };
+  // disc fields are costly; work them out once for both maps
+  const cacheD = new Float32Array(size * size);
+  const cacheR = new Float32Array(size * size);
+  const cached = new Uint8Array(size * size);
   const f3 = [0, 0, 0];
+  const fieldsAt = (u, v) => {
+    const px = Math.min(size - 1, Math.floor(u * size));
+    const py = Math.min(size - 1, Math.floor((1 - v) * size));
+    const i = py * size + px;
+    if (!cached[i]) {
+      discFields(u, v, f3);
+      cacheD[i] = f3[0];
+      cacheR[i] = f3[1];
+      cached[i] = 1;
+    }
+    f3[0] = cacheD[i];
+    f3[1] = cacheR[i];
+    return f3;
+  };
   const map = paint(size, size, (u, v, out) => {
     out[3] = 1;
     if (u < 0.39) {
@@ -275,7 +304,7 @@ export function compositeAtlas(o) {
       out[0] = out[1] = out[2] = 0.8;
       return;
     }
-    discFields(u, v, f3);
+    fieldsAt(u, v);
     const d = f3[0];
     const rr = f3[1];
     const openK = sm(1 - disc.open - 0.08, 1 - disc.open + 0.08, rr);
@@ -308,7 +337,7 @@ export function compositeAtlas(o) {
       return Math.pow(Math.abs(Math.cos(Math.PI * ray.veins * xx + 0.6 * noise2(xx * 4, v * 6))), 4) * 0.22 + fbm(x * 5, v * 14, 2) * 0.12;
     }
     if (u < 0.48 || v < 0.24 || v > 0.76) return fbm(u * 40, v * 40, 2) * 0.2;
-    discFields(u, v, f3);
+    fieldsAt(u, v);
     return Math.sqrt(Math.max(0, 1 - f3[0] * f3[0] * 1.3)) * 0.9;
   }, 3.2);
   return { map, normalMap };

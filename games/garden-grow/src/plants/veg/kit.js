@@ -80,6 +80,17 @@ export function disposeShared(g, shared) {
   g.dispose();
 }
 
+// InstancedMesh ignores morphTargetInfluences, and three.js reads them
+// (and fails) if a morphing instanced mesh is drawn before any setMorphAt.
+// So every morphing instanced mesh gets its morph texture up front.
+const _still = { morphTargetInfluences: [0] };
+export function readyMorphs(mesh) {
+  if (!mesh.geometry.morphAttributes.position) return mesh;
+  mesh.morphTargetInfluences = [0];
+  for (let i = 0; i < mesh.count; i++) mesh.setMorphAt(i, _still);
+  return mesh;
+}
+
 // Moves an object out of the plant into world space (no parent), keeping
 // where it is on screen. Plants adds it to the scene.
 export function toWorld(obj) {

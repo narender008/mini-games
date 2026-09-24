@@ -15,7 +15,7 @@ export const LAYOUTS = {
     name: 'Cottage garden',
     ground: 'lawn',
     lawn: { x0: -9, x1: 9, z0: -7, z1: 5 },
-    camera: { pos: [0, 1.32, 2.75], target: [0, 0.16, -0.3], fov: 36, fit: { hw: 1.62, hd: 1.0 } },
+    camera: { pos: [0, 1.22, 2.5], target: [0, 0.2, -0.36], fov: 36, fit: { hw: 1.5, hd: 0.95 } },
     zones: [
       { id: 'bed', shape: 'ellipse', cx: 0, cz: -0.34, rx: 1.34, rz: 0.6, y: 0.035, container: 'border' },
       { id: 'pot-left', shape: 'circle', cx: -1.62, cz: 0.32, r: 0.14, y: 0.27, container: 'pot', max: 1 },
@@ -37,8 +37,8 @@ export const LAYOUTS = {
       ['lavender', 1.72, -0.62],
     ],
     canRest: [1.45, 0, 0.62],
-    basket: [-1.12, 0, 0.9],
-    vase: [1.28, 0, 1.02],
+    basket: [-1.2, 0, 0.66],
+    vase: [1.62, 0, 0.12],
   },
   planters: {
     name: 'Raised planters',
@@ -65,7 +65,7 @@ export const LAYOUTS = {
   balcony: {
     name: 'Balcony pots',
     ground: 'deck',
-    deck: { x0: -2.4, x1: 2.4, z0: -1.45, z1: 2.2 },
+    deck: { x0: -2.4, x1: 2.4, z0: -1.45, z1: 7.5 }, // deep enough for tall phones, where the camera pulls back
     camera: { pos: [0, 1.42, 2.55], target: [0, 0.34, -0.45], fov: 36, fit: { hw: 1.62, hd: 0.95 } },
     zones: [
       { id: 'window-box', shape: 'rect', cx: 0, cz: -1.12, w: 1.7, d: 0.24, y: 0.42, container: 'windowbox' },

@@ -4,7 +4,7 @@
 // breeze, catching the light (and glowing when the low sun is behind them),
 // tiny crowns of droplets and soft rings where drops land around the garden,
 // and a faint veil of rain far off. It wets the ground a little at a time. The
-// rainbow is a real one (see rainbow.js), opposite the sun and far away.
+// rainbow is a real one (see rainbow.js), standing in the rain past the fence.
 import * as THREE from 'three';
 import { REDUCED_MOTION, clamp } from '../config.js';
 import { wind } from '../shared.js';
@@ -13,7 +13,6 @@ import { Rainbow } from './rainbow.js';
 import { Drops } from './drops.js';
 import { lightFor } from './light.js';
 
-const tmpV = new THREE.Vector3();
 const tmpD = new THREE.Vector3();
 
 export class Weather {
@@ -29,7 +28,7 @@ export class Weather {
     this.time = 0;
     this.splashAcc = 0;
     this.lastRain = -10;
-    this.field = new RainField(scene, Math.round(1500 + 3000 * k));
+    this.field = new RainField(scene, Math.round(2000 + 3500 * k));
     this.rings = new Rings(scene, Math.round(120 + 200 * k));
     const groundAt = (x, z) => (this.ground ? this.ground.heightAt(x, z) : 0);
     this.drops = new Drops(scene, { capacity: Math.round(500 + 900 * k), groundAt });
@@ -53,9 +52,10 @@ export class Weather {
   update(dt, t, { camera, sunDir, night = 0 } = {}) {
     if (dt <= 0) return;
     this.time += dt;
-    // rain eases in and out over a couple of seconds; the bow more slowly
+    // rain eases in and out over a couple of seconds; the bow shows within
+    // about two (while the camera looks up at it) and fades slowly
     this.rain += (this.rainTarget - this.rain) * (1 - Math.exp(-dt * 0.9));
-    this.bow += (this.bowTarget - this.bow) * (1 - Math.exp(-dt * (this.bowTarget > this.bow ? 0.45 : 0.7)));
+    this.bow += (this.bowTarget - this.bow) * (1 - Math.exp(-dt * (this.bowTarget > this.bow ? 1.2 : 0.5)));
     if (this.rain < 0.002) this.rain = this.rainTarget > 0 ? this.rain : 0;
     const L = lightFor(this.scene);
     if (sunDir) L.override = sunDir;
@@ -86,14 +86,15 @@ export class Weather {
     // ---- drops landing round the garden: crowns and rings
     if (rain > 0.02 && camera) {
       this.splashAcc += dt * rain * (140 + 260 * this.k);
-      // centred where the view meets the ground
-      const cx = this.center.x;
-      const cz = this.center.z - 0.8;
+      // centred where the middle of the view meets the ground
+      camera.getWorldDirection(tmpD);
+      const reach = Math.min(8, camera.position.y / Math.max(0.12, -tmpD.y));
+      const cx = camera.position.x + tmpD.x * reach;
+      const cz = camera.position.z + tmpD.z * reach;
       while (this.splashAcc >= 1) {
         this.splashAcc -= 1;
         const x = cx + (Math.random() - 0.5) * 5.6;
-        const z = cz + (Math.random() - 0.5) * 4.4;
-        tmpV.set(x, 0, z);
+        const z = cz + (Math.random() - 0.5) * 4.2;
         const y = this.ground ? this.ground.heightAt(x, z) : 0;
         if (Math.random() < 0.55) this.drops.crown(x, y, z, 4, 0.0012, 1 + ((Math.random() * 2.4) | 0));
         if (Math.random() < 0.6) this.rings.add(x, y, z, this.time, 0.012 + Math.random() * 0.014);

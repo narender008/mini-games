@@ -59,6 +59,7 @@ class App {
     this.rainbowT = 0;
     this.autoPour = 0;
     this.look = null; // Big kid close-up
+    this.skyLook = 0; // seconds left of looking up at a rainbow
     this.camBlend = 0;
     this.nightSmooth = 0;
     this.rain = 0;
@@ -110,14 +111,17 @@ class App {
     this.creatures = new Creatures({ scene, quality: q });
     await this.creatures.ready;
     this.visitors = new Visitors({ creatures: this.creatures, renderer, onNew: (kind) => this.newVisitor(kind) });
-    this.creatures.onArrive = (kind) => this.visitors.arrived(kind);
+    // only visitors that come while someone is playing go in the book
+    this.creatures.onArrive = (kind) => {
+      if (this.state === 'playing') this.visitors.arrived(kind);
+    };
     this.creatures.onChirp = (kind, pos) => {
       if (this.state !== 'loading') this.audio.bird(kind, this.panAt(pos));
     };
 
     progress(0.82, 'Filling the watering can');
     await tick();
-    this.effects = new Effects({ scene, quality: q });
+    this.effects = new Effects({ scene, quality: q, ground: this.env.ground });
     this.can = new WateringCan({ scene, quality: q, ground: this.env.ground });
     this.can.rest(new THREE.Vector3(...this.env.layout.canRest));
     this.can.onWater = (x, z, amount) => this.garden.water(x, z, amount);
@@ -172,6 +176,7 @@ class App {
     this.ui.setTool(this.tool);
     this.ui.setCounts(this.counts);
     document.body.classList.toggle('can-fs', canFullscreen);
+    document.body.classList.toggle('lite', q.tier === 'low'); // no glass blur on slow devices
     this.ui.setFullscreen(isFullscreen());
     onFullscreenChange(() => {
       this.ui.setFullscreen(isFullscreen());
@@ -184,6 +189,7 @@ class App {
     progress(0.88, 'Opening the flowers');
     await tick();
     this.startGarden();
+    this.showExtras();
     this.applyWeather(this.sel.weather, true);
     // warm up every shader: one of each plant in full bloom, a visitor of
     // each kind, water and petals, then put the garden back
@@ -231,22 +237,28 @@ class App {
   }
 
   // Pulls the camera back along its view line until the style's framing
-  // box fits the screen. Tall phones may crop the sides of the bed a
-  // little rather than shrink the garden to a postage stamp.
+  // box fits the screen. The taller the screen, the more the view crops the
+  // sides of the garden and looks down on it (as you would hold a phone
+  // upright over a bed), rather than shrinking it to a postage stamp.
   frameCamera() {
     const L = this.env.layout.camera;
     const aspect = this.size.aspect;
-    const fov = aspect < 0.8 ? 44 : aspect < 1.2 ? 40 : L.fov;
+    const tall = clamp((1.3 - aspect) / (1.3 - 0.46), 0, 1);
+    const fov = L.fov + 10 * tall;
     const target = new THREE.Vector3(...L.target);
     const pos = new THREE.Vector3(...L.pos);
-    const dir = pos.clone().sub(target);
-    const base = dir.length();
-    dir.normalize();
+    const off = pos.clone().sub(target);
+    const base = off.length();
+    // steeper from above on tall screens
+    const flat = Math.hypot(off.x, off.z);
+    const elev = THREE.MathUtils.lerp(Math.atan2(off.y, flat), THREE.MathUtils.degToRad(33), tall);
+    const dir = new THREE.Vector3((off.x / flat) * Math.cos(elev), Math.sin(elev), (off.z / flat) * Math.cos(elev));
     const tanV = Math.tan(THREE.MathUtils.degToRad(fov / 2));
-    const hw = L.fit.hw * (aspect < 0.8 ? 0.74 : 1);
-    const need = Math.max(base, hw / (tanV * aspect), (L.fit.hd * 1.25) / tanV);
-    // tall screens: lift the view a touch so the bed sits low with sky above
-    if (aspect < 0.8) target.y += 0.12;
+    const hw = L.fit.hw * (1 - 0.45 * tall);
+    const need = Math.max(base * (1 - 0.15 * tall), hw / (tanV * aspect), (L.fit.hd * 1.25) / tanV);
+    // and aimed a little beyond the bed, so it sits low with the garden behind it above
+    target.z -= 0.35 * tall;
+    target.y += 0.1 * tall;
     this.camBase = { target, pos: target.clone().addScaledVector(dir, need), fov, dist: need };
     this.camera.fov = fov;
     this.camera.aspect = aspect;
@@ -290,6 +302,8 @@ class App {
         this.weather.setRainbow(1);
         this.rainbowT = 30;
       } else this.weather.setRainbow(0);
+      // look up to the sky for a moment so the rainbow is seen
+      if (id === 'rainbow' || was === 'rain') this.skyLook = first ? 0 : 8.5;
       if (!first && (id === 'rainbow' || was === 'rain')) this.audio.rainbow();
       if (id === 'rainbow') this.env.wetAll(0.5);
     }
@@ -337,6 +351,8 @@ class App {
     if (p?.vase) p.vase.object.visible = big;
     if (p?.basket) p.basket.object.visible = big;
     for (const o of [...this.vaseItems, ...this.basketItems]) o.visible = big;
+    // birds may perch on the vase's stool only while it is out
+    this.perches = (p?.perches ?? []).filter((q) => !q.object || q.object.visible);
     this.wands.set(big && (this.tool === 'sun' || this.tool === 'rain') ? this.tool : null);
   }
 
@@ -366,6 +382,7 @@ class App {
     this.showExtras();
     this.lastInput = this.realTime;
     this.look = null;
+    if (this.weatherId === 'rainbow') this.skyLook = 8.5;
     this.audio.setMusic(mode === 'bedtime' ? 'bedtime' : 'day');
     this.audio.setCalm(mode === 'bedtime' ? 1 : 0);
     // Bedtime drifts from golden hour through dusk into a moonlit night
@@ -680,19 +697,29 @@ class App {
   }
 
   harvest(entry) {
-    const species = entry.species;
-    const kind = PLANTS[species].kind;
+    if (entry.harvesting) return;
+    entry.harvesting = true;
+    const kind = PLANTS[entry.species].kind;
     const pan = this.panAt(new THREE.Vector3(entry.x, entry.y, entry.z));
-    const res = entry.plant.harvest((item) => {
-      if (!item) return;
-      this.scene.attach(item);
-      if (kind === 'flower') this.audio.pick(pan);
-      else this.audio.harvestPop(pan);
-      this.effects.soilPuff(new THREE.Vector3(entry.x, entry.y + 0.01, entry.z));
-      this.flyTo(item, kind === 'flower' ? 'vase' : 'basket');
+    let res = null;
+    // the plant goes (or starts regrowing) once its crop has come free
+    const settle = () => {
+      if (!entry.harvesting) return;
+      entry.harvesting = false;
+      if (res?.remove) this.garden.remove(entry);
+      else this.garden.regrow(entry, res?.regrowTo ?? 0.66);
+    };
+    res = entry.plant.harvest((item) => {
+      if (item) {
+        this.scene.attach(item);
+        if (kind === 'flower') this.audio.pick(pan);
+        else this.audio.harvestPop(pan);
+        this.effects.soilPuff(new THREE.Vector3(entry.x, entry.y + 0.01, entry.z));
+        this.flyTo(item, kind === 'flower' ? 'vase' : 'basket');
+      }
+      setTimeout(settle, 250);
     });
-    if (res?.remove) setTimeout(() => this.garden.remove(entry), 900);
-    else if (res) setTimeout(() => this.garden.regrow(entry, res.regrowTo ?? 0.66), 700);
+    setTimeout(settle, 2500); // in case the plant never reports its crop free
   }
 
   flyTo(item, where) {
@@ -795,10 +822,8 @@ class App {
       this.rainbowT -= dt;
       if (this.rainbowT <= 0) this.weather.setRainbow(0);
     }
-    if (this.rain > 0.2) {
-      this.garden.waterAll(dt * 0.06 * this.rain);
-      this.env.wetAll(dt * 0.04 * this.rain);
-    }
+    // rain waters every plant (the weather wets the ground itself)
+    if (this.rain > 0.2) this.garden.waterAll(dt * 0.06 * this.rain);
 
     this.garden.update(dt);
     this.updateCanAndWands(dt);
@@ -814,7 +839,7 @@ class App {
     const lay = this.env.layout;
     this.creatures.update(dt, t, {
       targets: this.targets,
-      perches: this.env.props?.perches ?? [],
+      perches: this.perches ?? [],
       lawn: (x, z) => (Math.abs(x) < 2.6 && z > -2 && z < 1.4 ? this.env.heightAt(x, z) : null),
       bounds: { x0: -2.2, x1: 2.2, z0: lay.fence ? lay.fence.z + 0.4 : -1.4, z1: 1.1 },
       night,
@@ -869,10 +894,8 @@ class App {
       const g = this.groundAt(p.x, p.y);
       if (g) {
         this.can.aim(g);
-        if (!this.pouring) {
-          this.can.pour(true);
-          this.audio.pour(true, this.panAt(g));
-        }
+        if (!this.pouring) this.can.pour(true);
+        this.audio.pour(true, this.panAt(g)); // the sound follows the can
         this.pouring = true;
         this.canIdle = 0;
       }
@@ -916,6 +939,16 @@ class App {
       tPos.y = Math.max(tPos.y, this.look.y + 0.16);
       focus = tPos.distanceTo(tTarget);
       aperture = 2.4;
+    }
+    // the rainbow moment: tilt up until the sky shows over the fence
+    if (this.skyLook > 0 && !this.look) {
+      this.skyLook = Math.max(0, this.skyLook - dt);
+      const w = Math.min(1, this.skyLook / 1.5, (8.5 - this.skyLook) / 1.5);
+      const e = w * w * (3 - 2 * w);
+      const flat = Math.hypot(tPos.x - tTarget.x, tPos.z - tTarget.z);
+      const lift = tPos.y - tTarget.y - Math.tan(THREE.MathUtils.degToRad(1.5)) * flat;
+      tTarget = tTarget.clone();
+      tTarget.y += lift * e;
     }
     const k = 1 - Math.exp(-dt * 2.6);
     cur.target.lerp(tTarget, k);
@@ -961,7 +994,12 @@ class App {
       const z = pick(zones);
       const x = z.shape === 'circle' ? z.cx : z.cx + rand(-0.6, 0.6) * (z.rx ?? z.w / 2);
       const zz = z.shape === 'circle' ? z.cz : z.cz + rand(-0.2, 0.6) * (z.rz ?? z.d / 2);
-      if (this.garden.spotFor('tulip', x, zz)) return new THREE.Vector3(x, this.env.heightAt(x, zz), zz);
+      if (!this.garden.spotFor('tulip', x, zz)) continue;
+      const v = new THREE.Vector3(x, this.env.heightAt(x, zz), zz);
+      // only spots comfortably on screen, clear of the edges and the HUD
+      const sp = this.toScreen(v);
+      const m = 90;
+      if (sp.x > m && sp.x < this.size.w - m && sp.y > m && sp.y < this.size.h - m) return v;
     }
     return null;
   }

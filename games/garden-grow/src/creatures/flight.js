@@ -55,6 +55,22 @@ function speciesOf(plant) {
   return typeof s === 'string' ? s : s?.id ?? null;
 }
 
+// Eases a tracked spot (position and normal) towards where its plant says
+// it is now; big jumps (a different spot) are taken at once.
+const _n = new THREE.Vector3();
+export function follow(pos, normal, toPos, toNormal, dt, up = false) {
+  _n.copy(toNormal).normalize();
+  if (up && _n.y < 0) _n.negate();
+  if (!dt || pos.distanceToSquared(toPos) > 0.0025) {
+    pos.copy(toPos);
+    normal.copy(_n);
+    return;
+  }
+  const k = 1 - Math.exp(-10 * dt);
+  pos.lerp(toPos, k);
+  normal.lerp(_n, k).normalize();
+}
+
 // Picks a landing spot: flowers that attract this visitor are favoured,
 // nearer ones a little, and spots another visitor holds are skipped.
 // `taken(t)` says whether a spot is held; `prefer` is an optional species.

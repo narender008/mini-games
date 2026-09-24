@@ -89,7 +89,7 @@ function assets() {
   }, 1.2);
   shared = {
     foliage: leafMaterial({ map: leafMap, normalMap: leafNormal, normalScale: 0.8, vertexColors: true, translucency: 0.55, roughness: 0.52 }),
-    bloom: petalMaterial({ map: petalMap, normalMap: petalNormal, normalScale: 0.6, vertexColors: true, translucency: 0.9, roughness: 0.36 }),
+    bloom: petalMaterial({ map: petalMap, normalMap: petalNormal, normalScale: 0.6, vertexColors: true, translucency: 0.85, roughness: 0.45 }),
   };
   return shared;
 }
@@ -188,7 +188,7 @@ class Tulip extends FlowerBase {
     this.part(0, quant(Math.min(g, 0.92), 400), this.fol, this.folMesh, (b) => {
       if (g >= 0.28 || cut) {
         const thin = cut ? 1 : mix(0.55, 1, ease(g, 0.3, 0.62));
-        tube(b, path, (q) => (mix(0.0048, 0.0036, q) + 0.0012 * sm(0.9, 1, q)) * thin, { radial: 7, u0: STEM_U[0], u1: STEM_U[1], v0: 0, vScale: 1 / Math.max(0.05, path.length()) });
+        tube(b, path, (q) => (mix(0.0058, 0.0044, q) + 0.0012 * sm(0.9, 1, q)) * thin, { radial: 7, u0: STEM_U[0], u1: STEM_U[1], v0: 0, vScale: 1 / Math.max(0.05, path.length()) });
       }
       for (let i = 0; i < this.leaves.length; i++) {
         if (cut && i !== 2) continue;

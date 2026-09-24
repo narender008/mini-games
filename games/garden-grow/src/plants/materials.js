@@ -62,6 +62,11 @@ varying float vThick;
 `;
 
 // Wraps the physical direct-light term with thin-surface transmission.
+// Light that reaches the far side of a thin leaf or petal passes through it,
+// filtered by its pigment (a little more saturated). It is normalised like
+// the Lambert term, so a backlit petal is at most ~1.2x as bright as the
+// same petal lit from the front: it glows softly and keeps its texture, and
+// there is none of it unless the light really is behind the surface.
 const FRAG_TRANSLUCENT = /* glsl */ `
 #include <lights_physical_pars_fragment>
 void RE_Direct_Plant(const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal,
@@ -70,10 +75,11 @@ void RE_Direct_Plant(const in IncidentLight directLight, const in vec3 geometryP
   RE_Direct_Physical(directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
   float back = saturate(dot(-geometryNormal, directLight.direction));
   float toward = saturate(dot(-geometryViewDir, directLight.direction));
-  float fwd = toward * toward * toward * toward;
-  vec3 tcol = material.diffuseColor * uTransTint;
-  float k = (back * 0.85 + fwd * (0.35 + 1.4 * back)) * uTrans * (1.0 - vThick);
-  reflectedLight.directDiffuse += directLight.color * tcol * k;
+  float fwd = toward * toward;
+  vec3 dc = material.diffuseColor;
+  vec3 tcol = mix(dc, dc * dc / max(max(dc.r, max(dc.g, dc.b)), 0.04), 0.5) * uTransTint;
+  float k = back * (0.6 + 0.6 * fwd) * uTrans * (1.0 - vThick);
+  reflectedLight.directDiffuse += directLight.color * BRDF_Lambert(tcol) * k;
 }
 #undef RE_Direct
 #define RE_Direct RE_Direct_Plant
@@ -123,8 +129,8 @@ export function leafMaterial({
   roughness = 0.55,
   vertexColors = false,
   alphaTest = 0,
-  transTint = [1.15, 1.2, 0.55],
-  backTint = [1.18, 1.22, 1.12],
+  transTint = [1.0, 1.05, 0.7],
+  backTint = [1.12, 1.15, 1.08],
 } = {}) {
   const m = new THREE.MeshStandardMaterial({ color, map, normalMap, roughness, metalness: 0, side: THREE.DoubleSide, vertexColors, alphaTest });
   if (normalMap) m.normalScale.set(normalScale, normalScale);
@@ -143,7 +149,7 @@ export function petalMaterial({
   roughness = 0.5,
   vertexColors = false,
   alphaTest = 0,
-  transTint = [1.25, 1.1, 0.95],
+  transTint = [1, 1, 1],
   backTint = [0.96, 0.96, 0.96],
   glow = 0,
 } = {}) {
@@ -159,5 +165,5 @@ export function petalMaterial({
 // Stems, stalks and petioles: single-sided tubes, a little translucent.
 export function stemMaterial({ color = '#ffffff', map = null, normalMap = null, roughness = 0.6, vertexColors = false, translucency = 0.25 } = {}) {
   const m = new THREE.MeshStandardMaterial({ color, map, normalMap, roughness, metalness: 0, vertexColors });
-  return patch(m, { translucency, transTint: [1.1, 1.15, 0.6] });
+  return patch(m, { translucency, transTint: [1, 1.05, 0.7] });
 }

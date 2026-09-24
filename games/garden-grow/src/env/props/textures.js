@@ -54,6 +54,32 @@ function pf(x, y, px, py, oct, s) {
   return sum / norm;
 }
 
+// A smooth noise layer sampled once on a coarse grid over u, a in 0..1 (u
+// wraps) and read back bilinearly: the low-frequency layers do not need
+// evaluating at every pixel, and painting is the slow part of a first build.
+const fields = new Map();
+function field(key, nu, na, fn) {
+  let f = fields.get(key);
+  if (!f) {
+    const g = new Float32Array((nu + 1) * (na + 1));
+    for (let j = 0; j <= na; j++) for (let i = 0; i <= nu; i++) g[j * (nu + 1) + i] = fn(i / nu, j / na);
+    f = (u, a) => {
+      const x = (u - Math.floor(u)) * nu;
+      const y = Math.min(na - 1e-6, Math.max(0, a * na));
+      const i = Math.floor(x);
+      const j = Math.floor(y);
+      const tx = x - i;
+      const ty = y - j;
+      const o = j * (nu + 1) + i;
+      const p = g[o] + (g[o + 1] - g[o]) * tx;
+      const q = g[o + nu + 1] + (g[o + nu + 2] - g[o + nu + 1]) * tx;
+      return p + (q - p) * ty;
+    };
+    fields.set(key, f);
+  }
+  return f;
+}
+
 const sm = (a, b, v) => {
   const k = Math.min(1, Math.max(0, (v - a) / (b - a)));
   return k * k * (3 - 2 * k);
@@ -139,9 +165,19 @@ const KNOTS = [
   [0.22, 0.3, 0.007],
   [0.71, 0.72, 0.005],
 ];
+const grainFields = [];
+function grainFieldsFor(seed) {
+  return (grainFields[seed] ||= {
+    warp: field(`warp${seed}`, 64, 96, (x, y) => pf(x * 3, y * 3, 3, 0, 3, 11 + seed)),
+    silver: field(`silver${seed}`, 64, 64, (x, y) => pf(x * 5, y * 6, 5, 0, 3, 19 + seed)),
+    crack: field(`crack${seed}`, 32, 48, (x, y) => pn(x * 4, y * 7, 4, 0, 23 + seed)),
+    tone: field(`tone${seed}`, 16, 16, (x, y) => pf(x * 2, y * 2.5, 2, 0, 2, 37 + seed)),
+  });
+}
 function grainAt(u, a, out, seed = 0) {
+  const F = grainFields[seed] || grainFieldsFor(seed);
   const am = a * 0.4;
-  let d = am * 190 + 3.2 * pf(u * 3, a * 3, 3, 0, 3, 11 + seed) + 0.8 * pn(u * 14, a * 22, 14, 0, 13 + seed);
+  let d = am * 190 + 3.2 * F.warp(u, a) + 0.8 * pn(u * 14, a * 22, 14, 0, 13 + seed);
   let knot = 0;
   for (const [ku, ka, kr] of KNOTS) {
     let du = u - ku;
@@ -155,10 +191,10 @@ function grainAt(u, a, out, seed = 0) {
   const ring = d - Math.floor(d);
   const late = sm(0.6, 0.86, ring) * (1 - sm(0.9, 1, ring));
   const fibre = pn(u * 64, a * 560, 64, 0, 17 + seed);
-  const silver = pf(u * 5, a * 6, 5, 0, 3, 19 + seed);
-  const crackMask = sm(0.58, 0.72, pn(u * 4, a * 7, 4, 0, 23 + seed));
+  const silver = F.silver(u, a);
+  const crackMask = sm(0.58, 0.72, F.crack(u, a));
   const crack = crackMask * (1 - sm(0.004, 0.02, Math.abs(pn(u * 6, a * 60, 6, 0, 29 + seed) - 0.5)));
-  const tone = 0.9 + 0.2 * pf(u * 2, a * 2.5, 2, 0, 2, 37 + seed);
+  const tone = 0.9 + 0.2 * F.tone(u, a);
   let r = mix(206, 166, late) * tone;
   let g = mix(193, 150, late) * tone;
   let b = mix(174, 132, late) * tone;
@@ -247,6 +283,7 @@ export function paintedTextures() {
     const W = 256;
     const H = 512;
     const wood = [0, 0, 0];
+    const fDirt = field('paintDirt', 32, 32, (x, y) => pf(x * 3, y * 2, 3, 0, 3, 59));
     return build(
       W,
       H,
@@ -259,7 +296,7 @@ export function paintedTextures() {
         const bare = sm(thr, thr + 0.008, m);
         const lip = sm(thr - 0.018, thr, m) * (1 - bare);
         const craze = sm(0.4, 0.6, m) * (1 - sm(0.004, 0.018, Math.abs(pn(u * 36, a * 150, 36, 0, 57) - 0.5))) * (1 - bare);
-        const dirt = pf(u * 3, a * 2, 3, 0, 3, 59);
+        const dirt = fDirt(u, a);
         const late = Math.max(0, wh);
         let r = 230 - 22 * dirt - 8 * late;
         let g = 228 - 23 * dirt - 9 * late;
@@ -291,14 +328,18 @@ export function terracottaTextures() {
   return cached('terracotta', () => {
     const W = 512;
     const H = 256;
+    const fWarm = field('tcWarm', 128, 64, (x, y) => pf(x * 4, y * 2, 4, 0, 4, 61));
+    const fFlash = field('tcFlash', 32, 16, (x, y) => pf(x * 2, y * 1.5, 2, 0, 3, 63));
+    const fCloud = field('tcCloud', 256, 128, (x, y) => pf(x * 5, y * 3.5, 5, 0, 5, 73));
+    const fDamp = field('tcDamp', 48, 32, (x, y) => pf(x * 3, y * 2.5, 3, 0, 3, 77));
     return build(
       W,
       H,
       (x, y, out) => {
         const u = x / W;
         const v = 1 - y / H;
-        const warm = pf(u * 4, v * 2, 4, 0, 4, 61);
-        const flash = sm(0.55, 0.8, pf(u * 2, v * 1.5, 2, 0, 3, 63));
+        const warm = fWarm(u, v);
+        const flash = sm(0.55, 0.8, fFlash(u, v));
         let r = mix(170, 206, warm);
         let g = mix(94, 124, warm);
         let b = mix(68, 90, warm);
@@ -324,18 +365,20 @@ export function terracottaTextures() {
         // a few runs down from the rim
         const band = 0.45 + 0.55 * sm(0.55, 0.05, v) + 0.4 * sm(0.7, 0.84, v) * (1 - sm(0.9, 0.97, v));
         const drip = sm(0.6, 0.92, pn(u * 30, v * 1.4, 30, 0, 71)) * sm(0.3, 0.9, v);
-        const cloud = pf(u * 5, v * 3.5, 5, 0, 5, 73);
-        const bloom = Math.min(0.9, sm(0.36, 0.66, cloud * band + drip * 0.25) * 0.8 + 0.08);
-        r = mix(r, 212, bloom * 0.66);
-        g = mix(g, 202, bloom * 0.66);
-        b = mix(b, 188, bloom * 0.66);
+        const cloud = fCloud(u, v);
+        // a chalky crust, mottled rather than painted on
+        const crust = 0.55 + 0.45 * pn(u * 90, v * 45, 90, 0, 75);
+        const bloom = Math.min(0.85, sm(0.3, 0.78, cloud * band + drip * 0.25) * 0.75 * crust + 0.06);
+        r = mix(r, 206, bloom * 0.55);
+        g = mix(g, 196, bloom * 0.55);
+        b = mix(b, 182, bloom * 0.55);
         // darker damp patches where water has soaked through
-        const damp = sm(0.5, 0.75, pf(u * 3, v * 2.5, 3, 0, 3, 77)) * (0.4 + 0.6 * sm(0.6, 0.1, v)) * (1 - bloom);
+        const damp = sm(0.5, 0.75, fDamp(u, v)) * (0.4 + 0.6 * sm(0.6, 0.1, v)) * (1 - bloom);
         r *= 1 - damp * 0.22;
         g *= 1 - damp * 0.24;
         b *= 1 - damp * 0.22;
         // green algae round the foot where it stays damp
-        const alg = sm(0.16, 0.0, v + (pf(u * 12, v * 6, 12, 0, 3, 79) - 0.5) * 0.14);
+        const alg = v > 0.3 ? 0 : sm(0.16, 0.0, v + (pf(u * 12, v * 6, 12, 0, 3, 79) - 0.5) * 0.14);
         r = mix(r, 88, alg * 0.6);
         g = mix(g, 96, alg * 0.6);
         b = mix(b, 56, alg * 0.6);
@@ -417,7 +460,7 @@ export function leafTextures() {
       { n: 170, len: [12, 20], wid: 0.55, hue: [82, 100], sat: [30, 44], lit: [15, 29], tip: 0.2, dense: true },
       { n: 90, len: [18, 30], wid: 0.62, hue: [62, 80], sat: [45, 65], lit: [26, 42], tip: 0.6 },
       { n: 55, len: [32, 52], wid: 0.48, hue: [72, 96], sat: [38, 58], lit: [18, 34], tip: 0.35 },
-      { n: 60, len: [22, 34], wid: 0.6, hue: [88, 110], sat: [35, 50], lit: [16, 30], tip: 0.3, rose: true },
+      { n: 110, len: [22, 34], wid: 0.62, hue: [92, 112], sat: [30, 45], lit: [13, 25], tip: 0.3, rose: true },
     ];
     kinds.forEach((k, idx) => {
       const ox = (idx % 2) * T;
@@ -471,10 +514,10 @@ export function leafTextures() {
         drawLeaf(cx, px, py, ang, len * 1.6, len * 1.6 * k.wid, hue, sat, lit, k.tip);
       }
       if (k.rose) {
-        for (let i = 0; i < 5; i++) {
-          const px = ox + T * (0.2 + rnd() * 0.6);
-          const py = oy + T * (0.15 + rnd() * 0.5);
-          drawRose(cx, px, py, 16 + rnd() * 10, rnd);
+        for (let i = 0; i < 3; i++) {
+          const px = ox + T * (0.22 + rnd() * 0.56);
+          const py = oy + T * (0.18 + rnd() * 0.45);
+          drawRose(cx, px, py, 20 + rnd() * 10, rnd);
         }
       }
       cx.restore();
@@ -510,20 +553,25 @@ function drawLeaf(cx, x, y, ang, len, wid, hue, sat, lit, tip) {
 }
 
 function drawRose(cx, x, y, r, rnd) {
-  for (let i = 0; i < 7; i++) {
-    const a = (i / 7) * Math.PI * 2 + rnd();
-    cx.fillStyle = `hsl(${345 + rnd() * 10},${55 + rnd() * 15}%,${70 + rnd() * 10}%)`;
-    cx.beginPath();
-    cx.ellipse(x + Math.cos(a) * r * 0.45, y + Math.sin(a) * r * 0.45, r * 0.55, r * 0.42, a, 0, Math.PI * 2);
-    cx.fill();
+  // outer petals pale, deepening to a tighter, darker centre
+  const hue = 340 + rnd() * 14;
+  for (let ring = 0; ring < 3; ring++) {
+    const rr = r * (1 - ring * 0.28);
+    const n = 6 - ring;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + rnd() * 0.6 + ring;
+      const g = cx.createRadialGradient(x, y, rr * 0.1, x, y, rr);
+      g.addColorStop(0, `hsl(${hue},${50 + ring * 8}%,${48 + ring * 4}%)`);
+      g.addColorStop(1, `hsl(${hue + 6},${45 + ring * 6}%,${74 - ring * 6}%)`);
+      cx.fillStyle = g;
+      cx.beginPath();
+      cx.ellipse(x + Math.cos(a) * rr * 0.4, y + Math.sin(a) * rr * 0.4, rr * 0.55, rr * 0.44, a, 0, Math.PI * 2);
+      cx.fill();
+    }
   }
-  cx.fillStyle = 'hsl(340,55%,58%)';
+  cx.fillStyle = `hsl(${hue - 4},55%,40%)`;
   cx.beginPath();
-  cx.arc(x, y, r * 0.35, 0, Math.PI * 2);
-  cx.fill();
-  cx.fillStyle = 'hsl(48,80%,62%)';
-  cx.beginPath();
-  cx.arc(x, y, r * 0.12, 0, Math.PI * 2);
+  cx.arc(x, y, r * 0.16, 0, Math.PI * 2);
   cx.fill();
 }
 
@@ -585,6 +633,45 @@ export function hedgeTextures() {
     const hs = new Float32Array(S * S);
     for (let i = 0; i < S * S; i++) hs[i] = (img[i * 4] * 0.3 + img[i * 4 + 1] * 0.6 + img[i * 4 + 2] * 0.1) / 255;
     return { map: toTexture(c, true), normalMap: normalsFrom(hs, S, S, 5) };
+  });
+}
+
+// Foliage seen from far away: no single leaves, just rounded clumps of
+// leaves, sunlit on top and dark underneath, packed like a cauliflower.
+// 256 px tile; used for distant tree lines and the insides of crowns.
+export function canopyTextures() {
+  return cached('canopy', () => {
+    const S = 256;
+    const c = canvasOf(S, S);
+    const cx = c.getContext('2d');
+    cx.fillStyle = 'rgb(18,28,14)';
+    cx.fillRect(0, 0, S, S);
+    const rnd = seeded(33);
+    const blobs = [];
+    for (let i = 0; i < 520; i++) blobs.push([rnd() * S, rnd() * S, 7 + rnd() * 13, rnd()]);
+    // lower clumps overlap the ones above them
+    blobs.sort((a, b) => a[1] - b[1]);
+    for (const [x, y, r, k] of blobs) {
+      const xs = x < r ? [x, x + S] : x > S - r ? [x, x - S] : [x];
+      const ys = y < r ? [y, y + S] : y > S - r ? [y, y - S] : [y];
+      for (const px of xs) {
+        for (const py of ys) {
+          const g = cx.createRadialGradient(px - r * 0.3, py - r * 0.4, r * 0.1, px, py, r);
+          const h = 84 + k * 18;
+          g.addColorStop(0, `hsl(${h},${34 + k * 10}%,${30 + k * 10}%)`);
+          g.addColorStop(0.6, `hsl(${h + 4},${38}%,${19 + k * 5}%)`);
+          g.addColorStop(1, 'hsl(100,40%,9%)');
+          cx.fillStyle = g;
+          cx.beginPath();
+          cx.arc(px, py, r, 0, Math.PI * 2);
+          cx.fill();
+        }
+      }
+    }
+    const img = cx.getImageData(0, 0, S, S).data;
+    const hs = new Float32Array(S * S);
+    for (let i = 0; i < S * S; i++) hs[i] = (img[i * 4] * 0.3 + img[i * 4 + 1] * 0.6 + img[i * 4 + 2] * 0.1) / 255;
+    return { map: toTexture(c, true), normalMap: normalsFrom(hs, S, S, 4) };
   });
 }
 

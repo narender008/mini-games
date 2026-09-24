@@ -19,7 +19,7 @@ const RESIDENTS = [
 ];
 
 // full-scale levels of each layer
-const K = { air: 0.08, wind: 0.1, leaves: 0.05, rain: 0.23, bees: 0.04, crickets: 0.056, bird: 0.042, drip: 0.12 };
+const K = { air: 0.08, wind: 0.1, leaves: 0.05, rain: 0.23, bees: 0.04, crickets: 0.056, bird: 0.042, drip: 0.06 };
 
 export class Ambience {
   constructor(audio) {
@@ -151,7 +151,7 @@ export class Ambience {
     // the outdoor air is there whenever any of the garden is
     const outdoors = Math.min(1, 10 * Math.max(L.wind, L.rain, L.night, L.bees, L.birds));
     this.set(this.airG, K.air * outdoors * (0.8 + 0.2 * L.wind), now, 0.8);
-    this.set(this.windG, K.wind * (0.15 + 0.85 * L.wind) * (0.45 + 0.55 * this.gust), now, 1.2);
+    this.set(this.windG, K.wind * (0.15 * outdoors + 0.85 * L.wind) * (0.45 + 0.55 * this.gust), now, 1.2);
     this.set(this.leafG, K.leaves * L.wind * (0.25 + 0.75 * this.gust), now, 0.9);
 
     if (L.rain > 0.002 && !this.rainOn) {

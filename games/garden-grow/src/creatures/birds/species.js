@@ -38,19 +38,12 @@ export const SPECIES = {
       { c: [0, 70, 13], r: [13.5, 12, 11.5], pitch: 20 }, // upper breast / neck
       { c: [0, 76, 20], r: [9.5, 8, 8], pitch: 0 }, // throat
     ],
-    // feathers that overlap the folded wing: scapulars along its top edge,
-    // breast-side feathers over the bend of the wing (mirrored)
-    covers: [
-      { c: [10, 64.5, -15.5], r: [7, 6.5, 19], pitch: 36 },
-      { c: [13, 63, 15], r: [8, 13, 6], pitch: 36 },
-    ],
     head: [
       { c: [0, 85, 20], r: [12, 12, 13], pitch: -4 },
       { c: [0, 83.5, 28], r: [7.6, 7.8, 7.8], pitch: 0 },
     ],
     blend: { body: 10, head: 5, neck: 12, cover: 5 },
     bodyCenter: [0, 50, -4],
-    bodyAxis: [0, 0.64, 0.77],
     headCenter: [0, 84, 20],
     headAxis: [0, -0.05, 1],
     hip: [0, 42, -4],
@@ -88,7 +81,7 @@ vec3 plumage(vec3 p) {
   // upperparts: olive brown, a little darker on the crown
   vec3 col = mix(BROWN, CROWN, above(p.y, 80.0, 6.0));
   // underparts below the flank line: buff flanks, white belly, pale vent
-  float under = 1.0 - above(p.y + p.z * 0.35 - ax * 0.25, 48.0 + n1 * 4.0, 5.0);
+  float under = 1.0 - above(p.y - p.z * 0.6 - ax * 0.22, 47.0 + n1 * 4.0, 5.0);
   col = mix(col, BUFF, under * 0.9);
   float belly = ellM(p, vec3(0.0, 24.0, 8.0), vec3(17.0, 16.0, 22.0), 0.35 + n1 * 0.2);
   col = mix(col, WHITE, belly);
@@ -117,8 +110,8 @@ vec3 plumage(vec3 p) {
       pcov: { base: '#6f5f47', inner: '#665640', fringe: '#877557', fringeW: 0.5, shaft: '#54463a' },
       alula: { base: '#665640', inner: '#5e5040', fringe: '#79684e', fringeW: 0.4, shaft: '#54463a' },
       patch: { base: '#7c6b4d', fringe: '#857354', rows: 2 },
-      rectrix: { base: '#77613f', inner: '#6e5a3b', fringe: '#8f7852', fringeW: 0.5, shaft: '#554531' },
-      outerRect: { base: '#735e3e', inner: '#6a5639', fringe: '#8f7852', fringeW: 0.6, shaft: '#554531' },
+      rectrix: { base: '#6b5536', inner: '#624d31', fringe: '#806a48', fringeW: 0.5, shaft: '#4c3d2b' },
+      outerRect: { base: '#675234', inner: '#5e4a30', fringe: '#806a48', fringeW: 0.6, shaft: '#4c3d2b' },
     },
     behaviour: { ground: 0.75, peck: 1, sing: 0.9, tailFlick: 1, wingFlick: 0.8, bob: 1, hop: 0.07, soil: 0.85 },
   },
@@ -127,18 +120,17 @@ vec3 plumage(vec3 p) {
     id: 'blue-tit',
     posture: 30,
     body: [
-      { c: [0, 40, -4], r: [20, 22, 28], pitch: 30 },
-      { c: [0, 42, 8], r: [18, 20.5, 17], pitch: 25 },
-      { c: [0, 33, -23], r: [10.5, 9.5, 13], pitch: 25 },
-      { c: [0, 58, 12], r: [12.5, 11, 10], pitch: 15 },
+      { c: [0, 40, -4], r: [18.5, 22, 28], pitch: 30 },
+      { c: [0, 42, 8], r: [16.5, 20.5, 17], pitch: 25 },
+      { c: [0, 33, -23], r: [10, 9.5, 13], pitch: 25 },
+      { c: [0, 58, 12], r: [12, 11, 10], pitch: 15 },
     ],
     head: [
-      { c: [0, 70, 17], r: [11, 11, 11.6], pitch: 0 },
-      { c: [0, 68.5, 23], r: [7, 7.2, 6.8], pitch: 0 },
+      { c: [0, 70, 17], r: [11.6, 11.6, 12], pitch: 0 },
+      { c: [0, 68.5, 23], r: [7.3, 7.5, 7], pitch: 0 },
     ],
-    blend: { body: 9, head: 5, neck: 12 },
+    blend: { body: 9, head: 5, neck: 12, cover: 5 },
     bodyCenter: [0, 41, -3],
-    bodyAxis: [0, 0.5, 0.87],
     headCenter: [0, 69, 17],
     headAxis: [0, -0.02, 1],
     hip: [0, 34, -3],
@@ -147,8 +139,9 @@ vec3 plumage(vec3 p) {
     beak: { dir: [0, -0.1, 1], embed: 2.6, len: 8.2, w: 4.2, h: 4.4, pitch: -4, curve: 0.3, hook: 0.2, base: '#26282c', tip: '#15161a', mouth: '#c89060', lowerBase: '#3a3d44' },
     tail: { base: [0, 33, -21], pitch: -18, len: 52, width: 9.5, fork: -0.04, closedFan: 1.2, openFan: 6 },
     wing: {
-      shoulder: [11, 51, 5],
-      chart: { origin: [50, 12], angle: -22 },
+      shoulder: [10, 56, 4],
+      chart: { origin: [61, 5], angle: -32, hump: 8 },
+      margin: 2.5,
       primary: 55,
       secondary: 40,
       tertial: 32,
@@ -164,55 +157,61 @@ vec3 plumage(vec3 p) {
       BIB: '#141828',
       BACK: '#8c9853',
       RUMP: '#98a26a',
-      YELLOW: '#eccd3a',
-      YELLOW2: '#e2c43c',
+      YELLOW: '#efd54a',
+      YELLOW2: '#e6cb48',
       STREAK: '#6f7050',
+      NAPE: '#dfe7ea',
     },
     paint: /* glsl */ `
 vec3 plumage(vec3 p) {
   float ax = abs(p.x);
   float n1 = bNoise(p * 0.25) - 0.5;
   float n2 = bNoise(p * 0.8 + 5.0) - 0.5;
-  vec3 h = p - vec3(0.0, 69.0, 17.0); // head centre
-  // body: yellow-green back, sulphur yellow underparts
+  vec3 h = p - vec3(0.0, 69.0, 17.0); // head centre; the eye is at (8.3, 1.5, 6.6)
+  // body: yellow-green back, sulphur yellow underparts, a faint belly streak
   vec3 col = mix(BACK, RUMP, 1.0 - above(p.z, -12.0, 6.0));
-  float under = 1.0 - above(p.y + p.z * 0.3 - ax * 0.35, 43.0 + n1 * 4.0, 5.0);
-  vec3 yel = mix(YELLOW2, YELLOW, above(p.y, 36.0, 8.0));
-  col = mix(col, yel, under);
-  // faint dark streak down the middle of the belly
-  col = mix(col, STREAK, (1.0 - smoothstep(1.5, 4.0 + n2 * 2.0, ax)) * under * above(p.z, 2.0, 4.0) * (1.0 - above(p.y, 46.0, 4.0)) * 0.55);
-  // head: white face
-  float headZone = above(p.y, 53.0 - p.z * 0.25, 2.0);
-  col = mix(col, WHITE, headZone);
-  // blue cap on the crown, edged white
-  float cap = above(h.y - h.z * 0.12, 5.0 + n2 * 0.6, 0.6) * above(h.z, -9.5 - h.y * 0.3, 1.0);
+  float under = 1.0 - above(p.y - p.z * 0.5 - ax * 0.25, 42.0 + n1 * 4.0, 5.0);
+  col = mix(col, mix(YELLOW2, YELLOW, above(p.y, 36.0, 8.0)), under);
+  col = mix(col, STREAK, (1.0 - smoothstep(1.5, 4.0 + n2 * 2.0, ax)) * under * above(p.z, 2.0, 4.0) * (1.0 - above(p.y, 46.0, 4.0)) * 0.5);
+  // the eye line: from the beak base through the eye, back to the nape
+  float yl = h.z > 6.6 ? 1.5 - 0.62 * (h.z - 6.6) : 1.5 + 0.07 * (6.6 - h.z);
+  float dy = h.y - yl + n2 * 0.4;
+  // white cheek oval under the eye line, ringed by the dark collar
+  float dc = length(vec2((h.y + 3.9) / 5.2, (h.z - 3.2) / 7.0)) + n2 * 0.04;
+  float inHead = 1.0 - smoothstep(12.5, 14.5, length(h));
+  // the cheek and collar carry on over the side of the neck (the body mesh)
+  float side = 1.0 - smoothstep(14.5, 16.5, length(h.yz));
+  float headArea = max((1.0 - smoothstep(1.34, 1.46, dc)) * side, above(dy, -1.2, 0.4) * inHead);
+  col = mix(col, WHITE, headArea);
+  // dark collar round the cheek, joining the eye stripe at the nape
+  float collar = smoothstep(0.98, 1.06, dc) * (1.0 - smoothstep(1.34, 1.46, dc)) * (1.0 - above(dy, -0.8, 0.4)) * side;
+  // dark stripe through the eye (from the lores back to the nape)
+  float stripe = (1.0 - smoothstep(0.85, 1.35, abs(dy))) * above(ax, 2.2, 0.8) * (1.0 - above(h.z, 11.5, 0.8)) * inHead;
+  // blue cap on the crown, edged with a white line; a white band on the forehead
+  float capEdge = 2.5 + 1.2 * smoothstep(6.0, 10.5, h.z);
+  float cap = above(dy, capEdge, 0.45) * above(h.z + 0.25 * h.y, -9.0, 0.7) * inHead;
+  // behind the cap the dark band runs across the nape
+  float nape = above(-h.z - 0.3 * h.y, 8.5, 0.9) * above(dy, -1.2, 0.6) * (1.0 - cap) * inHead;
+  col = mix(col, STRIPE, max(max(collar, stripe), nape));
   col = mix(col, CAP, cap);
-  // white forehead band between beak and cap
-  col = mix(col, WHITE, above(h.z, 6.5 + (h.y - 4.0) * 0.4, 0.6) * above(h.y, 2.5, 0.8));
-  // dark line through the eye to the nape, and the dark collar
-  float stripe = 1.0 - smoothstep(0.9, 1.5 + n2 * 0.2, abs(h.y - 1.2 + h.z * 0.14) / 1.4);
-  stripe *= above(ax, 4.0, 1.0) * above(-h.z + 8.5, 0.0, 1.0);
-  float nape = above(-h.z, 8.0, 1.2) * above(h.y, -6.0, 1.2) * (1.0 - cap);
-  float collar = (1.0 - smoothstep(1.0, 2.2, abs(length(h.zy * vec2(0.8, 1.0) - vec2(-2.5, -1.5)) - 12.0 + n2) / 1.4)) * (1.0 - above(h.y, 1.0, 2.0)) * headZone;
-  col = mix(col, STRIPE, max(max(stripe, nape * 0.9), collar) * (1.0 - cap * 0.3));
+  // a pale spot in the middle of the nape
+  col = mix(col, NAPE, ellM(h, vec3(0.0, 4.0, -11.0), vec3(3.0, 2.6, 3.0), 0.5) * 0.8);
   // black bib under the beak
-  float bib = ellM(p, vec3(0.0, 57.0, 22.0), vec3(5.0, 7.0, 6.0), 0.35 + n2 * 0.3);
+  float bib = ellM(h, vec3(0.0, -9.0, 7.0), vec3(4.5, 5.5, 5.5), 0.35 + n2 * 0.3);
   col = mix(col, BIB, bib);
-  // the pale nape spot
-  col = mix(col, WHITE, ellM(p, vec3(0.0, 72.0, 5.0), vec3(3.5, 3.0, 3.0), 0.5) * 0.6);
   return col;
 }
 `,
     feathers: {
       primary: { base: '#3d4652', inner: '#2e343c', fringe: '#6f9ccc', fringeW: 0.45, outerEdge: '#5e92cc', shaft: '#23272c' },
-      secondary: { base: '#4d7fb4', inner: '#3a4452', fringe: '#6f9ccc', fringeW: 0.45, outerEdge: '#4f8ac8', shaft: '#2a3038' },
+      secondary: { base: '#50789f', inner: '#3a4452', fringe: '#6b92b8', fringeW: 0.45, outerEdge: '#4d80b4', shaft: '#2a3038' },
       tertial: { base: '#56667a', inner: '#4a5566', fringe: '#dfe6ea', fringeW: 0.35, tip: { color: '#f4f4ef', len: 0.12 }, shaft: '#333a44' },
-      gcov: { base: '#3f7fc8', inner: '#3a6aa8', fringe: '#5f97d4', fringeW: 0.4, tip: { color: '#f4f4ef', len: 0.24 }, shaft: '#2a4a70' },
-      pcov: { base: '#3470b8', inner: '#2e5c94', fringe: '#4d86c8', fringeW: 0.4, shaft: '#223a5a' },
+      gcov: { base: '#4a7fb8', inner: '#3f6a9c', fringe: '#6090c4', fringeW: 0.4, tip: { color: '#f2f2ec', len: 0.24 }, shaft: '#2a4a70' },
+      pcov: { base: '#3f70a8', inner: '#345c8a', fringe: '#5586bc', fringeW: 0.4, shaft: '#223a5a' },
       alula: { base: '#2f3844', inner: '#2a313a', fringe: '#4a78a8', fringeW: 0.4, shaft: '#20252c' },
-      patch: { base: '#3a86d4', fringe: '#5a9ade', rows: 3 },
-      rectrix: { base: '#4f78a8', inner: '#3d4d62', fringe: '#6b90bc', fringeW: 0.45, shaft: '#2a3342' },
-      outerRect: { base: '#566d88', inner: '#42505f', fringe: '#dfe4e8', fringeW: 0.9, shaft: '#2a3342' },
+      patch: { base: '#4a86c4', fringe: '#6096cc', rows: 3 },
+      rectrix: { base: '#4d6a8a', inner: '#3b4758', fringe: '#627f9e', fringeW: 0.45, shaft: '#2a3342' },
+      outerRect: { base: '#526276', inner: '#3e4a58', fringe: '#d6dce0', fringeW: 0.9, shaft: '#2a3342' },
     },
     behaviour: { ground: 0.35, peck: 0.6, sing: 0.8, tailFlick: 0.5, wingFlick: 0.6, bob: 0.4, hop: 0.05, soil: 0.2 },
   },
@@ -221,28 +220,28 @@ vec3 plumage(vec3 p) {
     id: 'goldfinch',
     posture: 32,
     body: [
-      { c: [0, 39, -6], r: [18.5, 20.5, 29], pitch: 32 },
-      { c: [0, 41, 7], r: [16.5, 19, 16.5], pitch: 25 },
-      { c: [0, 31, -26], r: [9.5, 8.5, 13], pitch: 25 },
-      { c: [0, 56, 10], r: [11.5, 10.5, 10], pitch: 18 },
+      { c: [0, 39, -6], r: [17, 20.5, 29], pitch: 32 },
+      { c: [0, 41, 7], r: [15.2, 19, 16.5], pitch: 25 },
+      { c: [0, 31, -26], r: [9, 8.5, 13], pitch: 25 },
+      { c: [0, 56, 10], r: [11, 10.5, 10], pitch: 18 },
     ],
     head: [
-      { c: [0, 67, 15], r: [10.2, 10.4, 11.6], pitch: -2 },
+      { c: [0, 67, 15], r: [10.6, 10.8, 11.8], pitch: -2 },
       { c: [0, 65.5, 22], r: [6.6, 6.6, 7.2], pitch: -6 },
     ],
-    blend: { body: 9, head: 6, neck: 11 },
+    blend: { body: 9, head: 6, neck: 11, cover: 5 },
     bodyCenter: [0, 40, -5],
-    bodyAxis: [0, 0.53, 0.85],
     headCenter: [0, 66, 15],
     headAxis: [0, -0.06, 1],
     hip: [0, 33, -5],
     neck: [0, 57, 9],
     eye: { dir: [0.76, 0.2, 0.62], r: 1.85, embed: 0.5, iris: '#140c08', ring: '#1b1512' },
-    beak: { dir: [0, -0.12, 1], embed: 3.2, len: 13, w: 5.2, h: 5.6, pitch: -4, curve: 0.2, hook: 0, base: '#e8cfc0', tip: '#6b625e', mouth: '#c89080', lowerBase: '#e9d4c6' },
+    beak: { dir: [0, -0.12, 1], embed: 3.2, len: 13, w: 5.2, h: 5.6, pitch: -4, curve: 0.2, hook: 0, base: '#eccab4', tip: '#77655c', mouth: '#c89080', lowerBase: '#efd2c0' },
     tail: { base: [0, 31, -25], pitch: -20, len: 50, width: 8.5, fork: 0.16, closedFan: 1.4, openFan: 6.5 },
     wing: {
-      shoulder: [10, 49, 3],
-      chart: { origin: [48, 10], angle: -24 },
+      shoulder: [9, 55, 2],
+      chart: { origin: [60, 3], angle: -30, hump: 8 },
+      margin: 2.5,
       primary: 62,
       secondary: 40,
       tertial: 32,
@@ -255,8 +254,8 @@ vec3 plumage(vec3 p) {
       RED: '#c5231d',
       BLACK: '#17130f',
       WHITE: '#f1eee6',
-      BUFF: '#b48a5c',
-      BREAST: '#c3a077',
+      BUFF: '#a8845e',
+      BREAST: '#c4a888',
       BELLY: '#efebe1',
       RUMP: '#e8e0cf',
     },
@@ -265,26 +264,29 @@ vec3 plumage(vec3 p) {
   float ax = abs(p.x);
   float n1 = bNoise(p * 0.24) - 0.5;
   float n2 = bNoise(p * 0.8 + 3.0) - 0.5;
-  vec3 h = p - vec3(0.0, 66.0, 15.0); // head centre
+  vec3 h = p - vec3(0.0, 66.0, 15.0); // head centre; the eye is at (7.9, 2.1, 6.8)
   // warm buff back and breast sides, white belly and rump
   vec3 col = BUFF;
-  float under = 1.0 - above(p.y + p.z * 0.3 - ax * 0.35, 42.0 + n1 * 4.0, 5.0);
+  float under = 1.0 - above(p.y - p.z * 0.5 - ax * 0.25, 41.0 + n1 * 4.0, 5.0);
   col = mix(col, BREAST, under);
   col = mix(col, BELLY, ellM(p, vec3(0.0, 24.0, 2.0), vec3(12.0 + n1 * 3.0, 15.0, 22.0), 0.4) * (1.0 - above(p.y, 44.0, 6.0) * 0.7));
   col = mix(col, RUMP, ellM(p, vec3(0.0, 40.0, -24.0), vec3(8.0, 8.0, 7.0), 0.5) * 0.9);
-  // head: white cheeks and throat
-  float headZone = above(p.y, 50.0 - p.z * 0.2 + n1, 2.0);
-  col = mix(col, WHITE, headZone * above(h.z, -10.0, 2.0));
-  // black crown down behind the cheeks to the neck sides
-  float crown = above(h.y - h.z * 0.3, 3.0 + n2 * 0.5, 0.6);
-  float rear = above(-h.z + h.y * 0.25, 4.5 + n2 * 0.6, 0.8) * above(h.y, -9.0 + ax * 0.2, 1.5) * (1.0 - above(-h.z, 13.0, 2.0));
-  col = mix(col, BLACK, max(crown, rear));
-  // red face around the beak, the eye at its back edge
-  float red = above(h.z + h.y * 0.1, 3.8 + n2 * 0.6, 0.6) * above(h.y, -6.5 - h.z * 0.3, 0.8);
+  // the head: white cheeks and throat, carried on over the side of the neck
+  float inHead = 1.0 - smoothstep(12.0, 14.0, length(h * vec3(1.0, 1.0, 0.9)));
+  float side = 1.0 - smoothstep(14.5, 16.5, length(h.yz));
+  float bar = -3.6 - 0.18 * h.y + n2 * 0.6;
+  col = mix(col, WHITE, side * above(h.z, bar - 0.6, 0.7) * above(h.y, -11.0 + n1 * 2.0 + ax * 0.12, 1.2));
+  // red face: in front of a line bowing back to just behind the eye
+  float zr = 4.4 + 0.05 * (h.y - 1.5) * (h.y - 1.5) + n2 * 0.5;
+  float red = above(h.z, zr, 0.45) * above(h.y, -8.0, 0.8) * side;
+  // black crown, and a black bar down behind the white cheek
+  float crown = above(h.y, 3.8 + n2 * 0.5, 0.5) * inHead;
+  float back = (1.0 - above(h.z, bar, 0.6)) * above(h.y, -7.0 + n1 * 1.5, 1.0) * side * (1.0 - above(-h.z, 11.5, 1.5));
+  col = mix(col, BLACK, max(crown, back) * (1.0 - red));
   col = mix(col, RED, red);
-  // black lores and a thin ring at the base of the beak
-  float lore = ellM(p, vec3(4.5, 66.5, 24.5), vec3(3.2, 1.8, 3.0), 0.4) + ellM(p, vec3(0.0, 64.0, 25.5), vec3(3.8, 3.0, 2.2), 0.4);
-  col = mix(col, BLACK, clamp(lore, 0.0, 1.0));
+  // a thin black ring round the base of the beak
+  float ring = 1.0 - smoothstep(0.85, 1.15, length((h - vec3(0.0, -1.4, 13.2)) / vec3(3.9, 3.4, 2.0)));
+  col = mix(col, BLACK, ring * 0.9);
   return col;
 }
 `,

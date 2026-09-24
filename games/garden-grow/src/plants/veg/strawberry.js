@@ -13,7 +13,7 @@ import { normalMapFromHeight } from '../../shared.js';
 import { vegLeaf, vegStem, rigidSway } from './mats.js';
 import { petalMaterial, leafMaterial } from '../materials.js';
 import { buildLeaf } from './leaf.js';
-import { Wobble, shareGeometry, disposeShared, toWorld, grow } from './kit.js';
+import { Wobble, shareGeometry, disposeShared, toWorld, grow, readyMorphs } from './kit.js';
 
 const STEM_UV = [0.005, 0.02, 0.07, 0.98];
 const LEAF_UV = [0.09, 0, 1, 1];
@@ -284,7 +284,7 @@ function leafGeometry() {
 function materials() {
   return once('strawberry-mats', () => {
     const lt = leafTextures();
-    const leaf = vegLeaf('strawberry', { map: lt.map, normalMap: lt.normalMap, normalScale: 1.1, alphaTest: 0.5, translucency: 0.42, roughness: 0.55 });
+    const leaf = vegLeaf('strawberry', { map: lt.map, normalMap: lt.normalMap, normalScale: 1.1, alphaTest: 0.5, translucency: 0.42, roughness: 0.55, backTint: [1.02, 1.06, 0.98] });
     const stalk = vegStem('strawberry-stalk', { color: '#7f9148', roughness: 0.6 });
     const sepal = vegLeaf('strawberry-sepal', { color: '#4c7e2e', translucency: 0.45, roughness: 0.5 });
     const petal = petalMaterial({ color: '#ffffff', vertexColors: true, translucency: 0.85, roughness: 0.45 });
@@ -389,7 +389,7 @@ export function createStrawberry({ seed = 1, quality } = {}) {
   const leafGeo = shareGeometry(leaf.geo);
   const leafFlex = new THREE.InstancedBufferAttribute(new Float32Array(NL * 2), 2);
   leafGeo.setAttribute('aVegFlex', leafFlex);
-  const leaves = new THREE.InstancedMesh(leafGeo, mats.leaf, NL);
+  const leaves = readyMorphs(new THREE.InstancedMesh(leafGeo, mats.leaf, NL));
   leaves.castShadow = shadows;
   leaves.receiveShadow = true;
   leaves.frustumCulled = false;
@@ -417,7 +417,7 @@ export function createStrawberry({ seed = 1, quality } = {}) {
     const g2 = shareGeometry(geo);
     const fa = new THREE.InstancedBufferAttribute(new Float32Array(NB * 2), 2);
     g2.setAttribute('aVegFlex', fa);
-    const m = new THREE.InstancedMesh(g2, mat, NB);
+    const m = readyMorphs(new THREE.InstancedMesh(g2, mat, NB));
     m.castShadow = shadows;
     m.frustumCulled = false;
     m.userData.src = geo;
@@ -520,7 +520,7 @@ export function createStrawberry({ seed = 1, quality } = {}) {
       // flowers face out and up; berries hang
       _v2.copy(_v).addScaledVector(Y, 0.5).normalize();
       const hang = smooth(0.8, 0.9, g) * (picked ? 0 : 1);
-      s.axis.copy(_v2).lerp(_v.clone().lerp(DOWN, 0.75), hang).normalize();
+      s.axis.copy(_v2).lerp(_v.lerp(DOWN, 0.75), hang).normalize();
 
       const bud = smooth(s.t0 + 0.02, s.t0 + 0.07, g);
       const bloom = smooth(s.t0 + 0.07, s.t0 + 0.15, g);
@@ -576,7 +576,7 @@ export function createStrawberry({ seed = 1, quality } = {}) {
     bGeo.setAttribute('aVegFlex', bFlex);
     const cGeo = shareGeometry(calyxGeometry());
     const b = new THREE.InstancedMesh(bGeo, mats.berry, n);
-    const c = new THREE.InstancedMesh(cGeo, mats.sepal, n);
+    const c = readyMorphs(new THREE.InstancedMesh(cGeo, mats.sepal, n));
     b.castShadow = c.castShadow = shadows;
     const centre = new THREE.Vector3();
     for (const s of ripe) centre.add(s.end);
@@ -642,6 +642,8 @@ export function createStrawberry({ seed = 1, quality } = {}) {
   // ---------------------------------------------------------- targets
 
   const tg = Array.from({ length: 2 + NB }, () => ({ pos: new THREE.Vector3(), normal: new THREE.Vector3(0, 1, 0), plant: null, kind: 'leaf', color: '#3b7026' }));
+
+  apply(); // valid from the first frame, before Plants flushes it
 
   return {
     object,

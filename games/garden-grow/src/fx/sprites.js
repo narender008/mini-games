@@ -116,7 +116,7 @@ const VERT = /* glsl */ `
 attribute vec4 iPos;   // xyz, rotation
 attribute vec4 iSize;  // width, height, frame, additive (0 matter .. 1 light)
 attribute vec4 iColor; // rgb (may exceed 1 for bloom), alpha
-attribute float iLit;  // 0: flat colour, 1: lit by the sun from its normal
+attribute float iLit;  // 0: flat colour; above 0 lit by the sun, its shape's normal weighted by this
 varying vec2 vUv;
 varying vec4 vColor;
 varying float vAdd;
@@ -151,13 +151,14 @@ void main() {
   if (a < 0.002) discard;
   vec3 col = vColor.rgb;
   if (vLit > 0.0) {
-    vec3 n = normalize(t.rgb * 2.0 - 1.0);
-    float d = dot(n, uLightView);
-    // soft wrap lighting, plus light scattered through thin edges
-    float wrap = clamp(d * 0.5 + 0.5, 0.0, 1.0);
-    float through = pow(clamp(-uLightView.z, 0.0, 1.0), 2.0) * (1.0 - t.a) * 1.5;
-    vec3 lit = uAmbient + uSunCol * (wrap * wrap * 0.3183 + through * 0.2);
-    col *= mix(vec3(1.0), lit, vLit);
+    // vLit sets how strongly the puff's own shape shades it
+    vec3 n = normalize(mix(vec3(0.0, 0.0, 1.0), t.rgb * 2.0 - 1.0, vLit));
+    float wrap = clamp(dot(n, uLightView) * 0.5 + 0.5, 0.0, 1.0);
+    // thin fringes glow when the sun is behind; light bounced about inside
+    // keeps even the shaded side of a cloud fairly bright
+    float through = pow(clamp(-uLightView.z, 0.0, 1.0), 2.0) * (1.0 - t.a) * 0.6;
+    vec3 lit = uAmbient * 1.2 + uSunCol * (wrap * wrap * 0.25 + 0.06 + through * 0.2);
+    col *= lit;
   }
   gl_FragColor = vec4(col * a, a * (1.0 - vAdd));
   #include <tonemapping_fragment>

@@ -219,8 +219,9 @@ void main() {
     horizon = mix(horizon, uOvercastCol * 0.62, uOvercast);
   }
 
-  // ---- below the horizon: distant ground fading into the haze
-  if (d.y < 0.0) col = mix(uGround, horizon, exp(d.y * 16.0));
+  // ---- below the horizon: far-off country lost in the glowing haze, so
+  // gaps between the backdrop trees read as light, not as a grey wall
+  if (d.y < 0.0) col = mix(uGround, horizon, exp(d.y * 4.0));
 
 #ifdef ENV
   // a garden's horizon is trees and hedges, not open sky
@@ -393,7 +394,7 @@ export function skyRadiance(d, U, out, steps) {
       v += (U.uOvercastCol.value[k] * ocGrad - v) * oc;
       horizon += (U.uOvercastCol.value[k] * 0.62 - horizon) * oc;
     }
-    if (d.y < 0) v = U.uGround.value[k] + (horizon - U.uGround.value[k]) * Math.exp(d.y * 16);
+    if (d.y < 0) v = U.uGround.value[k] + (horizon - U.uGround.value[k]) * Math.exp(d.y * 4);
     out[k] = v;
   }
   return out;

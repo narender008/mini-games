@@ -424,7 +424,7 @@ export function carrotRootTextures() {
         c.lerp(shoulder, Math.min(0.9, sh * sh * 1.1));
         // soil dusting, heavier lower down and caught in the rings
         const dust = fbm(u * 7 + 4, v * 24, 4);
-        const amt = Math.max(0, dust - 0.42 - v * 0.25) * 2.2 + r * 0.35 * (1 - v);
+        const amt = Math.max(0, dust - 0.36 - v * 0.3) * 2.6 + r * 0.5 * (1 - v) + (v < 0.12 ? (0.12 - v) * 3 : 0);
         c.lerp(soil, Math.min(0.85, amt));
         o[0] = c.r * 255;
         o[1] = c.g * 255;

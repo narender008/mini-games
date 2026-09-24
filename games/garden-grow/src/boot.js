@@ -73,6 +73,7 @@ async function boot() {
   } catch (err) {
     console.error(err);
     fail('Something went wrong while starting the game. Please reload the page.');
+    if (location.search.includes('debug')) text.textContent += ` ${err && err.stack}`;
   }
   return null;
 }

@@ -89,7 +89,7 @@ export class Seedling {
   hypState(g) {
     const hyp = this.hyp;
     return {
-      len: curve(g, [[0.09, 0.003], [0.18, 0.032], [0.24, Math.max(0.036, hyp * 0.9)], [0.34, Math.max(0.036, hyp)]]),
+      len: curve(g, [[0.09, 0.003], [0.18, 0.033], [0.23, Math.max(0.04, hyp * 0.9)], [0.34, Math.max(0.04, hyp)]]),
       hook: curve(g, [[0.12, 3.05], [0.2, 2.5], [0.25, 1.3], [0.3, 0]]),
     };
   }
@@ -103,7 +103,7 @@ export class Seedling {
     const epi = Math.max(0, o.epi ?? 0);
     const total = hypL + epi;
     const hookLen = Math.min(hypL, 0.011);
-    const y0 = o.y0 ?? -0.012;
+    const y0 = o.y0 ?? -0.008;
     const n = o.n ?? 26;
     const lean = o.lean ?? 0;
     const lax = Math.cos(o.leanAz ?? 0);

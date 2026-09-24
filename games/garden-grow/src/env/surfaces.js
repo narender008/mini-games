@@ -269,23 +269,27 @@ float edge = min(v, W - v);
 float endD = min(u, L - u);
 // board colour: warm oiled hardwood, each board a little different,
 // weathered greyer towards its ends and edges
-vec3 wood = mix(vec3(0.5, 0.33, 0.21), vec3(0.62, 0.44, 0.28), sr.x);
-wood = mix(wood, vec3(0.47, 0.42, 0.37), sr.y * 0.45);
-// grain: long streaks with the odd cathedral arch, and fine fibres
-float warp = gFbm(vec2(u * 1.6, v * 9.0) + sr.xy * 40.0);
-float ringC = v * mix(45.0, 75.0, sr.z) + warp * 3.5 + sin(u * 1.1 + sr.z * 6.28) * 1.8 * sr2.x;
-float ring = smoothstep(0.3, 0.48, abs(fract(ringC) - 0.5));
+vec3 wood = mix(vec3(0.55, 0.35, 0.21), vec3(0.68, 0.47, 0.29), sr.x);
+wood = mix(wood, vec3(0.5, 0.44, 0.38), sr.y * sr.y * 0.4);
+// grain: growth rings sliced lengthwise wander, bunch up and arch (flat
+// sawn), with fine fibres running along the board
+float warp = gFbm(vec2(u * 0.7, v * 5.0) + sr.xy * 40.0) * 7.0 + gFbm(vec2(u * 3.0, v * 14.0) + sr.yz * 17.0) * 1.2;
+float arch = sin(u * mix(0.8, 2.2, sr2.x) + sr.z * 6.28) * mix(0.5, 3.0, sr2.x);
+float ringC = v * mix(38.0, 70.0, sr.z) + warp + arch;
+float ring = smoothstep(0.32, 0.49, abs(fract(ringC) - 0.5));
+float band = 0.5 + 0.5 * sin(ringC * 6.2832 + 1.3);
 float fibre = gNoise(vec2(u * 9.0, v * 900.0 + sr.x * 91.0));
 float fine = gNoise(vec2(u * 40.0, v * 2600.0));
-vec3 dCol = wood * (1.0 - 0.2 * ring) * (0.92 + 0.14 * fibre) * (0.96 + 0.08 * fine);
-// knots
-float knotD = 9.0;
-vec2 kp = vec2(fract(sr2.y * 3.7) * L, (0.25 + 0.5 * sr2.z) * W);
-if (sr2.y > 0.35) {
-  vec2 kd = vec2((u - kp.x) * 0.55, v - kp.y);
-  knotD = length(kd);
-  dCol *= mix(0.45, 1.0, smoothstep(0.004, 0.012, knotD));
-  dCol *= 1.0 - 0.15 * smoothstep(0.03, 0.012, knotD) * (0.5 + 0.5 * sin(knotD * 900.0));
+float blotch = gFbm(vec2(u * 2.5, v * 30.0) + sr2.zy * 23.0);
+vec3 dCol = wood * (1.0 - 0.22 * ring) * (0.93 + 0.1 * band) * (0.92 + 0.14 * fibre) * (0.96 + 0.08 * fine) * (0.85 + 0.3 * blotch);
+// knots: small, sharp, with the grain swirling round them
+if (sr2.y > 0.55) {
+  vec2 kp = vec2(fract(sr2.y * 3.7) * L, (0.25 + 0.5 * sr2.z) * W);
+  vec2 kd = vec2((u - kp.x) * 0.45, v - kp.y);
+  float knotD = length(kd);
+  float kr = mix(0.003, 0.006, fract(sr2.x * 5.3));
+  dCol *= mix(0.35, 1.0, smoothstep(kr * 0.7, kr * 1.2, knotD));
+  dCol *= 1.0 - 0.18 * smoothstep(kr * 4.0, kr, knotD) * smoothstep(0.3, 0.5, abs(fract(knotD * 520.0) - 0.5));
 }
 float weather = smoothstep(0.35, 0.0, endD) * 0.5 + smoothstep(0.012, 0.0, edge) * 0.35;
 dCol = mix(dCol, vec3(0.5, 0.47, 0.43) * (0.9 + 0.2 * fibre), weather * 0.6);
@@ -313,11 +317,12 @@ dCol = mix(dCol, vec3(0.03, 0.025, 0.02), gap);
 // end grain on the sides of the deck
 if (abs(dNg.y) < 0.5) dCol = wood * vec3(0.7, 0.62, 0.55) * (0.85 + 0.2 * gNoise(dp.xy * vec2(40.0, 900.0) + dp.zy * vec2(40.0, 900.0)));
 vec2 dWet = wetAt(dp.xz);
-float dDamp = smoothstep(0.0, 0.8, dWet.x);
+float dwn = gNoise(dp.xz * 17.0) * 0.6 + gNoise(dp.xz * 47.0) * 0.4;
+float dDamp = smoothstep(0.0, 1.0, clamp(dWet.x * 1.3 - (dwn - 0.5) * 0.6 * (1.0 - dWet.x) * min(1.0, dWet.x * 4.0), 0.0, 1.0));
 dCol = mix(dCol, pow(dCol, vec3(1.12)) * 0.6, dDamp);
 diffuseColor.rgb = deckLinear(dCol);
 dkRough = mix(dkRough, 0.3, dDamp);
-dkRough = mix(dkRough, 0.1, dWet.y * 0.8 * (1.0 - gap));
+dkRough = mix(dkRough, 0.12, smoothstep(0.1, 0.6, dWet.y - (dwn - 0.5) * 0.3 * min(1.0, dWet.y * 4.0)) * (1.0 - gap));
 dkAO = 1.0 - 0.7 * gap - 0.25 * bevel;
 // rounded board edges catch the light; raised grain; sunk screw heads
 float slopeV = (v < W * 0.5 ? -1.0 : 1.0) * bevel * 0.9;

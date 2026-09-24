@@ -53,7 +53,7 @@ export class RainField {
       uAmount: { value: 0 },
     });
     this.uniforms = this.material.uniforms;
-    this.uniforms.uGain.value = 9; // rain on film reads stronger than the raw physics
+    this.uniforms.uGain.value = 16; // rain on film reads stronger than the raw physics
     this.mesh = new THREE.Mesh(g, this.material);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 8;

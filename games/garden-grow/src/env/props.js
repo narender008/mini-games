@@ -15,7 +15,7 @@ import { logRollEdging } from './props/edging.js';
 import { steppingStones } from './props/stones.js';
 import { terracottaPot } from './props/pots.js';
 import { picketFence, panelFence } from './props/fences.js';
-import { Cards, hedge, tree, treeLine, farGround } from './props/backdrop.js';
+import { Cards, hedge, tree, treeLine, farGround, climbingRose } from './props/backdrop.js';
 import { raisedPlanter, windowBox } from './props/planters.js';
 import { railing, sideWall, cityBelow } from './props/balcony.js';
 import { harvestBasket, vaseOnStool } from './props/extras.js';
@@ -111,23 +111,35 @@ export function buildProps(layout, { renderer = null, quality = null } = {}) {
     // the hedge and trees cast no shadows: they would put half the lawn in
     // shade whenever the sun is low behind them
     put(kit.hedge(), hedge({ z: fz - (tall ? 0.9 : 0.45), x0: -11, x1: 11, h: tall ? 2.3 : 1.75, depth: 0.85 }, rnd, cards, density), { cast: false });
+    // trees just over the hedge (seen when the camera pulls back on a
+    // portrait screen), and a few far clumps in the fields
     const trees = tall
       ? [
-          { x: -3.6, z: fz - 4.5, h: 7.5, kind: 'broad' },
-          { x: 3.2, z: fz - 5.5, h: 10, kind: 'birch' },
-          { x: 6.5, z: fz - 8, h: 9, kind: 'broad' },
+          { x: -1.9, z: fz - 3.8, h: 5.6, kind: 'broad' },
+          { x: 1.6, z: fz - 5.5, h: 10, kind: 'birch' },
+          { x: 5.5, z: fz - 5, h: 6.5, kind: 'broad' },
         ]
       : [
-          { x: -3.2, z: fz - 4, h: 9.5, kind: 'birch' },
-          { x: 3.8, z: fz - 5, h: 7, kind: 'broad' },
-          { x: -7.5, z: fz - 7, h: 8, kind: 'broad' },
+          { x: -1.6, z: fz - 3.6, h: 5.2, kind: 'broad' },
+          { x: 1.9, z: fz - 4.4, h: 5.8, kind: 'broad' },
+          { x: 0.2, z: fz - 8.5, h: 11, kind: 'birch' },
+          { x: -5.5, z: fz - 6.5, h: 7.5, kind: 'broad' },
         ];
+    if (tall) {
+      // a climbing rose trained over the fence and trellis
+      const canes = [...climbingRose({ x: -1.9, z: fz + 0.035, w: 2.0, h: 1.5 }, rnd, cards, density), ...climbingRose({ x: 2.6, z: fz + 0.035, w: 1.5, h: 1.4 }, rnd, cards, density)];
+      put(kit.plain('#56603a', 0.8), merge(canes), { cast: false });
+    }
+    for (let i = 0; i < 7; i++) trees.push({ x: -26 + i * 8.5 + (rnd() - 0.5) * 5, z: -17 - rnd() * 14, h: 8 + rnd() * 4, kind: 'broad', lod: 0.4 });
+    const cores = [];
     for (const t of trees) {
       const r = tree(t, rnd, cards, density);
       trunks[r.bark].push(...r.trunk);
+      cores.push(...r.core);
     }
-    put(kit.hedge(), treeLine({ z: -38, x0: -70, x1: 70, hMin: 8, hMax: 15 }, rnd), { cast: false, receive: false });
-    put(kit.hedge(), treeLine({ z: -60, x0: -110, x1: 110, hMin: 10, hMax: 18, bend: 0.002 }, rnd), { cast: false, receive: false });
+    put(kit.canopy(), merge(cores), { cast: false });
+    put(kit.canopy(), treeLine({ z: -38, x0: -70, x1: 70, hMin: 8, hMax: 15 }, rnd), { cast: false, receive: false });
+    put(kit.canopy(), treeLine({ z: -60, x0: -110, x1: 110, hMin: 10, hMax: 18, bend: 0.002 }, rnd), { cast: false, receive: false });
     put(kit.plain('#6f8a48', 1), farGround({}, rnd), { cast: false });
     if (trunks[0].length) put(kit.bark(0), merge(trunks[0]));
     if (trunks[1].length) put(kit.bark(1), merge(trunks[1]));
@@ -154,8 +166,18 @@ export function buildProps(layout, { renderer = null, quality = null } = {}) {
   group.add(vase.object);
   perches.push(...vase.perches);
 
+  // sharper timber and paint at grazing angles where the GPU allows it
+  if (renderer) {
+    const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    group.traverse((o) => {
+      const m = o.material;
+      if (m && m.map && m.map.anisotropy !== aniso) {
+        m.map.anisotropy = aniso;
+        m.map.needsUpdate = true;
+      }
+    });
+  }
   group.userData.buildMs = performance.now() - t0;
-  void renderer;
   return {
     group,
     perches,

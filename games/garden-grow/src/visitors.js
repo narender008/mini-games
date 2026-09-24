@@ -134,10 +134,10 @@ export class Visitors {
     const scene = (this.portraitScene ??= makePortraitScene());
     scene.add(model);
     model.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(model);
+    const box = new THREE.Box3().setFromObject(model, true);
     const sphere = box.getBoundingSphere(new THREE.Sphere());
     const cam = new THREE.PerspectiveCamera(30, 1, 0.001, 10);
-    const dist = (sphere.radius * 1.15) / Math.sin(THREE.MathUtils.degToRad(15));
+    const dist = (sphere.radius * 1.02) / Math.sin(THREE.MathUtils.degToRad(15));
     const dir = new THREE.Vector3(0.35, 0.75, 1).normalize();
     cam.position.copy(sphere.center).addScaledVector(dir, dist);
     cam.near = dist / 20;

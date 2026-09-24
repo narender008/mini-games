@@ -54,6 +54,7 @@ export class UI {
     this.night = -1;
     this.dusk = false;
     this.hintAt = '';
+    this.keyboard = false;
     this.queue = [];
     this.toastTimer = 0;
     this.cards = new Map();
@@ -95,8 +96,8 @@ export class UI {
           b.dataset.id = id;
           b.setAttribute('role', 'radio');
           b.setAttribute('aria-checked', String(this.sel[g.key] === id));
-          b.title = g.names[id] || id;
           const name = g.names[id] || id;
+          b.title = name;
           b.setAttribute('aria-label', name);
           b.innerHTML = `${svgUse(g.icon + id)}<span class="long" aria-hidden="true"></span><span class="short" aria-hidden="true"></span>`;
           b.querySelector('.long').textContent = name;
@@ -198,6 +199,9 @@ export class UI {
       el.addEventListener('pointerdown', (e) => e.stopPropagation());
     }
     addEventListener('resize', () => this.fitPackets());
+    // focus follows the overlays only for keyboard users, so taps never leave a focus ring
+    addEventListener('keydown', () => (this.keyboard = true), true);
+    addEventListener('pointerdown', () => (this.keyboard = false), true);
   }
 
   // ------------------------------------------------------------ taps
@@ -449,8 +453,11 @@ export class UI {
     box.hidden = !open;
     $('settings-btn').setAttribute('aria-expanded', String(open));
     this.h.settings(open);
-    if (open) $('settings-sheet').focus({ preventScroll: true });
-    else if (back) $('settings-btn').focus({ preventScroll: true });
+    if (open && this.keyboard) $('settings-sheet').focus({ preventScroll: true });
+    else if (back) {
+      if (this.keyboard) $('settings-btn').focus({ preventScroll: true });
+      else document.activeElement.blur();
+    }
   }
 
   settingsOpen() {
@@ -470,8 +477,11 @@ export class UI {
       for (const p of box.querySelectorAll('.page, .pages')) p.scrollTop = 0;
     }
     this.h.book(open);
-    if (open) $('book-journal').focus({ preventScroll: true });
-    else if (back) $('book-btn').focus({ preventScroll: true });
+    if (open && this.keyboard) $('book-journal').focus({ preventScroll: true });
+    else if (back) {
+      if (this.keyboard) $('book-btn').focus({ preventScroll: true });
+      else document.activeElement.blur();
+    }
   }
 
   bookOpen() {
