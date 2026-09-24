@@ -1,0 +1,17 @@
+{
+  "name": "Balloon Pop",
+  "short_name": "Balloon Pop",
+  "description": "Pop photoreal hot-air balloons over a dusk sea with a pin, dart, air rifle or slingshot.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#11163f",
+  "theme_color": "#11163f",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

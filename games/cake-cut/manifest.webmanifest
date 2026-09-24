@@ -1,0 +1,17 @@
+{
+  "name": "Cake Cut",
+  "short_name": "Cake Cut",
+  "description": "Decorate a photoreal party cake, blow out the candles, then cut and serve slices with a knife, wire or cake sword.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#1c120d",
+  "theme_color": "#1c120d",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

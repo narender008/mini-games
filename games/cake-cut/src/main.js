@@ -14,6 +14,7 @@ import { Mic } from './mic.js';
 import { Audio } from './audio.js';
 import { Post } from './post.js';
 import { UI, store } from './ui.js';
+import { canFullscreen, enterFullscreen, toggleFullscreen, isFullscreen, onFullscreenChange } from './fullscreen.js';
 import { EasySlices } from './slices.js';
 
 const BOARD = 0.004; // cake board thickness
@@ -132,7 +133,10 @@ class App {
     this.mic = new Mic(this.audio);
     this.ui = new UI(
       {
-        start: (mode) => this.startGame(mode),
+        start: (mode) => {
+          enterFullscreen(); // inside the start tap, so the browser allows it
+          this.startGame(mode);
+        },
         resume: () => this.resume(),
         menu: () => this.toMenu(),
         pause: () => this.pause(),
@@ -155,6 +159,11 @@ class App {
         look: () => this.look(),
         option: (name) => this.setOption(name),
         serve: () => this.easyAction({ kind: 'serve' }),
+        fullscreen: () => {
+          this.audio.unlock();
+          this.audio.click();
+          toggleFullscreen();
+        },
       },
       { cakes: CAKES, frostings: FROSTINGS, toppings: TOPPINGS },
     );
@@ -163,6 +172,18 @@ class App {
     this.ui.setMuted(this.audio.muted);
     this.ui.setOptions(this.opts);
     this.showBests();
+    // full screen: offer the toggle only where the browser supports it, keep
+    // its icon in sync however full screen is left (Esc, browser UI), pause
+    // as Esc would when it was left other than by the game's own button or F
+    // key (the browser keeps that Esc from the page), and re-fit the renderer,
+    // camera and HUD once the new size has settled
+    document.body.classList.toggle('can-fs', canFullscreen);
+    this.ui.setFullscreen(isFullscreen());
+    onFullscreenChange((escaped) => {
+      this.ui.setFullscreen(isFullscreen());
+      if (escaped && this.state === 'playing') this.pause();
+      requestAnimationFrame(() => this.resize());
+    });
 
     this.decor = this.defaultDecor(cakeById(QUERY.get('cake') || CAKES[0].id));
     this.buildCake();
@@ -897,7 +918,9 @@ class App {
     this.layout = { w, h, aspect, portrait };
     // the plate sits beside the stand, or in front of it on a tall screen
     this.plateHome = portrait ? new THREE.Vector3(0.02, 0, 0.3) : new THREE.Vector3(0.31, 0, 0.1);
-    if (!this.lift) this.plate.position.copy(this.plateHome);
+    this.plate.position.copy(this.plateHome);
+    // a slice on its way lands on the plate at its new home
+    if (this.lift) this.lift.to.copy(this.plateHome).setY(PLATE_TOP + 0.0005);
     // frame the cake and the plate
     const cam = this.camera;
     cam.aspect = aspect;
@@ -1229,6 +1252,7 @@ class App {
         if (this.state === 'playing') this.pause();
         else if (this.state === 'paused') this.resume();
       } else if (e.key === 'm' || e.key === 'M') this.toggleMute();
+      else if ((e.key === 'f' || e.key === 'F') && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) toggleFullscreen();
       else if (this.state === 'playing' && e.key >= '1' && e.key <= '5') this.ui.setTool(['chef', 'serrated', 'wire', 'sword', 'server'][Number(e.key) - 1]);
       else if (this.state === 'candles' && e.key === ' ' && !e.repeat && e.target.id !== 'blow') {
         e.preventDefault();

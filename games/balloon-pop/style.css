@@ -284,6 +284,37 @@ svg .thick {
   display: inline;
 }
 
+/* full-screen toggle: corners out to enter, corners in to leave */
+.fs[hidden] {
+  display: none;
+}
+
+.fs .exit {
+  display: none;
+}
+
+.fs[aria-pressed='true'] .enter {
+  display: none;
+}
+
+.fs[aria-pressed='true'] .exit {
+  display: inline;
+}
+
+/* on the start screen it sits in the panel's top-right corner */
+.menu-fs {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+}
+
+/* narrow phones: above the title, so the two never touch */
+@media (max-width: 400px) {
+  .can-fs #menu {
+    padding-top: 64px;
+  }
+}
+
 .toolswitch {
   display: flex;
   padding: 3px;
@@ -894,6 +925,18 @@ svg .thick {
   text-align: center;
 }
 
+/* with the full-screen button in the top bar too, the Games chip keeps just
+   its arrow on narrower screens so the score keeps its room */
+@media (max-width: 640px) {
+  .can-fs .chip span {
+    display: none;
+  }
+
+  .can-fs .chip {
+    padding: 0 10px;
+  }
+}
+
 @media (max-width: 520px) {
   .chip span {
     display: none;
@@ -932,6 +975,18 @@ svg .thick {
 
   #streak {
     top: calc(62px + var(--safe-t));
+  }
+
+  /* the full-screen button drops to a second row, under the pause button,
+     so the score and timer keep their room */
+  .actions {
+    position: relative;
+  }
+
+  #hud .fs {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
   }
 
   .pick {

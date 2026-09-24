@@ -15,6 +15,7 @@ import { Streak } from './streak.js';
 import { Audio } from './audio.js';
 import { Post } from './post.js';
 import { UI } from './ui.js';
+import { canFullscreen, enterFullscreen, toggleFullscreen, isFullscreen, onFullscreenChange } from './fullscreen.js';
 import { detectQuality, FrameGovernor } from './quality.js';
 
 const CAMERA_HEIGHT = 3.2;
@@ -159,15 +160,36 @@ class App {
     this.governor = new FrameGovernor(() => this.resize());
 
     this.ui = new UI({
+      play: (mode) => {
+        enterFullscreen(); // inside the start tap, so the browser allows it
+        this.startGame(mode);
+      },
       start: (mode) => this.startGame(mode),
       resume: () => this.resume(),
       menu: () => this.toMenu(),
       pause: () => this.pause(),
       toggleMute: () => this.toggleMute(),
       tool: (t) => this.setTool(t),
+      fullscreen: () => {
+        this.audio.unlock();
+        this.audio.click();
+        toggleFullscreen();
+      },
     });
     this.tools.setTool(this.ui.tool);
     this.ui.setMuted(this.audio.muted);
+    // full screen: offer the toggle only where the browser supports it, keep
+    // its icon in sync however full screen is left (Esc, browser UI), pause
+    // as Esc would when it was left other than by the game's own button or F
+    // key (the browser keeps that Esc from the page), and re-fit the renderer
+    // and HUD once the new size has settled
+    document.body.classList.toggle('can-fs', canFullscreen);
+    this.ui.setFullscreen(isFullscreen());
+    onFullscreenChange((escaped) => {
+      this.ui.setFullscreen(isFullscreen());
+      if (escaped && this.state === 'playing') this.pause();
+      requestAnimationFrame(() => this.resize());
+    });
 
     this.resize();
     addEventListener('resize', () => this.resize());
@@ -469,6 +491,7 @@ class App {
         if (this.state === 'playing') this.pause();
         else if (this.state === 'paused') this.resume();
       } else if (e.key === 'm' || e.key === 'M') this.toggleMute();
+      else if ((e.key === 'f' || e.key === 'F') && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) toggleFullscreen();
       else if (e.key === '1') this.ui.setTool('pin');
       else if (e.key === '2') this.ui.setTool('dart');
       else if (e.key === '3') this.ui.setTool('rifle');
