@@ -1,0 +1,17 @@
+{
+  "name": "Garden Grow",
+  "short_name": "Garden Grow",
+  "description": "Plant seeds, water them, and watch flowers bloom and butterflies arrive. A calm, bedtime-friendly garden.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#f4ecd8",
+  "theme_color": "#4d7a36",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}
