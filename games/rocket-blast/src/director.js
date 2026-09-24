@@ -505,7 +505,8 @@ export class Director {
     this.addScore(pts);
     const p = app.screenPos(x, y);
     // keep labels readable when hits come thick and fast: points shown at
-    // most every 0.3 s (summed), a "Quick!" at most every 1.5 s
+    // most every 0.3 s (summed; updateBig shows any held back once the 0.3 s
+    // is up), a "Quick!" at most every 1.5 s
     const now = app.realTime;
     this.ptsAcc += pts;
     this.ptsAt = { x: p.x, y: p.y, kind: r.mult >= 3 ? 'gold' : '' };
