@@ -16,7 +16,8 @@
 //     harvestable(),        // flowers: fully bloomed; vegetables: ripe
 //     harvest(onFree),      // animate the snip / pull; call onFree(item) with the freed Object3D
 //                           // placed in world space (Plants adds it to the scene if it has no parent;
-//                           // item.userData.dispose() frees it); returns { remove, regrowTo }
+//                           // item.userData.dispose() frees it; optional item.userData.core is the
+//                           // part it rests on); returns { remove, regrowTo }
 //     poke(),               // springy wobble
 //     dispose(),
 //     pending?(), flush?(), // optional: deferred rebuilds, run by Plants.update within a time budget
@@ -26,6 +27,7 @@
 //
 // Materials for every species come from ./materials.js (leafMaterial,
 // petalMaterial, stemMaterial, plantUniforms), which Plants.update drives.
+// Plants.warm() paints every species' textures in idle time ahead of use.
 import * as THREE from 'three';
 import { PLANTS, REDUCED_MOTION, clamp } from '../config.js';
 import { plantUniforms } from './materials.js';
@@ -195,6 +197,22 @@ export class Plants {
       }
     }
     return best;
+  }
+
+  // Paint each species' shared textures ahead of time, one species per idle
+  // slice (0.1 to 0.35 s each on a laptop), so the first seed of a kind does
+  // not stall a frame. Optional; call once after loading.
+  async warm(ids = Object.keys(SPECIES)) {
+    const idle = () => new Promise((r) => (globalThis.requestIdleCallback ? requestIdleCallback(() => r(), { timeout: 500 }) : setTimeout(r, 0)));
+    for (const id of ids) {
+      if (!SPECIES[id]) continue;
+      await idle();
+      try {
+        SPECIES[id]({ seed: 1, color: PLANTS[id]?.colors[0] ?? '#ffffff', quality: this.quality }).dispose?.();
+      } catch (err) {
+        console.warn(`Garden Grow: could not warm ${id}`, err);
+      }
+    }
   }
 
   // A picked stem with its open bloom and a leaf or two, base at the origin.

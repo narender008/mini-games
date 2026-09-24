@@ -113,9 +113,13 @@ void main() {
     if (c > 0.6) {
       vec3 sum = col;
       float wsum = 1.0;
+      // turn the spiral a different way at every pixel (interleaved
+      // gradient noise), so a wide blur reads as smooth, fine-grained
+      // bokeh instead of ghosted copies of the pattern
+      float spin = 6.2832 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
       for (int i = 0; i < TAPS; i++) {
         float f = sqrt((float(i) + 0.5) / float(TAPS));
-        float a = float(i) * 2.39996;
+        float a = float(i) * 2.39996 + spin;
         float dist = f * c;
         vec2 uv = vUv + vec2(cos(a), sin(a)) * dist / uRes;
         float cs = coc(uv);

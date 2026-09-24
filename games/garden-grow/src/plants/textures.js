@@ -320,7 +320,7 @@ export function compositeAtlas(o) {
     c[2] *= 1 - shade + (shade + 0.05) * cap;
     if (disc.dark) {
       // sunflower: brown-black florets in the middle, open ones ringed gold
-      mixRGB(c, disc.dark, (1 - openK) * 0.85, c);
+      mixRGB(c, disc.dark, (1 - openK) * (disc.darkK ?? 0.85), c);
     }
     const pol = openK * sm(0.35, 0.0, d) * (0.6 + 0.4 * noise2(u * 400, v * 400));
     mixRGB(c, disc.pollen, pol * 0.8, c);

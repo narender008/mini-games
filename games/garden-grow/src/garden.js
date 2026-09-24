@@ -80,6 +80,8 @@ export class Garden {
   }
 
   add(species, x, z, zone, { growth = 0, water = 0, color, seed } = {}) {
+    // a new seed goes into a freshly dug hole, and sits at its bottom
+    if (growth === 0) this.env.dig(x, z);
     const y = this.env.heightAt(x, z);
     const info = PLANTS[species];
     const entry = {

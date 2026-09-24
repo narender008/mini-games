@@ -58,6 +58,7 @@ uniform vec3 uTransTint;
 uniform vec3 uBackTint;
 uniform float uGlow;
 uniform float uNight;
+uniform float uSpec;
 varying float vThick;
 `;
 
@@ -72,7 +73,11 @@ const FRAG_TRANSLUCENT = /* glsl */ `
 void RE_Direct_Plant(const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal,
                      const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal,
                      const in PhysicalMaterial material, inout ReflectedLight reflectedLight) {
+  // the sun's own highlight can be toned down (a low sun glinting off a
+  // leaf at a grazing angle would otherwise turn the whole leaf white)
+  vec3 spec0 = reflectedLight.directSpecular;
   RE_Direct_Physical(directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
+  reflectedLight.directSpecular = spec0 + (reflectedLight.directSpecular - spec0) * uSpec;
   float back = saturate(dot(-geometryNormal, directLight.direction));
   float toward = saturate(dot(-geometryViewDir, directLight.direction));
   float fwd = toward * toward;
@@ -91,6 +96,7 @@ function patch(material, opts) {
     uTransTint: { value: new THREE.Color(...(opts.transTint ?? [1, 1, 1])) },
     uBackTint: { value: new THREE.Color(...(opts.backTint ?? [1, 1, 1])) },
     uGlow: { value: opts.glow ?? 0 },
+    uSpec: { value: opts.spec ?? 1 },
   };
   material.userData.uniforms = own;
   const glow = (opts.glow ?? 0) > 0;
@@ -119,7 +125,8 @@ function patch(material, opts) {
 }
 
 // Leaves (and sepals, cotyledons, bracts). Double-sided; `map` is an sRGB
-// colour texture, `normalMap` a linear one (veins); `translucency` 0..1.
+// colour texture, `normalMap` a linear one (veins); `translucency` 0..1;
+// `spec` scales the sun's highlight (uniforms: material.userData.uniforms).
 export function leafMaterial({
   color = '#ffffff',
   map = null,
@@ -131,10 +138,11 @@ export function leafMaterial({
   alphaTest = 0,
   transTint = [1.0, 1.05, 0.7],
   backTint = [1.12, 1.15, 1.08],
+  spec = 0.5,
 } = {}) {
   const m = new THREE.MeshStandardMaterial({ color, map, normalMap, roughness, metalness: 0, side: THREE.DoubleSide, vertexColors, alphaTest });
   if (normalMap) m.normalScale.set(normalScale, normalScale);
-  return patch(m, { translucency, transTint, backTint });
+  return patch(m, { translucency, transTint, backTint, spec });
 }
 
 // Petals. `sheen` 0..1 adds a velvet sheen (roses, poppies); `glow` a faint

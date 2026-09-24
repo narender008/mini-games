@@ -134,7 +134,12 @@ export class Visitors {
     const scene = (this.portraitScene ??= makePortraitScene());
     scene.add(model);
     model.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(model, true);
+    // frame what shows: hidden parts (a ladybird's folded flight wings)
+    // would otherwise shrink it in its circle
+    const box = new THREE.Box3();
+    model.traverseVisible((o) => {
+      if (o.isMesh) box.expandByObject(o, true);
+    });
     const sphere = box.getBoundingSphere(new THREE.Sphere());
     const cam = new THREE.PerspectiveCamera(30, 1, 0.001, 10);
     const dist = (sphere.radius * 1.02) / Math.sin(THREE.MathUtils.degToRad(15));

@@ -29,9 +29,12 @@ import { Visitors } from './visitors.js';
 import { canFullscreen, enterFullscreen, toggleFullscreen, isFullscreen, onFullscreenChange } from './fullscreen.js';
 
 const TAP_SLOP = 12; // px a press may move and still count as a tap
-const LITTLE_MAX = 22; // plants in a Little ones / Bedtime garden before old ones make room
+const LITTLE_MAX = 34; // plants in a Little ones / Bedtime garden before old ones make room
 const BEDTIME_DUSK = 40; // seconds into Bedtime when dusk begins
 const BEDTIME_NIGHT = 95; // ... and night
+const HARVEST_MAX = { vase: 9, basket: 12, pumpkin: 3 }; // picked things kept before the oldest goes
+const BASKET_SLOTS = [[-0.075, -0.035], [0.075, 0.035], [0.07, -0.04], [-0.07, 0.04]]; // basket-space x, z
+const UP = new THREE.Vector3(0, 1, 0);
 
 class App {
   constructor(canvas, progress) {
@@ -64,8 +67,8 @@ class App {
     this.nightSmooth = 0;
     this.rain = 0;
     this.bedtimeT = -1;
-    this.vaseItems = [];
-    this.basketItems = [];
+    this.harvested = { vase: [], basket: [], pumpkin: [] };
+    this.harvestN = { vase: 0, basket: 0, pumpkin: 0 };
     this.marks = new Map();
     this.ray = new THREE.Raycaster();
     this.ndc = new THREE.Vector2();
@@ -123,7 +126,7 @@ class App {
     await tick();
     this.effects = new Effects({ scene, quality: q, ground: this.env.ground });
     this.can = new WateringCan({ scene, quality: q, ground: this.env.ground });
-    this.can.rest(new THREE.Vector3(...this.env.layout.canRest));
+    this.can.rest(new THREE.Vector3(...this.env.layout.canRest), this.env.layout.canRest[3]);
     this.can.onWater = (x, z, amount) => this.garden.water(x, z, amount);
     this.weather = new Weather({ scene, quality: q, ground: this.env.ground });
     this.wands = new Wands({ scene, quality: q });
@@ -313,7 +316,7 @@ class App {
     this.saveGarden();
     this.clearHarvest();
     this.env.setStyle(id);
-    this.can.rest(new THREE.Vector3(...this.env.layout.canRest));
+    this.can.rest(new THREE.Vector3(...this.env.layout.canRest), this.env.layout.canRest[3]);
     this.can.aim(null);
     this.frameCamera();
     this.camCur = null;
@@ -350,7 +353,7 @@ class App {
     const p = this.env.props;
     if (p?.vase) p.vase.object.visible = big;
     if (p?.basket) p.basket.object.visible = big;
-    for (const o of [...this.vaseItems, ...this.basketItems]) o.visible = big;
+    for (const list of Object.values(this.harvested)) for (const o of list) o.visible = big;
     // birds may perch on the vase's stool only while it is out
     this.perches = (p?.perches ?? []).filter((q) => !q.object || q.object.visible);
     this.wands.set(big && (this.tool === 'sun' || this.tool === 'rain') ? this.tool : null);
@@ -626,7 +629,6 @@ class App {
 
   sowFx(entry) {
     const pos = new THREE.Vector3(entry.x, entry.y + 0.01, entry.z);
-    this.env.dig(entry.x, entry.z);
     this.effects.soilPuff(pos);
     this.audio.plant(this.panAt(pos));
     this.visitors.dug();
@@ -726,26 +728,48 @@ class App {
     const props = this.env.props;
     const box = where === 'vase' ? props.vase : props.basket;
     if (!box) return;
-    const list = where === 'vase' ? this.vaseItems : this.basketItems;
-    const i = list.length;
-    const to = new THREE.Vector3();
-    const quat = new THREE.Quaternion();
-    if (where === 'vase') {
-      // stems into the water, each leaning out a little differently
-      to.copy(box.mouth).add(new THREE.Vector3(0, -0.2, 0));
-      const a = i * 2.39996;
-      const tilt = 0.12 + (i % 3) * 0.1;
-      quat.setFromEuler(new THREE.Euler(Math.sin(a) * tilt, a, Math.cos(a) * tilt));
-    } else {
-      const a = i * 2.39996;
-      const r = 0.04 + (i % 4) * 0.025;
-      to.copy(box.inside).add(new THREE.Vector3(Math.cos(a) * r, Math.floor(i / 5) * 0.035, Math.sin(a) * r * 0.6));
-      quat.setFromEuler(new THREE.Euler(rand(-0.4, 0.4), rand(0, 6.28), Math.PI / 2 + rand(-0.3, 0.3)));
+    // a pumpkin is too big for the basket, so it sits on the ground beside it
+    const slot = where === 'basket' && item.userData.kind === 'pumpkin' ? 'pumpkin' : where;
+    const max = HARVEST_MAX[slot];
+    const list = this.harvested[slot];
+    const n = this.harvestN[slot]++ % max;
+    if (list.length >= max) {
+      const old = list.shift();
+      this.flights = this.flights.filter((f) => f.obj !== old);
+      old.removeFromParent();
+      old.userData.dispose?.();
     }
     list.push(item);
-    if (list.length > 12) {
-      const old = list.shift();
-      old.removeFromParent();
+    const to = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const basketQ = box.object.getWorldQuaternion(new THREE.Quaternion());
+    if (slot === 'vase') {
+      // stems cross at the mouth and fan out, each leaning a different way
+      const a = n * 2.39996;
+      const lean = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+      const tilt = 0.16 + (n % 3) * 0.085;
+      quat.setFromAxisAngle(new THREE.Vector3(lean.z, 0, -lean.x), tilt).multiply(new THREE.Quaternion().setFromAxisAngle(UP, a * 1.7));
+      to.copy(box.mouth).addScaledVector(lean, -0.03);
+      to.y += -0.19 + (n % 3) * 0.025;
+    } else if (slot === 'basket') {
+      // four to a layer, laid in the oval; carrots lie along it
+      item.userData.pile?.();
+      const layer = Math.floor(n / 4);
+      const [lx, lz] = BASKET_SLOTS[n % 4];
+      const off = new THREE.Vector3(lx, 0, lz).applyAxisAngle(UP, layer * 0.5 * (layer % 2 ? 1 : -1)).applyQuaternion(basketQ);
+      to.copy(box.inside).add(off);
+      const e = item.userData.kind === 'carrot'
+        ? new THREE.Euler(rand(-0.3, 0.3), (lx < 0 ? 0 : Math.PI) + rand(-0.3, 0.3), Math.PI / 2 + rand(-0.15, 0.15))
+        : new THREE.Euler(rand(-0.25, 0.25), rand(0, 6.28), rand(-0.25, 0.25));
+      quat.copy(basketQ).multiply(new THREE.Quaternion().setFromEuler(e));
+      to.y += layer * 0.04;
+      to.sub(restOffset(item, quat));
+    } else {
+      const spots = this.env.layout.pumpkins ?? [[0.3, 0], [0.55, 0.05], [0.2, 0.22]];
+      const [dx, dz] = spots[n % spots.length];
+      to.setFromMatrixPosition(box.object.matrixWorld).add(new THREE.Vector3(dx, 0, dz));
+      to.y = this.env.heightAt(to.x, to.z);
+      to.sub(restOffset(item, quat.setFromEuler(new THREE.Euler(rand(-0.06, 0.06), rand(0, 6.28), rand(-0.06, 0.06)))));
     }
     this.flights.push({ obj: item, from: item.position.clone(), q0: item.quaternion.clone(), to, q1: quat, t: 0, dur: 0.95, where });
   }
@@ -771,9 +795,13 @@ class App {
   }
 
   clearHarvest() {
-    for (const o of [...this.vaseItems, ...this.basketItems]) o.removeFromParent();
-    this.vaseItems = [];
-    this.basketItems = [];
+    for (const list of Object.values(this.harvested)) {
+      for (const o of list) {
+        o.removeFromParent();
+        o.userData.dispose?.();
+      }
+      list.length = 0;
+    }
     this.flights = [];
   }
 
@@ -935,7 +963,7 @@ class App {
     if (this.look && this.state === 'playing') {
       const dir = base.pos.clone().sub(base.target).normalize();
       tTarget = this.look;
-      tPos = this.look.clone().addScaledVector(dir, 0.62);
+      tPos = this.look.clone().addScaledVector(dir, this.lookDist ?? 0.62);
       tPos.y = Math.max(tPos.y, this.look.y + 0.16);
       focus = tPos.distanceTo(tTarget);
       aperture = 2.4;
@@ -1102,8 +1130,9 @@ class App {
         app.release();
       },
       screen: (x, y, z) => app.toScreen(new THREE.Vector3(x, y, z)),
-      look: (x, y, z) => {
+      look: (x, y, z, dist) => {
         app.look = x === undefined ? null : new THREE.Vector3(x, y, z);
+        app.lookDist = dist;
       },
       harvest: (i) => {
         const e = i === undefined ? app.garden.entries.find((x) => x.plant.harvestable()) : app.garden.entries[i];
@@ -1121,6 +1150,23 @@ function makeMarkHost() {
   host.setAttribute('aria-hidden', 'true');
   document.body.appendChild(host);
   return host;
+}
+
+// Where an object's resting part (userData.core, or the whole object)
+// sits relative to its origin when turned to `quat`: x and z of its centre,
+// y of its lowest point. Subtract it to set that part on a spot.
+function restOffset(obj, quat) {
+  const p = obj.position.clone();
+  const q = obj.quaternion.clone();
+  obj.position.set(0, 0, 0);
+  obj.quaternion.copy(quat);
+  obj.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(obj.userData.core ?? obj);
+  const off = box.getCenter(new THREE.Vector3()).setY(box.min.y);
+  obj.position.copy(p);
+  obj.quaternion.copy(q);
+  obj.updateMatrixWorld(true);
+  return off;
 }
 
 function pickValid(v, list) {

@@ -312,8 +312,8 @@ export class Bird {
     const toCam = Math.atan2(cam.x - at.x, cam.z - at.z);
     let side = Math.random() < 0.5 ? 1 : -1;
     if (prefer !== undefined) side = wrap(prefer - toCam) >= 0 ? 1 : -1;
-    let off = rand(70, 125) * D2R;
-    if (prefer !== undefined) off = clamp(Math.abs(wrap(prefer - toCam)), 70 * D2R, 130 * D2R);
+    let off = rand(70, 112) * D2R;
+    if (prefer !== undefined) off = clamp(Math.abs(wrap(prefer - toCam)), 70 * D2R, 115 * D2R);
     return wrap(toCam + side * off);
   }
 
@@ -435,10 +435,15 @@ export class Bird {
   planHop(world) {
     const lawn = world.lawn;
     const bd = world.bounds;
-    for (let tries = 0; tries < 8; tries++) {
-      // mostly onwards, sometimes turning
+    const cam = world.camera ? world.camera.position : _c.set(0, 1.3, 2.8);
+    const toCam = Math.atan2(cam.x - this.pos.x, cam.z - this.pos.z);
+    for (let tries = 0; tries < 10; tries++) {
+      // mostly onwards, sometimes turning; keep side-on rather than tail-on
+      // or face-on to the camera
       const turn = tries < 3 ? rand(-0.8, 0.8) : rand(-Math.PI, Math.PI);
       const dir = this.heading + turn;
+      const off = Math.abs(wrap(dir - toCam));
+      if (tries < 8 && (off < 50 * D2R || off > 135 * D2R)) continue;
       const dist = rand(0.035, 0.08) * (REDUCED_MOTION.matches ? 0.7 : 1);
       const x = this.pos.x + Math.sin(dir) * dist;
       const z = this.pos.z + Math.cos(dir) * dist;
@@ -446,6 +451,7 @@ export class Bird {
       const y = lawn ? lawn(x, z) : 0;
       if (y === null || y === undefined || Math.abs(y - this.pos.y) > 0.05) continue;
       if (this.crowded && this.crowded(this, x, z)) continue;
+      if (this.groundOk && !this.groundOk(this, x, y, z)) continue;
       this.hopFrom.copy(this.pos);
       this.hopTo.set(x, y, z);
       this.act3 = dir;
@@ -652,9 +658,6 @@ export class Bird {
     root.rotation.set(0, this.heading, 0);
     this.rig.apply();
     root.updateMatrixWorld(true);
-    // the soft outline only matters close up
-    const cam = world.camera;
-    this.rig.setFuzz(!!cam && this.fuzzOk !== false && cam.position.distanceToSquared(this.pos) < 0.8 * 0.8);
   }
 
   // world position of the body centre (picking, sound)

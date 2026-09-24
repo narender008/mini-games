@@ -72,7 +72,6 @@ export class SpeciesAssets {
 
     this.mats = {
       plumage: plumageMaterial(sp),
-      fuzz: plumageMaterial(sp, { fuzz: true }),
       feathers: featherMaterial(sp),
       beak: beakMaterial(),
       eye: eyeMaterial(),
@@ -117,12 +116,6 @@ export class BirdRig {
     this.body.add(this.head);
     this.headMesh = mesh(A.head, M.plumage);
     this.head.add(this.headMesh);
-    // soft feather-tip outline, shown when the camera is close
-    this.fuzz = [new THREE.Mesh(A.body, M.fuzz), new THREE.Mesh(A.head, M.fuzz)];
-    for (const f of this.fuzz) f.receiveShadow = shadows;
-    this.body.add(this.fuzz[0]);
-    this.head.add(this.fuzz[1]);
-    this.setFuzz(false);
     this.eyes = mesh(A.eyes, M.eye, false);
     this.eyes.receiveShadow = false;
     this.head.add(this.eyes);
@@ -130,8 +123,8 @@ export class BirdRig {
     this.beak.position.copy(A.beakBase);
     this.beak.quaternion.copy(A.beakQuat);
     this.head.add(this.beak);
-    this.beakUpper = mesh(A.beakUpper, M.beak);
-    this.beakLower = mesh(A.beakLower, M.beak);
+    this.beakUpper = mesh(A.beakUpper, M.beak, false);
+    this.beakLower = mesh(A.beakLower, M.beak, false);
     this.beak.add(this.beakUpper, this.beakLower);
 
     this.tailPivot = new THREE.Group();
@@ -245,12 +238,6 @@ export class BirdRig {
       } else _e.set(-p.feetDown * 0.5 + p.hopFeet * 0.35, toeOut, 0, 'YXZ');
       leg.foot.quaternion.setFromEuler(_e);
     }
-  }
-
-  setFuzz(on) {
-    if (this.fuzzOn === on) return;
-    this.fuzzOn = on;
-    for (const f of this.fuzz) f.visible = on;
   }
 
   // world position of the body centre (for picking and sound)

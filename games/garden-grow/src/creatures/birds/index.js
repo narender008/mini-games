@@ -7,6 +7,7 @@
 // every bird of that kind; each bird is a light joint rig (rig.js) driven by
 // its behaviour (brain.js).
 import * as THREE from 'three';
+import { LAYOUTS, inZone } from '../../layout.js';
 import { SPECIES, KINDS } from './species.js';
 import { SpeciesAssets } from './rig.js';
 import { Bird } from './brain.js';
@@ -15,6 +16,7 @@ const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
 const _p = new THREE.Vector3();
 const _ndc = new THREE.Vector3();
+const _q = new THREE.Vector3();
 
 export class Birds {
   constructor({ scene, quality } = {}) {
@@ -27,6 +29,7 @@ export class Birds {
     this.onArrive = null;
     this.onChirp = null;
     this.world = null; // the last world passed to update
+    this.layout = null; // the garden style in use, recognised from the ground
     this.max = (this.quality.creatures ?? 1) < 0.7 ? 2 : 3;
     this.ready = Promise.resolve();
   }
@@ -46,6 +49,7 @@ export class Birds {
     const w = this.world;
     if (w && (w.night > 0.5 || w.rain > 0.3)) return null;
     if (this.birds.filter((b) => !b.leaving).length >= this.max) return null;
+    this.layout = this.findLayout(w?.lawn);
     const bird = this.take(kind);
     const spot = this.pickSpot(bird);
     const start = this.entry(spot.pos);
@@ -61,11 +65,12 @@ export class Birds {
     if (i >= 0) bird = this.pool.splice(i, 1)[0];
     else {
       bird = new Bird(this.asset(kind), { shadows: this.quality.shadows !== false });
-      bird.fuzzOk = this.quality.tier !== 'low';
       bird.onChirp = (b) => {
         if (this.onChirp) this.onChirp(b.kind, b.rig.head.getWorldPosition(b.headW));
       };
       bird.crowded = (b, x, z) => this.crowded(b, x, z);
+      // hop only over open ground the camera can see (not into the grass)
+      bird.groundOk = (b, x, y, z) => this.openGround(x, y, z) && !this.nearPlant(this.world?.targets || [], x, z) && this.inView(_p.set(x, y, z), b);
     }
     this.scene.add(bird.object);
     return bird;
@@ -133,9 +138,9 @@ export class Birds {
   perchOk(p) {
     if (!p || !p.pos) return false;
     if (p.normal && p.normal.y < 0.7) return false;
-    if (!this.inBounds(p.pos.x, p.pos.z, 0) || p.pos.y > 1.6) return false;
+    if (!this.inBounds(p.pos.x, p.pos.z, -0.1) || p.pos.y > 1.6) return false;
     if (this.crowded(null, p.pos.x, p.pos.z, 0.14)) return false;
-    return this.farFromCamera(p.pos);
+    return this.inView(p.pos, null);
   }
 
   groundSpot(bird, w) {
@@ -143,20 +148,35 @@ export class Birds {
     if (!lawn) return null;
     const soil = bird.sp.behaviour.soil;
     const targets = w.targets || [];
-    for (let tries = 0; tries < 24; tries++) {
+    const zones = this.layout ? this.layout.zones : [];
+    for (let tries = 0; tries < 32; tries++) {
       let x;
       let z;
-      if (targets.length && Math.random() < soil) {
-        // near a plant: the dug and watered soil of the bed
+      const r = Math.random();
+      if (targets.length && r < soil * 0.6) {
+        // near a plant: the dug and watered soil round it
         const t = targets[Math.floor(Math.random() * targets.length)];
         const a = Math.random() * Math.PI * 2;
-        const r = 0.07 + Math.random() * 0.16;
-        x = t.pos.x + Math.cos(a) * r;
-        z = t.pos.z + Math.sin(a) * r;
-      } else if (Math.random() < soil) {
-        // the bed in front of the camera
-        x = (Math.random() - 0.5) * 2.2;
-        z = -0.34 + (Math.random() - 0.5) * 0.9;
+        const d = 0.1 + Math.random() * 0.14;
+        x = t.pos.x + Math.cos(a) * d;
+        z = t.pos.z + Math.sin(a) * d;
+      } else if (zones.length && r < 0.85) {
+        // anywhere in a bed, planter or pot
+        const zn = zones[Math.floor(Math.random() * zones.length)];
+        if (zn.shape === 'circle') {
+          const a = Math.random() * Math.PI * 2;
+          const d = Math.sqrt(Math.random()) * zn.r * 0.7;
+          x = zn.cx + Math.cos(a) * d;
+          z = zn.cz + Math.sin(a) * d;
+        } else if (zn.shape === 'rect') {
+          x = zn.cx + (Math.random() - 0.5) * (zn.w - 0.08);
+          z = zn.cz + (Math.random() - 0.5) * (zn.d - 0.08);
+        } else {
+          const a = Math.random() * Math.PI * 2;
+          const d = Math.sqrt(Math.random()) * 0.85;
+          x = zn.cx + Math.cos(a) * d * zn.rx;
+          z = zn.cz + Math.sin(a) * d * zn.rz;
+        }
       } else {
         const b = w.bounds || { x0: -2, x1: 2, z0: -1.8, z1: 1 };
         x = b.x0 + 0.3 + Math.random() * (b.x1 - b.x0 - 0.6);
@@ -165,22 +185,87 @@ export class Birds {
       if (!this.inBounds(x, z, 0.15)) continue;
       const y = lawn(x, z);
       if (y === null || y === undefined || !Number.isFinite(y)) continue;
+      if (!this.openGround(x, y, z)) continue;
       if (this.crowded(bird, x, z, 0.14)) continue;
       if (this.nearPlant(targets, x, z)) continue;
       _v.set(x, y, z);
-      if (!this.farFromCamera(_v)) continue;
+      if (!this.inView(_v, bird)) continue;
       return _v.clone();
     }
     return null;
+  }
+
+  // Which garden style is laid out: the one whose beds and pots all have
+  // soil where the ground says they do.
+  findLayout(lawn) {
+    if (!lawn) return null;
+    let best = null;
+    let bestK = 0.5;
+    for (const L of Object.values(LAYOUTS)) {
+      let ok = 0;
+      for (const zn of L.zones) {
+        const y = lawn(zn.cx, zn.cz);
+        if (y !== null && y !== undefined && y > 0.005 && Math.abs(y - zn.y) < 0.1) ok++;
+      }
+      const k = ok / L.zones.length;
+      if (k > bestK) {
+        bestK = k;
+        best = L;
+      }
+    }
+    return best;
+  }
+
+  // Bare ground a small bird is not lost in: soil, gravel or decking (the
+  // lawn's grass would hide it).
+  openGround(x, y, z) {
+    if (y > 0.005) return true;
+    const L = this.layout;
+    if (!L) return false;
+    if (L.ground === 'deck') return true;
+    const g = L.gravel;
+    return !!g && x > g.x0 + 0.05 && x < g.x1 - 0.05 && z > g.z0 + 0.05 && z < g.z1 - 0.05;
   }
 
   nearPlant(targets, x, z) {
     for (const t of targets) {
       const dx = t.pos.x - x;
       const dz = t.pos.z - z;
-      if (dx * dx + dz * dz < 0.045 * 0.045) return true;
+      if (dx * dx + dz * dz < 0.09 * 0.09) return true;
     }
     return false;
+  }
+
+  // Far enough from the lens, well inside the picture and not hidden behind
+  // a plant, a pot or a planter.
+  inView(p, self) {
+    if (!this.farFromCamera(p)) return false;
+    const cam = this.world?.camera;
+    if (!cam) return true;
+    // leaves and flowers nearer the camera and over the bird on screen
+    _ndc.copy(p).project(cam);
+    const sx = _ndc.x;
+    const sy = _ndc.y;
+    const dist = cam.position.distanceTo(p);
+    for (const t of this.world.targets || []) {
+      if (t.pos.y < p.y + 0.02) continue;
+      if (cam.position.distanceTo(t.pos) > dist - 0.03) continue;
+      _w.copy(t.pos).project(cam);
+      if (Math.abs(_w.x - sx) < 0.07 && _w.y > sy - 0.03) return false;
+    }
+    // pots and planters between the camera and the bird
+    const L = this.layout;
+    if (L) {
+      _w.set(p.x, p.y + 0.04, p.z);
+      for (let i = 1; i <= 24; i++) {
+        _q.lerpVectors(_w, cam.position, (i / 24) * Math.min(1, 1.6 / dist));
+        for (const zn of L.zones) {
+          if (zn.container === 'border') continue;
+          if (_q.y < zn.y + 0.03 && inZone(zn, _q.x, _q.z, -0.035) && !inZone(zn, p.x, p.z, -0.035)) return false;
+        }
+      }
+    }
+    return true;
   }
 
   inBounds(x, z, pad) {
@@ -316,9 +401,9 @@ export class Birds {
     b.object.position.set(0, 0, 0);
     b.object.rotation.set(0, b.heading, 0);
     b.rig.apply();
-    b.rig.setFuzz(true);
     b.object.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(b.object);
+    // precise: from the folded wings' own vertices, not the spread-wing morph
+    const box = new THREE.Box3().setFromObject(b.object, true);
     const sphere = box.getBoundingSphere(new THREE.Sphere());
     const holder = new THREE.Group();
     holder.name = `${kind}-model`;

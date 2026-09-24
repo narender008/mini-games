@@ -44,7 +44,7 @@ function assets() {
   const head = compositeAtlas({
     size: 768,
     ray: { base: 0.82, tip: 1, veins: 11, veinK: 0.05, pointed: true },
-    disc: { n: 1100, center: [0.44, 0.4, 0.16], mid: [0.36, 0.23, 0.09], ring: [0.66, 0.44, 0.1], pollen: [0.98, 0.78, 0.22], open: 0.32, dark: [0.32, 0.19, 0.08], capShade: 0.35, gap: [0.1, 0.06, 0.03], gapK: 0.6 },
+    disc: { n: 1100, center: [0.44, 0.4, 0.16], mid: [0.36, 0.23, 0.09], ring: [0.66, 0.44, 0.1], pollen: [0.98, 0.78, 0.22], open: 0.32, dark: [0.32, 0.19, 0.08], darkK: 0.72, capShade: 0.35, gap: [0.1, 0.06, 0.03], gapK: 0.6 },
   });
   shared = {
     foliage: leafMaterial({ map: leaf.map, normalMap: leaf.normalMap, normalScale: 1.1, vertexColors: true, alphaTest: 0.5, roughness: 0.72, translucency: 0.45 }),

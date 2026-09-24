@@ -352,6 +352,7 @@ function ripeColor(k, out) {
 
 const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
+const _up = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _s = new THREE.Vector3();
@@ -605,9 +606,37 @@ export function createStrawberry({ seed = 1, quality } = {}) {
     item.updateMatrixWorld(true);
     item.userData = {
       kind: 'strawberry',
+      core: b,
       count: ripe.length,
       size: { length: BERRY_L, width: BERRY_R * 2 },
       velocity: new THREE.Vector3(0, 0.35, 0),
+      // lay the berries in a little heap on their sides, tips outward (for
+      // the basket), each calyx staying on its berry
+      pile: () => {
+        const bm = new THREE.Matrix4();
+        const cm = new THREE.Matrix4();
+        const rel = new THREE.Matrix4();
+        const p = new THREE.Vector3();
+        const q = new THREE.Quaternion();
+        const sc = new THREE.Vector3();
+        const dir = new THREE.Vector3();
+        for (let i = 0; i < n; i++) {
+          b.getMatrixAt(i, bm);
+          c.getMatrixAt(i, cm);
+          rel.copy(bm).invert().multiply(cm);
+          bm.decompose(p, q, sc);
+          const a = i * 2.39996;
+          const ring = i === 0 ? 0 : i < 6 ? 1.5 : 2.6;
+          dir.set(Math.cos(a), -0.15, Math.sin(a)).normalize();
+          q.setFromUnitVectors(_up, dir).multiply(_q2.setFromAxisAngle(_up, a * 3.1));
+          p.set(Math.cos(a) * ring * BERRY_R, i >= 6 ? BERRY_R * 1.5 : 0, Math.sin(a) * ring * BERRY_R);
+          bm.compose(p, q, sc);
+          b.setMatrixAt(i, bm);
+          c.setMatrixAt(i, cm.copy(bm).multiply(rel));
+        }
+        b.instanceMatrix.needsUpdate = c.instanceMatrix.needsUpdate = true;
+        b.boundingBox = b.boundingSphere = c.boundingBox = c.boundingSphere = null;
+      },
       dispose: () => {
         disposeShared(bGeo, berryGeometry());
         disposeShared(cGeo, calyxGeometry());

@@ -70,6 +70,9 @@ export class Creatures {
     else if (BEE_KINDS[kind]) c = new Bee(kind, this);
     else if (kind === 'ladybird') c = new Ladybird(this);
     if (!c) return null;
+    // a touch larger than life, so small visitors still read from the
+    // garden camera a couple of metres away
+    c.object.scale.setScalar(kind === 'ladybird' ? 1.5 : 1.4);
     c.enter(this.camera);
     this.group.add(c.object);
     this.insects.push(c);

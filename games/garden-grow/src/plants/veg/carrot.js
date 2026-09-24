@@ -410,6 +410,7 @@ export function createCarrot({ seed = 1, quality } = {}) {
     rootMesh.castShadow = shadows;
     item.userData = {
       kind: 'carrot',
+      core: rootGroup, // the part that rests on things (fronds excluded)
       size: { length: ROOT_LEN + FROND_LEN, root: ROOT_LEN, width: ROOT_R * 2 },
       velocity: new THREE.Vector3(0, 0.8, 0),
       dispose: () => {

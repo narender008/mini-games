@@ -777,6 +777,7 @@ export function createPumpkin({ seed = 1, quality } = {}) {
         item.add(f, st);
         item.userData = {
           kind: 'pumpkin',
+          core: f,
           size: { width: PUMPKIN_D, height: PUMPKIN_H },
           velocity: new THREE.Vector3(0, 0.3, 0),
           dispose: () => m.dispose(),

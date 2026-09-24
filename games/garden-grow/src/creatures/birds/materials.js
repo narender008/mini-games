@@ -17,10 +17,7 @@ function paletteDefines(pal) {
   return s;
 }
 
-// `fuzz`: the same plumage on a slightly larger shell, cut into fine
-// feather-tip strands that only survive near the silhouette, so a close
-// bird's outline is soft instead of plastic-smooth.
-export function plumageMaterial(sp, { fuzz = false } = {}) {
+export function plumageMaterial(sp) {
   const det = bodyDetail();
   const mat = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
@@ -32,18 +29,15 @@ export function plumageMaterial(sp, { fuzz = false } = {}) {
     sheenRoughness: 0.55,
     sheenColor: new THREE.Color(1, 1, 1),
     specularIntensity: 0.3,
-    alphaToCoverage: fuzz,
-    transparent: false,
   });
-  mat.name = `bird-plumage-${sp.id}${fuzz ? '-fuzz' : ''}`;
+  mat.name = `bird-plumage-${sp.id}`;
   const uniforms = { uDetail: { value: det.map } };
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec3 aRest;\nvarying vec3 vRest;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-vRest = aRest;
-${fuzz ? 'transformed += objectNormal * 0.00045;' : ''}`);
+vRest = aRest;`);
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
@@ -77,18 +71,6 @@ ${sp.paint}
   }
   vec3 plum = plumage(anchor * 1000.0);
   diffuseColor.rgb *= plum * mix(0.8, 1.1, det.r);
-${
-  fuzz
-    ? `  // strands: fine streaks along the feather flow, kept only at grazing angles
-  vec2 su = vNormalMapUv * vec2(9.0, 2.2);
-  float strand = bHash(vec3(floor(su.x * 7.0), floor(su.y * 1.5), 3.0));
-  float along = fract(su.y * 1.5);
-  float facing = abs(dot(normalize(vNormal), normalize(vViewPosition)));
-  float rim = 1.0 - smoothstep(0.08, 0.5, facing);
-  diffuseColor.a = smoothstep(1.0 - rim * 0.75, 1.0 - rim * 0.75 + 0.1, strand * (1.0 - along * 0.6));
-  diffuseColor.rgb *= 0.92;`
-    : ''
-}
 }
 `,
       )
@@ -101,7 +83,7 @@ ${
 `,
       );
   };
-  mat.customProgramCacheKey = () => `bird-plumage-${sp.id}${fuzz ? '-fuzz' : ''}`;
+  mat.customProgramCacheKey = () => `bird-plumage-${sp.id}`;
   return mat;
 }
 
@@ -140,7 +122,7 @@ export function beakMaterial() {
     roughness: 0.62,
     clearcoat: 0.12,
     clearcoatRoughness: 0.4,
-    envMapIntensity: 0.7,
+    envMapIntensity: 0.45,
     side: THREE.DoubleSide,
   });
 }

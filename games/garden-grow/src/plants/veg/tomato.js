@@ -704,6 +704,7 @@ export function createTomato({ seed = 1, quality } = {}) {
     item.updateMatrixWorld(true);
     item.userData = {
       kind: 'tomato',
+      core: fr,
       count: FPT,
       size: { width: 0.12, fruit: FRUIT_R * 2 },
       velocity: new THREE.Vector3(0, 0.35, 0),

@@ -166,8 +166,8 @@ class Lavender extends FlowerBase {
           lean,
           L: Math.max(0.1, reach / Math.cos(lean * 0.9)),
           g0: 0.52 + rng() * 0.08,
-          spike: 0.05 + rng() * 0.02,
-          whorls: (low ? 7 : 9) + Math.floor(rng() * 2),
+          spike: 0.055 + rng() * 0.02,
+          whorls: (low ? 8 : 10) + Math.floor(rng() * 2),
           spin: rng() * TAU,
           path: new Path(8),
         });
@@ -330,11 +330,11 @@ class Lavender extends FlowerBase {
       for (let w = 0; w < st.whorls; w++) {
         const f = w / (st.whorls - 1); // 0 at the bottom of the spike
         // whorls crowd together towards the tip; the lowest stand apart
-        const at = len - spike * Math.pow(1 - f, 1.5) - (w === 0 ? spike * 0.3 : 0);
+        const at = len - spike * Math.pow(1 - f, 1.3) - (w === 0 ? spike * 0.25 : 0);
         path.at(Math.max(0, at), pt);
-        const s = grown * mix(1.1, 0.7, f * f);
+        const s = grown * mix(1.35, 0.8, f * f);
         frameAlong(M1, pt.p, pt.t, st.spin + w * 0.9);
-        blob(b, M1, 0.0034 * s, 0.0028 * s, 0.0034 * s, {
+        blob(b, M1, 0.0036 * s, 0.0034 * s, 0.0036 * s, {
           cols: 6,
           rows: 3,
           uv: [0.1, 0.9, 0.1, 0.9],
@@ -357,9 +357,9 @@ class Lavender extends FlowerBase {
         for (let k = 0; k < per; k++) {
           const a = (k / per) * TAU + w * 0.9 + st.spin + 0.5;
           frameAlong(M1, pt.p, pt.t, a);
-          M2.makeRotationX(0.95).setPosition(0, 0.002 * s, 0.0028 * s);
+          M2.makeRotationX(0.95).setPosition(0, 0.0024 * s, 0.003 * s);
           M1.multiply(M2);
-          const ko = sat(open * 1.2 - k * 0.1) * mix(0.8, 1, 1 - f);
+          const ko = sat(open * 1.2 - k * 0.1) * mix(1.0, 1.3, 1 - f);
           M2.makeScale(ko, ko, ko);
           M1.multiply(M2);
           km.setMatrixAt(n, M1);

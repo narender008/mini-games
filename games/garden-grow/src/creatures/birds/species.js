@@ -186,12 +186,12 @@ vec3 plumage(vec3 p) {
   // dark collar round the cheek, joining the eye stripe at the nape
   float collar = smoothstep(0.98, 1.06, dc) * (1.0 - smoothstep(1.34, 1.46, dc)) * (1.0 - above(dy, -0.8, 0.4)) * side;
   // dark stripe through the eye (from the lores back to the nape)
-  float stripe = (1.0 - smoothstep(0.85, 1.35, abs(dy))) * above(ax, 2.2, 0.8) * (1.0 - above(h.z, 11.5, 0.8)) * inHead;
+  float stripe = (1.0 - smoothstep(0.95, 1.45, abs(dy))) * above(ax, 2.2, 0.8) * (1.0 - above(h.z, 11.5, 0.8)) * side;
   // blue cap on the crown, edged with a white line; a white band on the forehead
   float capEdge = 2.5 + 1.2 * smoothstep(6.0, 10.5, h.z);
   float cap = above(dy, capEdge, 0.45) * above(h.z + 0.25 * h.y, -9.0, 0.7) * inHead;
   // behind the cap the dark band runs across the nape
-  float nape = above(-h.z - 0.3 * h.y, 8.5, 0.9) * above(dy, -1.2, 0.6) * (1.0 - cap) * inHead;
+  float nape = above(-h.z - 0.3 * h.y, 8.5, 0.9) * above(dy, -1.2, 0.6) * (1.0 - cap) * side;
   col = mix(col, STRIPE, max(max(collar, stripe), nape));
   col = mix(col, CAP, cap);
   // a pale spot in the middle of the nape
@@ -236,7 +236,7 @@ vec3 plumage(vec3 p) {
     hip: [0, 33, -5],
     neck: [0, 57, 9],
     eye: { dir: [0.76, 0.2, 0.62], r: 1.85, embed: 0.5, iris: '#140c08', ring: '#1b1512' },
-    beak: { dir: [0, -0.12, 1], embed: 3.2, len: 13, w: 5.2, h: 5.6, pitch: -4, curve: 0.2, hook: 0, base: '#eccab4', tip: '#77655c', mouth: '#c89080', lowerBase: '#efd2c0' },
+    beak: { dir: [0, -0.12, 1], embed: 3.2, len: 13, w: 5.2, h: 5.6, pitch: -4, curve: 0.2, hook: 0, base: '#f0c4a2', tip: '#5e4c44', mouth: '#c89080', lowerBase: '#f2cdb0' },
     tail: { base: [0, 31, -25], pitch: -20, len: 50, width: 8.5, fork: 0.16, closedFan: 1.4, openFan: 6.5 },
     wing: {
       shoulder: [9, 55, 2],
@@ -251,7 +251,7 @@ vec3 plumage(vec3 p) {
     legs: { foot: [6.5, 0, 3], ankle: [6, 16.5, -3.5], r: [0.75, 0.9], toe: 10.5, hallux: 8.5, color: '#b99088', scale: '#a57e76', claw: '#403430' },
     size: 1,
     palette: {
-      RED: '#c5231d',
+      RED: '#b8161a',
       BLACK: '#17130f',
       WHITE: '#f1eee6',
       BUFF: '#a8845e',
@@ -281,7 +281,7 @@ vec3 plumage(vec3 p) {
   float red = above(h.z, zr, 0.45) * above(h.y, -8.0, 0.8) * side;
   // black crown, and a black bar down behind the white cheek
   float crown = above(h.y, 3.8 + n2 * 0.5, 0.5) * inHead;
-  float back = (1.0 - above(h.z, bar, 0.6)) * above(h.y, -7.0 + n1 * 1.5, 1.0) * side * (1.0 - above(-h.z, 11.5, 1.5));
+  float back = (1.0 - above(h.z, bar, 0.6)) * above(h.z, bar - 4.5 - max(0.0, h.y) * 0.9, 0.8) * above(h.y, -7.0 + n1 * 1.5, 1.0) * side;
   col = mix(col, BLACK, max(crown, back) * (1.0 - red));
   col = mix(col, RED, red);
   // a thin black ring round the base of the beak

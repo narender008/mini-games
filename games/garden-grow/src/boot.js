@@ -57,7 +57,7 @@ async function boot() {
     return null;
   }
   progress(0.02, 'Loading the engine');
-  const expected = 2_400_000; // rough uncompressed size of the files above
+  const expected = 2_250_000; // rough uncompressed size of the files above
   try {
     await fetchWithProgress(FILES, (bytes) => progress(0.02 + 0.56 * Math.min(1, bytes / expected)));
   } catch {

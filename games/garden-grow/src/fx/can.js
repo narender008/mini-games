@@ -138,14 +138,15 @@ export class WateringCan {
     this.side = new THREE.Vector3(-1, 0, 0);
   }
 
-  // Where the can sits when it is not in use (layout.canRest).
-  rest(pos) {
+  // Where the can sits when it is not in use (layout.canRest), optionally
+  // with the direction its spout points (layout.canRest[3]).
+  rest(pos, yaw) {
     const y = Math.max(pos.y, this.ground ? this.ground.heightAt(pos.x, pos.z) : 0);
     this.restPos.set(pos.x, y, pos.z);
     // spout towards the garden, so from the camera it sits in three-quarter view
     const fx = -pos.x;
     const fz = -pos.z - 0.4;
-    this.restYaw = Math.atan2(-fz, fx) + 0.25;
+    this.restYaw = yaw ?? Math.atan2(-fz, fx) + 0.25;
     if (!this.hasRest || (this.resting && !this.target)) {
       this.hasRest = true;
       this.resting = true;

@@ -88,8 +88,10 @@ export function chooseTarget(targets, kinds, visitor, from, taken, avoid = null,
       if (sp && PLANTS[sp]?.attracts?.includes(visitor)) weight *= 4;
       if (prefer && sp === prefer) weight *= 12;
       if (from) weight *= 1 / (0.4 + t.pos.distanceTo(from));
-      // keep off spots right under the lens
+      // keep off spots right under the lens, and mostly leave the far
+      // border (beyond the flight volume) to look at from a distance
       if (t.pos.z > VOLUME.z1) weight *= 0.1;
+      if (t.pos.z < VOLUME.z0 || Math.abs(t.pos.x) > VOLUME.x1) weight *= 0.06;
     }
     w.push(weight);
     total += weight;

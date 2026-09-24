@@ -18,6 +18,8 @@ export const LAYOUTS = {
     camera: { pos: [0, 1.22, 2.5], target: [0, 0.2, -0.36], fov: 36, fit: { hw: 1.5, hd: 0.95 } },
     zones: [
       { id: 'bed', shape: 'ellipse', cx: 0, cz: -0.34, rx: 1.34, rz: 0.6, y: 0.035, container: 'border' },
+      // a long cottage border along the foot of the fence
+      { id: 'border', shape: 'ellipse', cx: 0, cz: -2.2, rx: 2.9, rz: 0.3, y: 0.03, container: 'border' },
       { id: 'pot-left', shape: 'circle', cx: -1.62, cz: 0.32, r: 0.14, y: 0.27, container: 'pot', max: 1 },
       { id: 'pot-right', shape: 'circle', cx: 1.72, cz: -0.62, r: 0.12, y: 0.23, container: 'pot', max: 1 },
     ],
@@ -35,9 +37,23 @@ export const LAYOUTS = {
       ['sunflower', 0.72, -0.62],
       ['daisy', -1.62, 0.32],
       ['lavender', 1.72, -0.62],
+      ['rose', -2.45, -2.22],
+      ['lavender', -1.95, -2.3],
+      ['poppy', -1.55, -2.12],
+      ['sunflower', -1.15, -2.3],
+      ['daisy', -0.75, -2.1],
+      ['rose', -0.3, -2.28],
+      ['tulip', 0.1, -2.08],
+      ['lavender', 0.5, -2.26],
+      ['poppy', 0.92, -2.12],
+      ['sunflower', 1.32, -2.3],
+      ['daisy', 1.72, -2.12],
+      ['lavender', 2.12, -2.28],
+      ['rose', 2.52, -2.2],
     ],
-    canRest: [1.45, 0, 0.62],
+    canRest: [1.36, 0, 0.44],
     basket: [-1.2, 0, 0.66],
+    pumpkins: [[0.32, -0.03], [0.58, 0.03], [0.22, 0.22]], // picked pumpkins sit on the ground by the basket (offsets)
     vase: [1.62, 0, 0.12],
   },
   planters: {
@@ -45,7 +61,7 @@ export const LAYOUTS = {
     ground: 'lawn',
     lawn: { x0: -9, x1: 9, z0: -7, z1: 5 },
     gravel: { x0: -2.1, x1: 2.1, z0: -1.55, z1: 0.95 },
-    camera: { pos: [0, 1.5, 2.8], target: [0, 0.32, -0.5], fov: 36, fit: { hw: 1.62, hd: 1.0 } },
+    camera: { pos: [0, 1.4, 2.4], target: [0, 0.36, -0.52], fov: 36, fit: { hw: 1.5, hd: 0.95 } },
     zones: [
       { id: 'left', shape: 'rect', cx: -0.82, cz: -0.12, w: 1.0, d: 0.5, y: 0.34, container: 'planter' },
       { id: 'right', shape: 'rect', cx: 0.82, cz: -0.12, w: 1.0, d: 0.5, y: 0.34, container: 'planter' },
@@ -58,8 +74,9 @@ export const LAYOUTS = {
       ['sunflower', 0.55, -1.0],
       ['strawberry', 1.1, -0.12],
     ],
-    canRest: [0, 0, 0.62],
+    canRest: [0, 0, 0.62, 0.55], // x, y, z and spout direction: side-on, not end-on to the camera
     basket: [-1.35, 0, 0.72],
+    pumpkins: [[0.32, -0.03], [0.58, 0.03], [0.22, 0.22]],
     vase: [1.4, 0, 0.78],
   },
   balcony: {
@@ -87,6 +104,7 @@ export const LAYOUTS = {
     ],
     canRest: [-0.72, 0, 0.62],
     basket: [-1.3, 0, 0.62],
+    pumpkins: [[-0.3, -0.02], [0.27, 0.2], [-0.24, 0.26]],
     vase: [1.4, 0, 0.68],
   },
 };
