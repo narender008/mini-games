@@ -586,6 +586,23 @@ void main() {
   gl_FragColor = vec4(c, 1.0);
 }`;
 
+// The house seen through the patio's glass doors: a dim room with sheer
+// curtains gathered at the sides and a band of floor at the bottom. The glass
+// adds its own reflections on top.
+const INTERIOR_FRAG = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vec2 p = vUv;
+  vec3 c = mix(vec3(0.16, 0.15, 0.14), vec3(0.3, 0.29, 0.27), smoothstep(0.1, 1.0, p.y));
+  c = mix(c, vec3(0.36, 0.28, 0.21), 1.0 - smoothstep(0.14, 0.16, p.y));
+  float side = min(p.x, 1.0 - p.x);
+  float drape = 1.0 - smoothstep(0.13, 0.17, side + (vnoise(vec2(p.y * 6.0, 1.0), vec2(1e4)) - 0.5) * 0.03);
+  float folds = 0.78 + 0.22 * sin(p.x * 140.0 + vnoise(p * vec2(8.0, 2.0), vec2(1e4)) * 3.0);
+  c = mix(c, vec3(0.8, 0.77, 0.71) * folds * mix(0.8, 1.0, p.y), drape * 0.9);
+  c *= 0.94 + 0.06 * vnoise(p * vec2(60.0, 90.0), vec2(1e4));
+  gl_FragColor = vec4(c, 1.0);
+}`;
+
 // ------------------------------------------------------------ soft shadows
 
 // A contact-hardening replacement for three's PCF shadow lookup, used on
@@ -1055,8 +1072,9 @@ class Build {
     return m;
   }
 
-  // A painted panel door in its architrave, fixed flat to a wall at (x, z).
-  door(x, z, along, paint, width = 0.84) {
+  // A painted panel door in its architrave (frame paint, defaulting to the
+  // door's), fixed flat to a wall at (x, z) and facing into the room.
+  door(x, z, along, paint, frame = null, width = 0.84) {
     const up = new THREE.Vector3(0, 1, 0);
     const inward = up.clone().cross(along).negate();
     const g = new THREE.Group();
@@ -1067,31 +1085,36 @@ class Build {
       const m = this.mesh(roundedBox(w, h, d, Math.min(0.004, d / 2.2), 1), mat, { parent: g });
       m.position.set(px, py, pz);
     };
-    box(width, 2.04, 0.04, 0, 1.02, 0.02);
+    box(width, 2.04, 0.03, 0, 1.02, 0.015);
     for (const [py, ph] of [[0.5, 0.62], [1.45, 0.82]]) {
-      for (const px of [-width / 4 + 0.02, width / 4 - 0.02]) box(width / 2 - 0.13, ph, 0.012, px, py, 0.044);
+      for (const px of [-width / 4 + 0.02, width / 4 - 0.02]) box(width / 2 - 0.13, ph, 0.012, px, py, 0.032);
     }
-    box(0.07, 2.1, 0.02, -width / 2 - 0.035, 1.05, 0.01);
-    box(0.07, 2.1, 0.02, width / 2 + 0.035, 1.05, 0.01);
-    box(width + 0.14, 0.07, 0.02, 0, 2.08, 0.01);
+    const trim = frame || paint;
+    box(0.07, 2.11, 0.036, -width / 2 - 0.035, 1.055, 0.018, trim);
+    box(0.07, 2.11, 0.036, width / 2 + 0.035, 1.055, 0.018, trim);
+    box(width + 0.14, 0.07, 0.036, 0, 2.075, 0.018, trim);
     const brass = this.std({ color: col('#c9a65a'), metalness: 1, roughness: 0.3 });
-    box(0.03, 0.12, 0.012, width / 2 - 0.07, 1.0, 0.046, brass);
+    box(0.03, 0.12, 0.012, width / 2 - 0.07, 1.0, 0.034, brass);
     const lever = this.mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.1, 12), brass, { parent: g });
     lever.rotation.z = Math.PI / 2;
-    lever.position.set(width / 2 - 0.11, 1.03, 0.07);
+    lever.position.set(width / 2 - 0.11, 1.03, 0.058);
     return g;
   }
 
-  // Dust motes drifting in the sunbeam: tiny additive specks that light up
-  // only where the window's light cookie says the sun reaches them.
-  dust(sun, count, box) {
+  // Dust motes drifting in the sunbeam: 1-2 px glints lit only where the
+  // window's light cookie says the sun reaches them. They write depth, so
+  // the depth of field treats each one at its own distance instead of the
+  // wall's behind it (which spread them into dotted rings), and they only
+  // show near the focal plane: a mote that would need blurring is faded
+  // out, and one that is culled is moved off screen so it writes nothing.
+  // place(rand, out) puts one mote somewhere in the beam.
+  dust(sun, count, place) {
     const rand = rng(77);
     const pos = new Float32Array(count * 3);
     const seed = new Float32Array(count);
+    const p = new THREE.Vector3();
     for (let i = 0; i < count; i++) {
-      pos[i * 3] = box.min.x + rand() * (box.max.x - box.min.x);
-      pos[i * 3 + 1] = box.min.y + rand() * (box.max.y - box.min.y);
-      pos[i * 3 + 2] = box.min.z + rand() * (box.max.z - box.min.z);
+      place(rand, p).toArray(pos, i * 3);
       seed[i] = rand();
     }
     const geo = new THREE.BufferGeometry();
@@ -1103,13 +1126,15 @@ class Build {
         uSunMatrix: { value: sun.shadow.matrix },
         uCookie: { value: sun.map },
         uScale: { value: 1000 },
-        uGain: { value: 2.2 },
+        uFocus: { value: 1.1 },
+        uGain: { value: 4.0 },
       },
       vertexShader: /* glsl */ `
 uniform float uDrift;
 uniform mat4 uSunMatrix;
 uniform sampler2D uCookie;
 uniform float uScale;
+uniform float uFocus;
 attribute float aSeed;
 varying float vLit;
 void main() {
@@ -1118,21 +1143,33 @@ void main() {
   vec4 sc = uSunMatrix * vec4(p, 1.0);
   vec2 suv = sc.xy / sc.w;
   float inside = step(0.0, suv.x) * step(suv.x, 1.0) * step(0.0, suv.y) * step(suv.y, 1.0);
-  vLit = inside * texture2D(uCookie, clamp(suv, 0.0, 1.0)).r * (0.35 + 0.65 * fract(aSeed * 7.31)) * (0.6 + 0.4 * sin(t * (0.8 + aSeed) + aSeed * 50.0));
+  float lit = inside * texture2D(uCookie, clamp(suv, 0.0, 1.0)).r;
+  lit *= (0.35 + 0.65 * fract(aSeed * 7.31)) * (0.6 + 0.4 * sin(t * (0.8 + aSeed) + aSeed * 50.0));
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
-  gl_Position = projectionMatrix * mv;
-  gl_PointSize = max(1.2, 0.0012 * uScale / -mv.z);
+  float z = -mv.z;
+  // a 1.5 mm glint: below a pixel it dims instead of shrinking
+  float px = 0.0015 * uScale / max(z, 0.01);
+  float size = clamp(px, 1.0, 2.0);
+  float cover = min(1.0, (px * px) / (size * size));
+  // defocus in dioptres beyond the post chain's in-focus tolerance (0.15,
+  // the lens pass's uTolerance); fade out before any blur would start
+  float defocus = abs(1.0 / uFocus - 1.0 / max(z, 0.01)) - 0.15;
+  float sharp = 1.0 - smoothstep(-0.06, 0.04, defocus);
+  float band = smoothstep(0.35, 0.6, z) * (1.0 - smoothstep(1.8, 2.6, z));
+  vLit = lit * cover * sharp * band;
+  gl_PointSize = size;
+  gl_Position = vLit < 0.004 ? vec4(2.0, 2.0, 2.0, 1.0) : projectionMatrix * mv;
 }`,
       fragmentShader: /* glsl */ `
 uniform float uGain;
 varying float vLit;
 void main() {
   float d = length(gl_PointCoord - 0.5);
-  float a = 1.0 - smoothstep(0.1, 0.5, d);
-  gl_FragColor = vec4(vec3(1.0, 0.93, 0.82) * vLit * a * uGain, 1.0);
+  if (d > 0.5) discard;
+  gl_FragColor = vec4(vec3(1.0, 0.93, 0.82) * vLit * uGain * (1.0 - 0.4 * smoothstep(0.25, 0.5, d)), 1.0);
 }`,
       transparent: true,
-      depthWrite: false,
+      depthWrite: true,
       blending: THREE.AdditiveBlending,
     });
     const pts = new THREE.Points(geo, mat);
@@ -1141,11 +1178,21 @@ void main() {
     this.bin.add(mat);
     this.group.add(pts);
     const size = new THREE.Vector2();
+    const eye = new THREE.Vector3();
+    const fwd = new THREE.Vector3();
     this.animators.push((dt, time, camera) => {
       if (!REDUCED_MOTION.matches) mat.uniforms.uDrift.value += dt;
       if (camera && camera.isPerspectiveCamera) {
         this.renderer.getDrawingBufferSize(size);
         mat.uniforms.uScale.value = size.y / (2 * Math.tan((camera.fov * Math.PI) / 360));
+        // the game focuses on the tower, which stands on the room's vertical
+        // axis: take the view ray's closest approach to that axis
+        eye.setFromMatrixPosition(camera.matrixWorld);
+        camera.getWorldDirection(fwd);
+        const flat = fwd.x * fwd.x + fwd.z * fwd.z;
+        let focus = flat > 1e-4 ? -(eye.x * fwd.x + eye.z * fwd.z) / flat : eye.length();
+        if (!(focus > 0.2)) focus = eye.length();
+        mat.uniforms.uFocus.value = Math.min(6, focus);
       }
     });
     return pts;
@@ -1496,15 +1543,19 @@ function buildPlayroom(R) {
   R.occluder(1.75, -1.35, 0.23, 0.23, 0.36, 0.45);
 
   // the door on the front wall, and a second painting on the right wall
-  R.door(1.3, Z1, new THREE.Vector3(-1, 0, 0), white);
+  R.door(1.3, Z1, new THREE.Vector3(-1, 0, 0), R.std({ color: col('#a9c0cf'), roughness: 0.4 }), white);
   const pic2 = R.mesh(new THREE.PlaneGeometry(0.4, 0.31), pic.material);
   pic2.rotation.y = -Math.PI / 2;
   pic2.position.set(X1 - 0.012, 1.35, -0.6);
   const pf2 = R.mesh(roundedBox(0.02, 0.37, 0.46, 0.004, 1), R.std({ color: col('#3f6f9e'), roughness: 0.5 }));
   pf2.position.set(X1 - 0.004, 1.35, -0.6);
   // motes in the beam
-  const motes = { high: 180, medium: 110, low: 50 }[R.quality.tier] || 80;
-  R.dust(sun, motes, new THREE.Box3(new THREE.Vector3(X0 + 0.2, 0.15, -0.9), new THREE.Vector3(0.9, 2.2, 2.0)));
+  const motes = { high: 600, medium: 400, low: 160 }[R.quality.tier] || 300;
+  // seeded along rays from the window opening, so none are wasted in shade
+  R.dust(sun, motes, (rand, out) => {
+    out.set(X0, sunWin.y0 + rand() * (sunWin.y1 - sunWin.y0), sunWin.z0 + rand() * (sunWin.z1 - sunWin.z0));
+    return out.addScaledVector(toSun, -(0.1 + rand() * 0.9) * (out.y - 0.05) / toSun.y);
+  });
 
   // a cream rug at the side of the room (clear of the play area)
   const rugMat = R.std(
@@ -1684,7 +1735,8 @@ function buildPatio(R) {
   const render = R.wallMaterial('#ece2d0');
   R.wall(render, { from: new THREE.Vector3(8, 0, 3.6), along: new THREE.Vector3(-1, 0, 0), width: 16, height: 4.5, holes: [{ x0: 7.1, x1: 8.9, y0: 0, y1: 2.1 }] });
   // glazed French doors: glass with a pale room behind, in white frames
-  const glass = R.std({ color: col('#9aa0a2'), roughness: 0.06 });
+  const inside = bake(R, { width: 256, height: 256, fragment: INTERIOR_FRAG, srgb: true, repeat: false });
+  const glass = R.std({ map: inside, roughness: 0.04 });
   const door = R.mesh(new THREE.PlaneGeometry(1.8, 2.1), glass);
   door.rotation.y = Math.PI;
   door.position.set(0, 1.05, 3.68);
@@ -2022,9 +2074,11 @@ export async function createRoom(id, { renderer, quality }) {
     grade: R.grade,
     view: R.view,
     floor: { ...R.floor },
-    update(dt, time) {
+    // camera is optional; the playroom's dust motes use it to size their
+    // points to the drawing buffer
+    update(dt, time, camera) {
       R.uniforms.uTime.value = time;
-      for (const a of R.animators) a(dt, time);
+      for (const a of R.animators) a(dt, time, camera);
     },
     // center + radius: a sphere holding every block that should cast a
     // shadow, e.g. the tower's mid-height and half its height plus the

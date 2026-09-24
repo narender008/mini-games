@@ -6,12 +6,14 @@
 // solved a few times per step). At toy scale a stack of 20+ fully dynamic
 // blocks sinks, leans and now and then falls on its own, whatever the
 // tuning. So a block that has come to rest on the floor or on frozen blocks
-// is switched to a FIXED body ('frozen'). A frozen tower cannot move at all,
-// so it stands perfectly still by construction, and costs nothing to step.
-// A new block always lands on fixed supports, which Rapier handles very
-// well: a block placed more than half off its support simply falls off by
-// real physics before it ever freezes. A block resting on something still
-// moving (or held) waits.
+// becomes a motionless body ('frozen'): a sleeping kinematic body whose
+// next pose is its pose (not a fixed body: Rapier 0.20 traps when bodies
+// that switched Fixed <-> Dynamic are removed, see _pin). A frozen tower
+// cannot move at all, so it stands perfectly still by construction, and
+// costs nothing to step. A new block always lands on immovable supports,
+// which Rapier handles very well: a block placed more than half off its
+// support simply falls off by real physics before it ever freezes. A block
+// resting on something still moving (or held) waits.
 //
 // Why balance is checked by hand. A frozen block no longer feels the blocks
 // stacked on it later, so a static balance check stands in for the missing
@@ -33,7 +35,7 @@
 //
 // Why frozen blocks wake. Hard hits on a frozen block (contact force events
 // turned into the speed they would give it) unfreeze it and everything
-// resting on it. The momentum the fixed body swallowed is handed back to
+// resting on it. The momentum the frozen body swallowed is handed back to
 // both bodies, so the hit reads as it would against a free block. Gentle
 // landings don't count, a dragged block must shove hard, a slow tool's push
 // is summed over a short window, and a kinematic tool wakes what it touches.
@@ -55,6 +57,9 @@
 // between the last two steps. A frame runs at most MAX_SUBSTEPS steps or
 // STEP_BUDGET_MS of physics, then drops the backlog, so a slow phone slows
 // the simulation down instead of spiralling.
+//
+// Should Rapier still fail inside a step, the world is rebuilt from the last
+// poses and a 'reset' event is emitted (see _recover).
 //
 // Rapier comes through the game's import map. Node tests resolve the bare
 // specifier with a module resolve hook (module.registerHooks); nothing here
@@ -675,14 +680,12 @@ export class Physics {
   // runs repeatable, which tests want).
   constructor({ floor = {}, hz = HZ, maxSubsteps = MAX_SUBSTEPS, budgetMs = STEP_BUDGET_MS } = {}) {
     this.RAPIER = RAPIER;
-    const world = new RAPIER.World({ x: 0, y: -G, z: 0 });
-    world.lengthUnit = LENGTH_UNIT;
     this._hz = hz;
     this._dt = 1 / hz;
-    world.timestep = this._dt;
-    world.integrationParameters.contact_natural_frequency = hz * CONTACT_SHARE;
-    this.world = world;
-    this.queue = new RAPIER.EventQueue(true);
+    this.world = null;
+    this.queue = null;
+    this.resets = 0; // times the world had to be rebuilt after a Rapier failure
+    this._dead = false;
 
     this._nextId = 2;
     this._owners = new Map(); // collider handle -> owner (handle, floor or wall)
@@ -725,13 +728,42 @@ export class Physics {
     this._impacts = []; // impacts to emit this frame
     this._pairTmp = [];
     this._candList = [];
+    this._toSleep = []; // just-frozen blocks to put to sleep after the next step
+    this._sleepCheck = 0;
     this._ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+    this._floorOwner = { id: 0, kind: 'floor', state: 'fixed', mass: Infinity, material: 'wood', _e: 0.3, _last: -1 };
+    this._wallOwner = { id: 1, kind: 'wall', state: 'fixed', mass: Infinity, material: 'wood', _e: 0, _last: -1 };
+    this._floor = { friction: 0.5, restitution: 0.3, kind: 'wood' };
+    this._buildWorld();
+    this.setFloor(floor);
+
+    this._onForce = (ev) => this._forceEvent(ev);
+    this._onCollision = (h1, h2, started) => this._collisionEvent(h1, h2, started);
+    this._rayFilter = (collider) => {
+      const o = this._owners.get(collider.handle);
+      if (!o) return false;
+      if (o.kind === 'floor') return true;
+      if (o.kind !== 'block' || o === this._rayExclude) return false;
+      return this._rayAll || (o.state !== 'held' && o.state !== 'kinematic');
+    };
+    this._rayExclude = null;
+    this._rayAll = true;
+  }
+
+  // A new Rapier world with the floor and the walls (and nothing else).
+  _buildWorld() {
+    const world = new RAPIER.World({ x: 0, y: -G, z: 0 });
+    world.lengthUnit = LENGTH_UNIT;
+    world.timestep = this._dt;
+    world.integrationParameters.contact_natural_frequency = this._hz * CONTACT_SHARE;
+    this.world = world;
+    this.queue = new RAPIER.EventQueue(true);
+    this._owners.clear();
+    this._caps.clear();
 
     // Floor: a big slab whose top is y = 0. Its restitution uses the Min
     // rule so a rug really deadens bounces.
     const fb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
-    this._floorOwner = { id: 0, kind: 'floor', state: 'fixed', mass: Infinity, material: 'wood', _e: 0.3, _last: -1 };
-    this._wallOwner = { id: 1, kind: 'wall', state: 'fixed', mass: Infinity, material: 'wood', _e: 0, _last: -1 };
     this._floorCollider = world.createCollider(
       RAPIER.ColliderDesc.cuboid(10, 0.5, 10)
         .setTranslation(0, -0.5, 0)
@@ -758,24 +790,13 @@ export class Physics {
       );
       this._owners.set(c.handle, this._wallOwner);
     }
-    this.setFloor(floor);
-
-    this._onForce = (ev) => this._forceEvent(ev);
-    this._onCollision = (h1, h2, started) => this._collisionEvent(h1, h2, started);
-    this._rayFilter = (collider) => {
-      const o = this._owners.get(collider.handle);
-      if (!o) return false;
-      if (o.kind === 'floor') return true;
-      if (o.kind !== 'block' || o === this._rayExclude) return false;
-      return this._rayAll || (o.state !== 'held' && o.state !== 'kinematic');
-    };
-    this._rayExclude = null;
-    this._rayAll = true;
+    this.setFloor(this._floor);
   }
 
   // ---- setup ----------------------------------------------------------------
 
   setFloor({ friction = 0.5, restitution = 0.3, kind = 'wood' } = {}) {
+    this._floor = { friction, restitution, kind };
     this._floorCollider.setFriction(friction);
     this._floorCollider.setRestitution(restitution);
     this._floorOwner.material = kind;
@@ -786,26 +807,38 @@ export class Physics {
     const shape = SHAPES[shapeId];
     if (!shape) throw new Error(`physics: unknown shape ${shapeId}`);
     const material = opts.material === 'paint' ? 'paint' : 'wood';
-    const mat = MATERIALS[material];
     const h = this._makeHandle('block', shapeId, material, opts, shape.colliders);
-    h._e = mat.restitution;
-    const body = this._createBody('dynamic', opts, DAMP_LIN, DAMP_ANG, 1, false);
+    h._e = MATERIALS[material].restitution;
+    this._attachBlock(h, opts);
+    // frozen: true (a preset) freezes on the first frame it has support.
+    h._asap = !!opts.frozen;
+    this._blocks.push(h);
+    this._moversDirty = true;
+    return h;
+  }
+
+  // Create a block's Rapier body and colliders (pose and velocity from o).
+  _attachBlock(h, o) {
+    const mat = MATERIALS[h.material];
+    const body = this._createBody('dynamic', o, DAMP_LIN, DAMP_ANG, 1, false);
     h.body = body;
+    h.colliders = [];
     let mass = 0;
-    for (const spec of shape.colliders) {
+    for (const spec of SHAPES[h.shapeId].colliders) {
       const mp = massProps(spec, DENSITY);
       mass += mp.mass;
-      const o = spec.offset || [0, 0, 0];
+      const off = spec.offset || [0, 0, 0];
       for (const { desc, share, cap } of colliderParts(spec, EDGE)) {
         const k = share || 1e-9;
+        // DEFAULT collision types only: a frozen (kinematic) block then
+        // skips the floor, the walls and the other frozen blocks entirely.
         desc
-          .setTranslation(o[0], o[1], o[2])
+          .setTranslation(off[0], off[1], off[2])
           .setMassProperties(mp.mass * k, mp.com, { x: mp.inertia.x * k, y: mp.inertia.y * k, z: mp.inertia.z * k }, { x: 0, y: 0, z: 0, w: 1 })
           .setFriction(mat.friction)
           .setRestitution(mat.restitution)
           .setCollisionGroups(groups(G_BLOCK, 0xffff))
-          .setActiveEvents(AE())
-          .setActiveCollisionTypes(RAPIER.ActiveCollisionTypes.DEFAULT | RAPIER.ActiveCollisionTypes.KINEMATIC_FIXED);
+          .setActiveEvents(AE());
         const c = this.world.createCollider(desc, body);
         h.colliders.push(c);
         this._owners.set(c.handle, h);
@@ -817,11 +850,6 @@ export class Physics {
     for (const c of h.colliders) c.setContactForceEventThreshold(1.2 * mass * G + 0.1);
     this._readPose(h);
     h._prev.set(h._cur);
-    // frozen: true (a preset) freezes on the first frame it has support.
-    h._asap = !!opts.frozen;
-    this._blocks.push(h);
-    this._moversDirty = true;
-    return h;
   }
 
   // Generic body for tools: { colliders: [shapes.js-style specs, plus
@@ -836,16 +864,25 @@ export class Physics {
     const type = spec.type || 'dynamic';
     const h = this._makeHandle('body', null, spec.material || 'wood', spec, spec.colliders);
     h._e = spec.restitution ?? 0.3;
+    h._spec = spec; // kept to rebuild it after a Rapier failure
+    h.state = type === 'dynamic' ? 'free' : type === 'kinematic' ? 'kinematic' : 'fixed';
+    this._attachBody(h, spec, type);
+    this._bodies.push(h);
+    this._moversDirty = true;
+    return h;
+  }
+
+  _attachBody(h, spec, type, o = spec) {
     const body = this._createBody(
       type,
-      spec,
+      o,
       spec.linearDamping ?? DAMP_LIN,
       spec.angularDamping ?? DAMP_ANG,
       spec.gravityScale ?? 1,
       !!spec.ccd,
     );
     h.body = body;
-    h.state = type === 'dynamic' ? 'free' : type === 'kinematic' ? 'kinematic' : 'fixed';
+    h.colliders = [];
     const density = spec.density ?? DENSITY;
     const parts = spec.colliders.map((s) => massProps(s, density));
     const total = parts.reduce((a, p) => a + p.mass, 0);
@@ -854,17 +891,20 @@ export class Physics {
     let mass = 0;
     spec.colliders.forEach((s, i) => {
       const mp = parts[i];
-      const o = s.offset || [0, 0, 0];
+      const off = s.offset || [0, 0, 0];
       const m = mp.mass * scale;
       mass += m;
       const inertia = { x: mp.inertia.x * scale, y: mp.inertia.y * scale, z: mp.inertia.z * scale };
+      // KINEMATIC_KINEMATIC: a kinematic tool must still meet frozen
+      // (kinematic) blocks so it can knock them loose.
       const d = colliderDesc(s, spec.round || 0)
-        .setTranslation(o[0], o[1], o[2])
+        .setTranslation(off[0], off[1], off[2])
         .setMassProperties(m, mp.com, inertia, { x: 0, y: 0, z: 0, w: 1 })
         .setFriction(spec.friction ?? 0.6)
         .setRestitution(spec.restitution ?? 0.3)
         .setCollisionGroups(groups(G_TOOL, filter))
-        .setActiveEvents(AE());
+        .setActiveEvents(AE())
+        .setActiveCollisionTypes(RAPIER.ActiveCollisionTypes.DEFAULT | RAPIER.ActiveCollisionTypes.KINEMATIC_KINEMATIC);
       if (s.rotation) d.setRotation({ x: s.rotation[0], y: s.rotation[1], z: s.rotation[2], w: s.rotation[3] });
       const c = this.world.createCollider(d, body);
       h.colliders.push(c);
@@ -874,9 +914,6 @@ export class Physics {
     for (const c of h.colliders) c.setContactForceEventThreshold(1.2 * mass * G + 0.1);
     this._readPose(h);
     h._prev.set(h._cur);
-    this._bodies.push(h);
-    this._moversDirty = true;
-    return h;
   }
 
   remove(h) {
@@ -924,22 +961,27 @@ export class Physics {
 
   step(realDt, timeScale = 1) {
     const t0 = performance.now();
+    if (this._dead) return 0;
     this._inStep = true;
     if (!(realDt > 0)) realDt = 0;
     this._acc += Math.min(realDt, 0.1) * timeScale;
     let n = 0;
-    while (this._acc >= this._dt) {
-      if (n >= this._maxSubsteps || (n > 0 && performance.now() - t0 > this._budgetMs)) {
-        // Can't keep up: drop the backlog so the simulation slows down.
-        this._acc = Math.min(this._acc, this._dt * 0.999);
-        break;
+    try {
+      while (this._acc >= this._dt) {
+        if (n >= this._maxSubsteps || (n > 0 && performance.now() - t0 > this._budgetMs)) {
+          // Can't keep up: drop the backlog so the simulation slows down.
+          this._acc = Math.min(this._acc, this._dt * 0.999);
+          break;
+        }
+        this._substep();
+        this._acc -= this._dt;
+        n++;
       }
-      this._substep();
-      this._acc -= this._dt;
-      n++;
+      this._alpha = this._acc / this._dt;
+      if (n) this._bookkeep(n * this._dt);
+    } catch (err) {
+      this._failed(err);
     }
-    this._alpha = this._acc / this._dt;
-    if (n) this._bookkeep(n * this._dt);
     this._inStep = false;
     this._flushImpacts();
     this._dispatch();
@@ -954,6 +996,10 @@ export class Physics {
     for (let i = 0; i < movers.length; i++) movers[i]._prev.set(movers[i]._cur);
     for (let i = 0; i < this._held.length; i++) this._drive(this._held[i]);
     this.world.step(this.queue);
+    if (this._toSleep.length) {
+      for (const h of this._toSleep) if (h.state === 'frozen') h.body.sleep();
+      this._toSleep.length = 0;
+    }
     this._stepCount++;
     this._time += this._dt;
     for (let i = 0; i < movers.length; i++) this._readPose(movers[i]);
@@ -1033,6 +1079,86 @@ export class Physics {
     }
   }
 
+  // Defence in depth: if Rapier ever fails inside a step (a WebAssembly
+  // trap leaves that world unusable), build a new world and put every block
+  // and tool body back where it last was, at rest. Frozen blocks stay
+  // frozen with their recorded supports. Joints and bodies that tools made
+  // directly on the old world are gone: 'reset' tells them to forget those
+  // (and never to call the old world again).
+  _failed(err) {
+    const wasm = (typeof WebAssembly !== 'undefined' && err instanceof WebAssembly.RuntimeError) ||
+      /unreachable|recursive use|borrowed|memory access|null pointer/i.test(String(err && err.message));
+    if (!wasm) {
+      // A bug of ours, not a dead world: skip the rest of this frame.
+      if (!this._jsErrorLogged) console.error('physics: error during step', err);
+      this._jsErrorLogged = true;
+      return;
+    }
+    // Rebuilding over and over would only stall the game.
+    const t = performance.now();
+    this._resetTimes = (this._resetTimes || []).filter((x) => t - x < 10000);
+    this._resetTimes.push(t);
+    if (this._resetTimes.length > 5) {
+      // Still rebuild, so every other call keeps working, but stop stepping.
+      console.error('physics: Rapier keeps failing; physics stopped.', err);
+      this._dead = true;
+    }
+    this._recover(err);
+  }
+
+  _recover(err) {
+    this.resets++;
+    if (this.resets === 1) console.error('physics: Rapier failed; rebuilding the world from the last poses.', err);
+    try {
+      this._buildWorld();
+      const pose = { position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } };
+      const put = (h) => {
+        const c = h._cur;
+        pose.position.x = c[0];
+        pose.position.y = c[1];
+        pose.position.z = c[2];
+        pose.quaternion.x = c[3];
+        pose.quaternion.y = c[4];
+        pose.quaternion.z = c[5];
+        pose.quaternion.w = c[6];
+        return pose;
+      };
+      for (const h of this._blocks) {
+        const state = h.state;
+        this._attachBlock(h, put(h));
+        h._tired = false;
+        if (state === 'frozen') this._pin(h);
+        else if (state === 'kinematic') h.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+        else {
+          h.state = 'free'; // a held block is dropped
+          h._calm = 0;
+          h._freeSince = this._time;
+        }
+      }
+      for (const h of this._bodies) {
+        const type = h.state === 'free' ? 'dynamic' : h.state;
+        this._attachBody(h, h._spec, type, put(h));
+      }
+      this._held.length = 0;
+      this._verify.length = 0;
+      this._pairs.clear();
+      this._knocks.length = 0;
+      this._kinKnocks.length = 0;
+      this._cands.length = 0;
+      this._impacts.length = 0;
+      this._acc = 0;
+      this._alpha = 0;
+      this._moversDirty = true;
+      this._dirty = true;
+    } catch (err2) {
+      // The WebAssembly instance itself is broken: stop simulating, keep the
+      // last poses on screen.
+      this._dead = true;
+      console.error('physics: could not rebuild the world; physics stopped.', err2);
+    }
+    this._emit('reset', { error: String((err && err.message) || err), stopped: this._dead, count: this.resets });
+  }
+
   // ---- contact events -----------------------------------------------------
 
   _ownerOf(ch) {
@@ -1052,7 +1178,7 @@ export class Physics {
     if (!started) return;
     const a = this._ownerOf(h1);
     const b = this._ownerOf(h2);
-    // A kinematic tool touching a frozen block: fixed and kinematic bodies
+    // A kinematic tool touching a frozen (kinematic) block: two kinematic bodies
     // never push each other, so wake the block and let the tool shove it.
     if (a.state === 'frozen' && (b.kind === 'body' || b.kind === 'other') && b.state === 'kinematic') this._kinKnocks.push(a);
     else if (b.state === 'frozen' && (a.kind === 'body' || a.kind === 'other') && a.state === 'kinematic') this._kinKnocks.push(b);
@@ -1119,8 +1245,8 @@ export class Physics {
     if (this._knocks.length < 16) this._knocks.push({ frozen, other, jx, jy, jz, cf, co });
   }
 
-  // Wake knocked blocks and hand back the momentum the fixed body
-  // swallowed: in the fixed collision the mover got impulse J back; in a
+  // Wake knocked blocks and hand back the momentum the frozen body
+  // swallowed: against the immovable block the mover got impulse J back; in a
   // free collision each body would get J * mF / (mF + mX).
   _applyKnocks() {
     for (const f of this._kinKnocks) if (f.state === 'frozen') this._wakeUp([f], 'knock', KNOCK_NO_FREEZE);
@@ -1246,6 +1372,11 @@ export class Physics {
       if ((h._calm >= need || h._asap) && t >= h._noFreezeUntil) cands.push(h);
     }
     if (cands.length) this._freezeCandidates(cands);
+    // A frozen block that is awake stops the free blocks on it sleeping.
+    if (t - this._sleepCheck > 0.5) {
+      this._sleepCheck = t;
+      for (const h of this._blocks) if (h.state === 'frozen' && !h.body.isSleeping()) h.body.sleep();
+    }
     if (this._verify.length) this._checkVerify();
     if (this._dirty) this._analyse();
     // Forget pairs that have not touched for a while.
@@ -1481,8 +1612,7 @@ export class Physics {
     h._com.z = com.z;
 
     this._untire(h);
-    h.body.setBodyType(RAPIER.RigidBodyType.Fixed, false);
-    this._readPose(h);
+    this._pin(h);
     h._prev.set(h._cur);
     h.state = 'frozen';
     h.settledAt = this._time;
@@ -1497,6 +1627,37 @@ export class Physics {
     this._dirty = true;
     this._moversDirty = true;
     return true;
+  }
+
+  // Frozen blocks are sleeping kinematic bodies rather than fixed ones.
+  // Rapier 0.20 traps ("unreachable") inside world.step once a body that
+  // went Dynamic -> Fixed has been removed and another body later switches
+  // Fixed -> Dynamic: exactly what a tidy-up after a crash does. To
+  // everything touching it a kinematic body with no motion is the same
+  // (infinite mass, never moves), and with DEFAULT collision types it never
+  // meets the floor, the walls or the other frozen blocks, so it costs
+  // nothing while it sleeps.
+  _pin(h) {
+    const b = h.body;
+    b.setLinvel(this._zero, false);
+    b.setAngvel(this._zero, false);
+    b.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, false);
+    this._readPose(h);
+    // Its next pose is where it is, so it can never drift.
+    const c = h._cur;
+    this._v.x = c[0];
+    this._v.y = c[1];
+    this._v.z = c[2];
+    this._q.x = c[3];
+    this._q.y = c[4];
+    this._q.z = c[5];
+    this._q.w = c[6];
+    b.setNextKinematicTranslation(this._v);
+    b.setNextKinematicRotation(this._q);
+    // Rapier wakes it again while it applies the type change in the next
+    // step, so it is put to sleep after that step too (see _substep).
+    b.sleep();
+    this._toSleep.push(h);
   }
 
   _untire(h) {
@@ -2023,7 +2184,7 @@ export class Physics {
 
   // Does any other block rest on this one? (For "only lift the top ones".)
   // Frozen blocks keep their supports; Rapier has no contacts between two
-  // fixed bodies, so those come from the record and the rest from the live
+  // frozen bodies, so those come from the record and the rest from the live
   // contacts.
   carrying(h) {
     if (!h || h.kind !== 'block' || h.state === 'removed') return false;

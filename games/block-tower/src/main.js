@@ -97,6 +97,9 @@ class App {
     this.lean = { angle: 0, vel: 0, axis: new THREE.Vector3(1, 0, 0) };
     this.score = 0;
     this.heightCm = 0;
+    this.roundPeak = 0; // tallest still height this round, cm
+    this.roundBest0 = 0; // the best when the round began
+    this.bestNoted = false;
     this.stable = 0; // seconds the structure has been still
     this.wobble = 0;
     this.raycaster = new THREE.Raycaster();
@@ -114,9 +117,11 @@ class App {
     const renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: false, alpha: false, stencil: false, powerPreference: 'high-performance' });
     this.renderer = renderer;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    // tone mapping happens in the post chain's last pass (see post.js); the
+    // rooms soften their own floor shadows
+    renderer.toneMapping = THREE.NoToneMapping;
     renderer.shadowMap.enabled = q.shadows;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
 
     const scene = (this.scene = new THREE.Scene());
     const camera = (this.camera = new THREE.PerspectiveCamera(VFOV, 1.6, 0.03, 60));
@@ -143,8 +148,8 @@ class App {
     this.factory = new BlockFactory({ renderer, quality: q });
     await this.factory.warm((p) => progress(0.64 + 0.14 * p, 'Painting the blocks'));
 
-    this.fx = new FX({ scene, camera, quality: q });
-    this.tools = new Tools({ scene, physics: this.physics, audio: this.audio, fx: this.fx, quality: q });
+    this.fx = new FX({ scene, camera, quality: q, supportAt: (x, z) => this.physics.topAt(x, z) });
+    this.tools = new Tools({ scene, camera, physics: this.physics, audio: this.audio, fx: this.fx, quality: q });
     this.tools.select(this.sel.tool);
     this.challenges = new Challenges({ scene, factory: this.factory });
 
@@ -212,7 +217,13 @@ class App {
     this.challenges.set('castle');
     this.fx.sparkle(new THREE.Vector3(0, 0.1, 0));
     this.updateCamera(1, true);
+    // compile against the post chain's off-screen target, which is where
+    // the scene is really drawn (tone mapping and colour space differ)
+    const target = this.post.composer?.renderTarget1 ?? null;
+    renderer.setRenderTarget(target);
+    this.tools.prewarm?.(renderer, camera);
     if (renderer.compileAsync) await renderer.compileAsync(scene, camera);
+    renderer.setRenderTarget(null);
     this.render();
     for (const rec of warm) {
       this.blockGroup.remove(rec.mesh);
@@ -251,6 +262,8 @@ class App {
     this.dpr = dpr;
     this.view = { w, h, aspect: w / h };
     this.camera.aspect = w / h;
+    // a touch wider on tall screens, like a phone camera held upright
+    this.camera.fov = w / h < 1 ? VFOV + 4 : VFOV;
     this.camera.updateProjectionMatrix();
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
@@ -285,6 +298,9 @@ class App {
     this.scene.background = room.background ?? null;
     this.renderer.toneMappingExposure = room.exposure ?? 1;
     if (room.bloom !== undefined) this.post.bloomStrength = room.bloom;
+    if (room.bloomThreshold !== undefined) this.post.bloomThreshold = room.bloomThreshold;
+    if (room.grade) this.post.setGrade?.(room.grade);
+    this.tools?.setSurface?.(room.floor.kind);
     this.physics.setFloor(room.floor);
     document.body.dataset.room = id;
     if (!first) this.audio.setRoom?.(id);
@@ -365,6 +381,7 @@ class App {
     this.abc = 0;
     this.score = 0;
     this.pendingDrops = 0;
+    this.newRound();
     document.body.dataset.mode = mode;
     this.ui.setMode(mode);
     this.ui.show('playing');
@@ -537,11 +554,11 @@ class App {
     this.physics.drive(rec.h, this._v.set(g.x, y, g.z), g.quat);
     const p = rec.mesh.position;
     const down = y <= g.rest - 0.003 && p.y - g.rest < 0.0012;
-    if (!down && g.t < 0.8) return;
+    if (!down && g.t < 1.2) return;
     delete rec.glide;
     this.physics.release(rec.h, { x: 0, y: 0, z: 0 });
     rec.landed = true;
-    this.kickLean(0.7);
+    if (!g.placed) this.kickLean(0.7);
   }
 
   // The tallest tower a toddler builds before the crown, a bit lower on
@@ -599,14 +616,24 @@ class App {
     const quiet = this.physics.quiet() && !this.tools.busy;
     c.quiet = quiet ? c.quiet + dt : 0;
     if (c.quiet > 0.7 || c.t > 9) {
-      if (this.sel.mode === 'big' && c.big) {
-        const bonus = Math.round(c.height);
-        this.score += bonus;
-        this.ui.callout(`${this.score} points!`, 'points');
-        this.audio.points(3);
-      }
       this.phase = 'rest';
       this.restT = this.sel.mode === 'big' ? 1.6 : 0.8;
+      if (this.sel.mode === 'big' && c.big) {
+        this.score += this.roundPeak; // a point for every centimetre of tower
+        this.ui.callout(`${this.score} points!`, '');
+        this.audio.points(3);
+        if (this.roundPeak > this.roundBest0 && this.roundPeak >= 12) {
+          // the tallest tower yet: say so once it is down
+          const peak = this.roundPeak;
+          this.restT += 1.5;
+          setTimeout(() => {
+            if (this.state !== 'playing') return;
+            this.ui.callout(`New best! ${peak} cm`, 'best');
+            this.audio.best();
+            this.fx.confetti(new THREE.Vector3(0, 0.12, 0));
+          }, 1300);
+        }
+      }
     }
   }
 
@@ -641,7 +668,14 @@ class App {
     );
   }
 
+  newRound() {
+    this.roundPeak = 0;
+    this.roundBest0 = this.best;
+    this.bestNoted = false;
+  }
+
   endSweep() {
+    this.newRound();
     for (const rec of [...this.recs]) if (rec.sweeping) this.removeRec(rec);
     this.phase = 'build';
     this.crown = false;
@@ -759,8 +793,8 @@ class App {
     this.audio.click();
   }
 
-  holdQuat(out = new THREE.Quaternion()) {
-    return out.setFromAxisAngle(this._v2.set(0, 0, 1), (this.held ? this.held.turns : 0) * (Math.PI / 2));
+  holdQuat(out = new THREE.Quaternion(), turns = this.held ? this.held.turns : 0) {
+    return out.setFromAxisAngle(this._v2.set(0, 0, 1), turns * (Math.PI / 2));
   }
 
   // Where a held block should be: under the pointer in the picture plane
@@ -770,11 +804,28 @@ class App {
     if (!hit) out.set(0, 0.2, 0);
     if (this.pointer.type !== 'mouse') out.y += TOUCH_LIFT;
     const size = SHAPES[shapeId].size;
-    const half = this.held && this.held.turns % 2 ? size[0] / 2 : size[1] / 2;
+    const turned = this.held && this.held.turns % 2;
+    const half = turned ? size[0] / 2 : size[1] / 2;
+    const halfW = turned ? size[1] / 2 : size[0] / 2;
     out.x = clamp(out.x, -0.4, 0.4);
-    out.y = clamp(out.y, half + 0.003, 1.3);
+    // it rides over whatever is below it, as if lifted by hand, so it can
+    // never be dragged through the build and bowl it over
+    const below = this.footTop(out.x, halfW, SHAPES[shapeId].size[2] / 2, this.held?.rec.h);
+    out.y = clamp(out.y, below + half + 0.006, 1.3);
     out.z = 0;
     return out;
+  }
+
+  // The highest surface under a block's whole footprint in the picture
+  // plane: rays down every 8 mm across it, front, middle and back.
+  footTop(x, halfW, halfD, exclude = null) {
+    const n = Math.max(2, Math.ceil((2 * halfW) / 0.008));
+    let top = 0;
+    for (let i = 0; i <= n; i++) {
+      const px = x - halfW + (2 * halfW * i) / n;
+      for (const pz of [-halfD * 0.7, 0, halfD * 0.7]) top = Math.max(top, this.physics.topAt(px, pz, 0, exclude));
+    }
+    return top;
   }
 
   turnHeld() {
@@ -790,8 +841,16 @@ class App {
     this.ui.setHolding(false);
     const rec = held.rec;
     if (!rec.h) return;
-    const v = { x: clamp(this.pointer.vx, -0.4, 0.4) * 0.3, y: 0, z: 0 };
-    this.physics.release(rec.h, v);
+    // set it down by hand: straight down onto whatever is below, then let go
+    // at rest, so where it is placed (not how far it fell) decides whether
+    // it stands
+    const size = SHAPES[rec.shapeId].size;
+    const turned = held.turns % 2 === 1;
+    const half = turned ? size[0] / 2 : size[1] / 2;
+    const halfW = turned ? size[1] / 2 : size[0] / 2;
+    const x = held.snap ? held.snap.x : rec.mesh.position.x;
+    const below = this.footTop(x, halfW, size[2] / 2, rec.h);
+    rec.glide = { t: 0, y0: rec.mesh.position.y, rest: below + half, x, z: 0, quat: this.holdQuat(new THREE.Quaternion(), held.turns), placed: true };
     rec.landed = false;
     rec.born = this.time;
     this.lastDrop = rec;
@@ -830,7 +889,7 @@ class App {
       this.challengeDone = true;
       this.fx.confetti(new THREE.Vector3(0, 0.2, 0));
       this.audio.challenge();
-      this.ui.callout(`${this.challenges.name} built!`, 'win');
+      this.ui.callout(`${this.challenges.name} built!`, 'challenge');
       this.score += 100;
     }
   }
@@ -844,14 +903,20 @@ class App {
     }
     const quiet = this.physics.quiet() && !this.held;
     this.stable = quiet ? this.stable + dt : 0;
-    // a new best counts once the tower has stood still for a moment
-    if (this.phase === 'build' && this.stable > 1 && cm > this.best) {
-      this.best = cm;
-      save('best', cm);
-      this.ui.setBest(cm);
-      this.ui.callout(`New best! ${cm} cm`, 'best');
-      this.audio.best();
-      this.fx.confetti(new THREE.Vector3(0, h + 0.05, 0));
+    // a height counts once the tower has stood still for a moment; a new
+    // best is kept at once and celebrated when the tower comes down
+    if (this.phase === 'build' && this.stable > 1 && cm > this.roundPeak) {
+      this.roundPeak = cm;
+      if (cm > this.best) {
+        this.best = cm;
+        save('best', cm);
+        this.ui.setBest(cm);
+        if (!this.bestNoted && this.roundBest0 > 0 && cm >= 12) {
+          this.bestNoted = true;
+          this.ui.callout('New best!', 'best');
+          this.audio.best();
+        }
+      }
     }
     const s = this.physics.stability();
     const target = this.phase === 'build' ? clamp(1 - s.value, 0, 1) : 0;
@@ -1077,7 +1142,7 @@ class App {
     if (this.phase === 'crash' || this.phase === 'rest' || this.phase === 'sweep') width = Math.max(width, 0.6);
     // room for the HUD above and the tray or button below
     const uiFrac = menu ? 0 : big ? 0.28 : 0.18;
-    const tanV = Math.tan(THREE.MathUtils.degToRad(VFOV / 2));
+    const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
     const span = (top + 0.06) / (1 - uiFrac);
     const dV = span / 2 / tanV;
     const dH = width / 2 / (tanV * aspect);

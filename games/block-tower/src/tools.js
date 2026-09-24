@@ -721,9 +721,12 @@ const CAR = {
   appear: 0.35,
   wind: 1.05, // three half turns
   hold: 0.18,
-  run: 1.7, // spring runs down over this long (s)
-  speed: 0.55, // m/s at full wind
-  force: 55, // drive acceleration at a standstill (m/s^2): ~7 N, enough to shove a tower's base
+  run: 1.4, // spring runs down over this long (s)
+  speed: 0.7, // m/s at full wind
+  // drive acceleration at a standstill (m/s^2): ~12 N. A weaker push (7 N)
+  // just slid a tall tower along the floor in one piece a third of the time;
+  // this shoves the base out from under it
+  force: 90,
   mass: 0.13,
 };
 

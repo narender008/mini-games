@@ -103,6 +103,11 @@ export class Challenges {
     this.id = null;
     this.slots = [];
     this.material = factory.ghostMaterial();
+    // the ghosts write depth, so the depth of field sees them where they
+    // stand (not at the floor behind) and keeps them sharp; and they glow a
+    // little brighter than the blocks' own highlights so they read in sun
+    this.material.depthWrite = true;
+    if (this.material.uniforms?.uColor) this.material.uniforms.uColor.value.multiplyScalar(1.8);
     this.time = 0;
     this._e = new THREE.Vector3();
   }
@@ -211,7 +216,8 @@ export class Challenges {
       s.mesh.visible = s.fade > 0.02;
       const u = s.mesh.material.uniforms;
       const pulse = s === hint ? 0.25 + 0.2 * Math.sin(this.time * 3.2) : 0;
-      if (u && u.uOpacity) u.uOpacity.value = s.fade * (0.75 + pulse);
+      if (u && u.uTime) u.uTime.value = this.time;
+      if (u && u.uOpacity) u.uOpacity.value = s.fade * (0.9 + pulse);
       else s.mesh.material.opacity = s.fade * (0.35 + pulse * 0.4);
     }
   }
