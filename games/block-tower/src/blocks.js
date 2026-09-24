@@ -555,4 +555,3 @@ export class BlockFactory {
     };
   }
 }
-

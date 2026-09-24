@@ -12,9 +12,9 @@
 // URL switches for testing: ?play starts straight into a game;
 // ?mode=little|big, ?set=wood|rainbow|letters, ?room=playroom|patio|bedtime,
 // ?tool=flick|ball|car|wrecker, ?challenge=<id> pick the starting choices;
-// ?quality=high|medium|low, ?msaa=N, ?shadows=0, ?ao=0, ?dof=0 tune
-// rendering; ?cover hides the interface; ?debug exposes window.__bt (see the
-// end of this file).
+// ?quality=high|medium|low, ?msaa=N, ?shadows=0, ?ao=0, ?dof=0,
+// ?tone=agx|aces|neutral tune rendering; ?cover hides the interface; ?debug
+// exposes window.__bt (see the end of this file).
 import * as THREE from 'three';
 import { QUERY, DEBUG, REDUCED_MOTION, MODES, SETS, ROOMS, TOOLS, load, save, pickValid, rand, pick, clamp, damp } from './config.js';
 import { SHAPES, SET_SHAPES } from './shapes.js';
