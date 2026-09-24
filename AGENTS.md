@@ -4,6 +4,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 - Static site, no build step: serve the repo root (`python3 -m http.server 8000`) and open `/`. ES modules will not load from `file://`.
 - `http.server` sends no cache headers, so browsers may keep serving an old module after an edit. When testing changes, disable the cache, hard-reload, or serve with `Cache-Control: no-store`.
+- Any browser launched to test a game must pass `--mute-audio` (headless or not) and be closed when the check ends; check sound through the AudioContext, never by playing it aloud.
 - Every URL must be relative (the site is served under `/mini-games/` on GitHub Pages). No CDN or other network calls at runtime; no tracking.
 - A game lives entirely in `games/<slug>/`, links back to `../../index.html`, and is listed by one entry in `games.js` (front page renders cards from it via `assets/site.js`). Steps are in `README.md`.
 - Shared libraries are vendored once, pinned and unmodified, under `vendor/<lib>/` with their licence, and loaded through an import map in the game's `index.html`. Record version and checksums in `vendor/<lib>/README.md` and `LICENSES.md`.
