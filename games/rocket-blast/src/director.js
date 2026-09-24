@@ -176,14 +176,15 @@ export class Director {
     const minY = -f.halfH + 3.2;
     const maxY = f.halfH - 1;
     const rows = Math.max(3, Math.floor(maxY - minY));
-    const taken = new Set(this.app.enemies.filter((e) => e.alive).map((e) => `${Math.round(e.gx / CELL + (n - 1) / 2)},${Math.round(e.gy - minY)}`));
+    const alive = this.app.enemies.filter((e) => e.alive);
+    const taken = (x, y) => alive.some((e) => Math.abs(e.gx - x) < 0.9 && Math.abs(e.gy - y) < 0.9);
     for (let tries = 0; tries < 12; tries++) {
       const cells = shapeCells(pick(ALL_SHAPES), Math.floor(Math.random() * 4));
       const w = Math.max(...cells.map((c) => c[0])) + 1;
       const h = Math.max(...cells.map((c) => c[1])) + 1;
       const c0 = Math.floor(Math.random() * (n - w + 1));
       const r0 = Math.floor(Math.random() * (rows - h + 1));
-      if (cells.some(([dx, dy]) => taken.has(`${c0 + dx},${r0 + dy}`))) continue;
+      if (cells.some(([dx, dy]) => taken(this.colX(c0 + dx), minY + r0 + dy))) continue;
       const colorIndex = this.pickColor();
       for (const [dx, dy] of cells) {
         const e = this.app.spawnEnemy({ x: this.colX(c0 + dx), y: minY + r0 + dy, colorIndex });
@@ -318,6 +319,17 @@ export class Director {
     // half the grid, but never more than the styles can draw with a tap's
     // worth of toys still popping (very wide screens have huge grids)
     const target = Math.min(Math.floor(n * rows * 0.5), TOY_CAPACITY - 60);
+    const minX = this.colX(0) - 0.5;
+    const maxX = this.colX(n - 1) + 0.5;
+    const minY = -f.halfH + 3.2 - 0.5;
+    const maxY = -f.halfH + 3.2 + rows - 0.5;
+    for (const e of this.app.enemies) {
+      if (!e.alive || e.gy === undefined) continue;
+      if (e.gx < minX || e.gx > maxX || e.gy < minY || e.gy > maxY) {
+        e.alive = false;
+        e.gone = true;
+      }
+    }
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0 && this.aliveCount() < target) {
       this.spawnFreeShape();

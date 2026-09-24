@@ -964,6 +964,10 @@ body[data-mode='free'] .score {
     grid-template-columns: repeat(2, var(--tap));
   }
 
+  #hud:has(.hud-left .fs:not([hidden])) .boss-bar {
+    top: calc(30px + 2 * var(--tap) + var(--safe-t));
+  }
+
   .menu-main {
     justify-content: flex-start;
   }
