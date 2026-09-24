@@ -38,4 +38,13 @@ window.MINI_GAMES = [
     imageAlt: 'A cottage garden bed at golden hour with tulips, poppies and sunflowers in bloom and a butterfly visiting',
     tags: ['3D', 'Ages 2+', 'Touch friendly'],
   },
+  {
+    slug: 'block-tower',
+    name: 'Block Tower',
+    description: 'Stack photoreal wooden toy blocks into a tower, then knock it down with a ball, a wind-up car or a wrecking ball.',
+    path: 'games/block-tower/',
+    image: 'games/block-tower/cover.jpg',
+    imageAlt: 'A tall tower of wooden and painted toy blocks on playroom floorboards in soft window light',
+    tags: ['3D', 'Ages 2+', 'Touch friendly'],
+  },
 ];

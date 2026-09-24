@@ -5,6 +5,7 @@
 | Library | Version | Where | Licence |
 | --- | --- | --- | --- |
 | [three.js](https://threejs.org/) | 0.186.0 | `vendor/three/` | MIT, see `vendor/three/LICENSE` |
+| [Rapier](https://rapier.rs/) (`@dimforge/rapier3d-compat`) | 0.20.0 | `vendor/rapier/` | Apache-2.0, see `vendor/rapier/LICENSE` |
 
 ## Assets
 
@@ -17,3 +18,5 @@ Cake Cut likewise uses no outside image, model or sound files. The cakes (sponge
 Rocket Blast also uses no image, model or sound files from anywhere else. Every model (the rocket and its pilot, the toy blocks, aliens and robots, the boss, the weapons, stars, gems, sweets and confetti, planets, hills, flowers and butterflies), every texture (skies, clouds, nebulae, the sprite atlas, sweet stripes, noise) and every sound (music, blasts, chimes, boops and giggles, fanfares, fireworks) is generated in code at runtime. The cover picture `games/rocket-blast/cover.jpg` and the icons are screenshots and drawings of this project's own work. The game was designed from a written brief and two mock-up pictures; the pictures are not part of this repository.
 
 Garden Grow uses no image, model or sound files from anywhere else either. The sky, sun, moon, clouds and stars, the soil with its crumbs, clods and pebbles, the lawn, gravel and decking, every prop (the timber edging, stepping stones, terracotta pots, picket and panel fences, raised planters, the balcony, the hedges and trees behind, the basket and the glass vase), every flower, vegetable and leaf, every visitor (butterflies, bees, ladybirds, birds, fireflies and moths), the watering can, water, rain and rainbow, and every sound (soil, water, rain, leaves, birdsong, chimes and the music) are generated in code at runtime. The bedtime music is an original lullaby and the traditional tune Twinkle, Twinkle, Little Star, which is in the public domain. The cover picture `games/garden-grow/cover.jpg` and the icons are screenshots and drawings of this project's own work.
+
+Block Tower also uses no image, model or sound files from anywhere else. Every block (the cubes, bricks, planks, pillars, cylinders, arches, roofs and half-rounds, their maple, beech and walnut grain, lacquered paint and letter faces), every room (floorboards, rug, decking, walls, windows, garden and furniture), every knock-down toy (the ball, the wind-up car and the wrecking ball) and every sound (wooden clacks, rolling, music, chimes and sparkles) is generated in code at runtime. The cover picture `games/block-tower/cover.jpg` and the icons are screenshots and drawings of this project's own work.
