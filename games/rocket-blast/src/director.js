@@ -130,22 +130,11 @@ export class Director {
 
   // ------------------------------------------------------------ spawning
 
-  spawnFormation({ shapes = LITTLE_SHAPES, speed = 0.55, breakAt = null, shift = 0, z = 0, inside = false } = {}) {
+  spawnFormation({ shapes = LITTLE_SHAPES, speed = 0.55, breakAt = null, shift = 0, z = 0 } = {}) {
     const f = this.field;
     const n = this.cols();
     const cells = shapeCells(pick(shapes), Math.floor(Math.random() * 4));
     const w = Math.max(...cells.map((c) => c[0])) + 1;
-    if (inside) {
-      // pop in (with the grow-in bounce) on a free patch of the upper sky, so
-      // toys are fully in view before the auto-fire reaches them
-      const h = Math.max(...cells.map((c) => c[1])) + 1;
-      const free = (x, y) => this.app.enemies.every((e) => !e.alive || Math.abs(e.x - x) > 1.05 || Math.abs(e.y - y) > 1.1);
-      for (let tries = 0; tries < 10; tries++) {
-        const c0 = Math.floor(Math.random() * (n - w + 1));
-        const top = rand(f.halfH * 0.05 + h, f.halfH - 1.4);
-        if (cells.every(([dx, dy]) => free(this.colX(c0 + dx), top - (h - 1) + dy))) return this.placeFormation(cells, c0, top - (h - 1), speed, breakAt, shift, z);
-      }
-    }
     const top = f.halfH + 0.9;
     // columns still busy near the top edge
     const busy = new Set();
@@ -316,8 +305,8 @@ export class Director {
     this.spawnTimer -= dt;
     const alive = this.aliveCount();
     if (this.spawnTimer <= 0 && alive < target) {
-      const speed = this.field.halfH > 6.5 * VIEW_ZOOM ? 0.7 : 0.55;
-      if (this.spawnFormation({ speed, inside: Math.random() < 0.75 })) this.spawnTimer = mega ? 0.3 : alive < target * 0.8 ? 0.45 : 1.2;
+      const speed = (this.field.halfH > 6.5 * VIEW_ZOOM ? 0.7 : 0.55) * VIEW_ZOOM;
+      if (this.spawnFormation({ speed })) this.spawnTimer = mega ? 0.3 : alive < target * 0.8 ? 0.45 : 1.2;
       else this.spawnTimer = 0.4;
     }
   }
@@ -344,6 +333,7 @@ export class Director {
   updateBig(dt, t, now) {
     const f = this.field;
     const w = this.wave;
+    if (this.ptsAcc && now - this.ptsT > 0.3) this.showPoints(now);
     // combo lapses
     const ended = this.combo.lapse(now);
     if (ended >= 8) this.app.ui.callout(`${ended} combo!`, 'small');
@@ -361,7 +351,7 @@ export class Director {
       // a few escorts keep the combo going
       this.spawnTimer -= dt;
       if (this.boss && this.spawnTimer <= 0 && this.aliveCount() < 8) {
-        this.spawnFormation({ shapes: ALL_SHAPES, speed: 0.9 + w * 0.05, breakAt: rand(-0.3, 0.3) * f.halfH });
+        this.spawnFormation({ shapes: ALL_SHAPES, speed: (0.9 + w * 0.05) * VIEW_ZOOM, breakAt: rand(-0.3, 0.3) * f.halfH });
         this.spawnTimer = 2.6;
       }
       if (!this.boss && this.waveSpawned > 0 && this.aliveCount() === 0) this.waveDone();
@@ -517,12 +507,9 @@ export class Director {
     // keep labels readable when hits come thick and fast: points shown at
     // most every 0.3 s (summed), a "Quick!" at most every 1.5 s
     const now = app.realTime;
-    this.ptsAcc = (this.ptsAcc || 0) + pts;
-    if (now - (this.ptsT ?? -1) > 0.3) {
-      app.ui.points(p.x, p.y, `+${this.ptsAcc}`, r.mult >= 3 ? 'gold' : '');
-      this.ptsAcc = 0;
-      this.ptsT = now;
-    }
+    this.ptsAcc += pts;
+    this.ptsAt = { x: p.x, y: p.y, kind: r.mult >= 3 ? 'gold' : '' };
+    if (now - (this.ptsT ?? -1) > 0.3) this.showPoints(now);
     const quick = r.tag === 'Quick!';
     if (r.tag && (!quick || now - (this.quickT ?? -1) > 1.5)) {
       if (quick) this.quickT = now;
@@ -538,6 +525,14 @@ export class Director {
       app.audio.milestone(Math.max(1, r.mult - 2));
     }
     return r.count;
+  }
+
+  // the summed points label, at the latest hit that went into it
+  showPoints(now) {
+    const { x, y, kind } = this.ptsAt;
+    this.app.ui.points(x, y, `+${this.ptsAcc}`, kind);
+    this.ptsAcc = 0;
+    this.ptsT = now;
   }
 
   collectPower(kind, x, y) {
