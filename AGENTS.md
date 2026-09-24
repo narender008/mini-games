@@ -10,6 +10,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 - Art and sound must be procedural or CC0, noted in `LICENSES.md`. Reference images supplied for a design are not committed.
 - Balloon Pop debug switches: `?debug` exposes `window.__bp` (freeze, step(ms), popFirst, spawn), `?cover` hides UI, `?quality=high|medium|low`, `?msaa=N`, `?shadows=0`. See `games/balloon-pop/src/main.js` and `src/quality.js`.
 - Cake Cut debug switches: `?debug` exposes `window.__cc` (freeze, thaw, step(ms), cut, stroke, lift, setCake, decor, blowOut, pieces, and for Little ones / Easy slices easyCut(angle), serve, front), `?cover` hides UI, `?cake=<id>`, plus `?quality=`, `?msaa=`, `?shadows=0`, `?ao=0`, `?dof=0`. See the end of `games/cake-cut/src/main.js` and `src/quality.js`.
+- Rocket Blast debug switches: `?debug` exposes `window.__rb` (freeze, thaw, step(ms), hitFirst, mega, and pointer(x, y, down, type), which takes play-field cells, not pixels), `?play` starts straight into a game, `?mode=little|big|free`, `?weapon=`, `?world=`, `?style=`, `?cover` hides UI, plus `?quality=`, `?msaa=`, `?tone=`. See the header and end of `games/rocket-blast/src/main.js`.
 
 ## Maintaining this file
 

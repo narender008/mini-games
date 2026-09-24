@@ -9,7 +9,7 @@
 // the cover picture); ?debug exposes window.__rb
 // (freeze, thaw, step(ms), hitFirst, mega, pointer(x, y, down, type)).
 import * as THREE from 'three';
-import { QUERY, DEBUG, REDUCED_MOTION, CELL, VIEW_ZOOM, load, save, rand, clamp, WEAPONS, WORLDS, STYLES, MODES } from './config.js';
+import { QUERY, DEBUG, REDUCED_MOTION, CELL, VIEW_ZOOM, TOY_CAPACITY, load, save, rand, clamp, WEAPONS, WORLDS, STYLES, MODES } from './config.js';
 import { detectQuality, FrameGovernor } from './quality.js';
 import { Post } from './post.js';
 import { createNoiseTexture, createSpriteAtlas, createCandyTexture } from './textures.js';
@@ -43,6 +43,7 @@ class App {
     this.keys = new Set();
     this.frozen = false;
     this.worlds = {};
+    this.worldLoads = {}; // in-flight world builds, by id
     this.sel = {
       weapon: pickValid(QUERY.get('weapon') || load('weapon', 'laser'), WEAPONS),
       world: pickValid(QUERY.get('world') || load('world', 'sunny'), WORLDS),
@@ -92,7 +93,7 @@ class App {
     scene.add(this.rocket.root);
     this.styles = {};
     for (const [id, Cls] of Object.entries(STYLE_CLASSES)) {
-      this.styles[id] = new Cls({ capacity: 180 });
+      this.styles[id] = new Cls({ capacity: TOY_CAPACITY });
       this.styles[id].group.visible = id === this.sel.style;
       scene.add(this.styles[id].group);
     }
@@ -194,7 +195,11 @@ class App {
     this.renderer.setSize(w, h, false);
     this.post.setSize(w, h, dpr);
     this.view = { camera: cam, dist, halfW, halfH };
-    if (!first) for (const world of Object.values(this.worlds)) world.layout(this.view);
+    // the frame governor rescales for pixel ratio alone; clouds only need
+    // re-laying out when the view's shape changes
+    const layoutKey = `${dist.toFixed(4)}:${aspect.toFixed(4)}`;
+    if (!first && layoutKey !== this.layoutKey) for (const world of Object.values(this.worlds)) world.layout(this.view);
+    this.layoutKey = layoutKey;
     if (this.state !== 'loading' && this.frozen) this.render();
   }
 
@@ -216,16 +221,23 @@ class App {
 
   async setWorld(id, first = false) {
     this.worldId = id;
-    let world = this.worlds[id];
-    if (!world) {
-      const create = await loadWorld(id);
-      world = create({ noise: this.noise, quality: this.quality, renderer: this.renderer, atlas: this.atlas, glow: this.glow, smoke: this.smoke });
-      world.layout(this.view);
-      const pmrem = new THREE.PMREMGenerator(this.renderer);
-      world.envRT = pmrem.fromScene(world.envScene, 0.02, 0.1, 2000);
-      pmrem.dispose();
-      this.worlds[id] = world;
-    }
+    // one build per world, shared by every tap made while it is still loading
+    this.worldLoads[id] ??= loadWorld(id).then(
+      (create) => {
+        const w = create({ noise: this.noise, quality: this.quality, renderer: this.renderer, atlas: this.atlas, glow: this.glow, smoke: this.smoke });
+        w.layout(this.view);
+        const pmrem = new THREE.PMREMGenerator(this.renderer);
+        w.envRT = pmrem.fromScene(w.envScene, 0.02, 0.1, 2000);
+        pmrem.dispose();
+        this.worlds[id] = w;
+        return w;
+      },
+      (err) => {
+        delete this.worldLoads[id]; // let a later tap try again
+        throw err;
+      },
+    );
+    const world = this.worlds[id] ?? (await this.worldLoads[id]);
     if (this.worldId !== id) return; // another world was picked meanwhile
     if (this.world && this.world !== world) this.scene.remove(this.world.group);
     this.world = world;
@@ -268,10 +280,6 @@ class App {
   // The player blasted an enemy (or hit the boss).
   hit(e, x, y, info = {}) {
     if (!e.alive) return;
-    if (e.boss && e.hp > 1) {
-      this.director.bossHit(e, x, y, info);
-      return;
-    }
     if (e.boss) {
       this.director.bossHit(e, x, y, info);
       return;
@@ -567,7 +575,6 @@ class App {
         rocket: r,
         bottom: -f.halfH,
         collect: (kind, x, y) => this.director.collectPower(kind, x, y),
-        shots: null,
       });
       const d = this.director;
       this.ui.combo(d.combo.live(this.realTime), d.combo.multiplier, d.combo.remaining(this.realTime));

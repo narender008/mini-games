@@ -1,5 +1,5 @@
 // Big Kid power-ups: glossy glass orbs with a glowing symbol inside that
-// float gently down. Fly into one or shoot it to collect it.
+// float gently down. Fly the rocket into one to collect it.
 //   rapid   faster shots         triple  three-way shots
 //   bomb    blasts every toy     double  double points
 import * as THREE from 'three';
@@ -58,13 +58,13 @@ export class PowerUps {
   }
 
   // collect(kind, x, y) is called for each orb the rocket or a shot reaches
-  update(dt, t, { rocket, shots, bottom, collect }) {
+  update(dt, t, { rocket, bottom, collect }) {
     let n = 0;
     for (const p of this.items) {
       p.age += dt;
       p.y += p.vy * dt;
       const x = p.x + Math.sin(t * 1.6 + p.phase) * 0.6;
-      const got = Math.hypot(rocket.pos.x - x, rocket.pos.y + 0.2 - p.y) < 1.5 || (shots && shots(x, p.y, 0.8));
+      const got = Math.hypot(rocket.pos.x - x, rocket.pos.y + 0.2 - p.y) < 1.5;
       if (got) {
         collect(p.kind, x, p.y);
         continue;

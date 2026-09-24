@@ -10,6 +10,9 @@ export const CELL = 1;
 // play (rocket, toys, shots, bursts) looks this much smaller on screen, and
 // screen-relative speeds and distances are multiplied by it to feel the same.
 export const VIEW_ZOOM = 1.3;
+// Most toys each enemy style can draw at once (alive, popping and the boss).
+// Free Blast keeps its grid below this with room for toys still popping.
+export const TOY_CAPACITY = 240;
 
 export const WEAPONS = ['laser', 'rocket', 'bubble', 'rainbow'];
 export const WORLDS = ['sunny', 'night', 'storm', 'clouds', 'grass', 'space'];

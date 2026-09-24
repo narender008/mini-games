@@ -8,7 +8,7 @@
 //           multipliers, power-ups, waves and a boss every third wave.
 //   free    Free Blast: the sky is always full; any tap or drag blasts.
 //   menu    the attract loop behind the start screen.
-import { CELL, VIEW_ZOOM, rand, pick, clamp } from './config.js';
+import { CELL, VIEW_ZOOM, TOY_CAPACITY, rand, pick, clamp } from './config.js';
 import { Combo } from './combo.js';
 import { POWERS } from './powerups.js';
 
@@ -326,7 +326,9 @@ export class Director {
     const f = this.field;
     const n = this.cols();
     const rows = Math.max(3, Math.floor(f.halfH * 2 - 4.2));
-    const target = Math.floor(n * rows * 0.5);
+    // half the grid, but never more than the styles can draw with a tap's
+    // worth of toys still popping (very wide screens have huge grids)
+    const target = Math.min(Math.floor(n * rows * 0.5), TOY_CAPACITY - 60);
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0 && this.aliveCount() < target) {
       this.spawnFreeShape();
@@ -547,10 +549,11 @@ export class Director {
     app.ui.points(p.x, p.y, pw.name, 'gold');
     if (kind === 'bomb') {
       let k = 0;
+      const shot = ++this.shotSeq; // its own shot, so multi-hits start from 1
       for (const e of app.enemies) {
         if (!e.alive) continue;
         const delay = 60 * k++;
-        setTimeout(() => app.hit(e, e.x, e.y, { weapon: 'bomb', shot: 'bomb' }), delay);
+        setTimeout(() => app.hit(e, e.x, e.y, { weapon: 'bomb', shot }), delay);
       }
       app.shake(0.8);
     } else this.powers[kind] = pw.time;
