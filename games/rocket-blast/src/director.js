@@ -8,7 +8,7 @@
 //           multipliers, power-ups, waves and a boss every third wave.
 //   free    Free Blast: the sky is always full; any tap or drag blasts.
 //   menu    the attract loop behind the start screen.
-import { CELL, rand, pick, clamp } from './config.js';
+import { CELL, VIEW_ZOOM, rand, pick, clamp } from './config.js';
 import { Combo } from './combo.js';
 import { POWERS } from './powerups.js';
 
@@ -90,6 +90,7 @@ export class Director {
     this.hits = 0;
     this.megaHits = 0;
     this.lastMega = -Infinity;
+    this.ptsAcc = 0;
     this.score = 0;
     this.wave = 1;
     this.waveSpawned = 0;
@@ -129,11 +130,22 @@ export class Director {
 
   // ------------------------------------------------------------ spawning
 
-  spawnFormation({ shapes = LITTLE_SHAPES, speed = 0.55, breakAt = null, shift = 0, z = 0 } = {}) {
+  spawnFormation({ shapes = LITTLE_SHAPES, speed = 0.55, breakAt = null, shift = 0, z = 0, inside = false } = {}) {
     const f = this.field;
     const n = this.cols();
     const cells = shapeCells(pick(shapes), Math.floor(Math.random() * 4));
     const w = Math.max(...cells.map((c) => c[0])) + 1;
+    if (inside) {
+      // pop in (with the grow-in bounce) on a free patch of the upper sky, so
+      // toys are fully in view before the auto-fire reaches them
+      const h = Math.max(...cells.map((c) => c[1])) + 1;
+      const free = (x, y) => this.app.enemies.every((e) => !e.alive || Math.abs(e.x - x) > 1.05 || Math.abs(e.y - y) > 1.1);
+      for (let tries = 0; tries < 10; tries++) {
+        const c0 = Math.floor(Math.random() * (n - w + 1));
+        const top = rand(f.halfH * 0.05 + h, f.halfH - 1.4);
+        if (cells.every(([dx, dy]) => free(this.colX(c0 + dx), top - (h - 1) + dy))) return this.placeFormation(cells, c0, top - (h - 1), speed, breakAt, shift, z);
+      }
+    }
     const top = f.halfH + 0.9;
     // columns still busy near the top edge
     const busy = new Set();
@@ -148,7 +160,10 @@ export class Director {
       if (ok) options.push(c);
     }
     if (!options.length) return null;
-    const c0 = pick(options);
+    return this.placeFormation(cells, pick(options), top, speed, breakAt, shift, z);
+  }
+
+  placeFormation(cells, c0, top, speed, breakAt, shift, z) {
     const colorIndex = this.pickColor();
     const form = { enemies: [], vy: -speed, breakAt, broken: false, shift, shiftT: rand(0.8, 1.6), dir: Math.random() < 0.5 ? -1 : 1 };
     // now and then one toy in a formation is a rare golden one
@@ -297,12 +312,12 @@ export class Director {
     const n = this.cols();
     // MEGA clears toys fast, so keep the sky topped up while it lasts
     const mega = this.app.megaT > 0;
-    const target = clamp(Math.round(n * (mega ? 1.6 : 1.2)), 10, 32);
+    const target = clamp(Math.round(n * (mega ? 1.6 : 1.3)), 12, 40);
     this.spawnTimer -= dt;
     const alive = this.aliveCount();
     if (this.spawnTimer <= 0 && alive < target) {
-      const speed = this.field.halfH > 6.5 ? 0.7 : 0.55;
-      if (this.spawnFormation({ speed })) this.spawnTimer = mega ? 0.3 : alive < target * 0.8 ? 0.45 : 1.2;
+      const speed = this.field.halfH > 6.5 * VIEW_ZOOM ? 0.7 : 0.55;
+      if (this.spawnFormation({ speed, inside: Math.random() < 0.75 })) this.spawnTimer = mega ? 0.3 : alive < target * 0.8 ? 0.45 : 1.2;
       else this.spawnTimer = 0.4;
     }
   }
@@ -351,7 +366,7 @@ export class Director {
     } else {
       this.spawnTimer -= dt;
       if (this.waveSpawned < this.waveTotal && this.spawnTimer <= 0) {
-        const speed = Math.min(2.3, 0.95 + w * 0.12) * (f.halfH > 6.5 ? 1.15 : 1);
+        const speed = Math.min(2.3, 0.95 + w * 0.12) * (f.halfH > 6.5 * VIEW_ZOOM ? 1.15 : 1) * VIEW_ZOOM;
         const breaks = Math.random() < Math.min(0.85, 0.3 + w * 0.1);
         const form = this.spawnFormation({
           shapes: ALL_SHAPES,
@@ -498,18 +513,18 @@ export class Director {
     this.addScore(pts);
     const p = app.screenPos(x, y);
     // keep labels readable when hits come thick and fast: points shown at
-    // most every 0.15 s (summed), a "Quick!" at most every 0.8 s
+    // most every 0.3 s (summed), a "Quick!" at most every 1.5 s
     const now = app.realTime;
     this.ptsAcc = (this.ptsAcc || 0) + pts;
-    if (now - (this.ptsT ?? -1) > 0.15) {
+    if (now - (this.ptsT ?? -1) > 0.3) {
       app.ui.points(p.x, p.y, `+${this.ptsAcc}`, r.mult >= 3 ? 'gold' : '');
       this.ptsAcc = 0;
       this.ptsT = now;
     }
     const quick = r.tag === 'Quick!';
-    if (r.tag && (!quick || now - (this.quickT ?? -1) > 0.8)) {
+    if (r.tag && (!quick || now - (this.quickT ?? -1) > 1.5)) {
       if (quick) this.quickT = now;
-      app.ui.points(p.x, p.y + 40, r.tag, 'pink');
+      app.ui.points(p.x, p.y + 30, r.tag, 'pink');
     }
     if (r.milestone) {
       app.ui.callout(r.milestone, '', `${r.count} in a row!`);

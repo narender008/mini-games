@@ -9,7 +9,7 @@
 // the cover picture); ?debug exposes window.__rb
 // (freeze, thaw, step(ms), hitFirst, mega, pointer(x, y, down, type)).
 import * as THREE from 'three';
-import { QUERY, DEBUG, REDUCED_MOTION, CELL, load, save, rand, clamp, WEAPONS, WORLDS, STYLES, MODES } from './config.js';
+import { QUERY, DEBUG, REDUCED_MOTION, CELL, VIEW_ZOOM, load, save, rand, clamp, WEAPONS, WORLDS, STYLES, MODES } from './config.js';
 import { detectQuality, FrameGovernor } from './quality.js';
 import { Post } from './post.js';
 import { createNoiseTexture, createSpriteAtlas, createCandyTexture } from './textures.js';
@@ -26,7 +26,7 @@ import { Audio } from './audio.js';
 import { UI } from './ui.js';
 
 const VFOV = 40;
-const TOUCH_LIFT = 1.7; // cells the rocket sits above a finger
+const TOUCH_LIFT = 1.7 * VIEW_ZOOM; // cells the rocket sits above a finger
 
 class App {
   constructor(canvas, progress) {
@@ -179,7 +179,7 @@ class App {
     this.dpr = dpr;
     const aspect = w / h;
     // at least 11 cells tall, and at least 7.4 cells across on tall phones
-    const cellsH = Math.max(11, 7.4 / aspect) * CELL;
+    const cellsH = Math.max(11, 7.4 / aspect) * CELL * VIEW_ZOOM;
     const halfH = cellsH / 2;
     const halfW = halfH * aspect;
     const dist = halfH / Math.tan(THREE.MathUtils.degToRad(VFOV / 2));
@@ -529,7 +529,7 @@ class App {
     const ky = (this.keys.has('ArrowUp') || this.keys.has('w') ? 1 : 0) - (this.keys.has('ArrowDown') || this.keys.has('s') ? 1 : 0);
     if (kx || ky) {
       this.pointer.known = false;
-      r.setTarget(clamp(r.target.x + kx * 14 * dt, b.minX, b.maxX), clamp(r.target.y + ky * 10 * dt, b.minY, b.maxY));
+      r.setTarget(clamp(r.target.x + kx * 14 * VIEW_ZOOM * dt, b.minX, b.maxX), clamp(r.target.y + ky * 10 * VIEW_ZOOM * dt, b.minY, b.maxY));
       this.lastInput = this.realTime;
     } else if (playing && this.pointer.known) {
       const lift = this.pointer.type === 'mouse' ? 0 : TOUCH_LIFT;

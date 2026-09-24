@@ -6,6 +6,10 @@ export const REDUCED_MOTION = matchMedia('(prefers-reduced-motion: reduce)');
 
 // One grid cell of the play field, in world units. Enemies are about a cell.
 export const CELL = 1;
+// How many more cells the camera shows than the original layout. Everything in
+// play (rocket, toys, shots, bursts) looks this much smaller on screen, and
+// screen-relative speeds and distances are multiplied by it to feel the same.
+export const VIEW_ZOOM = 1.3;
 
 export const WEAPONS = ['laser', 'rocket', 'bubble', 'rainbow'];
 export const WORLDS = ['sunny', 'night', 'storm', 'clouds', 'grass', 'space'];
