@@ -1,0 +1,17 @@
+{
+  "name": "Rocket Blast",
+  "short_name": "Rocket Blast",
+  "description": "Fly a happy toy rocket and blast googly-eyed toys into showers of stars and sweets. No losing, ever.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#1d63d8",
+  "theme_color": "#1d63d8",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

@@ -220,6 +220,31 @@ svg {
   right: calc(14px + var(--safe-r));
 }
 
+/* full-screen toggle: corners out to enter, corners in to leave */
+.fs .exit {
+  display: none;
+}
+
+.fs[aria-pressed='true'] .enter {
+  display: none;
+}
+
+.fs[aria-pressed='true'] .exit {
+  display: inline;
+}
+
+.menu-fs {
+  position: fixed;
+  z-index: 21;
+  top: calc(14px + var(--safe-t));
+  right: calc(14px + var(--safe-r) + var(--tap) + 12px);
+}
+
+/* the Games chip moves over one more button when full screen is offered */
+.can-fs .home-link {
+  right: calc(14px + var(--safe-r) + 2 * (var(--tap) + 12px));
+}
+
 /* ------------------------------------------------------------ start screen */
 
 #menu {
@@ -917,9 +942,26 @@ body[data-mode='free'] .score {
     padding-top: calc(70px + var(--safe-t));
   }
 
-  .home-link {
+  .home-link,
+  .can-fs .home-link {
     right: auto;
     left: calc(14px + var(--safe-l));
+  }
+
+  /* with the full-screen button on the top row, best scores get their own
+     row beneath it so long scores never run into the buttons */
+  .can-fs #menu {
+    padding-top: calc(114px + var(--safe-t));
+  }
+
+  .can-fs .bests {
+    top: calc(24px + var(--tap) + var(--safe-t));
+  }
+
+  /* narrow phones: two rows of HUD buttons so the score keeps its room */
+  .hud-left:has(.fs:not([hidden])) {
+    display: grid;
+    grid-template-columns: repeat(2, var(--tap));
   }
 
   .menu-main {
@@ -1105,7 +1147,8 @@ body[data-mode='free'] .score {
 .cover #hint,
 .cover #callout,
 .cover #flyers,
-.cover .menu-mute {
+.cover .menu-mute,
+.cover .menu-fs {
   display: none !important;
 }
 

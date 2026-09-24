@@ -1,6 +1,7 @@
 // The DOM layer: start screen, pickers, HUD, the settings overlay, callouts
 // and the stars that fly from each blast up to the score.
 import { WEAPONS, WORLDS, STYLES, MODES, REDUCED_MOTION } from './config.js';
+import { canFullscreen } from './fullscreen.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -84,6 +85,8 @@ export class UI {
       });
     }
     for (const b of document.querySelectorAll('.mute')) b.addEventListener('click', () => this.h.mute());
+    for (const b of document.querySelectorAll('.fs')) b.addEventListener('click', () => this.h.fullscreen());
+    document.querySelector('#hud .fs').hidden = !canFullscreen;
     $('to-menu').addEventListener('click', () => this.h.menu());
     $('settings-btn').addEventListener('click', () => this.toggleSettings());
     $('settings-close').addEventListener('click', () => this.toggleSettings(false));
@@ -129,6 +132,7 @@ export class UI {
     $('menu').hidden = state !== 'menu';
     $('hud').hidden = state !== 'playing';
     document.querySelector('.menu-mute').hidden = state !== 'menu';
+    document.querySelector('.menu-fs').hidden = state !== 'menu' || !canFullscreen;
     $('fire').hidden = state !== 'playing' || this.sel.mode === 'big';
     $('wave-box').hidden = this.sel.mode !== 'big';
     $('combo').hidden = true;
@@ -137,6 +141,13 @@ export class UI {
       $('boss-bar').hidden = true;
     }
     this.hint(false);
+  }
+
+  setFullscreen(on) {
+    for (const b of document.querySelectorAll('.fs')) {
+      b.setAttribute('aria-pressed', String(on));
+      b.setAttribute('aria-label', on ? 'Leave full screen' : 'Full screen');
+    }
   }
 
   setMuted(m) {

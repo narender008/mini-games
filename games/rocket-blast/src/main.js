@@ -21,6 +21,7 @@ import { FX } from './fx.js';
 import { WeaponSystem } from './weapons/index.js';
 import { loadWorld } from './worlds/index.js';
 import { Director, MEGA_EVERY, MEGA_TIME } from './director.js';
+import { canFullscreen, enterFullscreen, toggleFullscreen, isFullscreen, onFullscreenChange } from './fullscreen.js';
 import { PowerUps } from './powerups.js';
 import { Audio } from './audio.js';
 import { UI } from './ui.js';
@@ -118,7 +119,15 @@ class App {
 
     this.ui = new UI(
       {
-        play: () => this.startGame(),
+        play: () => {
+          enterFullscreen(); // inside the PLAY tap, so the browser allows it
+          this.startGame();
+        },
+        fullscreen: () => {
+          this.audio.unlock();
+          this.audio.click();
+          toggleFullscreen();
+        },
         mode: (m) => {
           this.sel.mode = m;
           save('mode', m);
@@ -138,6 +147,15 @@ class App {
     );
     this.ui.setMuted(this.audio.muted);
     this.ui.setBests(this.bests);
+    // full screen: offer the toggle only where the browser supports it, keep
+    // its icon in sync however full screen is left (Esc, browser UI), and
+    // re-fit the renderer and HUD once the new size has settled
+    document.body.classList.toggle('can-fs', canFullscreen);
+    this.ui.setFullscreen(isFullscreen());
+    onFullscreenChange(() => {
+      this.ui.setFullscreen(isFullscreen());
+      requestAnimationFrame(() => this.resize());
+    });
     addEventListener('resize', () => this.resize());
     this.bindInput();
 
@@ -446,6 +464,7 @@ class App {
         if (this.director.mode !== 'big' && !e.repeat) this.fireButton();
       }
       if (e.key === 'm' || e.key === 'M') this.toggleMute();
+      if ((e.key === 'f' || e.key === 'F') && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) toggleFullscreen();
       if (e.key === 'Escape' && this.state === 'playing' && this.ui.settingsOpen()) this.ui.toggleSettings(false);
     });
     addEventListener('keyup', (e) => this.keys.delete(e.key));

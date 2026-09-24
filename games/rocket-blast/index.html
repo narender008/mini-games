@@ -7,6 +7,13 @@
     <meta name="description" content="Fly a happy toy rocket and blast googly-eyed toy blocks into showers of stars and sweets. No losing, ever. For little ones and big kids." />
     <meta name="theme-color" content="#1d63d8" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <!-- "Add to Home Screen" opens the game full screen, with no browser bars -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Rocket Blast" />
     <link rel="stylesheet" href="style.css" />
     <script type="importmap">
       {
@@ -67,6 +74,9 @@
         <button type="button" class="round mute" aria-pressed="false" aria-label="Sound off">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg>
         </button>
+        <button type="button" class="round fs" aria-pressed="false" aria-label="Full screen" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="enter" d="M4 9.5V4h5.5M14.5 4H20v5.5M20 14.5V20h-5.5M9.5 20H4v-5.5" /><path class="exit" d="M9.5 4v5.5H4M20 9.5h-5.5V4M14.5 20v-5.5H20M4 14.5h5.5V20" /></svg>
+        </button>
       </div>
       <div class="hud-right">
         <div class="score" id="score-box" aria-live="polite">
@@ -86,6 +96,9 @@
     <div id="callout" aria-live="polite"></div>
     <div id="flyers" aria-hidden="true"></div>
     <div id="hint" aria-hidden="true"><svg viewBox="0 0 64 64"><use href="#i-hand" /></svg></div>
+    <button type="button" class="round fs menu-fs" aria-pressed="false" aria-label="Full screen" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path class="enter" d="M4 9.5V4h5.5M14.5 4H20v5.5M20 14.5V20h-5.5M9.5 20H4v-5.5" /><path class="exit" d="M9.5 4v5.5H4M20 9.5h-5.5V4M14.5 20v-5.5H20M4 14.5h5.5V20" /></svg>
+    </button>
     <button type="button" class="round mute menu-mute" aria-pressed="false" aria-label="Sound off" hidden>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg>
     </button>
