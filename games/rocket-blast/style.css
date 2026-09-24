@@ -951,7 +951,7 @@ body[data-mode='free'] .score {
   /* with the full-screen button on the top row, best scores get their own
      row beneath it so long scores never run into the buttons */
   .can-fs #menu {
-    padding-top: calc(114px + var(--safe-t));
+    padding-top: calc(66px + var(--tap) + var(--safe-t));
   }
 
   .can-fs .bests {
@@ -964,8 +964,8 @@ body[data-mode='free'] .score {
     grid-template-columns: repeat(2, var(--tap));
   }
 
-  #hud:has(.hud-left .fs:not([hidden])) .boss-bar {
-    top: calc(30px + 2 * var(--tap) + var(--safe-t));
+  .boss-bar {
+    top: calc(78px + 2 * var(--tap) + var(--safe-t));
   }
 
   .menu-main {

@@ -137,15 +137,12 @@ export class Director {
     const w = Math.max(...cells.map((c) => c[0])) + 1;
     const top = f.halfH + 0.9;
     // columns still busy near the top edge
-    const busy = new Set();
-    for (const e of this.app.enemies) {
-      if (!e.alive || e.boss || e.y < f.halfH - 0.6) continue;
-      busy.add(Math.round(e.x / CELL + (n - 1) / 2));
-    }
+    const high = this.app.enemies.filter((e) => e.alive && !e.boss && e.y >= f.halfH - 0.6);
+    const busy = (k) => high.some((e) => Math.abs((e.gx ?? e.x) - this.colX(k)) < 0.9);
     const options = [];
     for (let c = 0; c <= n - w; c++) {
       let ok = true;
-      for (let k = c; k < c + w; k++) if (busy.has(k)) ok = false;
+      for (let k = c; k < c + w; k++) if (busy(k)) ok = false;
       if (ok) options.push(c);
     }
     if (!options.length) return null;
