@@ -6,6 +6,7 @@ A small collection of free games that run in the browser. Open the front page, p
 | --- | --- |
 | [Balloon Pop](games/balloon-pop/) | Pop photoreal hot-air balloons drifting over a dusk sea, with a pin, a dart, an air rifle or a slingshot. Pop them fast to build a streak. A relaxed endless mode and a 60-second challenge. |
 | [Cake Cut](games/cake-cut/) | Decorate a photoreal birthday cake, blow out the candles, then cut it with a knife, serrated knife, cake wire or cake sword and serve the slices. Little ones mode for toddlers (tap for a slice that pops out and is served), Free play, Fair slices for a chosen number of guests, and a 90-second Party rush. |
+| [Rocket Blast](games/rocket-blast/) | Fly a happy toy rocket and blast googly-eyed toy blocks, aliens or robots into showers of stars and sweets, with a laser, homing rockets, bubbles or a rainbow beam, across six worlds. Nobody can lose. Little Pilot for toddlers (auto-fire and a big FIRE! button), Big Kid (hold to fire, combos, power-ups, waves and a friendly boss), and Free Blast (tap anywhere, no score). |
 
 ## Play locally
 

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>Rocket Blast · Mini Games</title>
+    <meta name="description" content="Fly a happy toy rocket and blast googly-eyed toy blocks into showers of stars and sweets. No losing, ever. For little ones and big kids." />
+    <meta name="theme-color" content="#1d63d8" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <!-- "Add to Home Screen" opens the game full screen, with no browser bars -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Rocket Blast" />
+    <link rel="stylesheet" href="style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../../vendor/three/build/three.module.js",
+          "three/addons/": "../../vendor/three/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body data-state="loading" data-mode="little">
+    <canvas id="scene" aria-label="Rocket Blast: a toy rocket blasting toy blocks in the sky"></canvas>
+
+    <div id="loader" role="progressbar" aria-label="Loading Rocket Blast" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <svg class="loader-rocket" viewBox="0 0 64 96" aria-hidden="true"><use href="#i-rocket" /></svg>
+      <div class="bar"><span id="loader-fill"></span></div>
+      <p id="loader-text">Loading…</p>
+    </div>
+
+    <!-- start screen -->
+    <section id="menu" hidden aria-labelledby="title">
+      <a class="chip home-link" href="../../index.html" aria-label="Back to all games">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Games</span>
+      </a>
+      <div class="menu-main">
+        <h1 id="title" class="logo"><span class="gtext w1" data-text="Rocket">Rocket</span><span class="gtext w2" data-text="Blast">Blast</span></h1>
+        <button type="button" id="play" class="play" aria-label="Play">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" /></svg>
+        </button>
+        <div class="modes" role="radiogroup" aria-label="Game mode">
+          <button type="button" class="mode" data-mode="little" role="radio" aria-checked="true">
+            <svg viewBox="0 0 64 64" aria-hidden="true"><use href="#i-mode-little" /></svg><span>Little Pilot</span>
+          </button>
+          <button type="button" class="mode" data-mode="big" role="radio" aria-checked="false">
+            <svg viewBox="0 0 64 64" aria-hidden="true"><use href="#i-mode-big" /></svg><span>Big Kid</span>
+          </button>
+          <button type="button" class="mode" data-mode="free" role="radio" aria-checked="false">
+            <svg viewBox="0 0 64 64" aria-hidden="true"><use href="#i-mode-free" /></svg><span>Free Blast</span>
+          </button>
+        </div>
+        <p class="bests" aria-live="polite">
+          <span class="best" data-best="little" title="Most stars in one flight"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-star" /></svg><b>0</b></span>
+          <span class="best" data-best="big" title="Best Big Kid score"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-trophy" /></svg><b>0</b></span>
+        </p>
+      </div>
+      <div class="pickers" data-where="menu"></div>
+    </section>
+
+    <!-- in-game HUD -->
+    <header id="hud" hidden>
+      <div class="hud-left">
+        <button type="button" class="round" id="to-menu" aria-label="Back to the start screen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5V20h-5.5v-5h-5v5H4z" class="fillc" /></svg>
+        </button>
+        <button type="button" class="round" id="settings-btn" aria-label="Change rocket, world and toys" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-gear" /></svg>
+        </button>
+        <button type="button" class="round mute" aria-pressed="false" aria-label="Sound off">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg>
+        </button>
+        <button type="button" class="round fs" aria-pressed="false" aria-label="Full screen" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="enter" d="M4 9.5V4h5.5M14.5 4H20v5.5M20 14.5V20h-5.5M9.5 20H4v-5.5" /><path class="exit" d="M9.5 4v5.5H4M20 9.5h-5.5V4M14.5 20v-5.5H20M4 14.5h5.5V20" /></svg>
+        </button>
+      </div>
+      <div class="hud-right">
+        <div class="score" id="score-box" aria-live="polite">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-star" /></svg><b id="score">0</b>
+        </div>
+        <div class="wave" id="wave-box" hidden><small>Wave</small><b id="wave">1</b></div>
+        <div class="combo" id="combo" hidden aria-hidden="true">
+          <b id="combo-mult">×1</b>
+          <span class="combo-count"><i id="combo-count">0</i></span>
+          <span class="meter"><i id="combo-bar"></i></span>
+        </div>
+      </div>
+      <div class="boss-bar" id="boss-bar" hidden aria-hidden="true"><i id="boss-fill"></i></div>
+    </header>
+
+    <button type="button" id="fire" hidden aria-label="Fire!"><span>FIRE!</span></button>
+    <div id="callout" aria-live="polite"></div>
+    <div id="flyers" aria-hidden="true"></div>
+    <div id="hint" aria-hidden="true"><svg viewBox="0 0 64 64"><use href="#i-hand" /></svg></div>
+    <button type="button" class="round fs menu-fs" aria-pressed="false" aria-label="Full screen" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path class="enter" d="M4 9.5V4h5.5M14.5 4H20v5.5M20 14.5V20h-5.5M9.5 20H4v-5.5" /><path class="exit" d="M9.5 4v5.5H4M20 9.5h-5.5V4M14.5 20v-5.5H20M4 14.5h5.5V20" /></svg>
+    </button>
+    <button type="button" class="round mute menu-mute" aria-pressed="false" aria-label="Sound off" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg>
+    </button>
+
+    <!-- settings overlay: the game keeps playing behind it -->
+    <aside id="settings" hidden aria-label="Change rocket, world and toys">
+      <div class="pickers" data-where="settings"></div>
+      <button type="button" class="round close" id="settings-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      </button>
+    </aside>
+
+    <noscript><p class="noscript">Rocket Blast needs JavaScript to run.</p></noscript>
+
+    <!-- icons -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <linearGradient id="g-gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff27a" /><stop offset="0.55" stop-color="#ffc21a" /><stop offset="1" stop-color="#f08a00" /></linearGradient>
+        <linearGradient id="g-red" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff7a6e" /><stop offset="1" stop-color="#d9141d" /></linearGradient>
+        <linearGradient id="g-white" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#c9d2de" /><stop offset="0.35" stop-color="#ffffff" /><stop offset="1" stop-color="#b9c4d2" /></linearGradient>
+        <radialGradient id="g-face" cx="0.4" cy="0.35" r="0.7"><stop offset="0" stop-color="#8fd0ff" /><stop offset="1" stop-color="#1f7fe8" /></radialGradient>
+        <radialGradient id="g-bubble" cx="0.35" cy="0.3" r="0.75"><stop offset="0" stop-color="#ffffff" stop-opacity="0.9" /><stop offset="0.35" stop-color="#bfe8ff" stop-opacity="0.35" /><stop offset="0.8" stop-color="#d7a6ff" stop-opacity="0.45" /><stop offset="1" stop-color="#7fd6ff" stop-opacity="0.9" /></radialGradient>
+        <linearGradient id="g-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c64d9" /><stop offset="1" stop-color="#9ad6ff" /></linearGradient>
+        <linearGradient id="g-night" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#16206b" /><stop offset="1" stop-color="#5b56b8" /></linearGradient>
+        <linearGradient id="g-storm" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4f5f7c" /><stop offset="1" stop-color="#9aa8bf" /></linearGradient>
+        <linearGradient id="g-pink" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff9ccf" /><stop offset="1" stop-color="#ffd9b0" /></linearGradient>
+        <linearGradient id="g-grass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#67d64a" /><stop offset="1" stop-color="#2b9a2e" /></linearGradient>
+        <linearGradient id="g-space" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2a1a6e" /><stop offset="1" stop-color="#7a2fa6" /></linearGradient>
+        <linearGradient id="g-planet" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffc37a" /><stop offset="1" stop-color="#e2566d" /></linearGradient>
+
+        <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 1.8l3 6.4 7 .8-5.2 4.8 1.4 7-6.2-3.5-6.2 3.5 1.4-7L2 9l7-.8z" fill="url(#g-gold)" stroke="#c96a00" stroke-width="1.2" stroke-linejoin="round" /><path d="M9.6 7.6 12 3.6l1.2 2.6" fill="none" stroke="#fffbd0" stroke-width="1.2" stroke-linecap="round" /></symbol>
+        <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M7 3h10v5a5 5 0 0 1-10 0z" fill="url(#g-gold)" stroke="#c96a00" stroke-width="1.2" /><path d="M7 5H4a3 3 0 0 0 3 4M17 5h3a3 3 0 0 1-3 4" fill="none" stroke="#c96a00" stroke-width="1.4" /><path d="M10.5 13h3v3.5h-3zM8 17h8v3.5H8z" fill="url(#g-gold)" stroke="#c96a00" stroke-width="1.2" /></symbol>
+        <symbol id="i-gear" viewBox="0 0 24 24"><path d="M10.3 2.5h3.4l.5 2.6 1.9.8 2.2-1.5 2.4 2.4-1.5 2.2.8 1.9 2.5.5v3.4l-2.5.5-.8 1.9 1.5 2.2-2.4 2.4-2.2-1.5-1.9.8-.5 2.6h-3.4l-.5-2.6-1.9-.8-2.2 1.5-2.4-2.4 1.5-2.2-.8-1.9-2.6-.5v-3.4l2.6-.5.8-1.9-1.5-2.2 2.4-2.4 2.2 1.5 1.9-.8z" class="fillc" /><circle cx="12" cy="12" r="3.2" fill="#2a5fc8" /></symbol>
+        <symbol id="i-rocket" viewBox="0 0 64 96"><path d="M32 4C20 16 16 32 16 50v18h32V50C48 32 44 16 32 4z" fill="url(#g-white)" stroke="#9aa6b6" stroke-width="1.5" /><path d="M32 4c-6 6-10 13-12.4 21h24.8C42 17 38 10 32 4z" fill="url(#g-red)" /><path d="M16 52 5 70v10l11-6zM48 52l11 18v10l-11-6z" fill="url(#g-red)" /><path d="M28 60h8v22h-8z" fill="url(#g-red)" /><circle cx="32" cy="40" r="10" fill="#dfe6ee" stroke="#9aa6b6" stroke-width="2" /><circle cx="32" cy="40" r="7.5" fill="url(#g-face)" /><circle cx="29.2" cy="38.6" r="1.6" fill="#fff" /><circle cx="34.8" cy="38.6" r="1.6" fill="#fff" /><circle cx="29.4" cy="39" r=".8" fill="#111" /><circle cx="35" cy="39" r=".8" fill="#111" /><path d="M29 42.4q3 2.8 6 0z" fill="#6b1020" /><path d="M24 68h16l-3 6H27z" fill="#5c6270" /><path d="M26 74h12q-2 12-6 18-4-6-6-18z" fill="#ffb01f" /><path d="M29 74h6q-1 7-3 11-2-4-3-11z" fill="#fff6c0" /></symbol>
+        <symbol id="i-hand" viewBox="0 0 64 64"><path d="M26 30V12a4 4 0 0 1 8 0v14l2-.2a4 4 0 0 1 4 4v1a4 4 0 0 1 8 .5v2a4 4 0 0 1 7 2.5v9C55 54 48 60 39 60h-4c-6 0-10-3-13-8l-8-12a4 4 0 0 1 6-5z" fill="#ffe1c6" stroke="#8a5a3c" stroke-width="2.4" stroke-linejoin="round" /></symbol>
+
+        <!-- weapons -->
+        <symbol id="i-w-laser" viewBox="0 0 64 64"><g transform="rotate(-35 32 32)"><rect x="24" y="4" width="16" height="56" rx="8" fill="#ffb300" opacity="0.35" /><rect x="27" y="7" width="10" height="50" rx="5" fill="url(#g-gold)" /><rect x="29.5" y="10" width="5" height="44" rx="2.5" fill="#fffbe0" /></g><circle cx="48" cy="14" r="3" fill="#fff6b0" /><circle cx="14" cy="50" r="2.4" fill="#fff6b0" /></symbol>
+        <symbol id="i-w-rocket" viewBox="0 0 64 64"><g transform="rotate(40 32 32)"><path d="M32 4c-7 7-9 16-9 26v12h18V30c0-10-2-19-9-26z" fill="url(#g-white)" stroke="#9aa6b6" /><path d="M32 4c-4 4-6.5 8.5-7.8 14h15.6C38.5 12.5 36 8 32 4z" fill="url(#g-red)" /><path d="M23 34l-7 11v5l7-3zM41 34l7 11v5l-7-3z" fill="url(#g-red)" /><circle cx="32" cy="26" r="4.5" fill="url(#g-face)" stroke="#9aa6b6" /><path d="M26 42h12q-2 10-6 16-4-6-6-16z" fill="#ffa21a" /><path d="M29 42h6q-1 6-3 9-2-3-3-9z" fill="#fff4b8" /></g></symbol>
+        <symbol id="i-w-bubble" viewBox="0 0 64 64"><circle cx="30" cy="32" r="22" fill="url(#g-bubble)" stroke="#9fe0ff" stroke-width="1.5" /><path d="M18 24a14 14 0 0 1 10-9" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" /><circle cx="52" cy="14" r="6" fill="url(#g-bubble)" stroke="#9fe0ff" /><circle cx="53" cy="48" r="4" fill="url(#g-bubble)" stroke="#9fe0ff" /></symbol>
+        <symbol id="i-w-rainbow" viewBox="0 0 64 64"><g fill="none" stroke-width="5" stroke-linecap="round"><path d="M6 50a26 26 0 0 1 52 0" stroke="#ff4242" /><path d="M11 50a21 21 0 0 1 42 0" stroke="#ff9d1f" /><path d="M16 50a16 16 0 0 1 32 0" stroke="#ffe23a" /><path d="M21 50a11 11 0 0 1 22 0" stroke="#3fd05a" /><path d="M26 50a6 6 0 0 1 12 0" stroke="#3d8bff" /></g><circle cx="8" cy="52" r="6" fill="#fff" /><circle cx="56" cy="52" r="6" fill="#fff" /></symbol>
+
+        <!-- worlds -->
+        <symbol id="i-world-sunny" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="url(#g-sky)" /><circle cx="44" cy="20" r="9" fill="url(#g-gold)" /><g stroke="#fff27a" stroke-width="2.4" stroke-linecap="round"><path d="M44 5v4M44 31v4M29 20h4M55 20h4M33.4 9.4l2.8 2.8M51.8 27.8l2.8 2.8M33.4 30.6l2.8-2.8M51.8 12.2l2.8-2.8" /></g><path d="M4 50c2-7 9-9 13-6 2-6 11-8 15-2 4-3 11-1 11 5 4-1 8 2 8 6H4z" fill="#fff" /><path d="M0 56c10-6 22-6 32 0s22 6 32 0v8H0z" fill="#e8f5ff" /></symbol>
+        <symbol id="i-world-night" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="url(#g-night)" /><path d="M40 10a13 13 0 1 0 12 18 10 10 0 1 1-12-18z" fill="#fff4c2" /><g fill="#fff"><circle cx="12" cy="14" r="1.5" /><circle cx="22" cy="28" r="1.2" /><circle cx="10" cy="36" r="1" /><circle cx="54" cy="44" r="1.3" /><circle cx="30" cy="10" r="1" /><path d="M24 16l1 2.4 2.4 1-2.4 1-1 2.4-1-2.4-2.4-1 2.4-1z" /></g><path d="M0 52c10-5 20-5 32 0s22 5 32 0v12H0z" fill="#3b3a8a" /></symbol>
+        <symbol id="i-world-storm" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="url(#g-storm)" /><path d="M10 30c0-6 6-10 11-8 2-7 12-10 18-4 5-3 13 0 13 7 5 0 7 5 5 9H12c-3 0-4-2-2-4z" fill="#e3e8f0" /><path d="M10 30c3 3 40 3 46 3" fill="none" stroke="#b8c2d2" stroke-width="2" /><path d="M34 36l-6 10h6l-4 10 11-14h-6l4-6z" fill="url(#g-gold)" stroke="#e39a00" /><g stroke="#cfe3ff" stroke-width="2" stroke-linecap="round"><path d="M16 42l-2 5M22 46l-2 5M46 42l-2 5M52 46l-2 5" /></g></symbol>
+        <symbol id="i-world-clouds" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="url(#g-pink)" /><path d="M8 26c1-5 7-7 10-4 2-5 10-6 13-1 4-2 9 1 9 5H8z" fill="#fff" /><path d="M24 44c1-6 8-8 12-5 2-6 12-7 15-1 5-2 10 1 10 6H24z" fill="#fff" /><path d="M2 58c2-6 9-7 12-4 3-5 12-5 14 1H2z" fill="#fff7fb" /><circle cx="50" cy="14" r="5" fill="#fff3b0" /></symbol>
+        <symbol id="i-world-grass" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="url(#g-sky)" /><path d="M0 40c12-8 24-8 34-2s20 4 30-2v28H0z" fill="url(#g-grass)" /><path d="M0 50c14-6 30-6 40 0s18 4 24 0v14H0z" fill="#3fb838" /><g><circle cx="16" cy="48" r="3" fill="#ff5fa2" /><circle cx="16" cy="48" r="1.2" fill="#ffe23a" /><circle cx="44" cy="54" r="3" fill="#fff" /><circle cx="44" cy="54" r="1.2" fill="#ffc21a" /><circle cx="30" cy="57" r="2.6" fill="#b06bff" /></g><path d="M42 20c-3-5-9-3-7 1 2 3 6 1 7-1zm0 0c3-5 9-3 7 1-2 3-6 1-7-1z" fill="#ffa21a" /><path d="M42 20v4" stroke="#6b3a1a" stroke-width="1.4" /><path d="M10 18c1-4 6-5 8-2 2-3 7-2 7 2z" fill="#fff" /></symbol>
+        <symbol id="i-world-space" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="url(#g-space)" /><g fill="#fff"><circle cx="10" cy="12" r="1.2" /><circle cx="52" cy="8" r="1.5" /><circle cx="56" cy="40" r="1" /><circle cx="8" cy="46" r="1.4" /><circle cx="22" cy="56" r="1" /></g><circle cx="30" cy="32" r="13" fill="url(#g-planet)" /><ellipse cx="30" cy="32" rx="23" ry="6.5" fill="none" stroke="#ffe0a8" stroke-width="3" transform="rotate(-18 30 32)" /><path d="M17 30a13 13 0 0 1 26 0" fill="url(#g-planet)" /><circle cx="50" cy="52" r="5" fill="#6fc8ff" /><path d="M44 14l12-6" stroke="#fff" stroke-width="2" stroke-linecap="round" /></symbol>
+
+        <!-- enemy styles -->
+        <symbol id="i-e-blocks" viewBox="0 0 64 64"><rect x="4" y="10" width="30" height="30" rx="8" fill="url(#g-red)" /><rect x="30" y="26" width="30" height="30" rx="8" fill="#ffc21a" /><rect x="30" y="26" width="30" height="30" rx="8" fill="url(#g-gold)" /><circle cx="13" cy="22" r="5" fill="#fff" /><circle cx="25" cy="22" r="5" fill="#fff" /><circle cx="14" cy="23" r="2.4" fill="#111" /><circle cx="26" cy="23" r="2.4" fill="#111" /><path d="M13 30q6 6 12 0z" fill="#6b1020" /><circle cx="40" cy="38" r="4.5" fill="#fff" /><circle cx="51" cy="38" r="4.5" fill="#fff" /><circle cx="41" cy="39" r="2.2" fill="#111" /><circle cx="52" cy="39" r="2.2" fill="#111" /><path d="M40 46q5.5 5 11 0z" fill="#6b1020" /></symbol>
+        <symbol id="i-e-aliens" viewBox="0 0 64 64"><path d="M22 14 18 4M42 14l4-10" stroke="#3fb83a" stroke-width="3" stroke-linecap="round" /><circle cx="18" cy="4" r="3.5" fill="#ffe23a" /><circle cx="46" cy="4" r="3.5" fill="#ff5fa2" /><path d="M32 12c14 0 22 12 22 26 0 12-10 20-22 20S10 50 10 38c0-14 8-26 22-26z" fill="#55d64a" /><path d="M20 20c3-4 8-5 12-5" stroke="#b9ffae" stroke-width="3" fill="none" stroke-linecap="round" /><circle cx="32" cy="32" r="10" fill="#fff" /><circle cx="33" cy="33" r="5" fill="#111" /><circle cx="35" cy="31" r="1.6" fill="#fff" /><path d="M24 46q8 7 16 0z" fill="#6b1020" /></symbol>
+        <symbol id="i-e-robots" viewBox="0 0 64 64"><path d="M32 12V5" stroke="#9aa6b6" stroke-width="3" /><circle cx="32" cy="5" r="3.5" fill="#ff4d4d" /><rect x="10" y="12" width="44" height="36" rx="9" fill="url(#g-white)" stroke="#8a96a8" stroke-width="1.5" /><rect x="15" y="18" width="34" height="18" rx="7" fill="#1b2a4a" /><circle cx="24" cy="27" r="5" fill="#5ff0ff" /><circle cx="40" cy="27" r="5" fill="#5ff0ff" /><circle cx="24" cy="27" r="2.2" fill="#e8ffff" /><circle cx="40" cy="27" r="2.2" fill="#e8ffff" /><rect x="24" y="39" width="16" height="4" rx="2" fill="#8a96a8" /><rect x="6" y="24" width="4" height="12" rx="2" fill="#ffb01f" /><rect x="54" y="24" width="4" height="12" rx="2" fill="#ffb01f" /><rect x="18" y="50" width="28" height="10" rx="4" fill="#3d8bff" /></symbol>
+
+        <!-- modes -->
+        <symbol id="i-mode-little" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#ffe8f3" /><g transform="translate(18 8) scale(0.44)"><use href="#i-rocket" width="64" height="96" /></g><path d="M46 14c-2-4-8-2-6 2l6 6 6-6c2-4-4-6-6-2z" fill="#ff5f9a" /></symbol>
+        <symbol id="i-mode-big" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#e3f0ff" /><g transform="translate(12 8) scale(0.44)"><use href="#i-rocket" width="64" height="96" /></g><path d="M44 10l-6 12h6l-4 12 12-16h-7l5-8z" fill="url(#g-gold)" stroke="#d08000" /><text x="47" y="56" font-size="14" font-weight="900" fill="#2f63d8" text-anchor="middle" font-family="Arial Rounded MT Bold, Arial, sans-serif">×5</text></symbol>
+        <symbol id="i-mode-free" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#fff3d6" /><g transform="translate(14 16) scale(0.62)"><use href="#i-hand" width="64" height="64" /></g><g fill="url(#g-gold)"><path d="M14 12l2 5 5 1-5 2-2 5-2-5-5-2 5-1z" /><path d="M48 8l1.5 3.5 3.5 1-3.5 1.5L48 17l-1.5-3-3.5-1.5 3.5-1z" /><path d="M52 30l1.2 3 3 1-3 1.2L52 38l-1.2-2.8-3-1.2 3-1z" /></g></symbol>
+      </defs>
+    </svg>
+
+    <script type="module" src="src/boot.js"></script>
+  </body>
+</html>
