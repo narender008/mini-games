@@ -1,0 +1,17 @@
+{
+  "name": "Block Tower",
+  "short_name": "Block Tower",
+  "description": "Stack wooden toy blocks as high as you dare, then knock the tower down. No losing, ever.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#e9c592",
+  "theme_color": "#e9c592",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}
