@@ -5,6 +5,7 @@ A small collection of free games that run in the browser. Open the front page, p
 | Game | What it is |
 | --- | --- |
 | [Balloon Pop](games/balloon-pop/) | Pop photoreal hot-air balloons drifting over a dusk sea, with a pin, a dart, an air rifle or a slingshot. Pop them fast to build a streak. A relaxed endless mode and a 60-second challenge. |
+| [Cake Cut](games/cake-cut/) | Decorate a photoreal birthday cake, blow out the candles, then cut it with a knife, serrated knife, cake wire or cake sword and serve the slices. Little ones mode for toddlers (tap for a slice that pops out and is served), Free play, Fair slices for a chosen number of guests, and a 90-second Party rush. |
 
 ## Play locally
 
