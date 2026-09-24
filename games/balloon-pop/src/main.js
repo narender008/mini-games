@@ -179,12 +179,15 @@ class App {
     this.tools.setTool(this.ui.tool);
     this.ui.setMuted(this.audio.muted);
     // full screen: offer the toggle only where the browser supports it, keep
-    // its icon in sync however full screen is left (Esc, browser UI), and
+    // its icon in sync however full screen is left (Esc, browser UI), pause
+    // as Esc would when it was left other than by the game's own button or F
+    // key (the browser keeps that Esc from the page), and
     // re-fit the renderer and HUD once the new size has settled
     document.body.classList.toggle('can-fs', canFullscreen);
     this.ui.setFullscreen(isFullscreen());
-    onFullscreenChange(() => {
+    onFullscreenChange((escaped) => {
       this.ui.setFullscreen(isFullscreen());
+      if (escaped && this.state === 'playing') this.pause();
       requestAnimationFrame(() => this.resize());
     });
 
