@@ -274,6 +274,7 @@ class App {
   choose(key, id) {
     this.audio.unlock();
     this.audio.select();
+    if (key === 'style') this.saveGarden();
     this.sel[key] = id;
     save(key, id);
     this.ui.setChoice(key, id);
@@ -313,12 +314,10 @@ class App {
   }
 
   setStyle(id) {
-    this.saveGarden();
     this.clearHarvest();
     this.env.setStyle(id);
     this.can.rest(new THREE.Vector3(...this.env.layout.canRest), this.env.layout.canRest[3]);
     this.can.aim(null);
-    this.frameCamera();
     this.camCur = null;
     this.frameCamera();
     this.look = null;
@@ -365,9 +364,17 @@ class App {
     this.tool = id;
     this.ui.setTool(id);
     if (id !== 'look' && this.look) this.look = null;
+    this.dropTool();
+    this.showExtras();
+  }
+
+  dropTool() {
     this.can.aim(null);
     this.can.pour(false);
-    this.showExtras();
+    this.wands.active(false);
+    this.audio.pour(false);
+    this.audio.sunWand(false);
+    this.audio.rainWand(false);
   }
 
   // ------------------------------------------------------------ flow
@@ -404,8 +411,7 @@ class App {
     this.state = 'menu';
     this.ui.show('menu');
     this.ui.setNight(0);
-    this.can.pour(false);
-    this.can.aim(null);
+    this.dropTool();
     this.wands.set(null);
     this.look = null;
     this.bedtimeT = -1;
@@ -492,7 +498,7 @@ class App {
     });
     c.addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('keydown', (e) => {
-      if (e.key === 'm' || e.key === 'M') this.toggleMute();
+      if ((e.key === 'm' || e.key === 'M') && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) this.toggleMute();
       if ((e.key === 'f' || e.key === 'F') && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) toggleFullscreen();
       if (e.key === 'Escape') {
         if (this.ui.bookOpen?.()) this.ui.toggleBook(false);
@@ -706,7 +712,7 @@ class App {
     let res = null;
     // the plant goes (or starts regrowing) once its crop has come free
     const settle = () => {
-      if (!entry.harvesting) return;
+      if (!entry.harvesting || !this.garden.entries.includes(entry)) return;
       entry.harvesting = false;
       if (res?.remove) this.garden.remove(entry);
       else this.garden.regrow(entry, res?.regrowTo ?? 0.66);
@@ -949,7 +955,13 @@ class App {
     }
     if (playing && big && p.down && !p.consumed && (this.tool === 'sun' || this.tool === 'rain')) {
       const g = this.groundAt(p.x, p.y);
-      if (g) this.wands.aim(g);
+      if (g) {
+        this.wands.aim(g);
+        if (this.wands.on) {
+          if (this.tool === 'sun') this.audio.sunWand(true, this.panAt(g));
+          else this.audio.rainWand(true, this.panAt(g));
+        }
+      }
     }
   }
 

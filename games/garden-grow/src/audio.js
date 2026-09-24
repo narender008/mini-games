@@ -451,7 +451,7 @@ export class Audio {
   // The watering can's shower on leaves and soil, faded in and out; the
   // last few drops fall from the rose when it stops.
   pour(on, pan) {
-    if (!this.ctx) return;
+    if (!this.ctx || (!on && !this.pourVoice)) return;
     const v = this.pourVoice || (this.pourVoice = this.loopVoice('pour', 0.1));
     if (!this.hold(v, !!on, pan, LEVEL.pour, 0.08, 0.15) || on || !this.ready()) return;
     const t = this.ctx.currentTime;
@@ -567,7 +567,7 @@ export class Audio {
 
   // The sun wand: a warm shimmering chord, with tiny sparkles while it beams.
   sunWand(on, pan) {
-    if (!this.ctx) return;
+    if (!this.ctx || (!on && !this.sunVoice)) return;
     const v = this.sunVoice || (this.sunVoice = this.makeSun());
     this.hold(v, !!on, pan, LEVEL.sun, 0.2, 0.35);
   }
@@ -608,7 +608,7 @@ export class Audio {
 
   // The rain wand: soft local rain from its little cloud, and drips.
   rainWand(on, pan) {
-    if (!this.ctx) return;
+    if (!this.ctx || (!on && !this.rainVoice)) return;
     const v = this.rainVoice || (this.rainVoice = this.loopVoice('rain', 0.15));
     this.hold(v, !!on, pan, LEVEL.rainWand, 0.15, 0.3);
   }
