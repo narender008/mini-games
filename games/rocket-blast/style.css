@@ -964,6 +964,8 @@ body[data-mode='free'] .score {
     grid-template-columns: repeat(2, var(--tap));
   }
 
+  /* boss bar below the whole right column (score, wave pill, combo) so it
+     covers neither the button rows nor the combo meter */
   .boss-bar {
     top: calc(78px + 2 * var(--tap) + var(--safe-t));
   }

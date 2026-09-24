@@ -173,6 +173,8 @@ export class Director {
     const minY = -f.halfH + 3.2;
     const maxY = f.halfH - 1;
     const rows = Math.max(3, Math.floor(maxY - minY));
+    // taken by distance, not grid index: a resize (full screen) re-grids the
+    // columns, and older toys then sit half a cell off the new ones
     const alive = this.app.enemies.filter((e) => e.alive);
     const taken = (x, y) => alive.some((e) => Math.abs(e.gx - x) < 0.9 && Math.abs(e.gy - y) < 0.9);
     for (let tries = 0; tries < 12; tries++) {
@@ -316,6 +318,8 @@ export class Director {
     // half the grid, but never more than the styles can draw with a tap's
     // worth of toys still popping (very wide screens have huge grids)
     const target = Math.min(Math.floor(n * rows * 0.5), TOY_CAPACITY - 60);
+    // a smaller field after a resize leaves some toys out of reach; retire
+    // them quietly so they neither linger nor count toward the target
     const minX = this.colX(0) - 0.5;
     const maxX = this.colX(n - 1) + 0.5;
     const minY = -f.halfH + 3.2 - 0.5;
