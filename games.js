@@ -29,4 +29,13 @@ window.MINI_GAMES = [
     imageAlt: 'A smiling toy rocket firing golden bolts at googly-eyed toy blocks bursting into stars and sweets in a blue sky',
     tags: ['3D', 'Ages 2+', 'Touch friendly'],
   },
+  {
+    slug: 'garden-grow',
+    name: 'Garden Grow',
+    description: 'Plant seeds in a photoreal garden, water them and watch flowers bloom and butterflies arrive. Calm and bedtime-friendly.',
+    path: 'games/garden-grow/',
+    image: 'games/garden-grow/cover.jpg',
+    imageAlt: 'A cottage garden bed at golden hour with tulips, poppies and sunflowers in bloom and a butterfly visiting',
+    tags: ['3D', 'Ages 2+', 'Touch friendly'],
+  },
 ];

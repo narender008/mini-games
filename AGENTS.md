@@ -12,6 +12,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 - Balloon Pop debug switches: `?debug` exposes `window.__bp` (freeze, step(ms), popFirst, spawn), `?cover` hides UI, `?quality=high|medium|low`, `?msaa=N`, `?shadows=0`. See `games/balloon-pop/src/main.js` and `src/quality.js`.
 - Cake Cut debug switches: `?debug` exposes `window.__cc` (freeze, thaw, step(ms), cut, stroke, lift, setCake, decor, blowOut, pieces, and for Little ones / Easy slices easyCut(angle), serve, front), `?cover` hides UI, `?cake=<id>`, plus `?quality=`, `?msaa=`, `?shadows=0`, `?ao=0`, `?dof=0`. See the end of `games/cake-cut/src/main.js` and `src/quality.js`.
 - Rocket Blast debug switches: `?debug` exposes `window.__rb` (freeze, thaw, step(ms), hitFirst, mega, and pointer(x, y, down, type), which takes play-field cells, not pixels), `?play` starts straight into a game, `?mode=little|big|free`, `?weapon=`, `?world=`, `?style=`, `?cover` hides UI, plus `?quality=`, `?msaa=`, `?tone=`. See the header and end of `games/rocket-blast/src/main.js`.
+- Garden Grow debug switches: `?debug` exposes `window.__gg` (freeze, thaw, step(ms), plant(species, x, z, growth), water, grow(g), bloomAll, spawn(kind), tap(x, y) and drag(x0, y0, x1, y1) in screen pixels, look, harvest), `?play` starts straight into a game, `?mode=little|big|bedtime`, `?time=`, `?weather=`, `?style=`, `?cover` hides UI, plus `?quality=`, `?msaa=`, `?shadows=0`, `?ao=0`, `?dof=0`. See the header and end of `games/garden-grow/src/main.js`.
 
 ## Maintaining this file
 
