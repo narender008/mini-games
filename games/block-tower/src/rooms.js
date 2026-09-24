@@ -1934,30 +1934,36 @@ function buildBedtime(R) {
     bulbMesh.instanceColor.needsUpdate = true;
   });
 
-  // a glowing moon night-light on a low bookcase at the back
+  // the room's night lamp: a glowing moon on a low bookcase under the
+  // window, placed so the game's camera (a little right of the tower,
+  // looking slightly left) has it in frame in landscape and portrait, clear
+  // of the tower, glowing below the curtains
   const shelfMat = R.std({ color: col('#e9e2d6'), roughness: 0.55 });
-  const bc = R.mesh(roundedBox(0.8, 0.5, 0.3, 0.01, 1), shelfMat);
-  bc.position.set(0.55, 0.25, Z0 + 0.16);
-  R.occluder(0.55, Z0 + 0.16, 0.4, 0.15, 0.5, 0.45);
-  const moonMat = new THREE.MeshStandardMaterial({ color: col('#fff4dc'), emissive: col('#ffcf8a'), emissiveIntensity: 3.2, roughness: 0.6 });
+  const bcX = -0.5;
+  // (low, so the fairy lights stay in view above it)
+  const bcH = 0.32;
+  const bc = R.mesh(roundedBox(0.8, bcH, 0.3, 0.01, 1), shelfMat);
+  bc.position.set(bcX, bcH / 2, Z0 + 0.16);
+  R.occluder(bcX, Z0 + 0.16, 0.4, 0.15, bcH, 0.45);
+  const moonMat = new THREE.MeshStandardMaterial({ color: col('#fff1dc'), emissive: col('#ffb466'), emissiveIntensity: 2.6, roughness: 0.6 });
   R.bin.add(moonMat);
-  const moon = R.mesh(new THREE.SphereGeometry(0.085, 32, 20), moonMat);
-  moon.position.set(0.72, 0.6, Z0 + 0.16);
-  const glow = new THREE.PointLight(col('#ffbf7a'), 0.45, 0, 2);
-  glow.position.set(0.72, 0.62, Z0 + 0.3);
+  const moon = R.mesh(new THREE.SphereGeometry(0.1, 32, 20), moonMat);
+  moon.position.set(bcX + 0.28, bcH + 0.1, Z0 + 0.17);
+  const glow = new THREE.PointLight(col('#ffb870'), 0.32, 0, 2);
+  glow.position.set(bcX + 0.28, bcH + 0.12, Z0 + 0.34);
   R.group.add(glow);
   R.lights.push(glow);
   const books = ['#c96f5a', '#6f8fb8', '#e2b04a', '#7aa37a'];
   books.forEach((hex, i) => {
-    const b = R.mesh(roundedBox(0.035, 0.22, 0.16, 0.002, 1), R.std({ color: col(hex), roughness: 0.6 }));
-    b.position.set(0.28 + i * 0.04, 0.5 + 0.11, Z0 + 0.16);
+    const b = R.mesh(roundedBox(0.035, 0.17, 0.13, 0.002, 1), R.std({ color: col(hex), roughness: 0.6 }));
+    b.position.set(bcX - 0.16 + i * 0.04, bcH + 0.085, Z0 + 0.16);
   });
   // star projector: a little dome on the bookcase
   const projMat = new THREE.MeshStandardMaterial({ color: col('#dfe6f5'), emissive: col('#9fb4ff'), emissiveIntensity: 0.8, roughness: 0.3 });
   R.bin.add(projMat);
   const proj = R.mesh(new THREE.SphereGeometry(0.05, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), projMat);
-  proj.position.set(0.4, 0.5, Z0 + 0.2);
-  R.uniforms.uProj.value.set(0.4, 0.56, Z0 + 0.2);
+  proj.position.set(bcX - 0.3, bcH, Z0 + 0.2);
+  R.uniforms.uProj.value.set(bcX - 0.3, bcH + 0.06, Z0 + 0.2);
   R.uniforms.uStarGain.value = 0.9;
   R.animators.push((dt, time) => {
     if (!REDUCED_MOTION.matches) R.uniforms.uStarTurn.value += dt * 0.015;
@@ -1994,7 +2000,7 @@ function buildBedtime(R) {
   R.group.add(hemi);
   R.lights.push(hemi);
 
-  R.exposure = 1.15;
+  R.exposure = 1.28;
   R.bloom = 0.38;
   R.bloomThreshold = 2.2;
   R.envIntensity = 1.0;

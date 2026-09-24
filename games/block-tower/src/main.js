@@ -584,6 +584,22 @@ class App {
     const centre = this.structureCentre();
     this.tools.trigger({ from: opts.from, dir: opts.dir, strength: opts.strength ?? 0.8, target: centre, height });
     this.startCrash('tool');
+    if (this.sel.tool === 'flick') this.flicked();
+  }
+
+  // A flick has no tool body to report its hit, so note it here for the
+  // follow-through.
+  flicked() {
+    this.noteHit(this.tools.lastDir, 0.3);
+  }
+
+  // Where and which way a knock-down toy first struck the tower.
+  noteHit(d, t = this.crash?.t) {
+    const c = this.crash;
+    if (!c || c.hit || !d) return;
+    const dir = new THREE.Vector3(d.x, 0, d.z);
+    if (dir.lengthSq() < 1e-6) dir.copy(this.screenDirToWorld(1, 0));
+    c.hit = { t, dir: dir.normalize() };
   }
 
   structureCentre() {
@@ -602,13 +618,18 @@ class App {
   startCrash(reason) {
     if (this.phase === 'crash') return;
     this.phase = 'crash';
-    this.crash = { reason, t: 0, quiet: 0, height: this.heightCm, blocks: this.recs.length, points: 0, accent: false };
+    this.crash = { reason, t: 0, quiet: 0, height: this.heightCm, height0: this.physics.structureHeight(), blocks: this.recs.length, points: 0, accent: false, hit: null, assisted: false };
     this.ui.setKnockEnabled?.(false);
   }
 
   updateCrash(dt) {
     const c = this.crash;
     c.t += dt;
+    // a knock at the foot of a tall tower can just shove the bottom block
+    // aside; a moment later, if most of the tower still stands, it goes over
+    // from the hit, as a real tower does once its base is knocked out
+    const due = c.hit ? c.t > c.hit.t + 0.7 : c.t > 2;
+    if (!c.assisted && due && c.reason === 'tool' && c.height0 > 0.12 && this.standingTop() > Math.max(0.12, c.height0 * 0.3)) this.followThrough(c);
     if (!c.accent && c.t > 0.25 && c.big) {
       c.accent = true;
       this.audio.crash(clamp(c.blocks / 20, 0.3, 1));
@@ -635,6 +656,36 @@ class App {
         }
       }
     }
+  }
+
+  // The top of what still stands: blocks at rest or nearly (the frozen
+  // structure alone reads zero once a knock has woken it).
+  standingTop() {
+    let top = 0;
+    for (const rec of this.recs) {
+      if (!rec.h || rec.sweeping || rec === this.held?.rec) continue;
+      const v = rec.h.body.linvel();
+      if (v.x * v.x + v.y * v.y + v.z * v.z > 0.04) continue;
+      top = Math.max(top, rec.mesh.position.y);
+    }
+    return top;
+  }
+
+  followThrough(c) {
+    c.assisted = true;
+    const dir = c.hit ? c.hit.dir : this.screenDirToWorld(1, 0);
+    const h = Math.max(0.1, this.standingTop());
+    this.physics.wakeAll({ reason: 'tool', hold: 1.5 });
+    // a column tipping about its foot: speed grows with height
+    for (const rec of this.recs) {
+      if (!rec.h || rec.sweeping || rec.h.state !== 'free') continue;
+      const y = rec.mesh.position.y;
+      const v = rec.h.body.linvel();
+      if (y < h * 0.2 || v.x * v.x + v.y * v.y + v.z * v.z > 0.04) continue; // already falling
+      const k = (1.1 * y) / h;
+      rec.h.body.setLinvel({ x: dir.x * k * 0.9, y: -0.05, z: dir.z * k * 0.9 }, true);
+    }
+    c.big = true;
   }
 
   // ------------------------------------------------------------ the magic sweep
@@ -693,6 +744,8 @@ class App {
   // ------------------------------------------------------------ physics events
 
   onImpact(e) {
+    // the floor may come as either body; put it second
+    if (!e.a && e.b) e = { ...e, a: e.b, b: null, materials: e.materials && [e.materials[1], e.materials[0]] };
     const a = this.recOf(e.a);
     const b = this.recOf(e.b);
     const floor = !e.b;
@@ -716,6 +769,9 @@ class App {
     if (strength > 0.55 && floor) this.fx.dust(e.point, strength);
     if (this.phase === 'crash') {
       if (strength > 0.35) this.crash.big = true;
+      const tool = e.a?.kind === 'body' ? e.a : e.b?.kind === 'body' ? e.b : null;
+      const other = tool === e.a ? e.b : e.a;
+      if (tool && other?.kind === 'block') this.noteHit(tool.body.linvel());
       if (this.sel.mode === 'big' && a && floor && !a.scored) {
         a.scored = true;
         this.score += 10;
@@ -748,6 +804,9 @@ class App {
   onWake(e) {
     if (this.state !== 'playing') return;
     if (e.reason === 'knock' && this.phase === 'build' && !this.held) this.startCrash('knock');
+    // a toy reached the frozen tower and woke it (its clack may have been
+    // merged away)
+    else if ((e.reason === 'knock' || e.reason === 'tool') && this.phase === 'crash' && this.crash.reason === 'tool') this.noteHit(this.tools.lastDir);
   }
 
   // ------------------------------------------------------------ Big kid
@@ -1082,6 +1141,7 @@ class App {
         this.dropHeld();
         this.tools.flickAt(hit.rec.h, hit.point, dir, strength);
         this.startCrash('tool');
+        this.flicked();
         return;
       }
     }

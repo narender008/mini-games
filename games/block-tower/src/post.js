@@ -1,10 +1,11 @@
 // Post-processing, tuned for small toys filmed close up: an HDR render with
 // depth, then a lens pass that adds ambient occlusion (from the depth
 // buffer, at half resolution, sized for centimetre gaps between blocks) and
-// a gentle depth of field focused on the tower, then bloom for the night lamp
-// and sun glints, and a final pass that white-balances, applies filmic
-// (AgX) tone mapping, restores a little saturation and contrast, and adds a
-// light vignette and fine grain.
+// a gentle depth of field focused on the tower (at half resolution, with
+// smooth round bokeh), then bloom for the night lamp and sun glints, and a
+// final pass that white-balances, applies filmic (AgX) tone mapping,
+// restores a little saturation and contrast, and adds a light vignette and
+// fine grain.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -98,53 +99,124 @@ void main() {
   gl_FragColor = vec4(vec3(sum / wsum), 1.0);
 }`;
 
-// Gather depth of field. The circle of confusion follows a thin lens:
+// Depth of field. The circle of confusion (CoC) follows a thin lens:
 // proportional to |1/focus - 1/distance|, less a tolerance so the whole play
-// area around the tower stays crisp. A sample only counts if its own circle
-// reaches this pixel, so the sharp tower never smears over the soft room.
-const LENS_FRAG = /* glsl */ `
-${DEPTH}
-uniform sampler2D tColor;
-uniform sampler2D tAO;
-uniform float uUseAO;
-uniform vec2 uRes;
+// area around the tower stays crisp. The blur runs at half resolution in two
+// passes, after the way CryEngine 3 did it: a gather over a disc of taps
+// laid out on a golden-angle spiral, then a small fill blur spaced to the
+// gaps between those taps. Together they act like several hundred taps, so a
+// small bright light (a fairy bulb, a star, the lamp) spreads into a smooth,
+// soft-edged disc, as through a real lens wide open, instead of a ring of
+// dots. A sample only counts if its own circle reaches the pixel, so the
+// sharp tower never smears over the soft room. The full-resolution pass
+// then blends the sharp picture into the blurred one by CoC.
+const COC = /* glsl */ `
 uniform float uFocus;
 uniform float uTolerance;
 uniform float uAperture;
 uniform float uMaxCoC;
-uniform float uDof;
-varying vec2 vUv;
-#ifndef TAPS
-#define TAPS 24
-#endif
 float coc(vec2 uv) {
   float z = max(0.001, viewDist(uv));
   return clamp((abs(1.0 / uFocus - 1.0 / z) - uTolerance) * uAperture, 0.0, uMaxCoC);
-}
-vec3 shade(vec2 uv) {
-  vec3 c = texture2D(tColor, uv).rgb;
-  if (uUseAO > 0.5) c *= texture2D(tAO, uv).r;
-  return c;
+}`;
+
+// Full-res colour (with AO) averaged into half-res texels; alpha carries the
+// CoC in half-res pixels, the smallest of the four so a texel straddling the
+// tower's edge counts as sharp and never bleeds the tower into the blur.
+const DOF_PREFILTER_FRAG = /* glsl */ `
+${DEPTH}
+${COC}
+uniform sampler2D tColor;
+uniform sampler2D tAO;
+uniform float uUseAO;
+uniform vec2 uFullRes;
+varying vec2 vUv;
+void main() {
+  vec2 t = 0.5 / uFullRes;
+  float c = min(min(coc(vUv - t), coc(vUv + vec2(t.x, -t.y))), min(coc(vUv + vec2(-t.x, t.y)), coc(vUv + t)));
+  vec3 col = texture2D(tColor, vUv).rgb;
+  if (uUseAO > 0.5) col *= texture2D(tAO, vUv).r;
+  if (any(isnan(col)) || any(isinf(col))) col = vec3(0.0);
+  gl_FragColor = vec4(min(col, vec3(500.0)), c * 0.5);
+}`;
+
+const DOF_GATHER_FRAG = /* glsl */ `
+uniform sampler2D tDof;
+uniform vec2 uRes;
+varying vec2 vUv;
+void main() {
+  vec4 centre = texture2D(tDof, vUv);
+  float c = centre.a;
+  if (c < 0.5) { gl_FragColor = centre; return; }
+  vec3 sum = centre.rgb;
+  float wsum = 1.0;
+  for (int i = 0; i < TAPS; i++) {
+    float f = sqrt((float(i) + 0.5) / float(TAPS));
+    float a = float(i) * 2.39996323;
+    float dist = f * c;
+    vec4 s = texture2D(tDof, vUv + vec2(cos(a), sin(a)) * dist / uRes);
+    float w = smoothstep(dist - 1.0, dist + 0.25, s.a);
+    sum += s.rgb * w;
+    wsum += w;
+  }
+  gl_FragColor = vec4(sum / wsum, c);
+}`;
+
+// Two hexagonal rings, at half and at the full gap between gather taps.
+const DOF_FILL_FRAG = /* glsl */ `
+uniform sampler2D tDof;
+uniform vec2 uRes;
+uniform float uGap;
+varying vec2 vUv;
+void main() {
+  vec4 centre = texture2D(tDof, vUv);
+  float c = centre.a;
+  if (c < 0.5) { gl_FragColor = centre; return; }
+  float r = max(0.75, c * uGap);
+  vec3 sum = centre.rgb;
+  float wsum = 1.0;
+  for (int i = 0; i < 12; i++) {
+    bool inner = i < 6;
+    float a = float(i) * 1.04719755 + (inner ? 0.0 : 0.52359878);
+    vec4 s = texture2D(tDof, vUv + vec2(cos(a), sin(a)) * r * (inner ? 0.5 : 1.0) / uRes);
+    float w = (inner ? 0.8 : 0.45) * smoothstep(0.25, 0.75, s.a);
+    sum += s.rgb * w;
+    wsum += w;
+  }
+  gl_FragColor = vec4(sum / wsum, c);
+}`;
+
+// Full resolution: the sharp picture with AO, blended into the half-res
+// blur where the CoC calls for it. The upsample skips half-res texels that
+// are in focus, so no sharp colour leaks into the soft background.
+const LENS_FRAG = /* glsl */ `
+${DEPTH}
+${COC}
+uniform sampler2D tColor;
+uniform sampler2D tAO;
+uniform sampler2D tDof;
+uniform float uUseAO;
+uniform float uDof;
+uniform vec2 uHalfRes;
+varying vec2 vUv;
+vec4 halfTexel(vec2 base, vec2 o, vec2 fr) {
+  vec4 s = texture2D(tDof, (base + o + 0.5) / uHalfRes);
+  float bw = mix(1.0 - fr.x, fr.x, o.x) * mix(1.0 - fr.y, fr.y, o.y);
+  float w = bw * (smoothstep(0.0, 0.75, s.a) + 1e-3);
+  return vec4(s.rgb * w, w);
 }
 void main() {
-  vec3 col = shade(vUv);
+  vec3 col = texture2D(tColor, vUv).rgb;
+  if (uUseAO > 0.5) col *= texture2D(tAO, vUv).r;
   if (uDof > 0.5) {
-    float c = coc(vUv);
-    if (c > 0.6) {
-      vec3 sum = col;
-      float wsum = 1.0;
-      float spin = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) * 0.6;
-      for (int i = 0; i < TAPS; i++) {
-        float f = sqrt((float(i) + 0.5) / float(TAPS));
-        float a = float(i) * 2.39996 + spin;
-        float dist = f * c;
-        vec2 uv = vUv + vec2(cos(a), sin(a)) * dist / uRes;
-        float cs = coc(uv);
-        float w = smoothstep(dist - 1.5, dist + 0.5, cs);
-        sum += shade(uv) * w;
-        wsum += w;
-      }
-      col = sum / wsum;
+    float m = smoothstep(0.35, 1.5, coc(vUv));
+    if (m > 0.0) {
+      vec2 hp = vUv * uHalfRes - 0.5;
+      vec2 base = floor(hp);
+      vec2 fr = hp - base;
+      vec4 acc = halfTexel(base, vec2(0.0, 0.0), fr) + halfTexel(base, vec2(1.0, 0.0), fr)
+        + halfTexel(base, vec2(0.0, 1.0), fr) + halfTexel(base, vec2(1.0, 1.0), fr);
+      col = mix(col, acc.rgb / max(acc.a, 1e-6), m);
     }
   }
   if (any(isnan(col)) || any(isinf(col))) col = vec3(0.0);
@@ -161,6 +233,8 @@ class LensPass extends Pass {
     const rt = () => new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
     this.aoA = rt();
     this.aoB = rt();
+    this.dofA = rt();
+    this.dofB = rt();
     const common = () => ({ tDepth: { value: null }, uInvProj: { value: new THREE.Matrix4() }, uProj: { value: new THREE.Matrix4() } });
     const mat = (fragmentShader, uniforms, defines = {}) =>
       new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader, uniforms: { ...common(), ...uniforms }, defines, depthTest: false, depthWrite: false });
@@ -170,31 +244,39 @@ class LensPass extends Pass {
       uIntensity: { value: new THREE.Vector2(1.3, 0.7) },
     });
     this.blurMat = mat(BLUR_FRAG, { tAO: { value: null }, uDir: { value: new THREE.Vector2() } });
-    this.lensMat = mat(
-      LENS_FRAG,
-      {
-        tColor: { value: null },
-        tAO: { value: null },
-        uUseAO: { value: this.useAO ? 1 : 0 },
-        uRes: { value: new THREE.Vector2() },
-        uFocus: { value: 1.1 },
-        uTolerance: { value: 0.15 },
-        uAperture: { value: 30 },
-        uMaxCoC: { value: 14 },
-        uDof: { value: this.useDof ? 1 : 0 },
-      },
-      { TAPS: quality.tier === 'high' ? 24 : 16 },
-    );
+    // shared by the prefilter and the final blend, so both see the same CoC
+    this.cocU = {
+      uFocus: { value: 1.1 },
+      uTolerance: { value: 0.15 },
+      uAperture: { value: 30 },
+      uMaxCoC: { value: 14 },
+    };
+    const useAO = { value: this.useAO ? 1 : 0 };
+    const halfRes = new THREE.Vector2();
+    this.prefMat = mat(DOF_PREFILTER_FRAG, { ...this.cocU, tColor: { value: null }, tAO: { value: null }, uUseAO: useAO, uFullRes: { value: new THREE.Vector2() } });
+    // taps per gather: the fill pass smooths the rest, so phones get fewer
+    const taps = quality.tier === 'high' ? 48 : 32;
+    this.gatherMat = mat(DOF_GATHER_FRAG, { tDof: { value: null }, uRes: { value: halfRes } }, { TAPS: taps });
+    this.fillMat = mat(DOF_FILL_FRAG, { tDof: { value: null }, uRes: { value: halfRes }, uGap: { value: Math.sqrt(Math.PI / taps) } });
+    this.lensMat = mat(LENS_FRAG, {
+      ...this.cocU,
+      tColor: { value: null },
+      tAO: { value: null },
+      tDof: { value: null },
+      uUseAO: useAO,
+      uDof: { value: this.useDof ? 1 : 0 },
+      uHalfRes: { value: halfRes },
+    });
     this.quad = new FullScreenQuad(null);
   }
 
   setSize(w, h) {
     const hw = Math.max(1, Math.floor(w / 2));
     const hh = Math.max(1, Math.floor(h / 2));
-    this.aoA.setSize(hw, hh);
-    this.aoB.setSize(hw, hh);
+    for (const t of [this.aoA, this.aoB, this.dofA, this.dofB]) t.setSize(hw, hh);
     this.aoMat.uniforms.uRes.value.set(hw, hh);
-    this.lensMat.uniforms.uRes.value.set(w, h);
+    this.lensMat.uniforms.uHalfRes.value.set(hw, hh);
+    this.prefMat.uniforms.uFullRes.value.set(w, h);
     this.height = h;
     this.applyAperture();
   }
@@ -202,46 +284,54 @@ class LensPass extends Pass {
   // blur scales with the picture height so every screen size gets the same look
   applyAperture() {
     const h = this.height || 1000;
-    const u = this.lensMat.uniforms;
-    u.uAperture.value = 30 * this.aperture * (h / 1000);
-    u.uMaxCoC.value = 15 * Math.max(0.2, this.aperture) * (h / 1000);
+    this.cocU.uAperture.value = 30 * this.aperture * (h / 1000);
+    this.cocU.uMaxCoC.value = 15 * Math.max(0.2, this.aperture) * (h / 1000);
+  }
+
+  setFocus(distance) {
+    this.cocU.uFocus.value = Math.max(0.05, distance);
+  }
+
+  pass(renderer, material, target) {
+    this.quad.material = material;
+    renderer.setRenderTarget(target);
+    this.quad.render(renderer);
   }
 
   render(renderer, writeBuffer, readBuffer) {
     const depth = readBuffer.depthTexture;
     const cam = this.camera;
-    for (const m of [this.aoMat, this.blurMat, this.lensMat]) {
+    for (const m of [this.aoMat, this.blurMat, this.prefMat, this.lensMat]) {
       m.uniforms.tDepth.value = depth;
       m.uniforms.uInvProj.value.copy(cam.projectionMatrixInverse);
       m.uniforms.uProj.value.copy(cam.projectionMatrix);
     }
     if (this.useAO) {
-      this.quad.material = this.aoMat;
-      renderer.setRenderTarget(this.aoA);
-      this.quad.render(renderer);
-      this.quad.material = this.blurMat;
+      this.pass(renderer, this.aoMat, this.aoA);
       this.blurMat.uniforms.tAO.value = this.aoA.texture;
       this.blurMat.uniforms.uDir.value.set(1 / this.aoA.width, 0);
-      renderer.setRenderTarget(this.aoB);
-      this.quad.render(renderer);
+      this.pass(renderer, this.blurMat, this.aoB);
       this.blurMat.uniforms.tAO.value = this.aoB.texture;
       this.blurMat.uniforms.uDir.value.set(0, 1 / this.aoA.height);
-      renderer.setRenderTarget(this.aoA);
-      this.quad.render(renderer);
+      this.pass(renderer, this.blurMat, this.aoA);
+    }
+    if (this.useDof) {
+      this.prefMat.uniforms.tColor.value = readBuffer.texture;
+      this.prefMat.uniforms.tAO.value = this.aoA.texture;
+      this.pass(renderer, this.prefMat, this.dofA);
+      this.gatherMat.uniforms.tDof.value = this.dofA.texture;
+      this.pass(renderer, this.gatherMat, this.dofB);
+      this.fillMat.uniforms.tDof.value = this.dofB.texture;
+      this.pass(renderer, this.fillMat, this.dofA);
     }
     this.lensMat.uniforms.tColor.value = readBuffer.texture;
     this.lensMat.uniforms.tAO.value = this.aoA.texture;
-    this.quad.material = this.lensMat;
-    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
-    this.quad.render(renderer);
+    this.lensMat.uniforms.tDof.value = this.dofA.texture;
+    this.pass(renderer, this.lensMat, this.renderToScreen ? null : writeBuffer);
   }
 
   dispose() {
-    this.aoA.dispose();
-    this.aoB.dispose();
-    this.aoMat.dispose();
-    this.blurMat.dispose();
-    this.lensMat.dispose();
+    for (const x of [this.aoA, this.aoB, this.dofA, this.dofB, this.aoMat, this.blurMat, this.prefMat, this.gatherMat, this.fillMat, this.lensMat]) x.dispose();
     this.quad.dispose();
   }
 }
@@ -451,7 +541,7 @@ export class Post {
 
   // distance in metres from the camera to the point that should be sharpest
   setFocus(distance) {
-    this.lens.lensMat.uniforms.uFocus.value = Math.max(0.05, distance);
+    this.lens.setFocus(distance);
   }
 
   // 0 = everything sharp, 1 = the default gentle blur, a little more is allowed

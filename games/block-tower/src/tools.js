@@ -1188,6 +1188,7 @@ export class Tools {
     const d = dir.clone();
     d.y = Math.max(0, d.y) * 0.3;
     d.normalize();
+    this.lastDir = d.clone();
     const at = new THREE.Vector3(point.x, point.y, point.z);
     const above = this.blocksAbove(handle, at);
     // speed to slide 4.5 cm out between surfaces gripping at ~0.45
@@ -1246,8 +1247,10 @@ export class Tools {
       this.side = -this.side;
       d = right.clone().multiplyScalar(this.side).addScaledVector(toward, -0.35).normalize();
     }
+    this.lastDir = d.clone();
     const top = Math.max(height, this.physics.structureHeight?.() || 0);
-    const y = Math.max(0.012, Math.min(top * 0.6, top - 0.014));
+    // low enough on a tall tower that most of it tips over as a piece
+    const y = Math.max(0.012, Math.min(top * (top > 0.1 ? 0.35 : 0.6), top - 0.014));
     const origin = target.clone().addScaledVector(d, -0.45).setY(y);
     let hit = this.physics.raycast(origin, d, 0.9);
     if (!hit || !hit.handle || hit.handle.kind === 'body') {
@@ -1290,6 +1293,7 @@ export class Tools {
     start.setY(0);
     if (Math.hypot(start.x, start.z) > PLAY_R) start.setLength(PLAY_R);
     const speed = 2.1 + 0.5 * strength; // m/s: a good hard roll, enough to topple a tall tower
+    this.lastDir = d.clone();
     this.props.push(new BallProp(this, { from: start, dir: d, speed, drop }));
     return true;
   }
@@ -1323,6 +1327,7 @@ export class Tools {
       }
     }
     if (Math.hypot(start.x, start.z) > PLAY_R) start.setLength(PLAY_R).setY(0);
+    this.lastDir = d.clone();
     this.props.push(new CarProp(this, { from: start, dir: d, strength }));
     return true;
   }
@@ -1335,6 +1340,7 @@ export class Tools {
       d = right.clone().multiplyScalar(this.side);
     }
     const top = Math.max(height, this.physics.structureHeight?.() || 0, 0.04);
+    this.lastDir = d.clone();
     this.props.push(new WreckerProp(this, { target, height: top, dir: d, strength }));
     return true;
   }
