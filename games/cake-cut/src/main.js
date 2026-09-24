@@ -241,7 +241,10 @@ class App {
 
   buildCake({ candles = true, keepPlates = false } = {}) {
     const d = this.decor;
-    if (!keepPlates) this.clearServed();
+    if (!keepPlates) {
+      this.dropLift();
+      this.clearServed();
+    }
     this.setCake(d.cake, { frosting: d.frosting });
     this.applyDecor(candles);
     this.easy = this.easyWanted() ? { slices: new EasySlices(), job: null, queue: [], ready: [] } : null;
@@ -287,7 +290,7 @@ class App {
     this.cancelCut();
     this.state = 'decorate';
     this.showLabels = false;
-    this.ui.setDecor(this.decor, this.recipe);
+    this.ui.setDecor(this.decor, cakeById(this.decor.cake));
     this.buildCake();
     this.ui.show('decorate');
     this.ui.hint('');
@@ -316,11 +319,13 @@ class App {
       if (d.candles.kind === 'number') d.candles.number = Math.max(0, Math.min(99, d.candles.number + change.step));
       else d.candles.count = Math.max(1, Math.min(12, d.candles.count + change.step));
     }
+    if (change.message !== undefined) d.message = change.message.slice(0, 18);
     this.ui.setDecor(d, cakeById(d.cake));
     if (change.message !== undefined) {
-      d.message = change.message.slice(0, 18);
       clearTimeout(this.msgTimer);
-      this.msgTimer = setTimeout(() => this.applyDecor(), 220);
+      this.msgTimer = setTimeout(() => {
+        if (this.state === 'decorate') this.applyDecor();
+      }, 220);
       return;
     }
     this.audio.unlock();
@@ -1048,6 +1053,7 @@ class App {
   littleCandles() {
     const cs = this.candles;
     if (!cs) return this.beginCutting('Tap the cake for a slice!');
+    if (this.easy) this.easy.queue.length = 0;
     this.state = 'candles';
     this.ui.show('candles');
     this.ui.candlePhase('lit');
@@ -1877,6 +1883,7 @@ class App {
     const L = this.lift;
     if (!L) return;
     L.carrier.removeFromParent();
+    disposeSlice(L.carrier);
     this.tools[L.tool].visible = false;
     this.lift = null;
   }
@@ -1899,10 +1906,12 @@ class App {
   clearServed() {
     for (const s of this.served) {
       s.group.removeFromParent();
+      disposeSlice(s.group);
     }
     this.served = [];
     if (this.plate.userData.slice) {
       this.plate.userData.slice.removeFromParent();
+      disposeSlice(this.plate.userData.slice);
       this.plate.userData.slice = null;
     }
   }
@@ -1916,6 +1925,7 @@ class App {
       s.group.position.copy(s.from).add(new THREE.Vector3(0.55 * k, 0, -0.1 * k));
       if (s.t > 0.8) {
         s.group.removeFromParent();
+        disposeSlice(s.group);
         this.served.splice(i, 1);
       }
     }
@@ -2206,6 +2216,12 @@ class App {
       inside: (x, z) => pointInPolygon([x, z], this.cake.outline.poly),
     };
   }
+}
+
+function disposeSlice(obj) {
+  obj.traverse((o) => {
+    if (o.isMesh && o.userData.piece) o.geometry.dispose();
+  });
 }
 
 function tick() {

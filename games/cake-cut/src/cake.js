@@ -18,7 +18,7 @@ import {
   squareOutline,
 } from './geom.js';
 import { MAX_SLITS } from './glsl.js';
-import { createExteriorMaterial, createInteriorMaterial, createSlitUniforms, tierUniforms } from './materials.js';
+import { BLANK, createExteriorMaterial, createInteriorMaterial, createSlitUniforms, tierUniforms } from './materials.js';
 
 const SLIT_HALF = 0.0012; // half the width of the gap a blade leaves
 const GAP = 0.0016; // how far a separated piece drifts from its neighbours
@@ -77,7 +77,7 @@ export class Cake {
   }
 
   isRemoved(p) {
-    return this.removed.some((poly) => pointInPolygon(p, poly));
+    return this.removed.some((r) => pointInPolygon(p, r.contour) && !r.holes.some((h) => pointInPolygon(p, h.poly)));
   }
 
   // ------------------------------------------------------------ cutting
@@ -288,8 +288,8 @@ export class Cake {
   // Take a piece off the cake: from now on it belongs to the caller.
   detach(piece) {
     piece.state = 'lifted';
-    this.removed.push(piece.contour);
-    this.slits = this.slits.filter((s) => !pointInPolygon([(s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2], piece.contour));
+    this.removed.push({ contour: piece.contour, holes: piece.holes });
+    this.slits = this.slits.filter((s) => !this.isRemoved([(s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2]));
     this.updateSlitUniforms();
   }
 
@@ -391,6 +391,7 @@ export class Cake {
       const u = t.uniforms;
       if (t !== top || !texture) {
         u.uMsgOpt.value.x = 0;
+        u.uMsg.value = BLANK;
         continue;
       }
       u.uMsg.value = texture;
@@ -579,6 +580,8 @@ export class Cake {
     if (this.messageTexture) this.messageTexture.dispose();
     this.group.removeFromParent();
     disposeGroup(this.group);
+    this.board.geometry.dispose();
+    this.board.material.dispose();
     for (const t of this.tiers) t.materials.forEach((m) => m.dispose());
   }
 }

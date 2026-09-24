@@ -42,15 +42,17 @@ export class EasySlices {
       // a cut where the cake is already sliced: use the nearest uncut part,
       // from its nearer end
       let best = Infinity;
+      let near = at;
       for (const f of free) {
         const dStart = angleDist(at, f.a0);
         const dEnd = angleDist(at, f.a0 + f.len);
         if (Math.min(dStart, dEnd) < best) {
           best = Math.min(dStart, dEnd);
           arc = f;
-          at = wrap(dStart <= dEnd ? f.a0 + W / 2 : f.a0 + f.len - W / 2);
+          near = wrap(dStart <= dEnd ? f.a0 + W / 2 : f.a0 + f.len - W / 2);
         }
       }
+      at = near;
     }
     let a0;
     let len;

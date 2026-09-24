@@ -223,6 +223,10 @@ svg .hair {
   white-space: nowrap;
 }
 
+.chip[hidden] {
+  display: none;
+}
+
 .chip.home {
   padding-left: 8px;
 }

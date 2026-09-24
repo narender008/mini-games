@@ -13,7 +13,7 @@ export const MAXL = 12;
 const col = (hex) => new THREE.Color(hex);
 
 // Uniforms for one tier, shared by its inside and outside materials.
-const BLANK = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+export const BLANK = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
 BLANK.needsUpdate = true;
 
 export function tierUniforms(recipe, tier, index, frosting, slitUniforms) {
