@@ -2,6 +2,8 @@
 // results and hints. In the Little ones mode the grown-up controls (back to
 // Games, the menu) only work when pressed and held, so a small child's taps
 // cannot end the game.
+import { canFullscreen } from './fullscreen.js';
+
 const $ = (id) => document.getElementById(id);
 
 const TOOL_KEY = 'mini-games.cake-cut.tool';
@@ -97,6 +99,13 @@ export class UI {
     });
     this.holdGuard(this.el.pauseBtn, () => this.h.pause());
     on('mute', () => this.h.toggleMute());
+    for (const b of document.querySelectorAll('.fs')) {
+      b.hidden = !canFullscreen;
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.h.fullscreen();
+      });
+    }
     on('spin-left', () => this.h.rotate(-1));
     on('spin-right', () => this.h.rotate(1));
     on('new-cake', () => this.h.newCake());
@@ -294,6 +303,13 @@ export class UI {
     box.querySelector('[data-opt="easy"]').hidden = this.mode !== 'free';
     box.querySelector('[data-opt="autoServe"]').hidden = !(this.mode === 'little' || (this.mode === 'free' && opts.easy));
     box.hidden = this.mode !== 'free' && this.mode !== 'little';
+  }
+
+  setFullscreen(on) {
+    for (const b of document.querySelectorAll('.fs')) {
+      b.setAttribute('aria-pressed', String(on));
+      b.setAttribute('aria-label', on ? 'Leave full screen' : 'Full screen');
+    }
   }
 
   // The big plate button, shown while a slice is waiting to be served.

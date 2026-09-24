@@ -1,4 +1,6 @@
 // DOM overlay: menu, HUD, pause and results panels, and floating score text.
+import { canFullscreen } from './fullscreen.js';
+
 const $ = (id) => document.getElementById(id);
 
 const BEST_KEY = 'mini-games.balloon-pop.best';
@@ -53,8 +55,8 @@ export class UI {
       e.stopPropagation();
       fn();
     });
-    on('play-relax', () => this.h.start('relax'));
-    on('play-timed', () => this.h.start('timed'));
+    on('play-relax', () => this.h.play('relax'));
+    on('play-timed', () => this.h.play('timed'));
     on('resume', () => this.h.resume());
     on('pause-menu', () => this.h.menu());
     on('again', () => this.h.start('timed'));
@@ -62,6 +64,13 @@ export class UI {
     on('results-menu', () => this.h.menu());
     on('pause-btn', () => this.h.pause());
     on('mute', () => this.h.toggleMute());
+    for (const b of document.querySelectorAll('.fs')) {
+      b.hidden = !canFullscreen;
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.h.fullscreen();
+      });
+    }
     document.querySelectorAll('[data-tool]').forEach((b) =>
       b.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -101,6 +110,13 @@ export class UI {
     this.el.mute.setAttribute('aria-pressed', String(m));
     this.el.mute.setAttribute('aria-label', m ? 'Turn sound on' : 'Mute sound');
     this.el.mute.classList.toggle('muted', m);
+  }
+
+  setFullscreen(on) {
+    for (const b of document.querySelectorAll('.fs')) {
+      b.setAttribute('aria-pressed', String(on));
+      b.setAttribute('aria-label', on ? 'Leave full screen' : 'Full screen');
+    }
   }
 
   show(name) {

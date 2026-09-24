@@ -267,6 +267,30 @@ svg .hair {
   display: inline;
 }
 
+/* full-screen toggle: corners out to enter, corners in to leave */
+.fs[hidden] {
+  display: none;
+}
+
+.fs .exit {
+  display: none;
+}
+
+.fs[aria-pressed='true'] .enter {
+  display: none;
+}
+
+.fs[aria-pressed='true'] .exit {
+  display: inline;
+}
+
+/* on the start screen it sits in the panel's top-right corner */
+.menu-fs {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+}
+
 /* ------------------------------------------------------------ tool tray */
 
 #tray {
@@ -1495,6 +1519,25 @@ body[data-mode='little'][data-state='candles'] #hint {
   }
   .mode .opts {
     padding-right: 8px;
+  }
+  /* the full-screen button drops to a second row, under the pause button,
+     so the party rush clock and score keep their room; the orders and the
+     fair-slices bar move down below it */
+  .actions {
+    position: relative;
+  }
+  #hud .fs {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+  }
+  .can-fs .orders,
+  .can-fs .fairbar {
+    top: calc(114px + var(--safe-t));
+  }
+  /* Little ones has room for it in the top row */
+  body[data-mode='little'] #hud .fs {
+    position: static;
   }
 }
 
