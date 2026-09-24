@@ -173,6 +173,8 @@ const G_WALL = 0x0004;
 const G_TOOL = 0x0008;
 const groups = (member, filter) => ((member & 0xffff) << 16) | (filter & 0xffff);
 
+const CAST_ROT = { x: 0, y: 0, z: 0, w: 1 };
+const CAST_DOWN = { x: 0, y: -1, z: 0 };
 const AE = () => RAPIER.ActiveEvents.COLLISION_EVENTS | RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS;
 
 let initPromise = null;
@@ -1622,6 +1624,7 @@ export class Physics {
     // Settling again after being woken (not freshly placed): physics has
     // just held this block up under the load it carries now.
     h._rest = h._woken;
+    h._wasAsap = h._asap;
     h._woken = false;
     h._asap = false;
     h._calm = 0;
@@ -1677,6 +1680,8 @@ export class Physics {
     h.body.setAngvel(this._zero, true);
     h.state = 'free';
     h._calm = 0;
+    h._woken = h._rest;
+    h._asap = h._wasAsap;
     this._dirty = true;
     this._moversDirty = true;
   }
@@ -2171,6 +2176,24 @@ export class Physics {
     return top;
   }
 
+  // Highest block surface (or the floor, 0) anywhere under a footprint
+  // centred on (x, z), hx across and hz deep either way: one thin box swept
+  // straight down, so nothing between probes is missed.
+  topUnder(x, z, hx, hz, exclude = null) {
+    const box = (this._castBox ??= new RAPIER.Cuboid(0.01, 0.0005, 0.01));
+    box.halfExtents.x = Math.max(1e-4, hx);
+    box.halfExtents.z = Math.max(1e-4, hz);
+    const from = (this._castFrom ??= { x: 0, y: 3, z: 0 });
+    from.x = x;
+    from.z = z;
+    this._rayExclude = exclude;
+    this._rayAll = false;
+    const hit = this.world.castShape(from, CAST_ROT, CAST_DOWN, box, 0, 4, true, undefined, undefined, undefined, undefined, this._rayFilter);
+    this._rayExclude = null;
+    this._rayAll = true;
+    return hit ? Math.max(0, from.y - box.halfExtents.y - hit.time_of_impact) : 0;
+  }
+
   // Top of the tallest frozen structure (every frozen block stands on the
   // floor through its supports).
   structureHeight() {
@@ -2292,6 +2315,7 @@ export class Physics {
       _freeSince: this._time,
       _tired: false,
       _asap: false,
+      _wasAsap: false,
       _quick: false,
       _woken: false,
       _rest: false,

@@ -374,8 +374,7 @@ class App {
       return;
     }
     if (!id || id === 'free') this.challenges.clear();
-    else this.challenges.set(id);
-    this.challengeDone = false;
+    else if (id !== this.challenges.id) this.challenges.set(id);
     this.ui.setChallenge(this.challenges.active ? this.challenges.id : null, this.challenges.progress);
     this.refreshChallenge();
   }
@@ -566,9 +565,19 @@ class App {
   updateGlide(rec, dt) {
     const g = rec.glide;
     g.t += dt;
+    const p = rec.mesh.position;
+    if (g.clear) {
+      // going sideways into a slot: up over the build first, then across
+      if (Math.abs(p.x - g.x) > 0.001 && g.t < 1) {
+        this.physics.drive(rec.h, this._v.set(p.y < g.clear - 0.003 ? p.x : g.x, g.clear, g.z), g.quat);
+        return;
+      }
+      g.clear = 0;
+      g.t = 0;
+      g.y0 = p.y;
+    }
     const y = Math.max(g.rest - 0.003, g.y0 - 0.5 * 6 * g.t * g.t);
     this.physics.drive(rec.h, this._v.set(g.x, y, g.z), g.quat);
-    const p = rec.mesh.position;
     const down = y <= g.rest - 0.003 && p.y - g.rest < 0.0012;
     if (!down && g.t < 1.2) return;
     delete rec.glide;
@@ -744,6 +753,7 @@ class App {
     this.roundPeak = 0;
     this.roundBest0 = this.best;
     this.bestNoted = false;
+    this.challengesBuilt = new Set(); // each counts once a round
   }
 
   endSweep() {
@@ -756,7 +766,6 @@ class App {
     this.pendingDrops = 0;
     this.score = 0;
     this.challenges.reset();
-    this.challengeDone = false;
     this.ui.setChallenge(this.challenges.active ? this.challenges.id : null, 0);
     this.ui.setKnockEnabled?.(true);
     this.ui.setHeight(0);
@@ -877,9 +886,11 @@ class App {
     this.held = { rec, turns: 0, snap: null, fromTray: false };
     // keep the block's current quarter turn about the view axis
     const e = HOLD_EULER.setFromQuaternion(rec.mesh.quaternion, 'ZYX');
-    this.held.turns = Math.round(e.z / (Math.PI / 2));
+    this.held.turns = (Math.round(e.z / (Math.PI / 2)) + 4) % 4;
     this.ui.setHolding(true);
     this.audio.click();
+    // the slot it came out of is empty again
+    this.refreshChallenge();
   }
 
   holdQuat(out = new THREE.Quaternion(), turns = this.held ? this.held.turns : 0) {
@@ -906,15 +917,17 @@ class App {
   }
 
   // The highest surface under a block's whole footprint in the picture
-  // plane: rays down every 8 mm across it, front, middle and back.
+  // plane.
   footTop(x, halfW, halfD, exclude = null) {
-    const n = Math.max(2, Math.ceil((2 * halfW) / 0.008));
-    let top = 0;
-    for (let i = 0; i <= n; i++) {
-      const px = x - halfW + (2 * halfW * i) / n;
-      for (const pz of [-halfD * 0.7, 0, halfD * 0.7]) top = Math.max(top, this.physics.topAt(px, pz, 0, exclude));
-    }
-    return top;
+    return this.physics.topUnder(x, 0, halfW, halfD, exclude);
+  }
+
+  // How high a block's centre must be to pass over everything between x0
+  // and x1.
+  clearOver(rec, x0, x1, half, halfW) {
+    const lo = Math.min(x0, x1);
+    const hi = Math.max(x0, x1);
+    return this.footTop((lo + hi) / 2, (hi - lo) / 2 + halfW, SHAPES[rec.shapeId].size[2] / 2, rec.h) + half + 0.006;
   }
 
   turnHeld() {
@@ -937,9 +950,11 @@ class App {
     const turned = held.turns % 2 === 1;
     const half = turned ? size[0] / 2 : size[1] / 2;
     const halfW = turned ? size[1] / 2 : size[0] / 2;
-    const x = held.snap ? held.snap.x : rec.mesh.position.x;
+    const p = rec.mesh.position;
+    const x = held.snap ? held.snap.x : p.x;
     const below = this.footTop(x, halfW, size[2] / 2, rec.h);
-    rec.glide = { t: 0, y0: rec.mesh.position.y, rest: below + half, x, z: 0, quat: this.holdQuat(new THREE.Quaternion(), held.turns), placed: true };
+    const clear = Math.abs(p.x - x) > 0.001 ? this.clearOver(rec, p.x, x, half, halfW) : 0;
+    rec.glide = { t: 0, y0: p.y, rest: below + half, x, z: 0, quat: this.holdQuat(new THREE.Quaternion(), held.turns), placed: true, clear };
     rec.landed = false;
     rec.born = this.time;
     this.lastDrop = rec;
@@ -956,24 +971,24 @@ class App {
     if (!held || !held.rec.h) return;
     const rec = held.rec;
     const target = this.holdTarget(rec.shapeId, this._v);
-    // close to an empty challenge slot of the same shape: glide into line
-    const slot = this.challenges.active && held.turns % 2 === 0 ? this.challenges.snap(rec.shapeId, target.x, target.y) : null;
+    const quat = this.holdQuat(this._q);
+    const size = SHAPES[rec.shapeId].size;
+    const turned = held.turns % 2 === 1;
+    const half = turned ? size[0] / 2 : size[1] / 2;
+    const halfW = turned ? size[1] / 2 : size[0] / 2;
+    // close to an empty challenge slot it fits and would rest in: glide
+    // into line
+    const slot = this.challenges.active ? this.challenges.snap(rec.shapeId, quat, target.x, (x) => this.footTop(x, halfW, size[2] / 2, rec.h) + half) : null;
     if (slot) target.x = slot.x;
     held.snap = slot;
     // the block travels in a straight line to its target, so keep it above
     // everything between here and there, and lift it clear before it moves
     // sideways: otherwise a quick drag past the build cuts its corner
-    const size = SHAPES[rec.shapeId].size;
-    const turned = held.turns % 2 === 1;
-    const half = turned ? size[0] / 2 : size[1] / 2;
-    const halfW = turned ? size[1] / 2 : size[0] / 2;
     const cur = rec.h.body.translation();
-    const lo = Math.min(cur.x, target.x);
-    const hi = Math.max(cur.x, target.x);
-    const clear = this.footTop((lo + hi) / 2, (hi - lo) / 2 + halfW, size[2] / 2, rec.h) + half + 0.006;
+    const clear = this.clearOver(rec, cur.x, target.x, half, halfW);
     target.y = Math.max(target.y, clear);
     if (cur.y < clear - 0.003) target.x = cur.x;
-    this.physics.drive(rec.h, target, this.holdQuat(this._q));
+    this.physics.drive(rec.h, target, quat);
   }
 
   refreshChallenge() {
@@ -987,8 +1002,8 @@ class App {
       this.audio.points(1);
     }
     this.ui.setChallenge(this.challenges.id, this.challenges.progress);
-    if (this.challenges.complete && !this.challengeDone) {
-      this.challengeDone = true;
+    if (this.challenges.complete && !this.challengesBuilt.has(this.challenges.id)) {
+      this.challengesBuilt.add(this.challenges.id);
       this.fx.confetti(new THREE.Vector3(0, 0.2, 0));
       this.audio.challenge();
       this.ui.callout(`${this.challenges.name} built!`, 'challenge');

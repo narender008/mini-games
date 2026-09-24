@@ -82,6 +82,19 @@ const SIZE_TOL = 0.007;
 const _m = new THREE.Matrix4();
 const _up = new THREE.Vector3();
 
+const UPRIGHT_ONLY = new Set(['roof', 'halfround', 'arch']);
+
+// Whether a block of this shape, turned this way, looks like the ghost in
+// its slot: a cube at any quarter turn, a brick, plank, pillar or cylinder
+// upright or flipped, a roof, half-round or arch only upright. The drag
+// snap and the check both ask this, so a block never snaps into a slot it
+// would not fill.
+export function fitsSlot(shapeId, quaternion) {
+  if (shapeId === 'cube') return true;
+  const up = _up.set(0, 1, 0).applyQuaternion(quaternion).y;
+  return UPRIGHT_ONLY.has(shapeId) ? up > 0.9 : Math.abs(up) > 0.9;
+}
+
 // World-space bounding-box extents of a block in its current orientation.
 function extents(shapeId, quaternion, out) {
   const [sx, sy, sz] = SHAPES[shapeId].size;
@@ -165,9 +178,7 @@ export class Challenges {
         const [sx, sy] = SHAPES[s.shape].size;
         extents(s.shape, b.quaternion, this._e);
         if (Math.abs(this._e.x - sx) > SIZE_TOL || Math.abs(this._e.y - sy) > SIZE_TOL) continue;
-        // right way up: roofs point up, half-rounds and arches sit flat
-        _up.set(0, 1, 0).applyQuaternion(b.quaternion);
-        if (_up.y < 0.9) continue;
+        if (!fitsSlot(s.shape, b.quaternion)) continue;
         hit = b;
         break;
       }
@@ -189,18 +200,20 @@ export class Challenges {
     return this.slots.length > 0 && this.slots.every((s) => s.filled);
   }
 
-  // The nearest empty slot for a block of this shape, within `reach` metres
-  // across the picture, so a release close to the outline lands in it.
-  snap(shapeId, x, y, reach = 0.03) {
+  // The nearest empty slot a block of this shape, turned this way, fills,
+  // within `reach` metres across the picture, so a release close to the
+  // outline lands in it. Only a slot the block would come to rest in counts:
+  // restAt(x) is the height its centre settles at if set down at x.
+  snap(shapeId, quaternion, x, restAt, reach = 0.03) {
+    if (!fitsSlot(shapeId, quaternion)) return null;
     let best = null;
     let bestD = reach;
     for (const s of this.slots) {
       if (s.filled || s.shape !== shapeId) continue;
-      const d = Math.abs(s.x - x) + Math.max(0, Math.abs(s.y - y) - 0.08) * 0.5;
-      if (d < bestD) {
-        bestD = d;
-        best = s;
-      }
+      const d = Math.abs(s.x - x);
+      if (d >= bestD || Math.abs(restAt(s.x) - s.y) > POS_TOL) continue;
+      bestD = d;
+      best = s;
     }
     return best;
   }
