@@ -298,6 +298,7 @@ export class BlockFactory {
     this.geometries = {};
     this.atlas = null;
     this.materials = new Set();
+    this.kept = new Map(); // program -> a released material still holding it
     this.last = {}; // last tone per set, so colours do not repeat back to back
     this.recentGlyphs = [];
     this.warmMs = 0;
@@ -422,14 +423,18 @@ export class BlockFactory {
     return block;
   }
 
-  // Frees a block's own material (the geometry is shared and stays).
+  // Frees a block's own material (the geometry is shared and stays). Every
+  // block shares one shader program, which three.js frees with the last
+  // material using it, so one compiled material per program is kept back,
+  // unused: clearing every block away never costs a recompile.
   release(block) {
     const mesh = block?.mesh || block;
     const mat = mesh?.material;
-    if (mat && this.materials.has(mat)) {
-      this.materials.delete(mat);
-      mat.dispose();
-    }
+    if (!mat || !this.materials.has(mat)) return;
+    this.materials.delete(mat);
+    const program = this.renderer?.properties.get(mat).currentProgram;
+    if (program && !this.kept.has(program)) this.kept.set(program, mat);
+    else mat.dispose();
   }
 
   // A fresh ghost material (cheap; they share one program). Animate it by
@@ -447,6 +452,8 @@ export class BlockFactory {
   dispose() {
     for (const m of this.materials) m.dispose();
     this.materials.clear();
+    for (const m of this.kept.values()) m.dispose();
+    this.kept.clear();
     for (const g of Object.values(this.geometries)) g.dispose();
     this.geometries = {};
     this.atlas?.dispose();

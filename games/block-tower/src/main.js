@@ -142,6 +142,7 @@ class App {
     this.physics.on('settle', (e) => this.onSettle(e));
     this.physics.on('topple', (e) => this.onTopple(e));
     this.physics.on('wake', (e) => this.onWake(e));
+    this.physics.on('reset', () => this.onReset());
 
     progress(0.64, 'Planing the wood');
     await tick();
@@ -256,9 +257,9 @@ class App {
     const w = Math.max(1, innerWidth);
     const h = Math.max(1, innerHeight);
     const q = this.quality;
-    let dpr = Math.min(devicePixelRatio || 1, q.maxDpr) * (this.governor ? this.governor.scale : 1);
+    let dpr = Math.min(devicePixelRatio || 1, q.maxDpr);
     if (w * h * dpr * dpr > q.maxPixels) dpr = Math.sqrt(q.maxPixels / (w * h));
-    dpr = Math.max(0.5, dpr);
+    dpr = Math.max(0.5, dpr * (this.governor ? this.governor.scale : 1));
     this.dpr = dpr;
     this.view = { w, h, aspect: w / h };
     this.camera.aspect = w / h;
@@ -289,8 +290,13 @@ class App {
       },
     );
     const room = this.rooms[id] ?? (await this.roomLoads[id]);
-    if (this.roomId !== id) return; // another room was picked meanwhile
-    if (this.room && this.room !== room) this.scene.remove(this.room.group);
+    if (this.roomId !== id) {
+      // another room was picked meanwhile
+      if (room !== this.room && this.quality.tier !== 'high') this.dropRoom(id);
+      return;
+    }
+    const old = this.room;
+    if (old && old !== room) this.scene.remove(old.group);
     this.room = room;
     this.scene.add(room.group);
     this.scene.environment = room.environment ?? null;
@@ -304,6 +310,16 @@ class App {
     this.physics.setFloor(room.floor);
     document.body.dataset.room = id;
     if (!first) this.audio.setRoom?.(id);
+    // the high tier keeps every room it has built, for an instant switch;
+    // phones and tablets keep only the room in use and build others afresh
+    if (old && old !== room && this.quality.tier !== 'high') this.dropRoom(Object.keys(this.rooms).find((k) => this.rooms[k] === old));
+  }
+
+  dropRoom(id) {
+    const room = this.rooms[id];
+    delete this.rooms[id];
+    delete this.roomLoads[id];
+    room?.dispose();
   }
 
   choose(key, id) {
@@ -323,11 +339,9 @@ class App {
   // A new block set repaints every block already in play, so the change is
   // seen at once, without stopping the game.
   reskin(setId) {
-    const allowed = SET_SHAPES[setId];
     for (const rec of this.recs) {
       if (rec.sweeping) continue;
-      const shapeId = allowed.includes(rec.shapeId) ? rec.shapeId : rec.shapeId;
-      const made = this.factory.make(shapeId, setId);
+      const made = this.factory.make(rec.shapeId, setId, rec.make);
       made.mesh.position.copy(rec.mesh.position);
       made.mesh.quaternion.copy(rec.mesh.quaternion);
       made.mesh.scale.copy(rec.mesh.scale);
@@ -371,6 +385,7 @@ class App {
   startGame() {
     this.audio.unlock();
     this.audio.click();
+    clearTimeout(this.bestTimer);
     const mode = this.sel.mode;
     save('mode', mode);
     this.state = 'playing';
@@ -395,6 +410,7 @@ class App {
   toMenu() {
     this.audio.click();
     this.audio.hush?.();
+    clearTimeout(this.bestTimer);
     this.dropHeld();
     this.state = 'menu';
     this.tools.clear();
@@ -433,7 +449,7 @@ class App {
   addBlockMesh(shapeId, setId = this.sel.set, makeOpts = {}) {
     const made = this.factory.make(shapeId, setId, makeOpts);
     this.blockGroup.add(made.mesh);
-    return { h: null, mesh: made.mesh, shapeId, setId, material: made.material, tone: made.tone, born: this.time, landed: false, sweeping: false, scored: false };
+    return { h: null, mesh: made.mesh, shapeId, setId, make: makeOpts, material: made.material, tone: made.tone, born: this.time, landed: false, sweeping: false, scored: false };
   }
 
   spawnBlock(shapeId, position, quaternion, opts = {}) {
@@ -571,13 +587,9 @@ class App {
 
   knock(opts = {}) {
     this.audio.unlock();
-    if (this.state !== 'playing' || this.phase === 'sweep' || this.tools.busy) return;
+    if (this.state !== 'playing' || this.phase !== 'build' || this.tools.busy) return;
     this.dropHeld();
-    for (const rec of this.recs) {
-      if (!rec.glide) continue;
-      delete rec.glide;
-      if (rec.h) this.physics.release(rec.h, { x: 0, y: 0, z: 0 });
-    }
+    this.releaseGlides();
     const blocks = this.recs.filter((r) => r.h && !r.sweeping);
     if (!blocks.length) return;
     const height = Math.max(0.04, this.towerHeight());
@@ -585,6 +597,15 @@ class App {
     this.tools.trigger({ from: opts.from, dir: opts.dir, strength: opts.strength ?? 0.8, target: centre, height });
     this.startCrash('tool');
     if (this.sel.tool === 'flick') this.flicked();
+  }
+
+  // Lets go of blocks still being eased down, so a knock meets them free.
+  releaseGlides() {
+    for (const rec of this.recs) {
+      if (!rec.glide) continue;
+      delete rec.glide;
+      if (rec.h) this.physics.release(rec.h, { x: 0, y: 0, z: 0 });
+    }
   }
 
   // A flick has no tool body to report its hit, so note it here for the
@@ -647,7 +668,7 @@ class App {
           // the tallest tower yet: say so once it is down
           const peak = this.roundPeak;
           this.restT += 1.5;
-          setTimeout(() => {
+          this.bestTimer = setTimeout(() => {
             if (this.state !== 'playing') return;
             this.ui.callout(`New best! ${peak} cm`, 'best');
             this.audio.best();
@@ -807,6 +828,15 @@ class App {
     // a toy reached the frozen tower and woke it (its clack may have been
     // merged away)
     else if ((e.reason === 'knock' || e.reason === 'tool') && this.phase === 'crash' && this.crash.reason === 'tool') this.noteHit(this.tools.lastDir);
+  }
+
+  // The physics was rebuilt after a failure, and it let go of every held
+  // block: stop holding or easing any down.
+  onReset() {
+    for (const rec of this.recs) delete rec.glide;
+    if (!this.held) return;
+    this.held = null;
+    this.ui?.setHolding(false);
   }
 
   // ------------------------------------------------------------ Big kid
@@ -1110,11 +1140,13 @@ class App {
       if (e.key === 'Escape' && this.state === 'playing' && this.ui.settingsOpen()) this.ui.toggleSettings(false);
       if (this.state !== 'playing' || this.ui.settingsOpen()) return;
       if ((e.key === 'r' || e.key === 'R') && !e.repeat) this.turnHeld();
-      if (e.key === ' ' && !e.repeat) {
+      // Space and Enter press a focused button or link, not the game
+      const control = e.target instanceof Element && e.target.closest('button, a[href], input, select, textarea, [role]');
+      if (e.key === ' ' && !e.repeat && !control) {
         e.preventDefault();
         if (this.sel.mode === 'little') this.dropNext();
       }
-      if ((e.key === 'Enter' || e.key === 'k' || e.key === 'K') && !e.repeat) this.knock();
+      if (((e.key === 'Enter' && !control) || e.key === 'k' || e.key === 'K') && !e.repeat) this.knock();
     });
     addEventListener('blur', () => {
       if (this.pointer.down) this.releaseHeld();
@@ -1139,6 +1171,7 @@ class App {
       const hit = this.swipeHit();
       if (hit) {
         this.dropHeld();
+        this.releaseGlides();
         this.tools.flickAt(hit.rec.h, hit.point, dir, strength);
         this.startCrash('tool');
         this.flicked();

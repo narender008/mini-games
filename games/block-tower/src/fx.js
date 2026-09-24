@@ -361,6 +361,17 @@ class Confetti {
     for (const c of this.items) {
       c.age += dt;
       if (c.age >= c.life) continue;
+      if (c.rest && this.supportAt) {
+        // now and then, see that what it lies on is still there
+        c.recheck -= dt;
+        if (c.recheck <= 0) {
+          c.recheck = rand(0.2, 0.35);
+          if (this.supportAt(c.p.x, c.p.z) + 0.0006 < c.p.y - 0.002) {
+            c.rest = false;
+            c.v.set(0, 0, 0);
+          }
+        }
+      }
       if (!c.rest) {
         // paper: light, so strong drag; it falls at about a third of a
         // metre a second and sways side to side as it tips back and forth
@@ -378,6 +389,7 @@ class Confetti {
         if (c.p.y <= floor && c.v.y <= 0) {
           c.p.y = floor;
           c.rest = true;
+          c.recheck = rand(0.2, 0.35);
           // settles flat, curl up or down, in whatever direction it landed
           c.q.setFromEuler(tmpE.set(-Math.PI / 2 + rand(-0.15, 0.15) + (Math.random() < 0.5 ? Math.PI : 0), 0, rand(0, 6.28), 'YXZ'));
         }

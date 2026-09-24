@@ -1110,7 +1110,7 @@ export class Audio {
       chirps.push([0, [3800, 3600, 2500], 0.24, 1], [0.34, [3700, 3500, 2500], 0.22, 0.8]);
     }
     for (const [dt, fs, dur, amp] of chirps) {
-      const at = t + dt;
+      const at = Math.max(t + dt, ctx.currentTime);
       const o = ctx.createOscillator();
       o.frequency.setValueCurveAtTime(Float32Array.from(fs, (f) => f * k), at, dur);
       const g = ctx.createGain();

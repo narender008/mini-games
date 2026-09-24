@@ -2093,10 +2093,21 @@ export async function createRoom(id, { renderer, quality }) {
       focus.copy(center);
       R.setShadowFocus(focus, radius);
     },
+    // Frees everything the room made: the baked textures and reflection map
+    // (in the bin), and every geometry, material, instanced mesh and light
+    // shadow map in its scene graph, binned or not.
     dispose() {
       R.group.removeFromParent();
-      for (const l of R.lights) if (l.shadow && l.shadow.map) l.shadow.map.dispose();
-      for (const x of R.bin.list) x.dispose();
+      const owned = new Set(R.bin.list);
+      const own = (o) => {
+        if (o.geometry) owned.add(o.geometry);
+        for (const m of [].concat(o.material ?? [])) owned.add(m);
+        if (o.isInstancedMesh) owned.add(o);
+        if (o.shadow) owned.add(o.shadow);
+      };
+      R.group.traverse(own);
+      R.lights.forEach(own);
+      for (const x of owned) x.dispose?.();
       R.bin.list.length = 0;
     },
   };

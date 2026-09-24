@@ -825,7 +825,7 @@ export class Physics {
     h.colliders = [];
     let mass = 0;
     for (const spec of SHAPES[h.shapeId].colliders) {
-      const mp = massProps(spec, DENSITY);
+      const mp = massProps(spec, DENSITY * (spec.fill ?? 1));
       mass += mp.mass;
       const off = spec.offset || [0, 0, 0];
       for (const { desc, share, cap } of colliderParts(spec, EDGE)) {
@@ -859,7 +859,8 @@ export class Physics {
   // 'fixed', density | mass, friction, restitution, linearDamping,
   // angularDamping, gravityScale, ccd, round (edge radius), material
   // ('rubber', 'wood', 'metal', ... for impact sounds), walls (false: pass
-  // through the boundary walls), userData }.
+  // through the boundary walls), frictionCombine ('min': its own friction,
+  // not the average with what it touches), lockRotations, userData }.
   addBody(spec) {
     const type = spec.type || 'dynamic';
     const h = this._makeHandle('body', null, spec.material || 'wood', spec, spec.colliders);
@@ -906,10 +907,12 @@ export class Physics {
         .setActiveEvents(AE())
         .setActiveCollisionTypes(RAPIER.ActiveCollisionTypes.DEFAULT | RAPIER.ActiveCollisionTypes.KINEMATIC_KINEMATIC);
       if (s.rotation) d.setRotation({ x: s.rotation[0], y: s.rotation[1], z: s.rotation[2], w: s.rotation[3] });
+      if (spec.frictionCombine === 'min') d.setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min);
       const c = this.world.createCollider(d, body);
       h.colliders.push(c);
       this._owners.set(c.handle, h);
     });
+    if (spec.lockRotations) body.lockRotations(true, true);
     h.mass = type === 'dynamic' ? mass : Infinity;
     for (const c of h.colliders) c.setContactForceEventThreshold(1.2 * mass * G + 0.1);
     this._readPose(h);

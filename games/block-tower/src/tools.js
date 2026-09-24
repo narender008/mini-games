@@ -783,13 +783,12 @@ class CarProp extends Prop {
       restitution: 0.1,
       angularDamping: 0.8,
       ccd: true,
+      // Rapier averages friction between surfaces; take the car's own (tiny)
+      // value instead so a wood floor doesn't brake wheels that should roll
+      frictionCombine: 'min',
       material: 'wood',
       userData: { tool: 'car' },
     });
-    // Rapier averages friction between surfaces; take the car's own (tiny)
-    // value instead so a wood floor doesn't brake wheels that should roll
-    const Min = t.physics.RAPIER?.CoefficientCombineRule?.Min;
-    if (Min !== undefined) for (const c of this.handle.colliders || []) c.setFrictionCombineRule(Min);
   }
 
   update(dt) {
@@ -964,11 +963,14 @@ class WreckerProp extends Prop {
       linearDamping: 0.02,
       angularDamping: 0.6,
       ccd: true,
+      // it hangs from its eye, so it turns with the string, not by itself
+      lockRotations: true,
+      // drawn back from a tower near the edge it may start past the soft
+      // walls; the string, not the walls, keeps it in reach
+      walls: false,
       material: 'paint',
       userData: { tool: 'wrecker' },
     });
-    // it hangs from its eye, so it turns with the string, not by itself
-    this.handle.body.lockRotations?.(true, true);
     this.pose();
     this.quarter = (Math.PI / 2) * Math.sqrt(L / G);
     this.reelAt = this.quarter + 2.4;
@@ -1121,11 +1123,26 @@ export class Tools {
   }
 
   // Build every prop once and compile its shaders against the live scene,
-  // so the first knock doesn't hitch.
+  // so the first knock doesn't hitch: the car in the colour it comes in
+  // first, and every prop both opaque and fading. Props fade in and out on
+  // their own copies of the materials, which are thrown away after; the
+  // faded copies made here are kept, so the programs for fading stay built.
   prewarm(renderer, camera = this.camera) {
     const g = new THREE.Group();
     g.position.set(0, -20, 0);
-    g.add(this.models.ball(), this.models.car(CAR_COLOURS[0]).root, this.models.wrecker().root);
+    const colour = CAR_COLOURS[(this.serial + 1) % CAR_COLOURS.length];
+    const props = () => {
+      const w = this.models.wrecker();
+      return [this.models.ball(), this.models.car(colour).root, w.root, w.string];
+    };
+    const faded = props();
+    this.faded = [];
+    for (const p of faded) {
+      const mats = ownMaterials(p);
+      setOpacity(p, mats, 0.5);
+      this.faded.push(...mats);
+    }
+    g.add(...props(), ...faded);
     this.scene.add(g);
     try {
       renderer.compile(this.scene, camera);
