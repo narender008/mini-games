@@ -178,7 +178,8 @@ class App {
     dpr = Math.max(0.5, dpr);
     this.dpr = dpr;
     const aspect = w / h;
-    // at least 11 cells tall, and at least 7.4 cells across on tall phones
+    // at least 11 cells tall, and at least 7.4 cells across on tall phones,
+    // then widened by VIEW_ZOOM
     const cellsH = Math.max(11, 7.4 / aspect) * CELL * VIEW_ZOOM;
     const halfH = cellsH / 2;
     const halfW = halfH * aspect;
