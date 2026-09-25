@@ -120,6 +120,7 @@ export class Sim {
 
   // built: from Layout.build()
   setTrack(built, extraBoxes = []) {
+    const prev = this.built;
     this.built = built;
     this.lanes = built.lanes;
     this.bowls = built.bowls;
@@ -142,6 +143,30 @@ export class Sim {
         let list = this.hash.get(k);
         if (!list) this.hash.set(k, (list = []));
         list.push(lane, i);
+      }
+    }
+    // marbles on pieces that are still there move onto their new lanes
+    if (prev) {
+      const byKey = new Map();
+      for (const inst of built.pieces) if (!byKey.has(pieceKey(inst.placement))) byKey.set(pieceKey(inst.placement), inst);
+      const same = (inst) => (inst ? byKey.get(pieceKey(inst.placement)) || null : null);
+      for (const m of this.marbles) {
+        if (m.state === 'lane' && m.lane) {
+          const lane = same(m.lane.piece)?.laneByName[m.lane.name];
+          if (lane) m.lane = lane;
+        } else if (m.state === 'bowl' && m.bowl) {
+          const bowl = same(m.bowl.inst)?.bowl;
+          if (bowl) m.bowl = bowl;
+        } else if (m.state === 'lift' && m.lift) {
+          const lift = same(m.lift.inst)?.lift;
+          if (lift) {
+            m.lift = lift;
+            m.lane = lift.ride;
+            lift.riders.push(m);
+          }
+        }
+        if (m.ignore) m.ignore = same(m.ignore.piece)?.laneByName[m.ignore.name] || null;
+        if (m.loopTop) m.loopTop = same(m.loopTop);
       }
     }
     // marbles on lanes that no longer exist take to the air
@@ -765,7 +790,8 @@ export class Sim {
       const qs = rel.dot(f.w);
       const qu = rel.dot(f.u);
       const rho = lane.rc - r;
-      const inside = lane.tube ? Math.hypot(qs, qu) < rho : Math.abs(qs) < rho && qu < lane.hw + 0.004 && (qu > 0 || Math.hypot(qs, qu) < rho);
+      const rin = rho + 3e-4;
+      const inside = lane.tube ? Math.hypot(qs, qu) < rin : Math.abs(qs) < rin && qu < lane.hw + 0.004 && (qu > 0 || Math.hypot(qs, qu) < rin);
       if (inside) {
         // caught
         const vn = -m.vel.dot(f.u);
@@ -930,6 +956,11 @@ export class Sim {
     m.lost = why;
     this.emit('lost', { m, why });
   }
+}
+
+// the same piece in the same place, across rebuilds and undo
+function pieceKey(p) {
+  return `${p.type},${p.i},${p.j},${p.level},${p.rot},${p.h ?? ''},${p.out ?? ''}`;
 }
 
 function hkey(x, y, z) {

@@ -270,6 +270,8 @@ class App {
     this.sel[key] = id;
     save(key, id);
     if (key === 'level') {
+      // a piece held in Big kid goes back into the old level's run first
+      if (this.build?.active) this.build.releaseGhost();
       this.ui.setLevel(id);
       this.setLevel(id).then(() => this.build?.levelChanged?.());
     } else if (key === 'mode') {
@@ -300,8 +302,11 @@ class App {
 
   async startBuild() {
     if (!this.build) {
-      const { Builder } = await import('./build.js');
-      this.build = new Builder(this);
+      this.buildLoad ||= import('./build.js');
+      const { Builder } = await this.buildLoad;
+      this.build ||= new Builder(this);
+      // the player may have gone home or back to Little ones meanwhile
+      if (this.sel.mode !== 'big' || this.state !== 'playing' || this.build.active) return;
     }
     this.build.start();
   }
@@ -316,6 +321,7 @@ class App {
     this.stopBuild();
     this.state = 'menu';
     this.rig.stopFollow();
+    this.ui.setFollow(false);
     this.ui.show('menu');
   }
 
@@ -336,8 +342,10 @@ class App {
   followSomeone() {
     const list = [...this.views.keys()].filter((m) => !m.lost && m.state !== 'gone');
     if (!list.length) {
-      this.dropMarble();
-      setTimeout(() => this.followSomeone(), 400);
+      // drop one and ride along with it (if there is anywhere to drop it)
+      const m = this.dropMarble();
+      if (m) this.rig.follow(m);
+      this.ui.setFollow(!!m);
       return;
     }
     // the newest marble has the most run ahead of it
@@ -403,6 +411,8 @@ class App {
       this.sim.remove(m);
       return;
     }
+    // it sparkles away without knocking into others
+    m.fading = true;
     v.fade = 0.0001;
     this.fx.sparkle(m.pos.clone(), 1);
     this.audio.sparkle();
@@ -420,6 +430,9 @@ class App {
     this.views.clear();
     this.sim.clear();
     this.rig.stopFollow();
+    this.ui?.setFollow(false);
+    // the bowl fills up again
+    for (const o of this.bowlMarbles) o.visible = true;
   }
 
   // the wooden bowl of marbles in the scene (where the level has one)
@@ -511,8 +524,9 @@ class App {
       } else if (e.key === ' ' && this.state === 'playing') {
         e.preventDefault();
         this.dropMarble();
-      } else if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey)) {
-        this.build?.action('undo');
+      } else if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && this.state === 'playing' && this.build?.active) {
+        e.preventDefault();
+        this.build.action('undo');
       }
     });
   }
@@ -577,6 +591,10 @@ class App {
     const p = this.pointers.get(e.pointerId);
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinch = null;
+    if (cancelled && this.build?.dragging) {
+      this.build.dragging = false;
+      this.build.drag = null;
+    }
     if (!p || cancelled) return;
     if (this.build?.active && this.build.dragging) {
       this.build.pointerUp?.(e, this.ndc(e));

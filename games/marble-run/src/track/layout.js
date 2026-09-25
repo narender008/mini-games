@@ -59,7 +59,8 @@ export class Layout {
   }
 
   toJSON() {
-    return this.placements.map(({ type, i, j, level, rot, h, locked }) => ({ type, i, j, level, rot, ...(h !== undefined ? { h } : {}), ...(locked ? { locked } : {}) }));
+    // everything but the id: lift outlets, tints and bell notes come along
+    return this.placements.map(({ id, ...p }) => p);
   }
 
   // world position of a local point of a placement

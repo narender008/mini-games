@@ -275,7 +275,7 @@ function funnelDef(id, size) {
         return V(x0 + (xe - x0) * u, prof(u), cz + (0 - cz) * s);
       }, null, 48);
       return [
-        { name: 'in', curve: inLane, channel: 'trough', intoBowl: true },
+        { name: 'in', curve: inLane, channel: 'deep', intoBowl: true },
         { name: 'out', curve: out, channel: 'tube', rmf: true, up0: V(1, 0, 0) },
       ];
     },

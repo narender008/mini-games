@@ -103,10 +103,11 @@ export class Builder {
   }
 
   stop() {
-    this.dropGhost();
+    this.releaseGhost();
     this.closeMore();
     this.active = false;
     this.puzzle = null;
+    this.undoStack = [];
     // Little ones get the ready-made run back
     this.useLayout(this.def.layout);
     this.app.rig.setHome(this.app.levelCam);
@@ -123,9 +124,9 @@ export class Builder {
   }
 
   enterView(view) {
+    this.releaseGhost();
     this.view = view;
     save('build.view', view);
-    this.dropGhost();
     this.closeMore();
     this.undoStack = [];
     this.app.clearMarbles();
@@ -140,7 +141,7 @@ export class Builder {
       this.app.rig.home();
     } else {
       this.puzzles = puzzlesFor(this.def);
-      this.loadPuzzle(clamp(load(`puzzle.${this.def.id}`, 0), 0, this.puzzles.length - 1));
+      this.loadPuzzle(clamp(Math.round(Number(load(`puzzle.${this.def.id}`, 0))) || 0, 0, this.puzzles.length - 1));
     }
     this.fillTray();
   }
@@ -179,6 +180,7 @@ export class Builder {
     this.app.applyLayout();
     this.refresh();
     if (this.view === 'build') save(`build.${this.def.id}`, this.app.layout.toJSON());
+    else if (this.puzzle?.solved) this.unsolve();
   }
 
   pushUndo() {
@@ -205,12 +207,12 @@ export class Builder {
   // ------------------------------------------------------------ pieces and fitting
 
   // A piece's shape at cell (0, 0), level 0, cached per turn (and lift height).
-  template(type, rot, h) {
-    const key = `${type}|${rot}|${h ?? ''}`;
+  template(type, rot, h, out) {
+    const key = `${type}|${rot}|${h ?? ''}|${out ?? ''}`;
     let t = this.tmpl.get(key);
     if (!t) {
       const L = new Layout(this.grid);
-      const inst = L.buildPiece({ id: -1, type, i: 0, j: 0, level: 0, rot, h });
+      const inst = L.buildPiece({ id: -1, type, i: 0, j: 0, level: 0, rot, h, out });
       const cells = inst.cells;
       t = {
         extent: [...inst.extent].map((e) => ({ i: e.i, j: e.j, lo: e.lo, hi: e.hi })),
@@ -259,7 +261,7 @@ export class Builder {
     const g = this.ghost;
     let best = null;
     for (const rot of rots) {
-      const t = this.template(g.type, rot, g.h);
+      const t = this.template(g.type, rot, g.h, g.out);
       for (const list of this.open.values()) {
         for (const P of list) {
           if (Math.abs(P.ci - ci) + Math.abs(P.cj - cj) > reach + 3) continue;
@@ -292,7 +294,7 @@ export class Builder {
     if (s) {
       Object.assign(g, s, { joined: true });
     } else {
-      const t = this.template(g.type, g.rot, g.h);
+      const t = this.template(g.type, g.rot, g.h, g.out);
       g.i = Math.round(ci - t.cx);
       g.j = Math.round(cj - t.cz);
       if (g.type === 'lift') g.level = 0;
@@ -304,7 +306,7 @@ export class Builder {
   // ------------------------------------------------------------ the held piece
 
   newGhost(type) {
-    this.dropGhost();
+    this.releaseGhost();
     const g = (this.ghost = { type, rot: 0, i: 0, j: 0, level: 16, h: type === 'lift' ? 30 : undefined, from: null, joined: false, ok: false });
     if (type === 'lift' || type === 'start') g.level = type === 'lift' ? 0 : 24;
     // join the open track end nearest the middle of the screen, if any
@@ -325,7 +327,7 @@ export class Builder {
     } else {
       // somewhere clear near the front middle of the view, low down
       if (type !== 'lift' && type !== 'start') g.level = 6;
-      const t = this.template(g.type, g.rot, g.h);
+      const t = this.template(g.type, g.rot, g.h, g.out);
       const c = this.screenCell(new THREE.Vector2(0, -0.35), this.grid.origin.y);
       const gr = this.grid;
       const ci = clamp(Math.round(c.x - t.cx), gr.min[0] + 1, gr.max[0] - 2);
@@ -352,11 +354,11 @@ export class Builder {
   }
 
   pickUp(p) {
-    this.dropGhost();
+    this.releaseGhost();
     this.pushUndo();
     this.app.layout.remove(p.id);
     this.changed();
-    this.ghost = { type: p.type, rot: p.rot, i: p.i, j: p.j, level: p.level, h: p.h, from: { ...p }, joined: false, ok: true };
+    this.ghost = { type: p.type, rot: p.rot, i: p.i, j: p.j, level: p.level, h: p.h, out: p.out, from: { ...p }, joined: false, ok: true };
     this.showGhost();
     this.app.audio.pickup();
     this.showTools();
@@ -364,16 +366,16 @@ export class Builder {
 
   showGhost() {
     const g = this.ghost;
-    const key = `${g.type}|${g.rot}|${g.h ?? ''}`;
+    const key = `${g.type}|${g.rot}|${g.h ?? ''}|${g.out ?? ''}`;
     if (g.key !== key) {
       this.clearGhostMeshes();
       const L = new Layout(this.grid);
-      L.add({ id: -1, type: g.type, i: 0, j: 0, level: 0, rot: g.rot, h: g.h });
+      L.add({ ...g.from, id: -1, type: g.type, i: 0, j: 0, level: 0, rot: g.rot, h: g.h });
       g.skin = new Skin({ theme: this.app.level.theme, mats: this.app.mats, quality: this.app.quality });
       g.group = g.skin.build({ ...L.build(), pillars: [] });
       this.ghostRoot.add(g.group);
       g.pads = new THREE.Group();
-      for (const [a, b] of this.template(g.type, g.rot, g.h).cells) {
+      for (const [a, b] of this.template(g.type, g.rot, g.h, g.out).cells) {
         const m = new THREE.Mesh(this.padGeo, this.padMat);
         m.position.set(a * CELL, 0, b * CELL);
         m.renderOrder = 3;
@@ -382,7 +384,7 @@ export class Builder {
       this.ghostRoot.add(g.pads);
       g.key = key;
     }
-    const t = this.template(g.type, g.rot, g.h);
+    const t = this.template(g.type, g.rot, g.h, g.out);
     g.ok = this.fitsAt(t, g.i, g.j, g.level, g.type === 'lift');
     const o = this.grid.origin;
     g.group.position.set(g.i * CELL, g.level * LEVEL, g.j * CELL);
@@ -408,7 +410,7 @@ export class Builder {
     this.showTools();
   }
 
-  cancelGhost() {
+  cancelGhost(quiet = false) {
     const g = this.ghost;
     if (!g) return;
     if (g.from) {
@@ -417,7 +419,14 @@ export class Builder {
       this.changed();
     }
     this.dropGhost();
-    this.app.audio.click();
+    if (!quiet) this.app.audio.click();
+  }
+
+  // let go of the held piece before anything else changes the run: one
+  // picked up from the run goes back where it was
+  releaseGhost() {
+    if (this.ghost?.from) this.cancelGhost(true);
+    else this.dropGhost();
   }
 
   placeGhost() {
@@ -429,9 +438,9 @@ export class Builder {
       return;
     }
     if (!g.from) this.pushUndo();
-    const p = { type: g.type, i: g.i, j: g.j, level: g.level, rot: g.rot };
+    // a piece put back keeps its id, lift outlet, tint and bell note
+    const p = { ...g.from, type: g.type, i: g.i, j: g.j, level: g.level, rot: g.rot };
     if (g.h !== undefined) p.h = g.h;
-    if (g.from?.id) p.id = g.from.id;
     this.app.layout.add(p);
     const at = g.group.getWorldPosition(new THREE.Vector3());
     this.dropGhost();
@@ -452,7 +461,7 @@ export class Builder {
   rotateGhost() {
     const g = this.ghost;
     if (!g) return;
-    const t0 = this.template(g.type, g.rot, g.h);
+    const t0 = this.template(g.type, g.rot, g.h, g.out);
     const ci = g.i + t0.cx;
     const cj = g.j + t0.cz;
     g.rot = (g.rot + 1) & 3;
@@ -499,7 +508,7 @@ export class Builder {
   pointerDown(e, ndc) {
     if (!this.hitsGhost(ndc)) return;
     const g = this.ghost;
-    const t = this.template(g.type, g.rot, g.h);
+    const t = this.template(g.type, g.rot, g.h, g.out);
     const c = this.screenCell(ndc, this.ghostHeight());
     this.dragging = true;
     this.drag = { y: this.ghostHeight(), dx: g.i + t.cx - c.x, dz: g.j + t.cz - c.y, x0: e.clientX, y0: e.clientY, moved: 0 };
@@ -607,6 +616,7 @@ export class Builder {
       case 'more':
         return this.toggleMore();
       case 'readymade':
+        this.releaseGhost();
         this.pushUndo();
         this.closeMore();
         this.useLayout(this.def.layout);
@@ -614,9 +624,9 @@ export class Builder {
         a.audio.place();
         return;
       case 'clear':
+        this.releaseGhost();
         this.pushUndo();
         this.closeMore();
-        this.dropGhost();
         a.clearMarbles();
         this.useLayout([]);
         save(`build.${this.def.id}`, []);
@@ -680,7 +690,8 @@ export class Builder {
 
   loadBuild(k) {
     const s = this.saves()[k];
-    if (!s) return;
+    if (!s || !Array.isArray(s.layout)) return;
+    this.releaseGhost();
     this.pushUndo();
     this.closeMore();
     this.useLayout(s.layout);
@@ -699,7 +710,7 @@ export class Builder {
   // ------------------------------------------------------------ puzzles
 
   loadPuzzle(k, sound = false) {
-    this.dropGhost();
+    this.releaseGhost();
     this.app.clearMarbles();
     this.undoStack = [];
     this.puzzleIndex = k;
@@ -766,6 +777,19 @@ export class Builder {
     this.app.audio.success?.(stars);
     this.app.fx.sparkle(m.pos.clone(), 1.6);
     this.app.ui.callout(stars === 3 ? 'Solved! Three stars!' : 'Solved!', 2600);
+  }
+
+  // The run changed after a solve: go again, counting only what marbles do
+  // from now on, so fewer pieces can earn more stars.
+  unsolve() {
+    const pz = this.puzzle;
+    pz.solved = false;
+    this.goalEl.classList.remove('solved');
+    this.showStars(load(`stars.${this.def.id}.${pz.id}`, 0), false);
+    for (const m of this.app.sim.marbles) {
+      m.trip = { bells: new Set(), loops: 0, wheels: 0, bowls: 0, spins: 0, goals: new Set() };
+      m.loopTop = null;
+    }
   }
 
   // ------------------------------------------------------------ frame
