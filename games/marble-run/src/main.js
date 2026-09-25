@@ -521,7 +521,7 @@ class App {
         if (e.target.closest?.('input, textarea')) return;
         this.audio.unlock();
         toggleFullscreen();
-      } else if (e.key === ' ' && this.state === 'playing') {
+      } else if (e.key === ' ' && this.state === 'playing' && !e.target.closest?.('button, input, select, textarea, a')) {
         e.preventDefault();
         this.dropMarble();
       } else if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && this.state === 'playing' && this.build?.active) {
