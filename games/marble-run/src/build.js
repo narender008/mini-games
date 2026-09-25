@@ -714,8 +714,13 @@ export class Builder {
     box.expandByPoint(new THREE.Vector3(box.min.x, this.grid.origin.y, box.min.z));
     const size = box.getSize(new THREE.Vector3());
     const centre = box.getCenter(new THREE.Vector3());
+    // the goal card sits over the top of the view and the tray over the
+    // bottom: aim a little high so the puzzle sits in the band between, and
+    // stand further back on short screens
+    centre.y += size.y * 0.14;
+    const short = innerHeight < 560 ? 1.4 : 1;
     const cam = this.app.levelCam;
-    this.app.rig.setHome({ target: centre, distance: clamp(Math.max(size.x, size.y * 1.4) * 1.7 + 0.25, 0.55, 1.6), azimuth: cam.azimuth, elevation: cam.elevation + 0.05, fov: cam.fov });
+    this.app.rig.setHome({ target: centre, distance: clamp((Math.max(size.x, size.y * 1.4) * 1.7 + 0.25) * short, 0.55, 2), azimuth: cam.azimuth, elevation: cam.elevation + 0.05, fov: cam.fov });
     this.app.rig.home();
     this.goalEl.hidden = false;
     this.goalText.textContent = pz.title;

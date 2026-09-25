@@ -52,15 +52,18 @@ export class CameraRig {
 
   // how far back to sit so the framing survives a narrow (portrait) screen
   portraitScale() {
-    return this.aspect < 1 ? clamp(1.15 / this.aspect, 1, 1.9) : this.aspect < 1.3 ? 1.12 : 1;
+    return this.aspect < 1 ? clamp(1.05 / this.aspect, 1, 1.65) : this.aspect < 1.3 ? 1.12 : 1;
   }
 
   home(snap = false) {
     const h = this.homeView;
     this.stopFollow();
     this.want.target.copy(h.target);
-    this.want.az = h.az;
-    this.want.el = h.el;
+    // on a tall screen, look down a little more and from a little to the
+    // side, so the run's depth fills the height the width cannot give
+    const tall = this.aspect < 1;
+    this.want.az = h.az - (tall ? 0.2 : 0);
+    this.want.el = h.el + (tall ? 0.26 : 0);
     this.want.dist = h.dist * this.portraitScale();
     if (snap) this.snap();
   }
