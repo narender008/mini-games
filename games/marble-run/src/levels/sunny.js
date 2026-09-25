@@ -97,7 +97,7 @@ export function theme(mats) {
     tube: { mat: acrylic, thickness: 0.0016 },
     enclosed: { mat: acrylic },
     funnel: { mat: tints.orange, stemMat: tints.orange },
-    bell: { mat: brass, bead: walnut, clapper: brass, frame: { mat: beech }, size: 0.016 },
+    bell: { mat: brass, bead: walnut, clapper: brass, frame: { mat: beech }, size: 0.02 },
     wheel: { segmentMats: [paints[0], paints[2], paints[1], paints[3]], paddle: tints.blue, hub: tints.blue, cover: acrylic, mat: tints.blue },
     spinner: { mat: brass, tip: paints[0] },
     splitter: { mat: tints.yellow },

@@ -9,7 +9,7 @@
 // that animate() drives from the pieces' mechanism state.
 import * as THREE from 'three';
 import { CELL, R_MARBLE } from './config.js';
-import { sweep, troughBeam, shellChannel, tubeRings, roundedBox, lathe, arcPts, profile } from './geometry.js';
+import { sweep, troughBeam, shellChannel, tubeRings, roundedBox, lathe, arcPts, profile, mergeGeometries } from './geometry.js';
 import { CHANNELS } from './track/path.js';
 import { rotXZ } from './track/layout.js';
 
@@ -50,6 +50,7 @@ export class Skin {
           o.receiveShadow = true;
         }
       });
+      this.mergeStatic(g);
     }
     const pillars = new THREE.Group();
     pillars.name = 'pillars';
@@ -61,7 +62,46 @@ export class Skin {
       }
     });
     group.add(pillars);
+    this.mergeStatic(pillars);
     return group;
+  }
+
+  // Many small meshes that never move cost a draw call each: bake them
+  // together per material. Moving and see-through parts, and anything a
+  // level marks userData.dynamic, stay as they are.
+  mergeStatic(root) {
+    root.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+    const keep = new Set();
+    for (const m of this.movers) for (const v of Object.values(m)) if (v?.isObject3D) keep.add(v);
+    for (const p of this.pickables) keep.add(p.object);
+    const groups = new Map();
+    root.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh) return;
+      for (let a = o; a && a !== root; a = a.parent) if (keep.has(a) || a.userData.dynamic) return;
+      const mat = o.material;
+      if (Array.isArray(mat) || mat.transparent || mat.vertexColors || o.geometry.attributes.color || o.geometry.morphAttributes?.position) return;
+      if (o.matrixWorld.determinant() < 0) return;
+      const key = `${mat.uuid}|${o.castShadow}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(o);
+    });
+    const m4 = new THREE.Matrix4();
+    for (const list of groups.values()) {
+      if (list.length < 2) continue;
+      const geos = list.map((o) => {
+        const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+        if (!g.attributes.normal) g.computeVertexNormals();
+        if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+        g.applyMatrix4(m4.multiplyMatrices(inv, o.matrixWorld));
+        return g;
+      });
+      const merged = this.mesh(mergeGeometries(geos), list[0].material, root);
+      merged.castShadow = list[0].castShadow;
+      merged.receiveShadow = true;
+      merged.userData.inst = root.userData.inst;
+      for (const o of list) o.removeFromParent();
+    }
   }
 
   mesh(geo, mat, parent) {
@@ -421,15 +461,8 @@ export class Skin {
     tube.position.set(c.x, box.min.y + h / 2 - 0.01, c.z);
     const screw = new THREE.Group();
     screw.position.set(c.x, box.min.y - 0.01, c.z);
-    const turns = Math.round(h / 0.035);
-    const pts = [];
-    for (let i = 0; i <= turns * 32; i++) {
-      const a = (i / 32) * Math.PI * 2;
-      pts.push(new THREE.Vector3(Math.cos(a) * 0.0105, (i / (turns * 32)) * h, Math.sin(a) * 0.0105));
-    }
-    const curve = new THREE.CatmullRomCurve3(pts);
-    const flight = this.mesh(new THREE.TubeGeometry(curve, turns * 40, 0.0016, 6, false), style.screw || this.theme.tube.mat, screw);
-    void flight;
+    // the screw's flight: a thin helical ramp from the core to the wall
+    this.mesh(helicoid(0.0024, 0.0122, h, Math.max(1, Math.round(h / 0.035)), 0.0012), style.screw || this.theme.tube.mat, screw);
     const core = this.mesh(new THREE.CylinderGeometry(0.0022, 0.0022, h, 10), style.core || style.screw || this.theme.tube.mat, screw);
     core.position.y = h / 2;
     g.add(screw);
@@ -445,9 +478,8 @@ export class Skin {
     const style = this.theme.goal || {};
     const pole = this.mesh(new THREE.CylinderGeometry(0.0012, 0.0012, 0.06, 8), style.pole || this.theme.trough.mat, g);
     pole.position.set(p.x, p.y + 0.03, p.z - 0.019);
-    const flag = this.mesh(new THREE.PlaneGeometry(0.022, 0.014), style.flag, g);
+    const flag = this.mesh(roundedBox(0.022, 0.014, 0.0012, 0.0005, 1), style.flag, g);
     flag.position.set(p.x + 0.011, p.y + 0.052, p.z - 0.019);
-    flag.material.side = THREE.DoubleSide;
     this.movers.push({ type: 'goal', flag, mech: inst.mech.goal, inst });
   }
 
@@ -522,7 +554,7 @@ const blockGeos = new Map();
 function blockGeo(h) {
   const key = Math.round(h * 2000);
   if (!blockGeos.has(key)) {
-    const g = roundedBox(POST, key / 2000 - 0.0008, POST, Math.min(0.0028, key / 6000));
+    const g = roundedBox(POST, key / 2000 - 0.0008, POST, Math.min(0.0028, key / 6000), 2);
     g.userData.shared = true;
     blockGeos.set(key, g);
   }
@@ -538,3 +570,33 @@ export function pillarPosts(p, parent, skin, mat) {
 }
 
 export { profile, arcPts };
+
+// A screw flight: a ramp winding round the y axis from radius r0 to r1,
+// `turns` times over height h, as a closed slab `t` thick (so it needs no
+// double-sided material).
+function helicoid(r0, r1, h, turns, t) {
+  const n = turns * 48;
+  const pos = [];
+  const idx = [];
+  // rows: top inner, top outer, bottom outer, bottom inner
+  for (let i = 0; i <= n; i++) {
+    const a = (i / 48) * Math.PI * 2;
+    const y = (i / n) * h;
+    const c = Math.cos(a);
+    const sn = Math.sin(a);
+    pos.push(c * r0, y + t / 2, sn * r0, c * r1, y + t / 2, sn * r1, c * r1, y - t / 2, sn * r1, c * r0, y - t / 2, sn * r0);
+  }
+  for (let i = 0; i < n; i++) {
+    const a = i * 4;
+    const b = a + 4;
+    for (let k = 0; k < 4; k++) {
+      const k1 = (k + 1) % 4;
+      idx.push(a + k, b + k, a + k1, a + k1, b + k, b + k1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}

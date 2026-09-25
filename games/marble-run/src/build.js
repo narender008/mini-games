@@ -327,8 +327,9 @@ export class Builder {
       if (type !== 'lift' && type !== 'start') g.level = 6;
       const t = this.template(g.type, g.rot, g.h);
       const c = this.screenCell(new THREE.Vector2(0, -0.35), this.grid.origin.y);
-      const ci = Math.round(c.x - t.cx);
-      const cj = Math.round(c.y - t.cz);
+      const gr = this.grid;
+      const ci = clamp(Math.round(c.x - t.cx), gr.min[0] + 1, gr.max[0] - 2);
+      const cj = clamp(Math.round(c.y - t.cz), gr.min[1] + 1, gr.max[1] - 2);
       let spot = null;
       for (let r = 0; r < 8 && !spot; r++) {
         for (let di = -r; di <= r && !spot; di++) {

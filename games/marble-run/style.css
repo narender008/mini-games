@@ -873,14 +873,16 @@ body[data-mode='little'] .big-only {
   }
   .bk-side {
     top: auto;
-    bottom: calc(var(--edge) + var(--tap) * 1.5 + 36px + var(--safe-b));
+    bottom: calc(var(--edge) + var(--tap) * 2.5 + 60px + var(--safe-b));
   }
   .bk-tools {
-    bottom: calc(var(--edge) + var(--tap) * 1.5 + 36px + var(--safe-b));
-    left: calc(var(--edge) + var(--safe-l));
-    transform: none;
-    flex-wrap: wrap;
-    max-width: calc(100vw - var(--tap) * 1.3 - 48px);
+    bottom: calc(var(--edge) + var(--tap) * 1.5 + 30px + var(--safe-b));
+    gap: 6px;
+    padding: 6px;
+  }
+  .bk-tools .round {
+    width: min(var(--tap), calc((100vw - 80px) / 6));
+    height: min(var(--tap), calc((100vw - 80px) / 6));
   }
   .bk-more {
     top: auto;

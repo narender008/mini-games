@@ -428,17 +428,19 @@ class App {
     this.bowl = b || null;
     if (!b) return;
     const pal = this.palette();
-    const n = 7;
-    for (let i = 0; i < n; i++) {
+    // a little heap: one in the middle, a ring round it, three on top
+    const spots = [[0, 0, 0]];
+    for (let k = 0; k < 6; k++) spots.push([2.05, k * 1.047 + 0.3, 0.22]);
+    for (let k = 0; k < 3; k++) spots.push([1.2, k * 2.094 + 0.8, 1.55]);
+    const ring = Math.min(1, (b.innerRadius - R_MARBLE * 1.1) / (R_MARBLE * 2.05));
+    spots.forEach(([rr, a, up], i) => {
       const o = this.look.make(pal[i % pal.length]);
-      const a = i * 2.4;
-      const r = i === 0 ? 0 : Math.min(b.innerRadius - R_MARBLE * 1.2, R_MARBLE * 1.6 + (i > 4 ? R_MARBLE * 1.2 : 0));
-      const layer = i > 4 ? 1 : 0;
-      o.position.set(b.position.x + Math.cos(a) * r, (b.floorY ?? b.position.y) + R_MARBLE * (1 + layer * 1.6), b.position.z + Math.sin(a) * r);
+      const r = rr * R_MARBLE * ring;
+      o.position.set(b.position.x + Math.cos(a) * r, (b.floorY ?? b.position.y) + R_MARBLE * (1 + up), b.position.z + Math.sin(a) * r);
       o.rotation.set(rand(0, 6), rand(0, 6), rand(0, 6));
       this.marbleGroup.add(o);
       this.bowlMarbles.push(o);
-    }
+    });
   }
 
   takeFromBowl() {
@@ -686,11 +688,15 @@ class App {
       this.ui?.setFollow(false);
     }
     this.rig.update(dt);
-    this.post.setFocus(this.rig.focusDistance(this.focusPoint));
+    // sharp where the camera looks (the ridden marble when following)
+    this.post.setFocus(this.rig.focusDistance());
     this.post.update(this.time);
   }
 
   render() {
+    // count every pass of the frame, for ?debug's stats
+    this.renderer.info.autoReset = false;
+    this.renderer.info.reset();
     this.post.render();
   }
 
