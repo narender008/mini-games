@@ -228,6 +228,8 @@ class App {
       if (s.bloom.radius !== undefined) this.post.bloom.radius = s.bloom.radius;
     }
     this.post.setGrade(s.grade || {});
+    // gentle depth of field: a whole run should read sharp from home
+    this.post.setAperture(s.aperture ?? 0.7);
     const g = L.def.ground;
     this.sim.groundY = g.y;
     this.sim.bounds = g.bounds;
