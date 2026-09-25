@@ -234,7 +234,7 @@ class App {
     this.sim.groundSurface = g.surface;
     this.layout = Layout.from(L.def.grid, L.def.layout);
     this.applyLayout();
-    const cam = L.def.cameraDefault || s.camera;
+    const cam = (this.levelCam = L.def.cameraDefault || s.camera);
     this.rig.setHome(cam, L.def.cameraLimits);
     this.rig.home(first);
     this.focusPoint = s.focus || cam.target;
@@ -722,6 +722,16 @@ class App {
       home: () => app.rig.home(true),
       marbles: () => [...app.views.keys()].map((m) => ({ id: m.id, state: m.state, piece: m.lane?.piece.def.id, pos: m.pos.toArray().map((v) => +v.toFixed(3)) })),
       layout: () => JSON.stringify(app.layout.toJSON()),
+      // Big kid: act as the build buttons do, or solve the puzzle shown
+      build: (action, arg) => app.build?.action(action, arg),
+      solve() {
+        const b = app.build;
+        if (!b?.puzzle) return false;
+        for (const p of b.puzzle.solution) app.layout.add({ ...p });
+        b.changed();
+        app.dropMarble();
+        return true;
+      },
       stats: () => ({ calls: app.renderer.info.render.calls, tris: app.renderer.info.render.triangles, scale: app.governor.scale, dpr: app.dpr }),
     };
   }
