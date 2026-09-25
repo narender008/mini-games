@@ -56,13 +56,42 @@ const DESIGNS = {
       { type: 'long', i: 3, j: 0, level: 29, rot: 1 },
     ],
   },
+  wheel: {
+    title: 'Turn the wheel with a marble',
+    goal: { wheels: 1 },
+    par: 3,
+    kit: { wheel: 1, long: 1, straight: 2, curveL: 1 },
+    layout: [
+      { type: 'start', i: 0, j: 0, level: 30 },
+      { type: 'catcher', i: 1, j: 0, level: 17, rot: 2 },
+    ],
+    solution: [
+      { type: 'long', i: 1, j: 0, level: 29 },
+      { type: 'wheel', i: 3, j: 0, level: 19 },
+      { type: 'straight', i: 2, j: 0, level: 18, rot: 2 },
+    ],
+  },
+  bellLoop: {
+    title: 'Ring a bell, then loop the loop',
+    goal: { bells: 1, loops: 1 },
+    par: 2,
+    kit: { bell: 1, loop: 1, straight: 1, curveR: 1 },
+    layout: [
+      { type: 'start', i: 0, j: 0, level: 40 },
+      { type: 'goal', i: 5, j: 1, level: 25 },
+    ],
+    solution: [
+      { type: 'bell', i: 1, j: 0, level: 39 },
+      { type: 'loop', i: 2, j: 0, level: 26 },
+    ],
+  },
 };
 
 const ORDER = {
-  sunny: ['bells', 'loop', 'funnel'],
-  crystal: ['loop', 'bells', 'funnel'],
-  storybook: ['bells', 'funnel', 'loop'],
-  cosmic: ['funnel', 'loop', 'bells'],
+  sunny: ['bells', 'loop', 'funnel', 'wheel'],
+  crystal: ['loop', 'bells', 'bellLoop', 'funnel'],
+  storybook: ['bells', 'wheel', 'funnel', 'bellLoop'],
+  cosmic: ['funnel', 'bellLoop', 'loop', 'bells'],
 };
 
 // The puzzles for a level, moved to the middle of its run area.

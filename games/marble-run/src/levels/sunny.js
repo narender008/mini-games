@@ -101,7 +101,8 @@ export function theme(mats) {
     wheel: { segmentMats: [paints[0], paints[2], paints[1], paints[3]], paddle: tints.blue, hub: tints.blue, cover: acrylic, mat: tints.blue },
     spinner: { mat: brass, tip: paints[0] },
     splitter: { mat: tints.yellow },
-    cup: { mat: tints.red, neck: acrylic },
+    // the little run starts from a turned wooden cup, as in the picture
+    cup: { mat: mats.wood({ species: 'beech', mapping: 'object', finish: 'lacquer', grain: 'y' }), neck: null },
     lift: { tube: acrylic, screw: mats.plastic({ color: '#e9f3fb' }), cap: tints.red },
     goal: { flag: paints[0], pole: beech },
     // blocks under the pieces: mostly natural beech, some painted
