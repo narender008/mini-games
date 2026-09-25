@@ -9,7 +9,7 @@
 // copy with a little picture to come back to. Marbles can be dropped in at
 // any time: the run rebuilds under them.
 import * as THREE from 'three';
-import { CELL, LEVEL, PORT_Y, save, load, clamp } from './config.js';
+import { CELL, LEVEL, PORT_Y, REDUCED_MOTION, save, load, clamp } from './config.js';
 import { Layout } from './track/layout.js';
 import { PIECES } from './track/pieces.js';
 import { Skin } from './skin.js';
@@ -715,7 +715,7 @@ export class Builder {
     const size = box.getSize(new THREE.Vector3());
     const centre = box.getCenter(new THREE.Vector3());
     const cam = this.app.levelCam;
-    this.app.rig.setHome({ target: centre, distance: clamp(Math.max(size.x, size.y * 1.4) * 1.9 + 0.35, 0.7, 1.6), azimuth: cam.azimuth, elevation: cam.elevation + 0.05, fov: cam.fov });
+    this.app.rig.setHome({ target: centre, distance: clamp(Math.max(size.x, size.y * 1.4) * 1.7 + 0.25, 0.55, 1.6), azimuth: cam.azimuth, elevation: cam.elevation + 0.05, fov: cam.fov });
     this.app.rig.home();
     this.goalEl.hidden = false;
     this.goalText.textContent = pz.title;
@@ -769,7 +769,8 @@ export class Builder {
     const g = this.ghost;
     if (g?.group) {
       this.t = (this.t || 0) + dt;
-      g.group.position.y = g.level * LEVEL + 0.004 + Math.sin(this.t * 4) * 0.0025;
+      // the held piece bobs gently (it just hovers, for reduced motion)
+      g.group.position.y = g.level * LEVEL + 0.004 + (REDUCED_MOTION.matches ? 0 : Math.sin(this.t * 4) * 0.0025);
       this.padMat.opacity = 0.38 + Math.sin(this.t * 5) * 0.12;
     }
     const pz = this.puzzle;
