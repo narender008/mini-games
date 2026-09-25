@@ -47,4 +47,13 @@ window.MINI_GAMES = [
     imageAlt: 'A tall tower of wooden and painted toy blocks on playroom floorboards in soft window light',
     tags: ['3D', 'Ages 2+', 'Touch friendly'],
   },
+  {
+    slug: 'marble-run',
+    name: 'Marble Run',
+    description: 'Drop shiny glass marbles down photoreal marble runs that ring bells, spin wheels and loop the loop, then build your own.',
+    path: 'games/marble-run/',
+    image: 'games/marble-run/cover.jpg',
+    imageAlt: 'Glass marbles rolling down a wooden toy marble run with a spiral funnel, a loop, a water wheel and brass bells in a sunlit playroom',
+    tags: ['3D', 'Ages 2+', 'Touch friendly'],
+  },
 ];

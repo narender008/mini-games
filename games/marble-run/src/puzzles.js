@@ -90,7 +90,7 @@ const DESIGNS = {
 const ORDER = {
   sunny: ['bells', 'loop', 'funnel', 'wheel'],
   crystal: ['loop', 'bells', 'bellLoop', 'funnel'],
-  storybook: ['bells', 'wheel', 'funnel', 'bellLoop'],
+  storybook: ['bells', 'funnel', 'loop', 'bellLoop'],
   cosmic: ['funnel', 'bellLoop', 'loop', 'bells'],
 };
 
