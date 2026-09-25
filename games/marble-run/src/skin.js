@@ -51,6 +51,7 @@ export class Skin {
         }
       });
       this.mergeStatic(g);
+      if (this.quality?.dof || this.quality?.ao) this.depthProxies(g);
     }
     const pillars = new THREE.Group();
     pillars.name = 'pillars';
@@ -102,6 +103,49 @@ export class Skin {
       merged.userData.inst = root.userData.inst;
       for (const o of list) o.removeFromParent();
     }
+  }
+
+  // Glass is blended without writing depth, so the lens pass would see what
+  // lies behind a clear tube and blur the tube as if it were far away. A
+  // depth-only twin of each see-through mesh, drawn after everything else,
+  // puts its distance in the depth buffer without changing a colour. (A
+  // level that makes its own twins marks them userData.depthProxy.)
+  depthProxies(root) {
+    let has = false;
+    root.traverse((o) => (has ||= !!o.userData.depthProxy));
+    if (has) return;
+    root.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+    const moving = new Set();
+    for (const m of this.movers) for (const v of Object.values(m)) if (v?.isObject3D) moving.add(v);
+    const statics = [];
+    const twins = [];
+    root.traverse((o) => {
+      if (!o.isMesh || Array.isArray(o.material) || !o.material.transparent || o.material.colorWrite === false) return;
+      let moves = false;
+      for (let a = o; a && a !== root; a = a.parent) if (moving.has(a) || a.userData.dynamic) moves = true;
+      (moves ? twins : statics).push(o);
+    });
+    for (const o of twins) {
+      const d = new THREE.Mesh(o.geometry, DEPTH_ONLY);
+      d.userData.depthProxy = true;
+      d.renderOrder = 50;
+      d.castShadow = false;
+      o.add(d);
+    }
+    if (!statics.length) return;
+    const m4 = new THREE.Matrix4();
+    const geos = statics.map((o) => {
+      const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+      if (!g.attributes.normal) g.computeVertexNormals();
+      if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+      g.applyMatrix4(m4.multiplyMatrices(inv, o.matrixWorld));
+      return g;
+    });
+    const d = this.mesh(mergeGeometries(geos), DEPTH_ONLY, root);
+    d.userData.depthProxy = true;
+    d.renderOrder = 50;
+    d.castShadow = false;
   }
 
   mesh(geo, mat, parent) {
@@ -547,6 +591,8 @@ export function pillarBlocks(p, parent, skin) {
     m.position.set(p.x, p.y0 + (k + 0.5) * bh0, p.z);
   }
 }
+
+const DEPTH_ONLY = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, transparent: true });
 
 // posts are this wide (the sim's collision boxes match)
 export const POST = 0.038;
