@@ -394,4 +394,3 @@ export function makeSeaSparkle({ count, land, glow, fxLayer, seed = 13 }) {
   };
   return points;
 }
-
