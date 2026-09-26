@@ -586,6 +586,8 @@ export class Builder {
   key(e) {
     if (!this.active || this.app.state !== 'playing' || e.target.closest?.('input')) return;
     const k = e.key;
+    // Enter on a control reached by keyboard presses it; on one just clicked
+    // (browsers keep focus there) it still puts the held piece down
     const control = e.target.closest?.('button, select, textarea, a');
     if (k === 'Enter' && control && control !== this.clickedControl) return;
     if (this.ghost) {
