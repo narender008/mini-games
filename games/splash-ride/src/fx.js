@@ -165,6 +165,23 @@ export class Spray {
     }
   }
 
+  // a hoop bursting into sparkles: they fly out from all round its rim
+  // (heading: the hoop's facing; radius in metres)
+  ringBurst(x, y, z, heading, radius, n = 70, tint = [1, 0.85, 0.45]) {
+    const rx = Math.cos(heading);
+    const rz = -Math.sin(heading);
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2 + Math.random() * 0.2;
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      const sp = rand(0.6, 2.2);
+      const px = x + ca * radius * rx;
+      const pz = z + ca * radius * rz;
+      const py = Math.max(0.1, y + sa * radius);
+      this.emit(px, py, pz, ca * rx * sp + rand(-0.3, 0.3), sa * sp + 0.8, ca * rz * sp + rand(-0.3, 0.3), rand(0.8, 1.5), rand(0.12, 0.24), 2, tint, 1.8);
+    }
+  }
+
   update(dt) {
     const g = 9.81;
     let live = 0;

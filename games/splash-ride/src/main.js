@@ -360,8 +360,9 @@ class App {
     this.audio.ring(n);
     this.audio.whoosh();
     d.ringBoost = 1;
-    this.spray.sparkle(r.x, 1.35, r.z, 50, r.tint.toArray());
-    this.wake.ripple(r.x, r.z, 0.5, this.time, this.glow());
+    this.spray.ringBurst(r.x, 1.35, r.z, r.heading, 1.65, 70, r.tint.toArray());
+    this.spray.sparkle(r.x, 1.35, r.z, 20, r.tint.toArray());
+    this.wake.ripple(r.x, r.z, 0.3, this.time, this.glow());
   }
 
   // ------------------------------------------------------------ layout

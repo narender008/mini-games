@@ -65,7 +65,7 @@ void main() {
   float trail = s * exp(-age * 0.8) * inside * exp(min(x, 0.0) * 0.5) * 0.5;
   // everything fades out well inside the quad, so its square edge never shows
   float edge = 1.0 - smoothstep(0.8, 0.98, length(vLocal));
-  float h = cos(x * 4.2) * (env + trail) * 0.09 * edge;
+  float h = cos(x * 4.2) * (env + trail) * 0.04 * edge;
   float foam = (s * exp(-age * 1.1) * exp(-r * r / (0.6 + s * 2.0 + age * 3.0)) * 1.3 + env * 0.06) * edge;
   gl_FragColor = vec4(foam, h, vParams.w * (foam + env * 0.6 * edge), foam * 0.6);
 }`;
