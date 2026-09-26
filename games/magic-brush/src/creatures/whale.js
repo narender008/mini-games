@@ -12,7 +12,7 @@
 // with Wave jostling inside).
 import * as THREE from 'three';
 import { Friend } from './friend.js';
-import { withLook, bindTo } from './parts.js';
+import { bindTo } from './parts.js';
 import { mergeGeometries } from './sculpt.js';
 import { pose, addPose, bump, ramp, smooth, Spring, TAU, clamp, lerp } from './anim.js';
 import { Tracker } from './pal-kit.js';
@@ -28,7 +28,12 @@ const C = [0, 0.172, 0]; // the bubble's centre, and Wave's
 const R = 0.142; // the bubble's radius
 const EYE = [0.036, 0.184, 0.059];
 const BLOWHOLE = [0, 0.219, 0.024];
-const SMALL = 5; // tiny air bubbles
+const SMALL = 7; // tiny air bubbles
+// in the garden he is this much bigger than on the easel (friends on the
+// ground keep the size they came alive at, so he grows as his bubble forms)
+// and his bubble floats this much higher
+const SIZE = 1.35;
+const LIFT = 0.016;
 const AIR = Array.from({ length: SMALL }, (_, i) => 'air' + i);
 // 'bounce': each hop's start, landing and height
 const BOUNCES = [[0.25, 0.85, 0.09], [0.85, 1.35, 0.055], [1.35, 1.75, 0.03]];
@@ -62,11 +67,21 @@ export class Whale extends Friend {
     this.lagY = new Spring(0, 1.4, 0.5);
     this.lagZ = new Spring(0, 1.4, 0.5);
     this.headYaw = new Spring(0, 1.2, 0.8);
-    this.small = Array.from({ length: SMALL }, (_, i) => ({ y: i / SMALL, x: rand(-0.06, 0.06), z: rand(-0.06, 0.06), sp: rand(0.05, 0.09), ph: rand(0, TAU) }));
+    this.small = Array.from({ length: SMALL }, (_, i) => ({ y: i / SMALL, x: rand(-0.07, 0.07), z: rand(-0.07, 0.07), sp: rand(0.045, 0.085), ph: rand(0, TAU), w: rand(2.2, 3.6) }));
+    this.sizeK = 1;
   }
 
   get tricks() {
     return ['spout', 'flip', 'bounce'];
+  }
+
+  dispose() {
+    if (this.pool) {
+      this.pool.geometry.dispose();
+      this.pool.material.map.dispose();
+      this.pool.material.dispose();
+    }
+    super.dispose();
   }
 
   sculpt(s) {
@@ -136,41 +151,100 @@ export class Whale extends Friend {
       lid: { tint: SKIN, paint: 1, rough: 0.35, open: -0.35, closed: 1.5 },
     });
 
-    // the bubble: clear water with a soap-film shimmer
+    // the bubble: a ball of clear water. It refracts the garden behind it
+    // (ior 1.33), with a bright rim where it turns away, a soft caustic
+    // glow on the side away from the sun, the sun's sharp glint and only a
+    // hint of soap-film colour
     const g = new THREE.SphereGeometry(R, 64, 40);
     g.translate(C[0], C[1], C[2]);
     g.deleteAttribute('uv');
-    withLook(g, { tint: 0xffffff, paint: 0, rough: 0.03 });
     bindTo(g, I.bubble);
-    const bm = this.mat('solid', { transmission: 1, iridescence: 1 });
-    bm.thickness = 0.03;
-    bm.ior = 1.33;
-    bm.attenuationColor = new THREE.Color(0.82, 0.95, 1.0);
-    bm.attenuationDistance = 0.8;
-    bm.iridescenceIOR = 1.33;
-    bm.iridescenceThicknessRange = [220, 680];
-    bm.specularIntensity = 1;
+    const bm = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      roughness: 0.03,
+      metalness: 0,
+      transmission: 1,
+      thickness: 0.1,
+      ior: 1.33,
+      attenuationColor: new THREE.Color(0.74, 0.92, 1.0),
+      attenuationDistance: 0.7,
+      specularIntensity: 1,
+      iridescence: 0.22,
+      iridescenceIOR: 1.33,
+      iridescenceThicknessRange: [260, 560],
+      envMapIntensity: 1.2,
+    });
+    bm.depthWrite = false; // the air bubbles inside draw over it
+    const time = this.shared.uTime;
+    bm.onBeforeCompile = (sh) => {
+      sh.uniforms.uTime = time;
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uTime;').replace(
+        '#include <opaque_fragment>',
+        `{
+          vec3 wN = normalize(normal);
+          vec3 wV = normalize(vViewPosition);
+          float wF = 1.0 - clamp(dot(wN, wV), 0.0, 1.0);
+          outgoingLight += vec3(0.8, 0.93, 1.0) * (pow(wF, 3.0) * 0.55 + pow(wF, 8.0) * 0.6);
+          #if NUM_DIR_LIGHTS > 0
+            float wC = smoothstep(0.45, 0.95, dot(wN, -directionalLights[0].direction)) * (1.0 - wF * 0.5);
+            float wS = 0.7 + 0.3 * sin(uTime * 1.6 + wN.x * 8.0 + wN.y * 6.0);
+            outgoingLight += directionalLights[0].color * vec3(1.0, 0.95, 0.8) * wC * wS * 0.09;
+          #endif
+        }
+        #include <opaque_fragment>`
+      );
+    };
+    bm.customProgramCacheKey = () => 'mb-whale-water';
     const bubble = this.addMesh(g, bm, { shadow: false });
     bubble.userData.noProject = true;
     bubble.renderOrder = 2;
     this.bubbleMesh = bubble;
 
-    // tiny air bubbles rising inside
+    // tiny air bubbles rising inside: see-through, with a silvery rim
     const list = [];
     for (let i = 0; i < SMALL; i++) {
-      const r = 0.0035 + (i % 3) * 0.0015;
-      const b = new THREE.SphereGeometry(r, 12, 8);
+      const r = 0.0035 + (i % 3) * 0.002;
+      const b = new THREE.SphereGeometry(r, 14, 10);
       b.translate(C[0], C[1], C[2]);
       b.deleteAttribute('uv');
-      withLook(b, { tint: 0xe8f6ff, paint: 0, rough: 0.05 });
       bindTo(b, I[AIR[i]]);
       list.push(b);
     }
-    const am = this.mat('solid', { clearcoat: 1, iridescence: 1 });
-    am.sheen = 1;
-    am.sheenColor = new THREE.Color(0.8, 0.95, 1);
+    const am = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.08, metalness: 0, transparent: true, depthWrite: false, envMapIntensity: 1.5 });
+    am.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace(
+        '#include <opaque_fragment>',
+        `float aF = 1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
+        outgoingLight += vec3(0.9, 0.97, 1.0) * pow(aF, 2.0) * 0.8;
+        diffuseColor.a = clamp(0.12 + pow(aF, 1.5) * 0.9, 0.0, 1.0);
+        #include <opaque_fragment>`
+      );
+    };
+    am.customProgramCacheKey = () => 'mb-whale-air';
     const air = this.addMesh(mergeGeometries(list), am, { shadow: false });
     air.userData.noProject = true;
+    air.renderOrder = 3;
+
+    // under the bubble: a soft shadow ring with light focused in the middle
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 64;
+    const cx = cv.getContext('2d');
+    const gr = cx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,250,225,0.55)');
+    gr.addColorStop(0.3, 'rgba(235,248,255,0.25)');
+    gr.addColorStop(0.55, 'rgba(20,45,70,0.16)');
+    gr.addColorStop(0.8, 'rgba(20,45,70,0.07)');
+    gr.addColorStop(1, 'rgba(20,45,70,0)');
+    cx.fillStyle = gr;
+    cx.fillRect(0, 0, 64, 64);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const pg = new THREE.PlaneGeometry(R * 2.1, R * 2.1);
+    pg.rotateX(-Math.PI / 2);
+    this.pool = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false }));
+    this.pool.position.set(C[0], 0.003, C[2]);
+    this.pool.renderOrder = 1;
+    this.object.add(this.pool);
   }
 
   // ------------------------------------------------------------ motion
@@ -190,7 +264,20 @@ export class Whale extends Friend {
     const bs = this.bubbleScale.update(painting ? 0 : 1, dt);
     const jel = this.jelly.update(0, dt);
     const bob = Math.sin(t * 1.3) * 0.008 + Math.sin(t * 0.47) * 0.004;
-    B.root.position.y += bob;
+    const grown = smooth(clamp(bs, 0, 1));
+    B.root.position.y += bob + LIFT * grown;
+    // grow to garden size with the bubble: whoever places him sets his scale
+    // each frame (friends.js, alive.js) or once (a portrait, a test page), so
+    // scale on top of theirs, or swap the last factor for the new one
+    const k = lerp(1, SIZE, grown);
+    const os = this.object.scale;
+    os.multiplyScalar(this.sizeX !== undefined && Math.abs(os.x - this.sizeX) < 1e-7 ? k / this.sizeK : k);
+    this.sizeK = k;
+    this.sizeX = os.x;
+    if (this.pool) {
+      this.pool.material.opacity = clamp(bs, 0, 1) * (1 - clamp((B.root.position.y - C[1]) * 6, 0, 0.6));
+      this.pool.visible = bs > 0.01;
+    }
     const sq = jel + (this.squash || 0);
     B.bubble.scale.set(Math.max(0.001, bs * (1 + sq * 0.6)), Math.max(0.001, bs * (1 - sq)), Math.max(0.001, bs * (1 + sq * 0.6)));
     this.squash = 0;
@@ -241,15 +328,15 @@ export class Whale extends Friend {
       b.y += dt * b.sp;
       if (b.y > 1) {
         b.y -= 1;
-        b.x = rand(-0.06, 0.06);
-        b.z = rand(-0.06, 0.06);
+        b.x = rand(-0.07, 0.07);
+        b.z = rand(-0.07, 0.07);
       }
       const y = lerp(-R * 0.75, R * 0.75, b.y);
       const lim = Math.sqrt(Math.max(0, R * R * 0.72 - y * y));
       const bone = B[AIR[i]];
-      bone.position.x = clamp(b.x + Math.sin(t * 3 + b.ph) * 0.005, -lim, lim);
+      bone.position.x = clamp(b.x + Math.sin(t * b.w + b.ph) * 0.006, -lim, lim);
       bone.position.y = y;
-      bone.position.z = clamp(b.z, -lim, lim);
+      bone.position.z = clamp(b.z + Math.cos(t * b.w * 0.8 + b.ph) * 0.004, -lim, lim);
       const sc = bs * Math.min(1, b.y * 8, (1 - b.y) * 8);
       bone.scale.setScalar(Math.max(0.001, sc));
     }

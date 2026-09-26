@@ -56,6 +56,9 @@ float wv = weave(vUvC);
 vec3 primer = vec3(0.9, 0.885, 0.85) * (0.94 + 0.06 * wv) * (0.97 + 0.03 * cN21(vUvC * 90.0));
 vec3 paint = exp(-P.rgb);
 vec3 col = mix(primer, primer * paint, cov);
+// thin paint sinks into the weave: its threads show through
+float cThin = cov * (1.0 - smoothstep(0.08, 0.45, S.r));
+col *= 1.0 - cThin * 0.12 * (1.0 - wv);
 // watercolour stains sink into the weave
 col = mix(col, col * (0.9 + 0.1 * wv), S.a * cov);
 // pencil outline: dots, turning into a fine line under the magic
@@ -74,12 +77,12 @@ const FACE_NORMAL = /* glsl */ `
   float hR = texture2D(tSurf, vUvC + vec2(uTexel.x, 0.0)).r;
   float hD = texture2D(tSurf, vUvC - vec2(0.0, uTexel.y)).r;
   float hU = texture2D(tSurf, vUvC + vec2(0.0, uTexel.y)).r;
-  float k = 0.85 * (1.0 - uLift * 0.8);
+  float k = 1.9 * (1.0 - uLift * 0.8);
   vec2 g = vec2(hR - hL, hU - hD) * k;
   // the weave shows through thin paint
   float thin = 1.0 - smoothstep(0.05, 0.4, hC);
   vec2 wg = vec2(weave(vUvC + vec2(0.0004, 0.0)) - weave(vUvC - vec2(0.0004, 0.0)), weave(vUvC + vec2(0.0, 0.0004)) - weave(vUvC - vec2(0.0, 0.0004)));
-  g += wg * 0.06 * thin;
+  g += wg * (0.06 + 0.1 * thin * cov);
   // glitter flakes: little mirrors tipped every which way
   if (cGlit > 0.02) {
     vec2 cell = floor(vUvC * vec2(1400.0, 1050.0));
@@ -121,7 +124,17 @@ if (cGlit > 0.02) {
 const FACE_EMISSIVE = /* glsl */ `
 {
   // bounce light from the bright studio keeps the canvas reading white
-  totalEmissiveRadiance += diffuseColor.rgb * 0.55;
+  totalEmissiveRadiance += diffuseColor.rgb * mix(0.55, 0.3, cov);
+  // wet paint catches the studio's window light along its ridges and rims
+  {
+    vec3 V = normalize(vViewPosition);
+    vec3 R = reflect(-V, normal);
+    vec3 L1 = normalize(vec3(-0.45, 0.75, 0.55));
+    vec3 L2 = normalize(vec3(0.5, 0.35, 0.8));
+    float sp = pow(max(dot(R, L1), 0.0), 60.0) * 1.3 + pow(max(dot(R, L2), 0.0), 28.0) * 0.35;
+    float gloss = cWet * (1.0 - S.a) + cov * 0.18;
+    totalEmissiveRadiance += vec3(1.0, 0.95, 0.88) * sp * gloss;
+  }
   float band = exp(-pow((vUvC.x - uSweep) / 0.035, 2.0));
   float spark = pow(cN21(vUvC * vec2(240.0, 180.0) + uTime * 2.0), 8.0) * 6.0;
   totalEmissiveRadiance += vec3(1.0, 0.82, 0.5) * uGlow * band * (0.8 + spark);

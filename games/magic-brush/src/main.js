@@ -155,7 +155,7 @@ class App {
 
     this.fx = {
       sparkles: new Sparkles(scene, q.particles),
-      droplets: new Droplets(scene, q.tier === 'low' ? 90 : 160, groundAt),
+      droplets: new Droplets(scene, q.tier === 'low' ? 120 : 320, groundAt),
       petals: new Petals(scene, 160, groundAt),
     };
     this.audio = new Audio();

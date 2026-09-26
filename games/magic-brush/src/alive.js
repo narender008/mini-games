@@ -14,6 +14,7 @@
 //    then says hello.
 import * as THREE from 'three';
 import { clamp, smoothstep, easeInOut, rand, REDUCED_MOTION } from './config.js';
+import { CANVAS_W, CANVAS_H } from './creatures/friend.js';
 
 const _m = new THREE.Matrix4();
 const _m2 = new THREE.Matrix4();
@@ -21,6 +22,9 @@ const _p = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _s = new THREE.Vector3();
 const _v = new THREE.Vector3();
+const _w = new THREE.Vector3();
+const _n = new THREE.Vector3();
+const _u = new THREE.Vector3();
 
 export class ComeAlive {
   constructor({ easel, fx, audio, groundAt }) {
@@ -64,6 +68,7 @@ export class ComeAlive {
       settle: 0.9,
       landed: false,
       dropAcc: 0,
+      peelAcc: 0,
       reduced,
     };
     this.easel.uniforms.uLift.value = 0;
@@ -131,10 +136,19 @@ export class ComeAlive {
 
     // wet droplets and sparkles fly off the seam
     if (e > 0 && e < 1) {
-      a.dropAcc += dt * (a.reduced ? 10 : 34);
+      a.dropAcc += dt * (a.reduced ? 12 : 95);
       while (a.dropAcc > 1) {
         a.dropAcc -= 1;
         this.seamParticle(a);
+      }
+    }
+    // and the paint still on the canvas starts to lift: glitter and flecks of
+    // paint peel off the strokes, most of all near the seam
+    if (e < 0.97) {
+      a.peelAcc += dt * (a.reduced ? 10 : 130) * (t < a.glow ? t / a.glow : 1);
+      while (a.peelAcc > 1) {
+        a.peelAcc -= 1;
+        this.peelParticle(a);
       }
     }
     if (tL >= a.leap && !a.landed) {
@@ -162,6 +176,41 @@ export class ComeAlive {
     }
   }
 
+  // a fleck of glitter or paint lifting off the part of the painting that is
+  // still paint (lying flat on the canvas)
+  peelParticle(a) {
+    const f = a.friend;
+    const pos = f.body.geometry.attributes.position;
+    const front = f.shared.uFront.value;
+    let uv = null;
+    for (let tries = 0; tries < 12; tries++) {
+      _v.fromBufferAttribute(pos, Math.floor(Math.random() * pos.count));
+      const w = f.paintUv(_v);
+      // favour the paint close behind the seam
+      if (w[0] < front - 0.01 && Math.random() < Math.exp(-(front - w[0]) * 4)) {
+        uv = w;
+        break;
+      }
+    }
+    if (!uv) return;
+    const plane = this.easel.plane;
+    _v.set((uv[0] - 0.5) * CANVAS_W + rand(-0.006, 0.006), (uv[1] - 0.5) * CANVAS_H + rand(-0.006, 0.006), 0.012).applyMatrix4(plane);
+    const n = plane.elements;
+    _n.set(n[8], n[9], n[10]).normalize();
+    const c = a.colors[Math.floor(Math.random() * a.colors.length)];
+    const out = rand(0.08, 0.35);
+    if (Math.random() < 0.5) {
+      // a wet fleck that pops off and falls
+      _w.copy(_n).multiplyScalar(out * 2.6).add(_u.set(rand(-0.3, 0.3), rand(0.15, 0.9), rand(-0.3, 0.3)));
+      this.fx.droplets.throw(_v, _w, c, rand(0.003, 0.008));
+    } else {
+      // glitter: the paint's colour, or gold
+      const g = Math.random() < 0.45;
+      const sc = g ? [2.2, 1.8, 1.0] : [c.r * 2.2 + 0.3, c.g * 2.2 + 0.3, c.b * 2.2 + 0.3];
+      this.fx.sparkles.emit(_v.x, _v.y, _v.z, _n.x * out + rand(-0.08, 0.08), _n.y * out + rand(0.05, 0.3), _n.z * out + rand(-0.08, 0.08), sc, rand(0.01, 0.024), rand(0.8, 1.8), { drag: 2.2, gravity: 0.05 });
+    }
+  }
+
   // a droplet or sparkle from somewhere along the seam
   seamParticle(a) {
     const f = a.friend;
@@ -186,10 +235,10 @@ export class ComeAlive {
     _v.applyMatrix4(f.body.matrixWorld);
     const c = a.colors[Math.floor(Math.random() * a.colors.length)];
     const n = this.easel.plane.elements;
-    const out = new THREE.Vector3(n[8], n[9], n[10]).normalize();
-    if (Math.random() < 0.55) {
-      const vel = out.clone().multiplyScalar(rand(0.4, 1.3)).add(new THREE.Vector3(rand(-0.6, 0.6), rand(0.2, 1.4), rand(-0.3, 0.3)));
-      this.fx.droplets.throw(_v, vel, c, rand(0.004, 0.011));
+    const out = _n.set(n[8], n[9], n[10]).normalize();
+    if (Math.random() < 0.6) {
+      const vel = _w.copy(out).multiplyScalar(rand(0.4, 1.4)).add(_u.set(rand(-0.6, 0.6), rand(0.2, 1.5), rand(-0.3, 0.3)));
+      this.fx.droplets.throw(_v, vel, c, rand(0.005, 0.016));
     }
     const sc = [c.r * 2 + 0.4, c.g * 2 + 0.4, c.b * 2 + 0.4];
     this.fx.sparkles.emit(_v.x, _v.y, _v.z, rand(-0.3, 0.3) + out.x * 0.3, rand(0, 0.5), rand(-0.3, 0.3) + out.z * 0.3, Math.random() < 0.5 ? sc : [2, 1.7, 1], rand(0.012, 0.03), rand(0.6, 1.4));

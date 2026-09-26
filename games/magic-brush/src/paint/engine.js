@@ -82,6 +82,11 @@ void main() {
   // across the brush, -1..1 (the sign from which side of the line)
   float u = clamp((across >= 0.0 ? 1.0 : -1.0) * dist / r, -1.2, 1.2);
   float au = abs(u);
+  // bristles are placed across the stroke: use the sideways offset (not the
+  // distance, which rings round every stamp's round cap)
+  float ul = clamp(across / r, -1.2, 1.2);
+  float aul = abs(ul);
+  float inSeg = 1.0 - smoothstep(0.0, r * 0.35, max(-along, along - L));
   float rag = (n21(vec2(s * 0.045 + uSeed, u * 2.5)) - 0.5) * 0.16;
   float amount = 0.0;
   float ridge = 0.0;
@@ -89,15 +94,20 @@ void main() {
   if (uTool == 0 || uTool == 2) {
     float body = 1.0 - smoothstep(0.8 + rag, 1.0 + rag * 0.5, au);
     // each bristle's own load; it runs dry after a while
-    float bi = floor((u * 0.5 + 0.5) * uBristles);
+    float bi = floor((ul * 0.5 + 0.5) * uBristles);
     float load = uLoad * (0.55 + 0.9 * h11(bi + uSeed * 13.0));
     float dry = smoothstep(load * 0.75, load * 1.3, s + (n11(s * 0.02 + bi * 3.1) - 0.5) * load * 0.35);
-    float fine = n11(u * uBristles * 2.3 + uSeed);
-    float streak = 0.72 + 0.28 * fine;
-    amount = body * (1.0 - dry) * mix(1.0, streak, 0.6);
-    // bristle grooves, paint pushed up at the edges, a blob where the stroke began
-    float start = 1.0 - smoothstep(0.0, r * 1.6, s);
-    ridge = amount * (0.45 + 0.4 * fine) + body * (1.0 - dry) * smoothstep(0.55, 0.92, au) * 0.45 + start * body * 0.5;
+    // bristle grooves a couple of texels apart, and a few fatter clumps of bristles
+    float fine = n11(ul * r * 0.45 + uSeed * 7.0);
+    float clump = n11(ul * 3.1 + uSeed * 3.0);
+    float streak = 0.62 + 0.38 * fine * (0.6 + 0.4 * clump);
+    amount = body * (1.0 - dry) * mix(1.0, streak, 0.55);
+    // bristle grooves, paint pushed up in a rim at the edges and where the
+    // bristles run dry, a thick blob where the stroke began
+    float start = 1.0 - smoothstep(0.0, r * 1.8, s);
+    float rim = smoothstep(0.5, 0.9, aul) * (1.0 - smoothstep(0.95, 1.1, aul)) * inSeg;
+    float tail = smoothstep(0.35, 0.7, dry) * (1.0 - smoothstep(0.7, 1.0, dry));
+    ridge = amount * (0.35 + 0.6 * fine * (0.5 + 0.5 * clump)) + body * rim * (1.0 - dry) * 0.7 + body * tail * 0.45 + start * body * 0.75;
     if (uTool == 2) {
       glit = body * (0.6 + 0.4 * n21(vPix * 0.35));
       amount = body * 0.9;
