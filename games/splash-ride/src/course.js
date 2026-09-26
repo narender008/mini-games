@@ -3,9 +3,9 @@
 // and has a bobbing arrow over it; pass near each one in turn and come back
 // through the gate. Missing a buoy is fine (passing a later one simply moves
 // the target on) and taking a long time is fine too: the course just
-// carries on, nobody fails. The best run in each place is kept on the
-// device together with its path, and replayed as a see-through ghost boat
-// next time.
+// carries on, nobody fails. The best full round (every buoy passed) in each
+// place is kept on the device together with its path, and replayed as a
+// see-through ghost boat next time.
 import * as THREE from 'three';
 import { load, save, TAU } from './config.js';
 import { LAYER_FX } from './post.js';
@@ -103,8 +103,16 @@ export class Course {
 
   // def: { gate: { x, z, angle, width }, buoys: [[x, z], ...] }, placeId, boatId
   setCourse(def, placeId) {
-    for (const b of this.buoys) this.group.remove(b.obj);
-    if (this.gate) this.group.remove(this.gate.a, this.gate.b, this.gate.line);
+    for (const b of this.buoys) {
+      this.group.remove(b.obj);
+      b.obj.geometry.dispose();
+    }
+    if (this.gate) {
+      const { a, b, line } = this.gate;
+      this.group.remove(a, b, line);
+      for (const o of [a, b, line]) o.traverse((m) => m.geometry?.dispose());
+      line.material.dispose();
+    }
     this.buoys = [];
     this.def = def;
     this.placeId = placeId;
@@ -176,6 +184,7 @@ export class Course {
     this.state = 'running';
     this.clock = 0;
     this.target = 0;
+    this.passed = 0;
     this.boatId = boatId;
     this.track = [];
     this.sampleT = 0;
@@ -186,7 +195,7 @@ export class Course {
 
   finish() {
     const t = this.clock;
-    const isBest = !this.best || t < this.best.time;
+    const isBest = this.passed === this.buoys.length && (!this.best || t < this.best.time);
     if (isBest) {
       this.best = { time: t, boat: this.boatId, track: this.track };
       save(`best.${this.placeId}`, this.best);
@@ -260,6 +269,7 @@ export class Course {
       const b = this.buoys[i];
       if (Math.hypot(boat.pos.x - b.x, boat.pos.z - b.z) < PASS) {
         this.target = i + 1;
+        this.passed++;
         this.audio.buoy?.(i);
         this.onEvent('buoy', { i, x: b.x, z: b.z });
         break;

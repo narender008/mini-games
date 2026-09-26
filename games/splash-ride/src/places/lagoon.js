@@ -80,10 +80,13 @@ export function height(x, z) {
   return h;
 }
 
+// the stilt hut off the big island
+const HUT = { x: -88, z: -22, r: 4.5 };
+
 export function solid(x, z) {
   if (height(x, z) > -0.7) return true;
   for (const r of ROCKS) if (Math.hypot(x - r.x, z - r.z) < r.r * 1.05) return true;
-  return false;
+  return Math.hypot(x - HUT.x, z - HUT.z) < HUT.r;
 }
 
 const C = (hex, k = 1) => new THREE.Color(hex).multiplyScalar(k);
@@ -286,7 +289,7 @@ export async function build({ quality, textures }) {
 
   // a thatched hut on stilts off the big island
   const hut = thatchHut(0.6);
-  hut.position.set(-140 + 52, 0, -40 + 18);
+  hut.position.set(HUT.x, 0, HUT.z);
   group.add(hut);
 
   // a far volcanic island on the horizon: a jungle-green peak furrowed by

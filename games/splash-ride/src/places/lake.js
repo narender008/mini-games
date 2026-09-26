@@ -53,7 +53,8 @@ function inJetty(x, z, pad = 0) {
   if (along < -2 || along > JETTY.len + JETTY.width * 0.5 + pad) return false;
   if (Math.abs(across) < JETTY.width * 0.5 + pad) return true;
   // the T at the end, with the two rowing boats tied alongside
-  return along > JETTY.len - 3 - pad && Math.abs(across) < JETTY.head * 0.5 + pad;
+  if (along > JETTY.len - 3 - pad && Math.abs(across) < JETTY.head * 0.5 + pad) return true;
+  return along > JETTY.len - 8.5 - pad && Math.abs(across) < 3 + pad;
 }
 
 export function height(x, z) {
@@ -284,6 +285,7 @@ function rowingBoat(colour) {
   const seg = 16;
   const ring = 9;
   const pos = [];
+  const uv = [];
   const idx = [];
   for (let i = 0; i <= seg; i++) {
     const t = i / seg;
@@ -293,6 +295,7 @@ function rowingBoat(colour) {
     for (let j = 0; j <= ring; j++) {
       const a = (j / ring) * Math.PI;
       pos.push(Math.cos(a) * w, -Math.sin(a) * sheer * 0.9 + sheer * 0.1, zz);
+      uv.push(t * 1.5, j / ring);
     }
   }
   for (let i = 0; i < seg; i++) {
@@ -304,6 +307,7 @@ function rowingBoat(colour) {
   }
   const hull = new THREE.BufferGeometry();
   hull.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  hull.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   hull.setIndex(idx);
   hull.computeVertexNormals();
   const outside = new THREE.Mesh(hull, new THREE.MeshPhysicalMaterial({ color: colour, roughness: 0.45, clearcoat: 0.5, clearcoatRoughness: 0.4, side: THREE.FrontSide }));

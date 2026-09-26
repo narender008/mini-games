@@ -370,10 +370,13 @@ export class Birds {
     this.flock = { x: 0, z: 0, cx: 0, cz: 0, ang: 0, r: 30, alt: 11, t: 0, dir: 1, glide: 0 };
   }
 
-  // First sight of the boat: spread the birds around it.
+  // First sight of the boat: spread the birds around it. A bird left far
+  // behind comes back from behind the camera, and the flock re-gathers.
   start(b, boat) {
-    const a = Math.random() * TAU;
-    const d = rand(20, 70);
+    const back = b.started;
+    const a = back ? boat.heading + Math.PI + rand(-0.7, 0.7) : Math.random() * TAU;
+    const d = back ? rand(60, 100) : rand(20, 70);
+    if (back && this.kind === 'pigeon') this.flock.t = 0;
     b.cx = boat.pos.x - Math.sin(a) * d;
     b.cz = boat.pos.z - Math.cos(a) * d;
     b.x = b.cx + b.r;
@@ -471,8 +474,8 @@ export class Birds {
       b.follow = rand(10, 18);
       return;
     }
-    b.cx = damp(b.cx, boat.pos.x + fx * 25, 0.05, dt);
-    b.cz = damp(b.cz, boat.pos.z + fz * 25, 0.05, dt);
+    b.cx = damp(b.cx, boat.pos.x + fx * 25, 0.3, dt);
+    b.cz = damp(b.cz, boat.pos.z + fz * 25, 0.3, dt);
     b.alt = damp(b.alt, 26 + 12 * Math.sin(time * 0.05 + b.i * 2), 0.2, dt);
     b.ang += (b.dir * 10) / b.r * dt;
     const tx = b.cx + Math.cos(b.ang + b.dir * 0.5) * b.r;

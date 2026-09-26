@@ -76,7 +76,7 @@ export class Controls {
       // arrows on a focused card); the round buttons over the game do not
       // steal the driving keys
       const control = e.target.closest?.('button, a, [role="slider"]');
-      if (control && !control.closest('#hud')) return;
+      if (control && !control.closest('#hud, [hidden]')) return;
       // (on the start screen the arrows may still scroll a short menu)
       if (document.body.dataset.state === 'playing') e.preventDefault();
       this.keys.add(key);
@@ -219,15 +219,16 @@ export class WheelControl {
       e.preventDefault();
       el.setPointerCapture?.(e.pointerId);
       this.id = e.pointerId;
-      this.start = at(e) - this.angle;
+      this.last = at(e);
       controls.wheelHeld = true;
       controls.onAnyInput();
     });
     el.addEventListener('pointermove', (e) => {
       if (e.pointerId !== this.id) return;
-      let a = at(e) - this.start;
-      a = Math.atan2(Math.sin(a), Math.cos(a));
-      this.angle = clamp(a, -2.1, 2.1);
+      const a = at(e);
+      const d = a - this.last;
+      this.last = a;
+      this.angle = clamp(this.angle + Math.atan2(Math.sin(d), Math.cos(d)), -2.1, 2.1);
     });
     const up = (e) => {
       if (e.pointerId !== this.id) return;

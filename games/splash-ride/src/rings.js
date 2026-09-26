@@ -114,7 +114,7 @@ export class Rings {
     g.setAttribute('mote', new THREE.BufferAttribute(mote, 4));
     g.setAttribute('tint', new THREE.BufferAttribute(tint, 3));
     this.moteUniforms = { uTime: { value: 0 }, uScale: { value: 700 } };
-    this.motes = new THREE.Points(g, new THREE.ShaderMaterial({ vertexShader: MOTE_VERT, fragmentShader: MOTE_FRAG, uniforms: this.moteUniforms, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.motes = new THREE.Points(g, new THREE.ShaderMaterial({ vertexShader: MOTE_VERT, fragmentShader: MOTE_FRAG, uniforms: this.moteUniforms, transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor }));
     this.motes.frustumCulled = false;
     this.motes.layers.set(LAYER_FX);
     scene.add(this.motes);
@@ -175,6 +175,8 @@ export class Rings {
       r.born = this.time + k * 0.15;
       r.chain = chain;
       r.side = null;
+      r.root.scale.setScalar(0.2);
+      r.glow.material.opacity = 1;
       r.root.visible = true;
       r.root.position.set(x, 0, z);
       r.root.rotation.set(0, h, 0);
@@ -217,8 +219,6 @@ export class Rings {
         if (r.pop >= 1) {
           r.live = false;
           r.root.visible = false;
-          r.root.scale.set(1, 1, 1);
-          r.glow.material.opacity = 1;
         }
       } else {
         // grow in gently
@@ -229,7 +229,7 @@ export class Rings {
         r.root.position.y = Math.sin(t * 1.3 + r.i) * 0.06;
         // collected when the boat passes through the plane of the hoop
         const side = Math.sign(along);
-        if (r.side !== null && side !== r.side && Math.abs(across) < R + 1.1 && !boat.airborneHigh) this.collect(r);
+        if (r.side !== null && side !== r.side && Math.abs(across) < R + 1.1) this.collect(r);
         else if (dist < 1.8) this.collect(r);
         r.side = side;
         if (along < 0 || dist < 30) ahead++;

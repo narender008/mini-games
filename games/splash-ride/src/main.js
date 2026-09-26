@@ -124,6 +124,8 @@ class App {
     scene.add(this.hemi);
 
     this.rig = new ChaseCam(camera);
+    this.rings = new Rings({ scene, land: null });
+    this.rings.onCollect = (r, n) => this.onRing(r, n);
     this.resize(true);
 
     try {
@@ -133,8 +135,6 @@ class App {
       console.warn('sound unavailable', err);
       this.audio = SILENT;
     }
-    this.rings = new Rings({ scene, land: null });
-    this.rings.onCollect = (r, n) => this.onRing(r, n);
     this.course = new Course({ scene, audio: this.audio, makeGhost: (id) => this.makeGhost(id) });
     this.course.onEvent = (kind, e) => this.onCourse(kind, e);
     this.shells = new Shells({ scene });
@@ -199,7 +199,7 @@ class App {
     this.wheel = new WheelControl(document.getElementById('wheel'), this.controls);
     this.controls.mode = this.sel.mode;
     addEventListener('keydown', (e) => {
-      if (e.target.closest?.('input, textarea')) return;
+      if (e.target.closest?.('input, textarea') || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'f' || e.key === 'F') {
         this.audio.unlock();
         toggleFullscreen();
@@ -381,14 +381,17 @@ class App {
     this.renderer.setSize(w, h, false);
     this.post.setSize(w, h, dpr);
     this.spray.setViewport(h * dpr);
-    this.rings?.setViewport(h * dpr);
+    this.rings.setViewport(h * dpr);
     if (!first && this.frozen) this.render();
   }
 
   // ------------------------------------------------------------ places
 
-  async loadPlace(id) {
-    if (this.places[id]) return this.places[id];
+  loadPlace(id) {
+    return (this.places[id] ??= this.buildPlace(id));
+  }
+
+  async buildPlace(id) {
     let mod;
     try {
       mod = await PLACE_MODULES[id]();
@@ -408,6 +411,7 @@ class App {
     group.add(terrain, scenery.group);
     this.sky.set(def.sky);
     const env = this.sky.environment(this.renderer, q.envSize);
+    if (this.place) this.sky.set(this.place.def.sky);
     const P = { id, def, land, group, scenery, env };
     try {
       P.animals = new Animals({
@@ -432,7 +436,6 @@ class App {
     } catch (err) {
       console.warn('animals unavailable', err);
     }
-    this.places[id] = P;
     return P;
   }
 
@@ -576,6 +579,7 @@ class App {
       input = { steer: 0.28 + Math.sin(t * 0.13) * 0.2, active: false, boost: false };
       input.steer = d.littleAssist({ ...input, active: false }, null);
     }
+    this.audio.boost(input.boost);
     d.little = this.sel.mode === 'little' || this.state !== 'playing';
     // fixed sub-steps keep the springs steady on slow frames
     const n = Math.ceil(dt / (1 / 90));

@@ -518,7 +518,7 @@ export class Ducks {
       // tilt with the swell: sample the surface ahead and to the side
       const hf = w.heightAt(m.x - Math.sin(m.heading) * 0.25, m.z - Math.cos(m.heading) * 0.25);
       const hr = w.heightAt(m.x + Math.cos(m.heading) * 0.25, m.z - Math.sin(m.heading) * 0.25);
-      place(this.mothers, fi, m.x, surf, m.z, m.heading, Math.atan2(hf - surf, 0.25), -Math.atan2(hr - surf, 0.25), m.scale);
+      place(this.mothers, fi, m.x, surf, m.z, m.heading, Math.atan2(hf - surf, 0.25), Math.atan2(hr - surf, 0.25), m.scale);
       ma[fi * 4] = m.phase;
       ma[fi * 4 + 1] = m.headYaw;
       ma[fi * 4 + 2] = m.headPitch;

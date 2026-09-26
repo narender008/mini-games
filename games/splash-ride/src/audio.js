@@ -689,6 +689,7 @@ export class Audio {
       s.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
       s.connect(this.ctx.destination);
       s.start();
+      if (this._muted) this.sleepT = setTimeout(() => this._muted && this.ctx.suspend().catch(() => {}), 400);
     }
     if (this.ctx.state !== 'running' && !this.hidden && !this._muted && !this.offline) this.ctx.resume().catch(() => {});
   }

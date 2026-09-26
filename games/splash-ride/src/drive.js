@@ -131,7 +131,7 @@ export class Boat {
     return {
       h: hc * 0.4 + (hb + hs + hr + hl) * 0.15,
       pitch: Math.atan2(hb - hs, 2 * L),
-      roll: Math.atan2(hl - hr, 2 * B),
+      roll: Math.atan2(hr - hl, 2 * B),
       bump: s.bumpHeight(x, z),
     };
   }

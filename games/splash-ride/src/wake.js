@@ -147,10 +147,10 @@ export class Wake {
   // Record the boat's pose. p: { x, z, dx, dz (unit heading), speed,
   // halfBeam, halfLength, foam (0..1, 0 while airborne), glow (0..1) }
   record(time, p) {
-    this.head = { ...p, t: time };
+    const rec = { x: p.x, z: p.z, dx: p.dx, dz: p.dz, v: p.speed, hw: p.halfBeam, hl: p.halfLength, foam: p.foam, glow: p.glow, t: time };
+    this.head = rec;
     const last = this.lastRec;
     if (last && Math.hypot(p.x - last.x, p.z - last.z) < 0.45 && time - last.t < 0.12) return;
-    const rec = { x: p.x, z: p.z, dx: p.dx, dz: p.dz, v: p.speed, hw: p.halfBeam, hl: p.halfLength, foam: p.foam, glow: p.glow, t: time };
     this.path.push(rec);
     if (this.path.length > MAXP) this.path.shift();
     this.lastRec = rec;
