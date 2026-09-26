@@ -371,11 +371,15 @@ void main() {
 
   // --- foam
   float shore = 0.0;
-  if (!sky) shore = (1.0 - smoothstep(0.02, 0.45, depthBelow));
+  if (!sky) shore = (1.0 - smoothstep(0.02, 0.32, depthBelow));
   vec2 luv = (p - uLandInfo.xy) / uLandInfo.zw;
   float land = texture2D(uLand, luv).r;
   float nB = texture2D(uNoise, p * 0.013).g;
   float band = exp(-max(land, 0.0) / 1.6) * (0.5 + 0.5 * sin(land * 2.3 - uTime * 1.3 + nB * 9.0));
+  // lapping foam comes and goes in patches along a shore, never a clean ring
+  band *= smoothstep(0.35, 0.7, texture2D(uNoise, p * 0.09 + vec2(uTime * 0.01, 0.0)).g);
+  // a wet line with foam here and there where the water meets a shore
+  shore *= 0.35 + 0.65 * smoothstep(0.3, 0.75, texture2D(uNoise, p * 0.23 + vec2(0.0, uTime * 0.012)).b);
   float foamAmt = wake.r + (shore * 0.8 + band * 0.45) * uLook2.y + bf;
   // foam: fractal patches (which grow and join as foam builds up) with a
   // bubbly lace inside them

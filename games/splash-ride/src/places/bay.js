@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { rng, smoothstep } from '../config.js';
 import { dirFrom } from '../sky.js';
-import { makeNoise, islandHeight, smax, rockGeometry, instances, merge } from './common.js';
+import { makeNoise, islandHeight, smax, rockGeometry, rockMaterial, instances, merge } from './common.js';
 import { makeSeaPines, makeWoods } from './bay-trees.js';
 import { makeVillage } from './bay-village.js';
 import { makeFireflies, makeFloatingLanterns, makeSeaSparkle } from './bay-glow.js';
@@ -458,7 +458,7 @@ export async function build({ quality, renderer, textures, land }) {
 
   // ---- rocks: along the foot of the cliffs, round the lighthouse knoll and
   // the islet, and the sea stacks
-  const rockMat = new THREE.MeshStandardMaterial({ color: 0x7c766f, roughness: 0.8 });
+  const rockMat = rockMaterial(textures.noise, 0x7c766f, { lichen: 0.5, lichenColor: 0x9a9670 });
   const bigRocks = [];
   const smallRocks = [];
   const addRock = (x, z, s, sink = 0.35) => (s > 1.5 ? bigRocks : smallRocks).push({ x, y: height(x, z) - s * sink, z, s, sy: 0.6 + r() * 0.5, ry: r() * 6.28 });

@@ -169,17 +169,131 @@ export function merge(geos) {
 export function rockGeometry(seed, detail = 3) {
   const g = new THREE.IcosahedronGeometry(1, detail);
   const n = makeNoise(seed);
+  const r = rng(seed * 7 + 3);
+  // a few flat breaks, like a boulder split along its joints
+  const cuts = [];
+  for (let i = 0; i < 4; i++) {
+    const a = r() * Math.PI * 2;
+    const y = r() * 1.4 - 0.4;
+    const d = new THREE.Vector3(Math.cos(a), y, Math.sin(a)).normalize();
+    cuts.push([d, 0.72 + r() * 0.2]);
+  }
   const pos = g.attributes.position;
   const v = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i);
-    const d = 1 + 0.28 * n.fbm(v.x * 1.4 + 3, v.z * 1.4 + v.y * 0.9, 4) + 0.08 * n.noise(v.x * 5, v.y * 5 + v.z * 3);
+    const ridge = 1 - Math.abs(n.noise(v.x * 2.6 + 7, v.y * 2.6 + v.z * 1.7));
+    const d = 1 + 0.24 * n.fbm(v.x * 1.4 + 3, v.z * 1.4 + v.y * 0.9, 4) + 0.1 * ridge * ridge + 0.06 * n.noise(v.x * 7, v.y * 7 + v.z * 4) + 0.03 * n.noise(v.x * 15 + 2, v.z * 15 - v.y * 9);
     v.multiplyScalar(d);
+    for (const [c, k] of cuts) {
+      const o = v.dot(c) - k;
+      if (o > 0) v.addScaledVector(c, -o * 0.97);
+    }
     v.y *= 0.72;
     pos.setXYZ(i, v.x, v.y, v.z);
   }
-  g.computeVertexNormals();
-  return g;
+  // the icosahedron comes unindexed (flat facets); weld it so it shades as
+  // one smooth weathered surface
+  const welded = weld(g);
+  welded.computeVertexNormals();
+  return welded;
+}
+
+// join vertices that share a position into one indexed geometry
+function weld(g) {
+  const pos = g.attributes.position;
+  const map = new Map();
+  const out = [];
+  const index = [];
+  for (let i = 0; i < pos.count; i++) {
+    const key = `${Math.round(pos.getX(i) * 1e4)},${Math.round(pos.getY(i) * 1e4)},${Math.round(pos.getZ(i) * 1e4)}`;
+    let k = map.get(key);
+    if (k === undefined) {
+      k = out.length / 3;
+      map.set(key, k);
+      out.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+    }
+    index.push(k);
+  }
+  const w = new THREE.BufferGeometry();
+  w.setAttribute('position', new THREE.Float32BufferAttribute(out, 3));
+  w.setIndex(index);
+  return w;
+}
+
+// Stone that looks weathered rather than painted: colour from world
+// position (so no two rocks match), dark cracks, lichen or salt on the tops,
+// a wet dark band at the waterline and weed below it. `noise` is the game's
+// noise texture (textures.noise).
+export function rockMaterial(noise, color, { lichen = 0, lichenColor = 0x8a8c5a, weed = 1, roughness = 0.84 } = {}) {
+  const mat = new THREE.MeshStandardMaterial({ color, roughness, metalness: 0 });
+  const u = { uRockNoise: { value: noise }, uLichen: { value: lichen }, uLichenColor: { value: new THREE.Color(lichenColor) }, uWeed: { value: weed } };
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, u);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vRPos;\nvarying vec3 vRNrm;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+{
+  vec4 rp = vec4(transformed, 1.0);
+  mat3 rm = mat3(modelMatrix);
+#ifdef USE_INSTANCING
+  rp = instanceMatrix * rp;
+  rm = rm * mat3(instanceMatrix);
+#endif
+  vRPos = (modelMatrix * rp).xyz;
+  vRNrm = normalize(rm * objectNormal);
+}`,
+      );
+    sh.fragmentShader = sh.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+varying vec3 vRPos;
+varying vec3 vRNrm;
+uniform sampler2D uRockNoise;
+uniform float uLichen, uWeed;
+uniform vec3 uLichenColor;
+vec3 rPert;
+float rRough;
+vec4 rockTri(vec3 p, vec3 w) {
+  return texture2D(uRockNoise, p.yz) * w.x + texture2D(uRockNoise, p.xz) * w.y + texture2D(uRockNoise, p.xy) * w.z;
+}`,
+      )
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+{
+  vec3 wn = normalize(vRNrm);
+  vec3 w = pow(abs(wn), vec3(4.0));
+  w /= w.x + w.y + w.z;
+  vec4 a = rockTri(vRPos * 0.33, w);
+  vec4 b = rockTri(vRPos * 0.07, w);
+  vec4 c = rockTri(vRPos * 1.3, w);
+  float tone = a.b * 0.5 + b.g * 0.35 + c.b * 0.15;
+  vec3 col = diffuseColor.rgb * (0.62 + 0.7 * tone) * mix(vec3(1.0), vec3(1.06, 1.0, 0.92), b.r);
+  // joints and cracks: thin dark lines
+  float crack = 1.0 - smoothstep(0.0, 0.035, abs(b.b - 0.5) + c.g * 0.02);
+  col *= 1.0 - 0.5 * crack;
+  // lichen or salt on the faces that look up
+  float top = smoothstep(0.45, 0.85, wn.y) * smoothstep(0.45, 0.62, a.g + c.b * 0.2);
+  col = mix(col, uLichenColor * (0.75 + 0.5 * c.g), uLichen * top);
+  // wet and dark at the waterline, green-brown weed below it
+  float h = vRPos.y;
+  float wet = smoothstep(0.7 + a.r * 0.4, 0.0, h);
+  col *= mix(1.0, 0.52, wet);
+  col = mix(col, col * vec3(0.55, 0.62, 0.36), uWeed * smoothstep(-0.05, -0.5, h));
+  rRough = mix(0.84, 0.35, wet * step(-0.1, h));
+  rPert = vec3(c.b - 0.5, 0.0, c.g - 0.5) * 0.9 + vec3(a.g - 0.5, 0.0, a.b - 0.5) * 0.5;
+  diffuseColor.rgb = col;
+}`,
+      )
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = rRough;')
+      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize(normal + (viewMatrix * vec4(rPert, 0.0)).xyz * 0.5);');
+  };
+  mat.customProgramCacheKey = () => 'rock';
+  return mat;
 }
 
 export { smoothstep };

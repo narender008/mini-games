@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { rng } from '../config.js';
 import { dirFrom } from '../sky.js';
-import { makeNoise, islandHeight, smax, smoothstep, rockGeometry, instances, canvasTexture, merge } from './common.js';
+import { makeNoise, islandHeight, smax, smoothstep, rockGeometry, rockMaterial, instances, canvasTexture, merge } from './common.js';
 import { makePines, makeForest } from './pines.js';
 
 const noise = makeNoise(34);
@@ -530,7 +530,7 @@ function mountains() {
   return m;
 }
 
-export async function build({ quality }) {
+export async function build({ quality, textures }) {
   const group = new THREE.Group();
   group.name = 'lake';
   const r = rng(51);
@@ -582,7 +582,7 @@ export async function build({ quality }) {
   group.add(pines);
 
   // granite: boulders in the water, along the shores and on the islet
-  const rockMat = new THREE.MeshStandardMaterial({ color: 0x77716a, roughness: 0.78 });
+  const rockMat = rockMaterial(textures.noise, 0x77716a, { lichen: 0.8 });
   const rockGeos = [rockGeometry(5), rockGeometry(9), rockGeometry(14)];
   const rocks = [[], [], []];
   ROCKS.forEach((rk, i) => rocks[i % 3].push({ x: rk.x, y: -0.5, z: rk.z, s: rk.r, sy: 0.9 + r() * 0.4, ry: r() * 6 }));

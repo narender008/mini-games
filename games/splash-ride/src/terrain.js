@@ -189,10 +189,10 @@ float tShadowK;`,
     float rip = sin(ph) * 0.5 + 0.5;
     vec3 bed = uBed * (0.8 + 0.22 * grain + 0.1 * rip * rip);
     tPert += vec3(cos(ph) * 0.14, 0.0, 0.05) * under;
-    vec2 mq = p * 0.013 + (texture2D(uNoise, p * 0.0041).gb - 0.5) * 0.45;
-    float meadow = texture2D(uNoise, mq).g * 0.75 + texture2D(uNoise, mq * 2.7).b * 0.25;
+    vec2 mq = p * 0.0061 + (texture2D(uNoise, p * 0.0023).gb - 0.5) * 0.25;
+    float meadow = texture2D(uNoise, mq).r * 0.85 + texture2D(uNoise, mq * 4.1).g * 0.15;
     float tuft = texture2D(uNoise, p * 0.37).b;
-    float gm = smoothstep(0.5, 0.56, meadow + (tuft - 0.5) * 0.08) * smoothstep(-0.9, -2.4, h);
+    float gm = smoothstep(0.5, 0.6, meadow + (tuft - 0.5) * 0.12) * smoothstep(-0.9, -2.4, h);
     // blades lying with the current: streaky, with lighter tips
     float blade = texture2D(uNoise, vec2(p.x * 1.3 + p.y * 0.4, p.y * 0.22) ).b;
     vec3 grassBed = mix(vec3(0.13, 0.16, 0.07), vec3(0.3, 0.32, 0.14), blade) * (0.75 + 0.4 * n2.b);

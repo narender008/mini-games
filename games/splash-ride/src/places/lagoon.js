@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { rng } from '../config.js';
 import { dirFrom } from '../sky.js';
-import { makeNoise, islandHeight, smax, smoothstep, rockGeometry, instances } from './common.js';
+import { makeNoise, islandHeight, smax, smoothstep, rockGeometry, rockMaterial, instances } from './common.js';
 import { makePalms } from './palms.js';
 
 const noise = makeNoise(21);
@@ -213,7 +213,7 @@ function thatchHut(r) {
   return g;
 }
 
-export async function build({ quality }) {
+export async function build({ quality, textures }) {
   const group = new THREE.Group();
   group.name = 'lagoon';
   const r = rng(99);
@@ -245,7 +245,7 @@ export async function build({ quality }) {
   group.add(palms);
 
   // volcanic rocks
-  const rockMat = new THREE.MeshStandardMaterial({ color: 0x3e3935, roughness: 0.82, metalness: 0 });
+  const rockMat = rockMaterial(textures.noise, 0x4a4540, { lichen: 0.35, lichenColor: 0x9a938a });
   const rockGeos = [rockGeometry(3), rockGeometry(8), rockGeometry(13)];
   rockGeos.forEach((geo, k) => {
     const items = ROCKS.filter((_, i) => i % 3 === k).map((rk) => ({ x: rk.x, y: -0.6, z: rk.z, s: rk.r, sy: 1.1 + r() * 0.5, ry: r() * 6 }));
