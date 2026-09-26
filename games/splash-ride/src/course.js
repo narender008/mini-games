@@ -286,7 +286,9 @@ export class Course {
         const o = this.ghost.object;
         o.position.set(tr[a] + (tr[b] - tr[a]) * k, tr[a + 1] + (tr[b + 1] - tr[a + 1]) * k, tr[a + 2] + (tr[b + 2] - tr[a + 2]) * k);
         o.rotation.set(tr[a + 4] + (tr[b + 4] - tr[a + 4]) * k, lerpA(tr[a + 3], tr[b + 3]), tr[a + 5] + (tr[b + 5] - tr[a + 5]) * k, 'YXZ');
-        this.ghost.update?.(dt, { time, speed: 8, speed01: 0.8, turn: 0, throttle: 1, boost: 0, airborne: false, windLocal: new THREE.Vector3(0, 0, 8) });
+        const gs = this.ghostState || (this.ghostState = { speed: 8, speed01: 0.8, turn: 0, throttle: 1, boost: 0, airborne: false, windLocal: new THREE.Vector3(5, 0, 4) });
+        gs.time = time;
+        this.ghost.update?.(dt, gs);
         o.visible = true;
       } else {
         this.ghost.object.visible = false;
