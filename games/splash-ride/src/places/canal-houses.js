@@ -8,7 +8,7 @@
 // houses with a house behind to close the view.
 import { rng, clamp } from '../config.js';
 import { T, F, col, WHITE } from './canal-kit.js';
-import { quayLines, streetWidth } from './canal-quays.js';
+import { quayLines, streetWidth, tube } from './canal-quays.js';
 import { allWaterD, nearBridge, CZ } from './canal-layout.js';
 
 const PAINT = {
@@ -126,19 +126,35 @@ export function house(g, d, cards, w, D, o) {
   g.poly(outline, holes, 0, wallT, wallC);
 
   const frameC = o.frameC;
+  // the reveals: lit at the wall face, shadowy deep in, darkest under the head
+  const k = (m) => wallC.map((v) => v * m);
+  const jo = k(0.86);
+  const ji = k(0.5);
+  const ho = k(0.62);
+  const hi = k(0.38);
+  const seed = g.ox * 0.731 + g.oz * 0.419;
   for (const q of opens) {
-    const { x0, x1, y0, y1, rec } = q;
-    const rc = o.brick ? wallC : wallC;
-    g.quad([x0, y0, 0], [x0, y0, -rec], [x0, y1, -rec], [x0, y1, 0], wallT, rc);
-    g.quad([x1, y0, -rec], [x1, y0, 0], [x1, y1, 0], [x1, y1, -rec], wallT, rc);
-    g.quad([x0, y1, -rec], [x1, y1, -rec], [x1, y1, 0], [x0, y1, 0], wallT, rc.map((v) => v * 0.8));
-    if (y0 < 4) g.quad([x0, y0, 0], [x1, y0, 0], [x1, y0, -rec], [x0, y0, -rec], wallT, rc);
-    g.panel(x0, x1, y0, y1, -rec, q.tile, q.door ? o.doorC : q.shop ? o.shopC : frameC);
+    const { x0, x1, y0, y1 } = q;
+    const rec = q.rec + 0.1;
+    g.quad([x0, y0, 0], [x0, y0, -rec], [x0, y1, -rec], [x0, y1, 0], wallT, [jo, ji, ji, jo]);
+    g.quad([x1, y0, -rec], [x1, y0, 0], [x1, y1, 0], [x1, y1, -rec], wallT, [ji, jo, jo, ji]);
+    g.quad([x0, y1, -rec], [x1, y1, -rec], [x1, y1, 0], [x0, y1, 0], wallT, [hi, hi, ho, ho]);
+    if (y0 < 4) g.quad([x0, y0, 0], [x1, y0, 0], [x1, y0, -rec], [x0, y0, -rec], wallT, k(0.92));
+    // every window its own variant (see the kit): 1..15 in the tile's high bits
+    const v = 1 + Math.floor(hash(seed + x0 * 3.1, y0 * 1.7) * 15);
+    g.panel(x0, x1, y0, y1, -rec, q.tile + 16 * v, q.door ? o.doorC : q.shop ? o.shopC : frameC);
     if (q.door) {
-      // a stone step
-      d.box(x0 - 0.15, x1 + 0.15, -0.3, 0.18, -rec, 0.35, T.SAND, col('#cfc9bd'), 'kb');
+      // two stone steps up to the door
+      d.box(x0 - 0.15, x1 + 0.15, -0.3, 0.18, -rec, 0.36, T.SAND, col('#cfc9bd'), 'kb');
+      if (!o.plain) d.box(x0 - 0.32, x1 + 0.32, -0.3, 0.09, 0.36, 0.66, T.SAND, col('#c2bbae'), 'kb');
     }
-    if (q.sill) d.box(x0 - 0.08, x1 + 0.08, y0 - 0.1, y0 + 0.005, -0.02, 0.13, T.SAND, trimC, 'k');
+    if (q.sill) {
+      // a stone sill standing well proud, with a soft shadow and a weather
+      // stain running down the wall under it
+      d.box(x0 - 0.11, x1 + 0.11, y0 - 0.1, y0 + 0.02, -rec, 0.15, T.SAND, trimC, 'k');
+      const len = 0.45 + hash(seed + x0, y0) * 0.6;
+      if (!o.plain) stain(d, holes, wallT, wallC, w, x0 - 0.11, x1 + 0.11, y0 - 0.1, len, 0.5);
+    }
     if (q.surround) {
       const s = 0.15;
       d.box(x0 - s, x0, q.sill ? y0 : 0, y1, 0, 0.05, T.PLAIN, trimC, 'kbtr');
@@ -158,13 +174,25 @@ export function house(g, d, cards, w, D, o) {
   if (!o.brick && o.bands) {
     for (let f = 1; f <= nF; f++) {
       const y = H0 + (f - 1) * Hf - 0.05;
-      d.box(-0.01, w + 0.01, y, y + 0.16, 0, 0.06, T.PLAIN, trimC, 'k');
+      d.box(-0.01, w + 0.01, y, y + 0.16, 0, 0.07, T.PLAIN, trimC, 'k');
+      if (!o.plain) stain(d, holes, wallT, wallC, w, 0, w, y, 0.28, 0.66, 0);
     }
   }
   if (style === 'eave' || style === 'flat' || style === 'cornice') {
     const ch = style === 'cornice' ? 0.55 : 0.35;
     g.box(-0.02, w + 0.02, Hw - 0.12, Hw + ch * 0.4, 0, 0.12, T.PLAIN, trimC, 'k');
     g.box(-0.04, w + 0.04, Hw + ch * 0.4, Hw + ch, 0, 0.32, T.PLAIN, trimC, 'k');
+    // the shadow under the cornice, a gutter along it and a downpipe
+    const zinc = col('#8e918c');
+    if (!o.plain) {
+      stain(d, holes, wallT, wallC, w, 0, w, Hw - 0.12, 0.5, 0.5, 0);
+      d.box(-0.04, w + 0.04, Hw + ch - 0.04, Hw + ch + 0.1, 0.32, 0.46, T.PLAIN, zinc, 'k');
+    }
+    if (!o.plain && !o.shutters && hash(seed, 5.5) < 0.7) {
+      const px = hash(seed, 7.7) < 0.5 ? 0.14 : w - 0.14;
+      tube(d, [px, Hw + ch, 0.39], [px, Hw - 0.3, 0.14], 0.045, 0.045, 5, T.PLAIN, zinc);
+      tube(d, [px, Hw - 0.3, 0.14], [px, 0.25, 0.14], 0.045, 0.045, 5, T.PLAIN, zinc);
+    }
     if (style === 'cornice') {
       // a raised middle with a little pediment
       const pw = Math.min(w * 0.5, 2.6);
@@ -187,8 +215,9 @@ export function house(g, d, cards, w, D, o) {
     const y0 = H0 + (f - 1) * Hf + 0.9;
     const y1 = y0 + 1.5;
     for (const zc of [-D * 0.3, -D * 0.72]) {
-      g.quad([-0.01, y0, zc - 0.5], [-0.01, y0, zc + 0.5], [-0.01, y1, zc + 0.5], [-0.01, y1, zc - 0.5], winT, frameC, [[0, 0], [1, 0], [1, 1], [0, 1]]);
-      g.quad([w + 0.01, y0, zc + 0.5], [w + 0.01, y0, zc - 0.5], [w + 0.01, y1, zc - 0.5], [w + 0.01, y1, zc + 0.5], winT, frameC, [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      const v = 16 * (1 + Math.floor(hash(seed + zc, y0) * 15));
+      g.quad([-0.01, y0, zc - 0.5], [-0.01, y0, zc + 0.5], [-0.01, y1, zc + 0.5], [-0.01, y1, zc - 0.5], winT + v, frameC, [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      g.quad([w + 0.01, y0, zc + 0.5], [w + 0.01, y0, zc - 0.5], [w + 0.01, y1, zc - 0.5], [w + 0.01, y1, zc + 0.5], winT + v, frameC, [[0, 0], [1, 0], [1, 1], [0, 1]]);
     }
   }
   g.quad([w, -0.3, -D], [0, -0.3, -D], [0, sideTop, -D], [w, sideTop, -D], wallT, wallC.map((v) => v * 0.85));
@@ -256,9 +285,38 @@ function gableTrim(g, top, c, style) {
   }
 }
 
+const hash = (a, b) => {
+  const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+  return v - Math.floor(v);
+};
+
+// A soft shadow and weather stain on the wall under a sill, band or
+// cornice (x0..x1, from ytop down by len): a patch of the wall's own
+// surface a centimetre proud, darkest (k) at the top and fading into the
+// wall below and at the sides (by `fade` metres). It stops short of any
+// opening below it.
+function stain(d, holes, tile, wallC, w, x0, x1, ytop, len, k, fade = 0.22) {
+  x0 = Math.max(x0, 0);
+  x1 = Math.min(x1, w);
+  fade = Math.min(fade, x0, w - x1);
+  let yb = Math.max(ytop - len, 0.42);
+  for (const h of holes) {
+    const hy = h[2][1];
+    if (hy < ytop - 0.01 && h[1][0] > x0 - fade && h[0][0] < x1 + fade) yb = Math.max(yb, hy + 0.04);
+  }
+  if (ytop - yb < 0.08) return;
+  const z = 0.012;
+  const dark = wallC.map((v) => v * k);
+  d.quad([x0, yb, z], [x1, yb, z], [x1, ytop, z], [x0, ytop, z], tile, [wallC, wallC, dark, dark]);
+  if (fade > 0.02) {
+    d.quad([x0 - fade, yb, z], [x0, yb, z], [x0, ytop, z], [x0 - fade, ytop, z], tile, [wallC, wallC, dark, wallC]);
+    d.quad([x1, yb, z], [x1 + fade, yb, z], [x1 + fade, ytop, z], [x1, ytop, z], tile, [wallC, wallC, wallC, dark]);
+  }
+}
+
 function flowerBox(g, cards, x0, x1, y0, r, o) {
   const bc = col(pick(r, BOXES));
-  g.box(x0 - 0.04, x1 + 0.04, y0 + 0.005, y0 + 0.22, 0.04, 0.27, T.PLANK, bc, 'k');
+  g.box(x0 - 0.04, x1 + 0.04, y0 + 0.02, y0 + 0.24, 0.04, 0.27, T.PLANK, bc, 'k');
   const xm = (x0 + x1) / 2;
   const hw = (x1 - x0) / 2 + 0.1;
   const cell = r() < 0.55 ? F.GERANIUM : F.PETUNIA;
@@ -370,6 +428,8 @@ export function houseOptions(reg, r, prev) {
 // kept free (the café, the church square...).
 export function buildHouses(sectors, quality, skip = () => false) {
   const r = rng(314);
+  // the small facade extras (stains, gutters, downpipes, second steps) on high only
+  const low = quality.tier !== 'high';
   const lines = quayLines();
   let count = 0;
   for (const line of lines) {
@@ -445,6 +505,7 @@ export function buildHouses(sectors, quality, skip = () => false) {
       const g = sectors.geo(mx, mz);
       const d = sectors.det(mx, mz);
       const o = houseOptions(reg, r, prev);
+      o.plain = low;
       g.frame(a.x, 1.41, a.z, rx, rz);
       d.frame(a.x, 1.41, a.z, rx, rz);
       house(g, d, sectors.flowers(mx, mz), cw, D, o);

@@ -130,7 +130,7 @@ export async function build({ quality, renderer }) {
   const t2 = performance.now();
   const houses = buildHouses(sectors, quality, keepClear);
   const t3 = performance.now();
-  buildBridges(sectors);
+  buildBridges(sectors, quality);
   const props = buildProps(sectors, K, quality, quays.lampSpots);
   const t4 = performance.now();
   for (const m of sectors.meshes(K, quality.shadows)) group.add(m);

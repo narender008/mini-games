@@ -232,7 +232,7 @@ export function buildBoom(sectors) {
 
 // ------------------------------------------------------------ landmarks
 
-function church(g, d, cards, x, z) {
+function church(g, d, cards, x, z, lod) {
   const brick = WHITE;
   const sand = col('#e4d8c0');
   // the tower (west end), square, brick with sandstone corners
@@ -319,7 +319,7 @@ function church(g, d, cards, x, z) {
     const a = (k / 8) * Math.PI * 2 + 0.3;
     const tx = x + 14 + Math.cos(a) * 30;
     const tz = z + Math.sin(a) * 22;
-    tree(g, cards, tx, STREET, tz, 900 + k, 1.05);
+    tree(g, cards, tx, STREET, tz, 900 + k, 1.05, lod);
   }
   g.identity();
 }
@@ -646,7 +646,7 @@ export function buildProps(sectors, K, quality, lamps) {
   const extra = [];
   buildBoats(sectors);
   buildBoom(sectors);
-  church(sectors.geo(CHURCH.x, CHURCH.z), sectors.det(CHURCH.x, CHURCH.z), sectors.cards(CHURCH.x, CHURCH.z), CHURCH.x, CHURCH.z);
+  church(sectors.geo(CHURCH.x, CHURCH.z), sectors.det(CHURCH.x, CHURCH.z), sectors.cards(CHURCH.x, CHURCH.z), CHURCH.x, CHURCH.z, quality.tier === 'high' ? 1 : quality.tier === 'low' ? 0.45 : 0.47);
   const hub = windmill(sectors.geo(MILL.x, MILL.z), MILL.x, MILL.z);
   const sails = millSails(K);
   // face the sails south-east, towards the canals

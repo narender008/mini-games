@@ -296,7 +296,7 @@ function buildWood(g, d, cards, fr, b) {
   }
 }
 
-function buildHousesBridge(g, d, cards, fr, b) {
+function buildHousesBridge(g, d, cards, fr, b, plain) {
   const r = rng(77);
   const L = fr.span;
   const W = b.width;
@@ -335,6 +335,7 @@ function buildHousesBridge(g, d, cards, fr, b) {
     o.shop = false;
     o.doorAt = 'none';
     o.boxes = 0.8;
+    o.plain = plain;
     if (o.style === 'eave' || o.style === 'flat' || o.style === 'cornice') o.style = r() < 0.5 ? 'eave' : 'flat';
     const save = [g.ox, g.oy, g.oz, g.rx, g.rz];
     // the front facing +z (overhanging a little), and the back facing -z
@@ -359,7 +360,7 @@ function buildHousesBridge(g, d, cards, fr, b) {
 
 // ------------------------------------------------------------ all of them
 
-export function buildBridges(sectors) {
+export function buildBridges(sectors, quality = { tier: 'high' }) {
   for (const b of BRIDGES) {
     const fr = bridgeFrame(b);
     const g = sectors.geo(fr.x, fr.z);
@@ -369,7 +370,7 @@ export function buildBridges(sectors) {
     d.frame(fr.x, 0, fr.z, fr.ax, fr.az);
     if (b.kind === 'stone') buildStone(g, d, cards, fr, b);
     else if (b.kind === 'wood') buildWood(g, d, cards, fr, b);
-    else buildHousesBridge(g, d, cards, fr, b);
+    else buildHousesBridge(g, d, cards, fr, b, quality.tier !== 'high');
     g.identity();
     d.identity();
   }

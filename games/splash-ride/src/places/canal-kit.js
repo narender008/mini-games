@@ -1,8 +1,8 @@
 // Canal Town's shared kit: one texture atlas and one material for nearly
 // everything built (plaster, brick, roof tiles, quay stone, cobbles, planks,
-// paint, windows, doors, copper, sandstone), a second atlas for the leafy,
-// flowery alpha-tested cards, and a geometry builder that merges it all
-// into a few meshes per town sector.
+// paint, windows, doors, copper, sandstone), a second atlas for the flowery
+// alpha-tested cards, a third for the street trees' leaf clusters, and a
+// geometry builder that merges it all into a few meshes per town sector.
 //
 // Atlas: 4 x 4 cells painted on canvases. Tiling cells repeat by fract() in
 // the shader (with wrapped margins so mipmaps do not bleed), window and door
@@ -10,6 +10,14 @@
 // GPU from painted height and roughness, carries the normal (xy) and the
 // roughness (z) of every cell. The builder writes uv in "tile periods"
 // (metres / period) so every surface has the right scale without thought.
+//
+// The town shader adds what the atlas cannot: plaster and brick weather
+// with height (a damp band above the street, dirt streaks, patchy colour),
+// window and door frames are shaded by their reveals, and the glass (the
+// smoothest texels) reflects the sky. A tile number may carry a window's
+// own variant in its high bits (tile + 16 * v, v = 1..15): each window then
+// gets its own pane tilt, reflection strength and now and then a warm,
+// lamp-lit room behind it.
 import * as THREE from 'three';
 import { rng, clamp } from '../config.js';
 import { bake } from '../textures.js';
@@ -24,6 +32,9 @@ const TILING = [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0];
 
 // foliage atlas cells
 export const F = { LEAVES: 0, GERANIUM: 1, PETUNIA: 2, IVY: 3 };
+// street tree leaf atlas cells: two leafy sprays, the dense shady inside of a
+// crown and a sparse spray for the ragged outside
+export const L = { SPRAY: 0, SPRAY2: 1, INNER: 2, EDGE: 3 };
 
 // ------------------------------------------------------------ colours
 
@@ -241,36 +252,53 @@ PAINT[T.ROOF] = (a, h, r, P, R) => {
 };
 
 PAINT[T.BARK] = (a, h, r, P, R) => {
-  // plane-tree bark: olive grey flaking off in cream and khaki patches
-  a.fillStyle = '#8a8670';
+  // lime bark: grey-brown ridges split by a network of shallow vertical
+  // fissures, grey lichen and a green film of algae here and there
+  a.fillStyle = '#7a7266';
   a.fillRect(0, 0, P, P);
-  h.fillStyle = grey(120);
+  h.fillStyle = grey(170);
   h.fillRect(0, 0, P, P);
-  const cols = ['#cdc5a4', '#a7a37f', '#6d6e52', '#b9b18e', '#94906f'];
-  for (let i = 0; i < 70; i++) {
+  mottle(a, P, 5, 43, 0.2, '#3e3a32', '#b8b2a2');
+  for (let i = 0; i < 46; i++) {
+    // a fissure wandering down the trunk (and across the wrap)
+    let x = R() * P;
+    const w = 2 + R() * 5;
+    const y0 = R() * P;
+    const len = P * (0.25 + R() * 0.6);
+    a.strokeStyle = `rgba(${36 + R() * 12},${32 + R() * 10},${26 + R() * 8},0.85)`;
+    h.strokeStyle = grey(40 + R() * 30);
+    a.lineWidth = h.lineWidth = w;
+    for (const g of [a, h]) {
+      for (const dx of [-P, 0, P]) {
+        for (const dy of [-P, 0, P]) {
+          const rr = rng(i * 31 + 7);
+          let xx = x;
+          g.beginPath();
+          g.moveTo(xx + dx, y0 + dy);
+          for (let y = y0; y < y0 + len; y += 14) {
+            xx += (rr() - 0.5) * 9;
+            g.lineTo(xx + dx, y + dy);
+          }
+          g.stroke();
+        }
+      }
+    }
+  }
+  for (let i = 0; i < 26; i++) {
     const x = R() * P;
     const y = R() * P;
-    const s = 8 + R() * 36;
-    const c = cols[Math.floor(R() * cols.length)];
-    const hv = 110 + R() * 40;
+    const s = 6 + R() * 22;
+    const c = R() < 0.6 ? `rgba(170,172,158,${0.25 + R() * 0.3})` : `rgba(96,116,62,${0.2 + R() * 0.25})`;
     wrap(P, (dx, dy) => {
       a.fillStyle = c;
-      h.fillStyle = grey(hv);
-      for (let k = 0; k < 5; k++) {
-        const ox = (R() - 0.5) * s;
-        const oy = (R() - 0.5) * s * 1.6;
-        a.beginPath();
-        a.ellipse(x + dx + ox, y + dy + oy, s * 0.5, s * 0.8, 0, 0, Math.PI * 2);
-        a.fill();
-        h.beginPath();
-        h.ellipse(x + dx + ox, y + dy + oy, s * 0.5, s * 0.8, 0, 0, Math.PI * 2);
-        h.fill();
-      }
+      a.beginPath();
+      a.ellipse(x + dx, y + dy, s * 0.6, s, 0, 0, Math.PI * 2);
+      a.fill();
     });
   }
-  grain(a, P, 20, 41);
-  grain(h, P, 40, 42);
-  r.fillStyle = grey(0.9 * 255);
+  grain(a, P, 22, 41);
+  grain(h, P, 44, 42);
+  r.fillStyle = grey(0.92 * 255);
   r.fillRect(0, 0, P, P);
 };
 
@@ -783,6 +811,183 @@ FOLIAGE[F.IVY] = (g, S, R) => {
   }
 };
 
+// ------------------------------------------------------------ street tree leaves
+
+// one lime leaf: a heart-shaped blade on a short stalk, a little lighter on
+// one half of the midrib, the midrib itself a fine pale line
+function limeLeaf(g, x, y, s, ang, h, sat, l) {
+  g.save();
+  g.translate(x, y);
+  g.rotate(ang);
+  g.beginPath();
+  g.moveTo(0, -s * 0.16);
+  g.bezierCurveTo(s * 0.62, -s * 0.1, s * 0.52, -s * 0.78, 0, -s);
+  g.bezierCurveTo(-s * 0.46, -s * 0.72, -s * 0.66, -s * 0.16, 0, -s * 0.16);
+  g.fillStyle = hsl(h, sat, l);
+  g.fill();
+  g.save();
+  g.clip();
+  g.fillStyle = `hsla(${h + 6},${sat}%,${l + 7}%,0.55)`;
+  g.fillRect(0, -s, s, s);
+  g.restore();
+  if (s > 9) {
+    g.strokeStyle = `hsla(${h + 10},${sat - 8}%,${l + 14}%,0.5)`;
+    g.lineWidth = Math.max(0.8, s * 0.035);
+    g.beginPath();
+    g.moveTo(0, -s * 0.16);
+    g.lineTo(0, -s * 0.86);
+    g.stroke();
+  }
+  g.strokeStyle = 'rgba(70,60,30,0.8)';
+  g.lineWidth = Math.max(0.8, s * 0.03);
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.lineTo(0, -s * 0.17);
+  g.stroke();
+  g.restore();
+}
+
+// A spray of lime leaves on branching twigs, painted back to front: the
+// leaves deep in the spray are dark and cool, the ones on top lit, a few
+// catching the sky. `n` leaves over a disc; `twig` how much bare twig shows.
+function leafSpray(g, S, R, n, twig, dark = 0) {
+  const leaves = [];
+  // twigs: from the bottom middle up and out, forking once or twice
+  const twigs = [];
+  const grow = (x, y, a, len, w, depth) => {
+    const x1 = x + Math.cos(a) * len;
+    const y1 = y + Math.sin(a) * len;
+    twigs.push([x, y, x1, y1, w]);
+    // leaves alternate along the twig
+    const m = Math.round(len / (S * 0.035));
+    for (let i = 1; i <= m; i++) {
+      const t = i / m;
+      const side = i % 2 ? 1 : -1;
+      leaves.push({ x: x + (x1 - x) * t, y: y + (y1 - y) * t, a: a + Math.PI / 2 + side * (0.7 + R() * 0.7), d: R() });
+    }
+    if (depth < 2) {
+      const k = 2 + (R() < 0.4 ? 1 : 0);
+      for (let i = 0; i < k; i++) grow(x + (x1 - x) * (0.45 + R() * 0.5), y + (y1 - y) * (0.45 + R() * 0.5), a + (R() - 0.5) * 1.6, len * (0.5 + R() * 0.25), w * 0.6, depth + 1);
+    }
+  };
+  const nt = 4 + Math.floor(R() * 2);
+  for (let t = 0; t < nt; t++) grow(S * (0.42 + R() * 0.16), S * (0.9 + R() * 0.06), -Math.PI / 2 + (t / (nt - 1) - 0.5) * 2.2 + (R() - 0.5) * 0.3, S * (0.3 + R() * 0.12), S * 0.012, 0);
+  // more leaves scattered round the twigs to fill the spray out
+  while (leaves.length < n) {
+    const tw = twigs[Math.floor(R() * twigs.length)];
+    const t = R();
+    const off = (R() - 0.5) * S * 0.1;
+    const x = tw[0] + (tw[2] - tw[0]) * t - off * 0.5;
+    const y = tw[1] + (tw[3] - tw[1]) * t + off;
+    leaves.push({ x, y, a: R() * Math.PI * 2, d: R() });
+  }
+  for (const [x0, y0, x1, y1, w] of twigs) {
+    g.strokeStyle = `rgba(${62 + R() * 20},${54 + R() * 14},${40 + R() * 10},${twig})`;
+    g.lineWidth = Math.max(1, w);
+    g.beginPath();
+    g.moveTo(x0, y0);
+    g.lineTo(x1, y1);
+    g.stroke();
+  }
+  leaves.sort((a, b) => a.d - b.d);
+  for (const f of leaves) {
+    // keep within the cell
+    if (f.x < S * 0.04 || f.x > S * 0.96 || f.y < S * 0.06 || f.y > S * 0.97) continue;
+    const yellow = R() < 0.03;
+    const h = yellow ? 64 + R() * 10 : 84 + R() * 26;
+    const sat = 26 + R() * 20;
+    const l = (9 + f.d * 20 + R() * 6) * (1 - dark) + (R() < 0.05 ? 8 : 0);
+    limeLeaf(g, f.x, f.y, S * (0.05 + R() * 0.03), f.a, h, sat, l);
+  }
+}
+
+const LEAVES = [];
+LEAVES[L.SPRAY] = (g, S, R) => leafSpray(g, S, R, 420, 0.9);
+LEAVES[L.SPRAY2] = (g, S, R) => leafSpray(g, S, R, 520, 0.8);
+LEAVES[L.INNER] = (g, S, R) => {
+  // the shady inside of a crown: a dense ragged mass of dark leaves
+  for (let i = 0; i < 700; i++) {
+    const a = R() * Math.PI * 2;
+    const d = Math.sqrt(R()) * S * 0.44;
+    const l = 10 + R() * 9 + (d / S) * 14;
+    limeLeaf(g, S / 2 + Math.cos(a) * d, S / 2 + Math.sin(a) * d + S * 0.03, S * (0.05 + R() * 0.03), R() * Math.PI * 2, 80 + R() * 25, 28 + R() * 20, l);
+  }
+};
+LEAVES[L.EDGE] = (g, S, R) => leafSpray(g, S, R, 170, 1);
+
+function buildLeaves(S) {
+  const W = S * 2;
+  const c = canvas(W, W);
+  const g = c.getContext('2d');
+  for (let i = 0; i < 4; i++) {
+    const cx = (i % 2) * S;
+    const cy = (1 - Math.floor(i / 2)) * S;
+    g.save();
+    g.beginPath();
+    g.rect(cx, cy, S, S);
+    g.clip();
+    g.translate(cx, cy);
+    LEAVES[i](g, S, rng(3000 + i * 17));
+    g.restore();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+// The street trees' leaves: alpha-tested cards that keep their coverage in
+// the small mipmaps (so crowns do not thin out with distance), light
+// through them when seen against the sun, and sway gently in the tops (the
+// `sway` attribute: amplitude, phase).
+function leavesMaterial(map, time) {
+  const m = new THREE.MeshStandardMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide, vertexColors: true, roughness: 0.72 });
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = time;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nattribute vec2 sway;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+{
+  float ph = sway.y;
+  float k = sway.x;
+  transformed.x += (sin(uTime * 0.95 + ph) * 0.11 + sin(uTime * 2.3 + ph * 2.7) * 0.025) * k;
+  transformed.z += (cos(uTime * 0.8 + ph * 1.3) * 0.08 + cos(uTime * 2.9 + ph * 1.9) * 0.02) * k;
+  transformed.y += sin(uTime * 1.7 + ph * 2.1) * 0.025 * k;
+}`,
+      );
+    sh.fragmentShader = sh.fragmentShader
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+{
+  // keep the alpha-tested coverage as the texture shrinks into its mipmaps
+  vec2 tsz = vec2(textureSize(map, 0));
+  vec2 dx = dFdx(vMapUv * tsz);
+  vec2 dy = dFdy(vMapUv * tsz);
+  float lod = 0.5 * log2(max(dot(dx, dx), dot(dy, dy)));
+  diffuseColor.a *= 1.0 + max(lod, 0.0) * 0.28;
+}`,
+      )
+      // the bent crown normals shade both faces of a card alike
+      .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\nnormal = normalize(vNormal);\nnonPerturbedNormal = normal;')
+      .replace(
+        '#include <opaque_fragment>',
+        `#if NUM_DIR_LIGHTS > 0
+{
+  // sunlight through the leaves when looking towards the sun
+  float tr = pow(saturate(dot(-geometryViewDir, directionalLights[0].direction)), 4.0);
+  outgoingLight += diffuseColor.rgb * directionalLights[0].color * vec3(0.9, 1.0, 0.45) * tr * 0.18;
+}
+#endif
+#include <opaque_fragment>`,
+      );
+  };
+  m.customProgramCacheKey = () => 'canal-leaves';
+  return m;
+}
+
 // ------------------------------------------------------------ atlas + materials
 
 let KIT = null;
@@ -891,6 +1096,7 @@ function buildFoliage(S) {
 const TOWN_VERT_PARS = /* glsl */ `
 attribute float tile;
 varying float vTile;
+varying vec3 vTownW;
 #ifdef BOB
 attribute vec4 bob;
 uniform float uTime;
@@ -907,17 +1113,38 @@ vTile = tile;
   transformed.y += bob.w * (sin(ph) * 0.035 + rel.x * sin(ph * 0.83 + 1.3) * 0.006 + rel.y * sin(ph * 0.71 + 2.1) * 0.006);
 }
 #endif
+vTownW = (modelMatrix * vec4(transformed, 1.0)).xyz;
 `;
 
 const TOWN_FRAG_PARS = /* glsl */ `
 varying float vTile;
+varying vec3 vTownW;
 uniform float uGlow;
 vec4 texN;
+float townTi;
+float townGlass;
+vec2 townWin;
+float townH(float n) { return fract(sin(n * 91.345 + 3.17) * 43758.5453); }
+float townH2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float townN1(float x) {
+  float i = floor(x);
+  float f = fract(x);
+  return mix(townH(i), townH(i + 1.0), f * f * (3.0 - 2.0 * f));
+}
+float townN2(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(townH2(i), townH2(i + vec2(1.0, 0.0)), f.x), mix(townH2(i + vec2(0.0, 1.0)), townH2(i + 1.0), f.x), f.y);
+}
 `;
 
 const TOWN_MAP = /* glsl */ `
 {
-  float ti = floor(vTile + 0.5);
+  float raw = floor(vTile + 0.5);
+  float ti = mod(raw, 16.0);
+  float wv = floor(raw / 16.0);
+  townTi = ti;
   bool tiling = ti < 7.5 || (ti > 12.5 && ti < 14.5);
   vec2 cellO = vec2(mod(ti, 4.0), floor(ti / 4.0));
   vec2 f = tiling ? fract(vMapUv) : clamp(vMapUv, 0.0, 1.0);
@@ -927,7 +1154,51 @@ const TOWN_MAP = /* glsl */ `
   vec2 gdy = dFdy(vMapUv) * (1.0 - 2.0 * M) * 0.25;
   diffuseColor *= textureGrad(map, auv, gdx, gdy);
   texN = textureGrad(normalMap, auv, gdx, gdy);
+  townGlass = 0.0;
+  townWin = vec2(0.5, 0.0);
+  if (!tiling && ti < 12.5) {
+    // windows and doors: the reveal shades the frame, most under the head
+    diffuseColor.rgb *= mix(0.5, 1.0, smoothstep(0.0, 0.14, 1.0 - f.y)) * mix(0.7, 1.0, smoothstep(0.0, 0.07, min(f.x, 1.0 - f.x)));
+    townGlass = 1.0 - smoothstep(0.06, 0.14, texN.b);
+    if (wv > 0.5) {
+      // this window's own look: how much sky it catches, how its panes lean
+      townWin = vec2(townH(wv * 1.73), townH(wv * 3.1 + step(0.5, f.y) * 0.37 + step(0.5, f.x) * 0.13) - 0.5);
+      if (townH(wv * 5.31) < 0.16) diffuseColor.rgb *= mix(vec3(1.0), vec3(3.6, 2.4, 1.3), townGlass);
+    }
+  }
+  if (ti < 1.5) {
+    // plaster and brick weather: a damp band above the street, dirt
+    // streaks running down, and patchy colour over the whole wall
+    float along = vMapUv.x * (ti < 0.5 ? 3.0 : 1.2);
+    float y = vTownW.y;
+    float damp = smoothstep(0.3, 1.0 + 0.6 * townN1(along * 0.7 + 11.0), y - 1.41);
+    float streak = smoothstep(0.55, 0.95, townN1(along * 2.8)) * smoothstep(0.3, 0.8, townN2(vec2(along * 0.5 + 5.0, y * 0.3)));
+    float mott = townN2(vec2(along, y) * 0.45) + townN2(vec2(along, y) * 1.3 + 7.0) * 0.5 - 0.75;
+    diffuseColor.rgb *= (0.76 + 0.24 * damp) * (1.0 - 0.12 * streak) * (1.0 + 0.1 * mott);
+    diffuseColor.rgb *= 1.0 + vec3(0.02, 0.0, -0.03) * mott;
+  } else if (abs(ti - 4.0) < 0.5) {
+    // dressed stone (quay walls, plinths, abutments): rain streaks and patches
+    float along = vMapUv.x * 2.4;
+    float streak = smoothstep(0.5, 0.95, townN1(along * 2.2 + 3.0)) * smoothstep(0.25, 0.8, townN2(vec2(along * 0.4, vTownW.y * 0.35)));
+    float mott = townN2(vec2(along, vTownW.y) * 0.6 + 4.0) - 0.5;
+    diffuseColor.rgb *= (1.0 - 0.16 * streak) * (1.0 + 0.14 * mott);
+  }
 }
+`;
+
+// the glass: a stronger, sky-bright reflection than plain Fresnel gives
+// (old panes lean a little and catch the sky over the opposite houses)
+const TOWN_GLASS = /* glsl */ `
+#if defined( USE_ENVMAP ) && defined( ENVMAP_TYPE_CUBE_UV )
+if (townGlass > 0.01) {
+  vec3 rw = transformDirectionByInverseViewMatrix(reflect(-geometryViewDir, normal), viewMatrix);
+  rw.y = abs(rw.y) * 0.7 + 0.04 + townWin.y * 0.1;
+  vec3 sky = textureCubeUV(envMap, envMapRotation * normalize(rw), 0.06).rgb * envMapIntensity;
+  float fr = 0.05 + 0.95 * pow(1.0 - saturate(dot(normal, geometryViewDir)), 5.0);
+  float k = townGlass * clamp(0.07 + 0.12 * townWin.x + fr * 1.2, 0.0, 0.8);
+  outgoingLight = mix(outgoingLight, sky, k);
+}
+#endif
 `;
 
 function townMaterial(maps, time, bob) {
@@ -949,11 +1220,13 @@ function townMaterial(maps, time, bob) {
         `{
   vec3 mapN = vec3(texN.xy * 2.0 - 1.0, 0.0);
   mapN.xy *= normalScale;
+  mapN.xy += townGlass * vec2(townWin.y, townH(townWin.y * 13.1 + 0.7) - 0.5) * 0.14;
   mapN.z = sqrt(max(0.0, 1.0 - dot(mapN.xy, mapN.xy)));
   normal = normalize(tbn * mapN);
 }`,
       )
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif (vTile > 14.5) totalEmissiveRadiance += diffuseColor.rgb * uGlow;');
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif (townTi > 14.5) totalEmissiveRadiance += diffuseColor.rgb * uGlow;')
+      .replace('#include <opaque_fragment>', TOWN_GLASS + '#include <opaque_fragment>');
   };
   m.customProgramCacheKey = () => (bob ? 'canal-town-bob' : 'canal-town');
   return m;
@@ -973,6 +1246,7 @@ export function kit(renderer, quality) {
     town: townMaterial(maps, time, false),
     boats: townMaterial(maps, time, true),
     foliage,
+    leaves: leavesMaterial(buildLeaves(low ? 256 : 512), time),
   };
   return KIT;
 }
@@ -1060,7 +1334,7 @@ export class Geo {
     this.nrm[i * 3 + 2] = wnz;
     if (u === undefined) {
       // project along the face in world space, in tile periods
-      const p = PERIOD[tile];
+      const p = PERIOD[tile & 15];
       if (Math.abs(ny) > 0.85) {
         u = wx / p;
         w = (ny > 0 ? -wz : wz) / p;
@@ -1227,6 +1501,10 @@ export class Cards {
     this.uv = [];
     this.col = [];
     this.idx = [];
+    this.sw = [];
+    // while set ({ base, height, phase }), cards sway more the higher they
+    // stand above base (the street trees)
+    this.sway = null;
   }
 
   // centre c, half-axes a (u direction) and b (v direction, v up the cell),
@@ -1246,6 +1524,9 @@ export class Cards {
       this.nrm.push(nn[0], nn[1], nn[2]);
       this.uv.push(u0 + ((s + 1) / 2) * du, v0 + ((t + 1) / 2) * du);
       this.col.push(colour[0], colour[1], colour[2]);
+      const w = this.sway;
+      if (w) this.sw.push(clamp((y - w.base) / w.height, 0, 1) ** 1.5, w.phase);
+      else this.sw.push(0, 0);
     }
     this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
@@ -1256,6 +1537,7 @@ export class Cards {
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nrm, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    if (this.sw.some((v) => v !== 0)) g.setAttribute('sway', new THREE.Float32BufferAttribute(this.sw, 2));
     g.setIndex(this.idx);
     g.computeBoundingSphere();
     return g;
@@ -1335,7 +1617,7 @@ export class Sectors {
     for (const [k, s] of this.map) {
       if (s.geo.n) out.push(mesh(s.geo.geometry(), K.town, 'town ' + k));
       if (s.boats && s.boats.n) out.push(mesh(s.boats.geometry(), K.boats, 'boats ' + k));
-      if (s.cards.idx.length) out.push(mesh(s.cards.geometry(), K.foliage, 'trees ' + k));
+      if (s.cards.idx.length) out.push(mesh(s.cards.geometry(), K.leaves, 'trees ' + k));
     }
     for (const [k, s] of this.detail) {
       if (!s.geo.n && !s.cards.idx.length) continue;

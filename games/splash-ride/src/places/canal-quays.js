@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { rng, clamp } from '../config.js';
 import { rockGeometry, instances, makeNoise } from './common.js';
 import { allWaterD, waterD, seaD, nearBridge, CZ, BASIN, COAST, QUAY_TOP, MOORED } from './canal-layout.js';
-import { T, F, col, WHITE } from './canal-kit.js';
+import { T, L, col, WHITE } from './canal-kit.js';
 
 const noise = makeNoise(88);
 
@@ -233,38 +233,132 @@ export function tube(geo, p0, p1, r0, r1, seg, tile, c) {
   }
 }
 
-// a lime tree: a clear trunk, a few limbs and a loose, lobed crown of leaf
-// cards (normals bent outwards from the crown so it shades like a volume)
-export function tree(geo, cards, x, y, z, seed, scale = 1) {
+// A street lime: a clear, slightly leaning trunk that forks at about three
+// metres into three or four limbs, each bending up and throwing out side
+// branches; the crown is clumps of leaf-spray cards at the branch ends (so
+// its outline is lumpy and the sky shows through near the edge), dark,
+// dense cards in its heart so it never looks hollow, and normals bent out
+// from the crown's middle so it shades like one soft volume. The cards
+// sway more the higher they are. `lod` < 1 (medium and low quality) builds
+// fewer, larger cards and fewer twigs.
+const TAU = Math.PI * 2;
+const add = (p, d, k) => [p[0] + d[0] * k, p[1] + d[1] * k, p[2] + d[2] * k];
+const dirOf = (tilt, a) => [Math.sin(tilt) * Math.cos(a), Math.cos(tilt), Math.sin(tilt) * Math.sin(a)];
+
+export function tree(geo, cards, x, y, z, seed, scale = 1, lod = 1) {
   const r = rng(seed);
-  const s = scale * (0.95 + r() * 0.3);
-  const bark = col('#d8d4c8');
-  const h0 = 4.2 * s;
-  tube(geo, [x, y - 0.2, z], [x + (r() - 0.5) * 0.3, y + h0, z + (r() - 0.5) * 0.3], 0.26 * s, 0.19 * s, 7, T.BARK, bark);
-  const cy = y + h0 + 4.4 * s;
-  const R = 4.3 * s;
-  // the crown: a few overlapping lobes round the middle
-  const lobes = [];
-  const nl = 4 + Math.floor(r() * 2);
+  const s = scale * (0.92 + r() * 0.28);
+  const bark = col('#aaa498', 0.95 + r() * 0.1);
+  // the trunk, flared at the foot
+  const hf = (2.9 + r() * 0.8) * s;
+  const lx = (r() - 0.5) * 0.4 * s;
+  const lz = (r() - 0.5) * 0.4 * s;
+  const foot = [x + lx * 0.1, y + 0.6, z + lz * 0.1];
+  const F = [x + lx, y + hf, z + lz];
+  tube(geo, [x, y - 0.25, z], foot, 0.44 * s, 0.3 * s, 8, T.BARK, bark);
+  tube(geo, foot, F, 0.3 * s, 0.22 * s, 8, T.BARK, bark);
+  const C = [F[0], y + hf + 4.7 * s, F[2]]; // the middle of the crown
+  const RX = 4.7 * s;
+  const RY = 4.9 * s;
+  const clumps = [];
+  const nl = 3 + (r() < 0.55 ? 1 : 0);
+  const a0 = r() * TAU;
   for (let i = 0; i < nl; i++) {
-    const a = (i / nl) * Math.PI * 2 + r() * 0.6;
-    const d = R * (0.35 + r() * 0.2);
-    lobes.push({ x: x + Math.cos(a) * d, y: cy + (r() - 0.35) * R * 0.5, z: z + Math.sin(a) * d, r: R * (0.55 + r() * 0.2) });
+    const a = a0 + (i / nl) * TAU + (r() - 0.5) * 0.7;
+    const tilt = 0.42 + r() * 0.32;
+    const len = (5.4 + r() * 1.6) * s;
+    const M = add(F, dirOf(tilt, a), len * 0.5);
+    const Tp = add(M, dirOf(tilt * 0.55, a + (r() - 0.5) * 0.5), len * 0.5);
+    tube(geo, F, M, 0.17 * s, 0.11 * s, 6, T.BARK, bark);
+    tube(geo, M, Tp, 0.11 * s, 0.04 * s, 5, T.BARK, bark);
+    clumps.push({ p: Tp, r: (1.8 + r() * 0.4) * s });
+    // side branches off the limb, reaching out and a little up
+    for (const side of lod < 1 ? [i % 2 ? -1 : 1] : [-1, 1]) {
+      const from = add(F, dirOf(tilt, a), len * (0.35 + r() * 0.25));
+      const end = add(from, dirOf(tilt + 0.35 + r() * 0.35, a + side * (0.6 + r() * 0.5)), (2.6 + r() * 1.2) * s);
+      tube(geo, from, end, 0.075 * s, 0.025 * s, 4, T.BARK, bark);
+      clumps.push({ p: end, r: (1.6 + r() * 0.35) * s });
+    }
   }
-  lobes.push({ x, y: cy + R * 0.35, z, r: R * 0.6 });
-  for (const l of lobes) {
-    tube(geo, [x, y + h0 - 0.3, z], [l.x * 0.7 + x * 0.3, l.y - l.r * 0.3, l.z * 0.7 + z * 0.3], 0.15 * s, 0.05 * s, 5, T.BARK, bark);
+  // a leader up the middle
+  const top = [F[0] + (r() - 0.5) * 0.8, F[1] + 6.8 * s, F[2] + (r() - 0.5) * 0.8];
+  tube(geo, F, top, 0.16 * s, 0.05 * s, 5, T.BARK, bark);
+  clumps.push({ p: top, r: 2 * s });
+  // and leafy twigs filling out the rest of the crown's outside
+  for (let i = 0; i < (lod < 1 ? 4 : 6); i++) {
+    const a = r() * TAU;
+    const e = 0.2 + r() * 0.75;
+    clumps.push({ p: [C[0] + Math.cos(a) * Math.sin(Math.acos(e - 0.3)) * RX, C[1] + (e - 0.3) * RY, C[2] + Math.sin(a) * Math.sin(Math.acos(e - 0.3)) * RX], r: (1.5 + r() * 0.4) * s });
   }
-  const tint = [0.92 + r() * 0.14, 0.96 + r() * 0.1, 0.8 + r() * 0.16];
+  // keep every clump inside an upright oval crown
+  for (const c of clumps) {
+    const dx = (c.p[0] - C[0]) / RX;
+    const dy = (c.p[1] - C[1]) / RY;
+    const dz = (c.p[2] - C[2]) / RX;
+    const e = Math.hypot(dx, dy, dz);
+    if (e > 0.74) {
+      const k = 0.74 / e;
+      c.p = [C[0] + dx * k * RX, C[1] + dy * k * RY, C[2] + dz * k * RX];
+    }
+  }
+  const tint = [0.9 + r() * 0.16, 0.95 + r() * 0.1, 0.78 + r() * 0.2];
   const bentN = (vx, vy, vz) => {
-    const dx = (vx - x) / R;
-    const dy = (vy - cy) / R + 0.4;
-    const dz = (vz - z) / R;
+    const dx = (vx - C[0]) / RX;
+    const dy = (vy - C[1]) / RY + 0.35;
+    const dz = (vz - C[2]) / RX;
     const l = Math.hypot(dx, dy, dz) || 1;
     return [dx / l, dy / l, dz / l];
   };
-  for (const l of lobes) {
-    const n = Math.round(24 * (l.r / (R * 0.6)) ** 2);
+  const phase = x * 0.23 + z * 0.31;
+  cards.sway = { base: F[1] - 0.5, height: top[1] + 2 - F[1], phase };
+  const card = (cell, p, size, out, k) => {
+    // face mostly outwards and upwards, never all alike
+    let fx = out[0] * 0.7 + (r() - 0.5) * 1.1;
+    let fy = out[1] * 0.7 + 0.35 + (r() - 0.5) * 1.1;
+    let fz = out[2] * 0.7 + (r() - 0.5) * 1.1;
+    const fl = Math.hypot(fx, fy, fz) || 1;
+    fx /= fl;
+    fy /= fl;
+    fz /= fl;
+    // two axes across the facing direction, turned by a random roll
+    let ax = -fz;
+    let az = fx;
+    let al = Math.hypot(ax, az);
+    if (al < 0.2) {
+      ax = 1;
+      az = 0;
+      al = 1;
+    }
+    ax /= al;
+    az /= al;
+    // (up the card, the way the sprays grow)
+    const bx0 = -fy * az;
+    const by0 = fx * az - fz * ax;
+    const bz0 = fy * ax;
+    const roll = (r() - 0.5) * 1.2;
+    const c = Math.cos(roll);
+    const sn = Math.sin(roll);
+    const A = [(ax * c + bx0 * sn) * size, by0 * sn * size, (az * c + bz0 * sn) * size];
+    const B = [(bx0 * c - ax * sn) * size, by0 * c * size, (bz0 * c - az * sn) * size];
+    // lighter towards the sunny top, a little darker underneath
+    const h = clamp((p[1] - (C[1] - RY)) / (2 * RY), 0, 1);
+    const shade = k * (0.72 + 0.28 * h) * (0.94 + r() * 0.12);
+    cards.sway.phase = phase + r() * 0.8;
+    cards.card(cell, p[0], p[1], p[2], A[0], A[1], A[2], B[0], B[1], B[2], bentN, [tint[0] * shade, tint[1] * shade, tint[2] * shade], 0.01);
+  };
+  // the dark, dense heart of the crown
+  for (let i = 0; i < 9; i++) {
+    const p = [C[0] + (r() - 0.5) * RX * 0.7, C[1] - RY * 0.05 + (r() - 0.5) * RY * 0.7, C[2] + (r() - 0.5) * RX * 0.7];
+    card(L.INNER, p, (1.5 + r() * 0.4) * s, [(p[0] - C[0]) / RX, 0, (p[2] - C[2]) / RX], 0.85);
+  }
+  // clumps of leafy sprays round every branch end
+  for (const cl of clumps) {
+    const ox = cl.p[0] - C[0];
+    const oy = cl.p[1] - C[1];
+    const oz = cl.p[2] - C[2];
+    const ol = Math.hypot(ox, oy, oz) || 1;
+    const out = [ox / ol, oy / ol, oz / ol];
+    const n = Math.round(10 * lod * (cl.r / (1.5 * s)) ** 2);
     for (let i = 0; i < n; i++) {
       let px;
       let py;
@@ -274,20 +368,13 @@ export function tree(geo, cards, x, y, z, seed, scale = 1) {
         py = r() * 2 - 1;
         pz = r() * 2 - 1;
       } while (px * px + py * py + pz * pz > 1);
-      const k = 0.45 + 0.55 * Math.sqrt(px * px + py * py + pz * pz);
-      const cx = l.x + px * l.r * k;
-      const cyy = l.y + py * l.r * k * 0.8;
-      const cz = l.z + pz * l.r * k;
-      const size = (0.95 + r() * 0.45) * s;
-      const yaw = r() * Math.PI * 2;
-      const pitch = (r() - 0.5) * 1.8;
-      const ax = [Math.cos(yaw) * size, (r() - 0.5) * 0.4 * size, Math.sin(yaw) * size];
-      const bx = [-Math.sin(yaw) * Math.sin(pitch) * size, Math.cos(pitch) * size, Math.cos(yaw) * Math.sin(pitch) * size];
-      // lighter towards the sunny top, darker inside and underneath
-      const shade = 0.7 + 0.4 * clamp((cyy - (cy - R)) / (2 * R), 0, 1);
-      cards.card(F.LEAVES, cx, cyy, cz, ax[0], ax[1], ax[2], bx[0], bx[1], bx[2], bentN, [tint[0] * shade, tint[1] * shade, tint[2] * shade]);
+      const p = [cl.p[0] + (px * 0.8 + out[0] * 0.25) * cl.r, cl.p[1] + (py * 0.65 + out[1] * 0.2) * cl.r, cl.p[2] + (pz * 0.8 + out[2] * 0.25) * cl.r];
+      const edge = px * out[0] + py * out[1] + pz * out[2] > 0.45;
+      const cell = edge && r() < 0.6 ? L.EDGE : r() < 0.55 ? L.SPRAY : L.SPRAY2;
+      card(cell, p, (0.7 + r() * 0.3) * s * lod ** -0.35, out, 1);
     }
   }
+  cards.sway = null;
 }
 
 // a green cast-iron lamp post with a lantern
@@ -314,6 +401,7 @@ function bollard(geo, x, y, z) {
 // keep clear of).
 export function buildQuays(sectors, quality) {
   const low = quality.tier === 'low';
+  const lod = quality.tier === 'high' ? 1 : low ? 0.45 : 0.47;
   const r = rng(7);
   const lines = quayLines();
   const rubble = [];
@@ -420,7 +508,7 @@ export function buildQuays(sectors, quality) {
         const z = a.z + a.nz * 3.3;
         if (!lampSpots.some((l) => Math.hypot(l.x - x, l.z - z) < 4) && (!low || r() < 0.6)) {
           treeSpots.push({ x, z });
-          tree(geo, sectors.cards(x, z), x, 1.41, z, Math.round(a.s * 13 + i));
+          tree(geo, sectors.cards(x, z), x, 1.41, z, Math.round(a.s * 13 + i), 1, lod);
           geo.identity();
         }
       }
