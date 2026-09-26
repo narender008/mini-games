@@ -56,7 +56,8 @@ void main() {
     col = vTint * (vKind > 0.5 ? uAmbient * 1.5 + uSunColor * 0.4 : uAmbient * 0.95 + uSunColor * 0.22);
     // droplets catch the sun as a tiny bright glint
     if (vKind < 0.5) col += uSunColor * 0.5 * exp(-dot(p - vec2(-0.3, -0.3), p - vec2(-0.3, -0.3)) * 8.0);
-    col += vec3(0.25, 0.8, 1.0) * uGlow * 2.5;
+    // the night bay's plankton lights up the droplets; wide mist only faintly
+    col += vec3(0.25, 0.8, 1.0) * uGlow * (vKind > 0.5 ? 0.6 : 2.5);
   }
   gl_FragColor = vec4(col * a, a);
 }`;

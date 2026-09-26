@@ -582,7 +582,7 @@ class App {
     for (let i = 0; i < n; i++) d.update(dt / n, input);
     this.updateBoatView(dt);
     this.updateSpray(dt);
-    this.place.scenery.update?.(dt, t);
+    this.place.scenery.update?.(dt, t, this.drive);
     this.place.animals?.update(dt, t, this.animalBoat());
     this.sky.update(t);
     this.water.update(t, this.camera);

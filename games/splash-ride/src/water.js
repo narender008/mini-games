@@ -383,8 +383,11 @@ void main() {
 
   // --- the night bay's glowing plankton, stirred up by anything moving
   if (uGlow.a > 0.0) {
-    float g = wake.b * (0.6 + 0.8 * pattern) + fm * 0.25 * wake.b;
+    // specks of light rather than a flat sheet: bright where the water is
+    // churned (foam), a fine glitter of points everywhere it was stirred
+    float speck = smoothstep(0.55, 0.92, texture2D(uNoise, p * 2.1 + vec2(uTime * 0.07, -uTime * 0.05)).b);
     float twinkle = texture2D(uNoise, p * 0.7 + uTime * 0.05).b;
+    float g = wake.b * (0.18 + 0.32 * pattern + 1.3 * speck) + fm * 0.6 * wake.b;
     col += uGlow.rgb * uGlow.a * (g + smoothstep(0.72, 0.95, twinkle) * wake.b * 1.5);
   }
 
