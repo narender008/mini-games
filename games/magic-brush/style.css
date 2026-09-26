@@ -863,8 +863,9 @@ body.cover #callout {
   body[data-mode='big'] .paints {
     grid-template-columns: repeat(4, auto);
   }
-  .top-right {
-    right: calc(120px + var(--safe-r));
+  /* the painting's corner buttons sit left of the toolbar (its width is set by ui.js) */
+  #hud .top-right {
+    right: calc(var(--toolbar-w, 170px) + 10px + var(--safe-r));
   }
 }
 @media (prefers-reduced-motion: reduce) {

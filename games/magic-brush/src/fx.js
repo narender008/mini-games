@@ -181,6 +181,7 @@ export class Droplets {
     this._m = new THREE.Matrix4();
     this._q = new THREE.Quaternion();
     this._s = new THREE.Vector3();
+    this._p = new THREE.Vector3();
     this._up = new THREE.Vector3(0, 1, 0);
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
     for (let i = 0; i < max; i++) {
@@ -192,7 +193,8 @@ export class Droplets {
     this.splatAlpha = [];
   }
 
-  throw(pos, vel, color, r = 0.01) {
+  // water drops just vanish when they land; paint drops leave a splat
+  throw(pos, vel, color, r = 0.01, water = false) {
     const d = this.p[this.next];
     this.next = (this.next + 1) % this.max;
     d.on = true;
@@ -200,6 +202,7 @@ export class Droplets {
     d.vel.copy(vel);
     d.r = r;
     d.color.copy(color);
+    d.water = water;
     d.t = 0;
   }
 
@@ -216,7 +219,7 @@ export class Droplets {
       if (d.pos.y - d.r < gy || d.t > 4) {
         d.on = false;
         this.mesh.setMatrixAt(i, m.makeScale(0, 0, 0));
-        if (d.t <= 4) this.splat(d.pos.x, gy + 0.002, d.pos.z, d.r * (2.2 + Math.random()), d.color);
+        if (d.t <= 4 && !d.water) this.splat(d.pos.x, gy + 0.002, d.pos.z, d.r * (2.2 + Math.random()), d.color);
         continue;
       }
       // stretched along the velocity, a little wobble
@@ -238,9 +241,8 @@ export class Droplets {
       this.splatsAge[i] -= dt;
       const s = this.splatSize[i] * Math.min(1, this.splatsAge[i] / 1.5) * Math.min(1, (6 - this.splatsAge[i]) * 12 + 0.2);
       this.splats.getMatrixAt(i, m);
-      m.decompose(this._s.set(0, 0, 0), this._q, new THREE.Vector3());
-      const pos = new THREE.Vector3().setFromMatrixPosition(m);
-      m.compose(pos, this._q, new THREE.Vector3(s, 1, s * 0.85));
+      m.decompose(this._p, this._q, this._s);
+      m.compose(this._p, this._q, this._s.set(s, 1, s * 0.85));
       if (this.splatsAge[i] <= 0) m.makeScale(0, 0, 0);
       this.splats.setMatrixAt(i, m);
     }
@@ -254,7 +256,7 @@ export class Droplets {
     this.splatsAge[i] = 6;
     this.splatSize[i] = r;
     this._q.setFromAxisAngle(this._up, Math.random() * TAU);
-    this._m.compose(new THREE.Vector3(x, y, z), this._q, new THREE.Vector3(r, 1, r * 0.85));
+    this._m.compose(this._p.set(x, y, z), this._q, this._s.set(r, 1, r * 0.85));
     this.splats.setMatrixAt(i, this._m);
     this.splats.setColorAt(i, color);
     this.splats.instanceMatrix.needsUpdate = true;

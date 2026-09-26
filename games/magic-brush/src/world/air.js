@@ -20,7 +20,8 @@ void main() {
   float tw = 0.55 + 0.45 * sin(uTime * (1.5 + aSeed.y * 2.0) + aSeed.x * 40.0);
   vA = tw;
   vCol = mix(vec3(2.4, 1.6, 0.7), vec3(1.6, 1.4, 2.2), aSeed.w);
-  gl_PointSize = aSeed.z * uScale / -mv.z;
+  // (never more than a few pixels: close to the camera they would be big discs)
+  gl_PointSize = min(aSeed.z * uScale / -mv.z, uScale * 0.009);
   gl_Position = projectionMatrix * mv;
 }`;
 

@@ -464,8 +464,7 @@ float mbPaintState = 1.0 - vAlive;
 diffuseColor.rgb = mbBase;
 `;
 
-export function membraneMaterial(shared, { veins = 14, iridescence = 0.6 } = {}) {
-  const own = { uVeins: { value: veins } };
+export function membraneMaterial(shared, { iridescence = 0.6 } = {}) {
   const m = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
     roughness: 0.35,
@@ -477,12 +476,10 @@ export function membraneMaterial(shared, { veins = 14, iridescence = 0.6 } = {})
     sheenColor: 0xffffff,
     sheenRoughness: 0.3,
   });
-  m.userData.own = own;
   return hook(m, shared, 'mb-membrane', (s) => {
     injectVertex(s);
     injectFragment(s, MEMBRANE_COLOR, { rough: 'roughnessFactor = mix(vMix.z, 0.22, mbPaintState * uAliveOn);' });
     s.fragmentShader = s.fragmentShader
-      .replace('uniform sampler2D tSkin;', 'uniform sampler2D tSkin;\nuniform float uVeins;')
       // light through the membrane: the key light seen from behind
       .replace(
         '#include <lights_fragment_end>',

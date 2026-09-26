@@ -53,6 +53,8 @@ export async function start(canvas, progress) {
 const AUTO_COVER = 0.8;
 // ... and before GO starts to glow
 const READY_COVER = 0.3;
+// kept paintings on the shelf, newest first
+const MAX_PAINTINGS = 30;
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
@@ -625,9 +627,13 @@ class App {
   // ------------------------------------------------------------ keeping
 
   savePainting() {
-    const rec = { id: newId(), image: this.magic.paintingImage(), made: Date.now() };
+    // the picture for the shelf, and the strokes themselves to hang it again
+    const strokes = this.paint.history.map((c) => ({ brush: c.brush, seed: c.seed, time: c.time, pts: c.pts }));
+    const rec = { id: newId(), image: this.magic.paintingImage(), strokes, made: Date.now() };
     this.paintings.unshift(rec);
     this.store.put('paintings', rec).catch(() => {});
+    // the shelf keeps the newest few dozen
+    for (const old of this.paintings.splice(MAX_PAINTINGS)) this.store.remove('paintings', old.id).catch(() => {});
     return rec;
   }
 
@@ -643,15 +649,16 @@ class App {
     }
   }
 
-  // a kept painting back on the easel (as a picture to paint over)
+  // a kept painting back on the easel, dry, to paint more on (big kids keep paintings)
   hangPainting(p) {
+    if (!p.strokes?.length || this.alive.busy) return;
+    if (this.mode !== 'big') this.setMode('big');
     this.startPainting(true);
-    const img = new Image();
-    img.onload = () => {
-      this.newCanvas();
-      this.paint.fromImage?.(img);
-    };
-    img.src = p.image;
+    this.newCanvas();
+    const last = p.strokes[p.strokes.length - 1].time;
+    const now = this.paint.clock;
+    this.paint.replay(p.strokes.map((c) => ({ ...c, time: now - 120 - (last - c.time) })));
+    this.checkCoverage();
   }
 
   async restoreFriends() {
@@ -933,12 +940,17 @@ class App {
 
   takePortrait({ f, record }) {
     if (!f.object.parent || !record) return;
+    record.portrait = this.portraitOf(f);
+    this.store.put('friends', record).catch(() => {});
+  }
+
+  portraitOf(f, size = 256, quality = 0.86) {
     const cam = this.camera;
     const savePos = cam.position.clone();
     const saveQ = cam.quaternion.clone();
     const saveFov = cam.fov;
     const c = f.worldCenter(new THREE.Vector3());
-    const r = f.restRadius * f.object.scale.x;
+    const r = (f.portraitRadius ?? f.restRadius) * f.object.scale.x;
     const fov = 30;
     const dist = (r * 1.0) / Math.tan((fov * Math.PI) / 360);
     // from the front, a little to the side and above
@@ -949,20 +961,23 @@ class App {
     cam.lookAt(c);
     cam.updateMatrixWorld();
     this.post.setFocus(cam.position.distanceTo(c));
+    // this close, the usual lens would blur half the friend: stop it down
+    const aperture = this.post.lens.aperture;
+    this.post.setAperture(aperture * 0.3);
     this.post.render();
+    this.post.setAperture(aperture);
     const el = this.renderer.domElement;
     const side = Math.min(el.width, el.height);
     const cv = document.createElement('canvas');
-    cv.width = cv.height = 256;
-    cv.getContext('2d').drawImage(el, (el.width - side) / 2, (el.height - side) / 2, side, side, 0, 0, 256, 256);
-    record.portrait = cv.toDataURL('image/jpeg', 0.86);
+    cv.width = cv.height = size;
+    cv.getContext('2d').drawImage(el, (el.width - side) / 2, (el.height - side) / 2, side, side, 0, 0, size, size);
     cam.position.copy(savePos);
     cam.quaternion.copy(saveQ);
     cam.fov = saveFov;
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
     this.post.setFocus(cam.position.distanceTo(this.rig.look));
-    this.store.put('friends', record).catch(() => {});
+    return cv.toDataURL('image/jpeg', quality);
   }
 
   // ------------------------------------------------------------ debug
@@ -1076,6 +1091,18 @@ class App {
         app.rig.snap({ pos: new THREE.Vector3(...pos), look: new THREE.Vector3(...look), fov });
       },
       shot: (name) => app.rig.snap(app.shot(name)),
+      // the camera close on the i-th friend (from its front, yaw degrees to the side, k times
+      // further; with abs, yaw is a world direction instead)
+      close(i = 0, yaw = 25, k = 1.3, fov = 32, abs = false) {
+        const f = app.friends.list[i]?.friend;
+        if (!f) return;
+        const c = f.worldCenter(new THREE.Vector3());
+        const d = ((f.portraitRadius ?? f.restRadius) * f.object.scale.x * k) / Math.tan((fov * Math.PI) / 360);
+        const a = (abs ? 0 : f.object.rotation.y) + (yaw * Math.PI) / 180;
+        app.rig.snap({ pos: new THREE.Vector3(c.x + Math.sin(a) * d * 0.94, c.y + d * 0.26, c.z + Math.cos(a) * d * 0.94), look: c, fov });
+      },
+      // the i-th friend in the garden as a square jpeg data URL (picker pictures)
+      portrait: (i = 0, size = 256, quality = 0.86) => app.friends.list[i] && app.portraitOf(app.friends.list[i].friend, size, quality),
       friends: () => app.friends.list.map((e) => ({ kind: e.friend.info.id, x: +e.pos.x.toFixed(2), z: +e.pos.z.toFixed(2), state: e.state })),
       state: () => ({ state: app.state, mode: app.mode, coverage: +app.coverage.toFixed(3), strokes: app.paint.history.length, busy: app.alive.busy, magic: app.magicRun?.phase ?? null, scale: app.governor.scale, strain: app.governor.strain }),
     };

@@ -17,6 +17,8 @@ import { homeSpot, onPond, WATER_Y } from './world/world.js';
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
+const _vel = new THREE.Vector3();
+const WATER = new THREE.Color(0.75, 0.9, 1.0);
 
 export class Friends {
   constructor({ scene, fx, audio, quality, walkable, groundAt }) {
@@ -84,6 +86,7 @@ export class Friends {
     e.pos.set(spot.x, spot.y, spot.z);
     e.baseY = spot.y;
     e.scale = e.friend.worldScale;
+    e.friend.atHome = true;
     e.state = 'idle';
     e.timer = rand(1, 3);
     // face the studio, where the children are
@@ -341,10 +344,10 @@ export class Friends {
       this.fx.sparkles.burst(ev.at, ev.count ?? 30, { colors: ev.colors || [[1.8, 1.5, 0.9]], speed: ev.speed ?? 0.6, up: ev.up ?? 0.4, size: ev.size ?? 0.018, life: ev.life ?? 1.2 });
     } else if (ev.type === 'splash') {
       // water drops (a whale's spout, a boat's bow wave)
-      const c = ev.color || new THREE.Color(0.75, 0.9, 1.0);
+      const c = ev.color || WATER;
       for (let k = 0; k < (ev.count ?? 20); k++) {
-        const vel = new THREE.Vector3(rand(-0.4, 0.4), rand(0.8, 1.6) * (ev.up ?? 1), rand(-0.4, 0.4));
-        this.fx.droplets.throw(ev.at, vel, c, rand(0.004, 0.009));
+        const vel = _vel.set(rand(-0.4, 0.4), rand(0.8, 1.6) * (ev.up ?? 1), rand(-0.4, 0.4));
+        this.fx.droplets.throw(ev.at, vel, c, rand(0.004, 0.009), true);
       }
     } else if (ev.type === 'land') {
       this.fx.sparkles.burst(ev.at.setY(this.groundAt(ev.at.x, ev.at.z) + 0.02), 18, { colors: [[1.6, 1.4, 1]], speed: 0.6, up: 0.4, size: 0.015 });

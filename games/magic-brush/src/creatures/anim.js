@@ -129,10 +129,13 @@ export function axisPose(bone, axis, angle) {
 }
 
 // Two-bone planar IK in a bone chain's own side plane (y-z), for legs: given
-// the hip-to-foot distance wanted, returns the hip and knee bend angles.
-export function twoBone(l1, l2, dist) {
+// the hip-to-foot distance wanted, returns the hip and knee bend angles
+// (in `out`, a two-element array, when given, to avoid an allocation).
+export function twoBone(l1, l2, dist, out = [0, 0]) {
   const d = clamp(dist, Math.abs(l1 - l2) + 1e-4, l1 + l2 - 1e-4);
   const a1 = Math.acos(clamp((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1, 1));
   const a2 = Math.acos(clamp((l1 * l1 + l2 * l2 - d * d) / (2 * l1 * l2), -1, 1));
-  return [a1, Math.PI - a2];
+  out[0] = a1;
+  out[1] = Math.PI - a2;
+  return out;
 }

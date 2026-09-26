@@ -423,7 +423,15 @@ export class World {
         diffuseColor.rgb *= 0.85 + 0.25 * big;`,
       );
     };
-    const lawn = new THREE.Mesh(new THREE.CircleGeometry(80, 64), lawnMat);
+    // a disc with the pond cut out (its water and bed lie below the lawn),
+    // with the same uvs as a plain disc
+    const lawnShape = new THREE.Shape().absarc(0, 0, 80, 0, TAU, false);
+    lawnShape.holes.push(new THREE.Path().absarc(POND.x, -POND.z, POND.r + 0.02, 0, TAU, true));
+    const lawnGeo = new THREE.ShapeGeometry(lawnShape, 64);
+    const lp = lawnGeo.attributes.position;
+    const luv = lawnGeo.attributes.uv;
+    for (let i = 0; i < lp.count; i++) luv.setXY(i, lp.getX(i) / 160 + 0.5, lp.getY(i) / 160 + 0.5);
+    const lawn = new THREE.Mesh(lawnGeo, lawnMat);
     lawn.rotation.x = -Math.PI / 2;
     lawn.receiveShadow = true;
     this.group.add(lawn);

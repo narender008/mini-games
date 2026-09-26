@@ -97,6 +97,8 @@ export class UI {
       $$('.close', o).forEach((b) => b.addEventListener('click', () => this.closeOverlay(o.id)));
     }
     $$('.guess-more')[0].addEventListener('click', () => this.showGuessAll());
+    // the toolbar's width, for the corner buttons beside it on landscape phones
+    new ResizeObserver(() => document.body.style.setProperty('--toolbar-w', `${$('toolbar').offsetWidth}px`)).observe($('toolbar'));
     this.buildPicker();
     this.setMode('little');
   }
