@@ -154,7 +154,8 @@ uniform vec3 uSand, uWet, uBed, uGrass, uGrass2, uRock;
 uniform float uCoral;
 uniform vec4 uLevels;
 float tRough;
-vec3 tPert;`,
+vec3 tPert;
+float tShadowK;`,
       )
       .replace(
         '#include <map_fragment>',
@@ -171,27 +172,43 @@ vec3 tPert;`,
   vec3 col = sand;
   tRough = 0.92;
   tPert = vec3(0.0);
+  // light scattered in the water fills shadows on the bed: the deeper, the
+  // paler (a boat's shadow on a 4 m bottom is a soft grey-blue, not black)
+  tShadowK = 1.0 - 0.65 * smoothstep(0.0, 4.5, -h);
   // wet sand: darker and glossier from just under the water up the beach
   float wet = smoothstep(uLevels.z + 0.25 * n2.r, -0.05, h);
   col = mix(col, uWet * (0.9 + 0.2 * grain), wet);
   tRough = mix(tRough, 0.42, wet * smoothstep(-0.6, 0.05, h));
-  // under water: rippled sand, weed tints, and coral in the lagoon
+  // under water: ripple marks in the sand, meadows of sea grass with ragged
+  // edges, and coral heads in the lagoon (all from warped fbm, never the
+  // cellular channel, which reads as round blobs through the water)
   float under = smoothstep(-0.15, -0.8, h);
   if (under > 0.0) {
-    float rip = sin(dot(p, vec2(1.7, 0.6)) + n2.r * 9.0) * 0.5 + 0.5;
-    vec3 bed = uBed * (0.8 + 0.25 * grain + 0.12 * rip);
-    bed = mix(bed, bed * vec3(0.8, 0.9, 0.7), smoothstep(0.55, 0.75, n1.r) * 0.6);
-    tPert += vec3(cos(dot(p, vec2(1.7, 0.6)) + n2.r * 9.0) * 0.12, 0.0, 0.05) * under;
+    vec2 wq = p + (texture2D(uNoise, p * 0.011).rg - 0.5) * 18.0;
+    float ph = dot(wq, vec2(1.9, 0.7)) + n2.r * 6.0;
+    float rip = sin(ph) * 0.5 + 0.5;
+    vec3 bed = uBed * (0.8 + 0.22 * grain + 0.1 * rip * rip);
+    tPert += vec3(cos(ph) * 0.14, 0.0, 0.05) * under;
+    vec2 mq = p * 0.013 + (texture2D(uNoise, p * 0.0041).gb - 0.5) * 0.45;
+    float meadow = texture2D(uNoise, mq).g * 0.75 + texture2D(uNoise, mq * 2.7).b * 0.25;
+    float tuft = texture2D(uNoise, p * 0.37).b;
+    float gm = smoothstep(0.5, 0.56, meadow + (tuft - 0.5) * 0.08) * smoothstep(-0.9, -2.4, h);
+    // blades lying with the current: streaky, with lighter tips
+    float blade = texture2D(uNoise, vec2(p.x * 1.3 + p.y * 0.4, p.y * 0.22) ).b;
+    vec3 grassBed = mix(vec3(0.13, 0.16, 0.07), vec3(0.3, 0.32, 0.14), blade) * (0.75 + 0.4 * n2.b);
+    bed = mix(bed, grassBed, gm * 0.8);
+    tPert += vec3(blade - 0.5, 0.0, tuft - 0.5) * gm * 0.5;
     if (uCoral > 0.5) {
-      float cm = smoothstep(0.6, 0.72, n1.r + n2.g * 0.25) * smoothstep(-0.7, -1.6, h) * smoothstep(-9.0, -4.0, h);
-      float kind = n2.a;
-      vec3 coral = kind > 0.66 ? vec3(0.62, 0.3, 0.33) : kind > 0.33 ? vec3(0.55, 0.45, 0.26) : vec3(0.36, 0.34, 0.42);
-      coral *= 0.6 + 0.6 * n3.a;
-      col = mix(col, mix(bed, coral, cm), under);
-      tPert += vec3(n3.a - 0.5, 0.0, n3.g - 0.5) * cm * 0.9;
-    } else {
-      col = mix(col, bed, under);
+      float cm = smoothstep(0.62, 0.7, n1.r + n2.g * 0.25 + (tuft - 0.5) * 0.12) * smoothstep(-0.7, -1.6, h) * smoothstep(-9.0, -4.0, h) * (1.0 - gm);
+      // muted, the way coral looks from above water: ochre, rose and olive
+      vec3 coral = mix(vec3(0.52, 0.4, 0.28), vec3(0.55, 0.34, 0.36), smoothstep(0.35, 0.65, n2.b));
+      coral = mix(coral, vec3(0.4, 0.42, 0.28), smoothstep(0.45, 0.7, n1.b));
+      float lump = texture2D(uNoise, p * 0.9).b;
+      coral *= 0.55 + 0.55 * lump;
+      bed = mix(bed, coral, cm);
+      tPert += vec3(lump - 0.5, 0.0, n3.g - 0.5) * cm * 1.1;
     }
+    col = mix(col, bed, under);
   }
   // grass and scrub on the higher ground, rock on the steep bits
   float grass = smoothstep(uLevels.x, uLevels.x + 0.6, h + (n2.g - 0.5) * 1.2) * (1.0 - smoothstep(uLevels.y - 0.15, uLevels.y + 0.05, slope));
@@ -206,6 +223,7 @@ vec3 tPert;`,
   diffuseColor.rgb *= col;
 }`,
       )
+      .replace('#include <lights_fragment_begin>', THREE.ShaderChunk.lights_fragment_begin.replaceAll('directionalLightShadow.shadowIntensity', 'directionalLightShadow.shadowIntensity * tShadowK'))
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = tRough;')
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize(normal + (viewMatrix * vec4(tPert, 0.0)).xyz * 0.6);');
   };

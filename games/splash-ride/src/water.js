@@ -243,6 +243,9 @@ uniform vec4 uLandInfo;        // origin x, origin z, size x, size z
 uniform sampler2D uOpaque;
 uniform sampler2D uDepth;
 uniform sampler2D uReflect;
+uniform sampler2D uReflectDepth;
+uniform mat4 uReflectInvProj;  // the mirror camera's (oblique) projection, inverted
+uniform float uWorldFog;       // the world pass's haze density
 uniform float uReflectOn;
 uniform vec2 uResolution;
 uniform vec2 uCamNF;           // near, far
@@ -340,8 +343,17 @@ void main() {
   R.y = abs(R.y);
   vec3 refl;
   if (uReflectOn > 0.5) {
-    vec2 rc = vReflCoord.xy / vReflCoord.w + N.xz * 0.09 / (1.0 + dist * 0.015);
-    refl = texture2D(uReflect, clamp(rc, 0.002, 0.998)).rgb;
+    vec2 rc = clamp(vReflCoord.xy / vReflCoord.w + N.xz * 0.09 / (1.0 + dist * 0.015), 0.002, 0.998);
+    refl = texture2D(uReflect, rc).rgb;
+    // the mirrored world gets the haze of its full light path, like the
+    // world pass gives the real thing (distant hills pale in the water too)
+    float rz = texture2D(uReflectDepth, rc).x;
+    if (rz < 1.0) {
+      vec4 rv = uReflectInvProj * vec4(rc * 2.0 - 1.0, rz * 2.0 - 1.0, 1.0);
+      float rdist = length(rv.xyz / rv.w);
+      float rhf = 0.4 + 0.6 * exp(-max(cameraPosition.y + R.y * rdist * 0.5, 0.0) / 60.0);
+      refl = mix(refl, skyHaze(R), 1.0 - exp(-rdist * uWorldFog * rhf));
+    }
   } else {
     refl = skyColor(R, false);
   }
@@ -376,9 +388,15 @@ void main() {
   // fine bubbly break-up (smooth noise: cellular noise read as tiles here)
   float fine = texture2D(uNoise, p * 0.71 + vec2(uTime * 0.011, 0.0)).b * 0.6 + texture2D(uNoise, p * 1.9).b * 0.4;
   pattern = pattern * 0.78 + fine * 0.22;
-  float fm = smoothstep(1.0 - foamAmt, 1.2 - foamAmt, pattern) * smoothstep(0.0, 0.3, foamAmt) * (0.55 + 0.45 * clamp(foamAmt, 0.0, 1.0));
+  // even the thickest foam keeps some holes, so it never reads as paint
+  float cover = clamp(foamAmt, 0.0, 1.0) * 0.9;
+  float fm = smoothstep(1.0 - cover, 1.2 - cover, pattern) * smoothstep(0.0, 0.3, foamAmt) * (0.5 + 0.5 * clamp(foamAmt, 0.0, 1.0));
   fm *= 0.82 + 0.18 * lace;
-  vec3 foamCol = 0.8 * (uSunColor * (0.55 + 0.45 * nl) / 3.14159 + uAmbient) * (0.82 + 0.18 * fine);
+  // heavy foam breaks into a lacy web of bubbles with darker water between
+  float web = texture2D(uCaustics, fp * 0.55 + vec2(uTime * 0.03, 0.0)).r;
+  fm *= mix(1.0, 0.45 + 0.75 * web, smoothstep(0.35, 1.0, foamAmt) * 0.7);
+  // thin foam is a translucent grey, thick foam catches the light
+  vec3 foamCol = 0.8 * (uSunColor * (0.55 + 0.45 * nl) / 3.14159 + uAmbient) * (0.72 + 0.18 * fine + 0.12 * smoothstep(0.4, 1.2, foamAmt));
   col = mix(col, foamCol, clamp(fm, 0.0, 0.95));
 
   // --- the night bay's glowing plankton, stirred up by anything moving
@@ -485,6 +503,9 @@ export class WaterSurface {
       uOpaque: { value: null },
       uDepth: { value: null },
       uReflect: { value: null },
+      uReflectDepth: { value: null },
+      uReflectInvProj: { value: new THREE.Matrix4() },
+      uWorldFog: { value: 0.0005 },
       uReflectOn: { value: 0 },
       uResolution: { value: new THREE.Vector2(1, 1) },
       uCamNF: { value: new THREE.Vector2(0.1, 5000) },

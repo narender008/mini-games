@@ -29,7 +29,13 @@ class PlanarReflection {
     this.camera = new THREE.PerspectiveCamera();
     this.camera.layers.set(LAYER_WORLD);
     this.textureMatrix = new THREE.Matrix4();
-    this.target = new THREE.WebGLRenderTarget(16, 16, { type: THREE.HalfFloatType, depthBuffer: true });
+    // with its depth, so the water can haze what it mirrors by distance
+    // just as the world pass hazes the real thing
+    this.target = new THREE.WebGLRenderTarget(16, 16, {
+      type: THREE.HalfFloatType,
+      depthBuffer: true,
+      depthTexture: new THREE.DepthTexture(16, 16, THREE.FloatType),
+    });
     this.target.texture.generateMipmaps = false;
     this._plane = new THREE.Plane();
     this._clip = new THREE.Vector4();
@@ -153,10 +159,13 @@ class WorldPass extends Pass {
     });
     this.quad = new FullScreenQuad(this.copyMat);
     const u = water.uniforms;
+    u.uWorldFog = this.copyMat.uniforms.uFog;
     u.uOpaque.value = this.opaque.texture;
     u.uDepth.value = this.opaque.depthTexture;
     if (this.reflection) {
       u.uReflect.value = this.reflection.target.texture;
+      u.uReflectDepth.value = this.reflection.target.depthTexture;
+      u.uReflectInvProj.value = this.reflection.camera.projectionMatrixInverse;
       u.uTexMatrix.value = this.reflection.textureMatrix;
       u.uReflectOn.value = 1;
     }
