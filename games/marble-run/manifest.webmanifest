@@ -1,0 +1,17 @@
+{
+  "name": "Marble Run",
+  "short_name": "Marble Run",
+  "description": "Drop shiny glass marbles down wooden, crystal, castle and space marble runs, ring the bells, and build your own runs. No losing, ever.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#e9c893",
+  "theme_color": "#e9c893",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}
