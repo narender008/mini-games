@@ -50,6 +50,13 @@ export class Friend {
     this.hideOpts = {};
     this.voxelScale = 1;
     this.smoothRounds = 8;
+    // how it gets about in the world: walking pace in m/s (0: stays where it
+    // is, like a flower), how fast it turns (rad/s), and its size once home
+    // (a painted tree grows, a sun rises big into the sky)
+    this.walkSpeed = 0.28;
+    this.turnRate = 2.4;
+    this.worldScale = 1;
+    this.hopScale = 1; // how high hello and goodbye hops go
   }
 
   // ------------------------------------------------------------ to override
@@ -342,6 +349,23 @@ export class Friend {
 
   emit(type, data = {}) {
     this.events.push({ type, ...data });
+  }
+
+  // the middle of the friend as it is posed now (a flying friend's body is
+  // lifted by its root bone), in world space
+  worldCenter(out = new THREE.Vector3()) {
+    this.bounds.getCenter(out);
+    const root = this.bones.root;
+    if (root) {
+      const rest = this.sculptor.bones[this.sculptor.index.root].pos;
+      root.updateWorldMatrix(true, false);
+      _w.set(0, 0, 0).applyMatrix4(root.matrixWorld);
+      this.object.worldToLocal(_w);
+      out.x += _w.x - rest[0];
+      out.y += _w.y - rest[1];
+      out.z += _w.z - rest[2];
+    }
+    return this.object.localToWorld(out);
   }
 
   // a world-space point on a bone (rest-space offset from that bone)

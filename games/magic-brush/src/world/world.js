@@ -15,6 +15,7 @@ import { woodTextures, drawSplatters, periodicNoise, SPLAT_COLORS } from './text
 import { grassField, foliage, leafCardTexture, flowerBeds, WIND } from './foliage.js';
 import { tubeGeometry } from '../creatures/parts.js';
 import { SKY_GLSL } from './sky.js';
+import { stringLights } from './air.js';
 
 const DECK_Z0 = -1.1;
 const DECK_Z1 = 2.8;
@@ -45,6 +46,39 @@ export function walkable(x, z) {
 
 export function groundAt(x, z) {
   return z > DECK_Z0 && Math.abs(x) < DECK_X && z < DECK_Z1 ? 0.045 : 0;
+}
+
+export const WATER_Y = -0.02;
+
+// Where friends with a special home settle: flowers and trees in the
+// garden beds and lawn, the sun and rainbows up over the garden, boats on
+// the pond. taken: [{x, z}] already used, to keep them apart.
+const HOMES = {
+  garden: [[-3.1, -1.6], [-2.7, -3.0], [-0.7, -5.2], [1.0, -5.9], [2.3, -3.2], [3.1, -1.9], [1.8, -6.0], [-1.6, -3.6], [-3.6, -2.4], [0.2, -4.4], [2.9, -4.6], [-1.3, -1.8]],
+  sky: [[-1.4, -4.6, 1.7], [1.2, -5.2, 1.9], [-3.0, -3.2, 1.6], [2.6, -3.6, 1.6], [0.0, -6.5, 2.1], [-2.2, -6.2, 2.0]],
+  pond: [[POND.x + 0.35, POND.z + 0.2], [POND.x - 0.4, POND.z - 0.1], [POND.x + 0.05, POND.z - 0.5], [POND.x - 0.2, POND.z + 0.5]],
+};
+
+export function homeSpot(home, taken = []) {
+  const list = HOMES[home] || HOMES.garden;
+  let best = list[0];
+  let bestD = -1;
+  for (const p of list) {
+    let d = Infinity;
+    for (const t of taken) d = Math.min(d, Math.hypot(t.x - p[0], t.z - p[1]));
+    d += Math.random() * 0.3;
+    if (d > bestD) {
+      bestD = d;
+      best = p;
+    }
+  }
+  const y = home === 'sky' ? best[2] : home === 'pond' ? WATER_Y : groundAt(best[0], best[1]);
+  return { x: best[0], y, z: best[1] };
+}
+
+// inside the pond (for boats), as a signed distance like walkable
+export function onPond(x, z) {
+  return Math.hypot(x - POND.x, z - POND.z) - (POND.r - 0.25);
 }
 
 export class World {
@@ -456,6 +490,16 @@ export class World {
     tree(7.8, -10, 5.5, 2.8, 65);
     tree(-9.5, -3, 4.6, 2.4, 66);
     tree(9, -2, 4.2, 2.2, 67);
+    // a wood round the far side of the lawn
+    const W = rng(140);
+    for (let i = 0; i < 16; i++) {
+      const a = -Math.PI * 0.8 + (i / 15) * Math.PI * 1.6 + (W() - 0.5) * 0.12;
+      const r = 12 + W() * 5;
+      const x = Math.sin(a) * r * 1.1;
+      const z = -3.5 - Math.cos(a) * r;
+      if (z > 0) continue;
+      tree(x, z, 5 + W() * 2.5, 2.6 + W() * 1.2, 200 + i);
+    }
     // stepping stones
     const stoneMat = new THREE.MeshStandardMaterial({ color: 0xb9ac98, roughness: 0.9 });
     const R = rng(71);
@@ -469,6 +513,19 @@ export class World {
       s.receiveShadow = true;
       this.group.add(s);
     }
+    // strings of little lights from the trees to the lantern posts
+    const lights = stringLights(
+      [
+        [[TREES[0].x - 0.15, 2.4, TREES[0].z + 0.1], [0.95, 1.02, -2.2]],
+        [[TREES[1].x + 0.12, 2.2, TREES[1].z - 0.1], [-0.9, 1.02, -4.6]],
+        [[TREES[2].x, 2.3, TREES[2].z + 0.15], [1.1, 1.02, -6.9]],
+        [[TREES[0].x, 2.6, TREES[0].z - 0.1], [TREES[2].x + 0.1, 2.5, TREES[2].z]],
+        [[-0.9, 1.02, -4.6], [0.95, 1.02, -2.2]],
+      ],
+      { sag: 0.5 },
+    );
+    this.group.add(lights);
+    this.stringMat = lights.userData.mat;
     // lanterns on posts along the path
     const postMat = new THREE.MeshStandardMaterial({ color: 0x3b2c22, roughness: 0.6, metalness: 0.4 });
     for (const [x, z, lit] of [[0.95, -2.2, 0.35], [-0.9, -4.6, 0.35], [1.1, -6.9, 0]]) {
@@ -591,41 +648,57 @@ export class World {
 
   buildDistance() {
     // two rings of soft hills and a castle on the nearer ridge, hazed with the sky
-    const hazeMat = (base, dist) =>
+    const hazeMat = (base, dist, canopy = 0) =>
       new THREE.ShaderMaterial({
-        uniforms: { ...this.sky.uniforms, uBase: { value: new THREE.Color(base) }, uHaze: { value: dist } },
-        vertexShader: 'varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+        uniforms: { ...this.sky.uniforms, uBase: { value: new THREE.Color(base) }, uHaze: { value: dist }, uCanopy: { value: canopy } },
+        vertexShader: 'varying vec3 vW; varying float vTop; attribute float aTop; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vTop = aTop; gl_Position = projectionMatrix * viewMatrix * w; }',
         fragmentShader: `${SKY_GLSL}
-          uniform vec3 uBase; uniform float uHaze; varying vec3 vW;
+          uniform vec3 uBase; uniform float uHaze; uniform float uCanopy; varying vec3 vW; varying float vTop;
           void main(){
             vec3 d = normalize(vW - cameraPosition);
             float lit = 0.75 + 0.35 * clamp(vW.y / 30.0, 0.0, 1.0);
             vec3 c = uBase * lit;
+            if (uCanopy > 0.0) {
+              // a forested ridge: crowns of trees, lit on the sun side, darker below
+              float a = atan(vW.z, vW.x);
+              vec2 p = vec2(a * 90.0 * uCanopy, vW.y * 0.9);
+              float crowns = skF(p * 1.3) * 0.7 + skF(p * 4.1) * 0.3;
+              vec3 toSun = normalize(vec3(uSunDir.x, 0.0, uSunDir.z));
+              float side = 0.5 + 0.5 * dot(normalize(vec3(-vW.x, 0.0, -vW.z)), -toSun);
+              c *= 0.55 + 0.7 * crowns;
+              c *= mix(0.6, 1.25, smoothstep(0.0, 1.0, vTop));
+              c += vec3(0.35, 0.22, 0.08) * side * smoothstep(0.55, 1.0, crowns) * 0.5;
+            }
             gl_FragColor = vec4(mix(c, skyHaze(d), uHaze), 1.0);
           }`,
       });
-    const ring = (r0, h, seed, color, haze) => {
+    const ring = (r0, h, seed, color, haze, canopy = 0) => {
       const R = periodicNoise(seed);
-      const segs = 160;
+      const segs = canopy ? 720 : 160;
       const pos = [];
+      const top = [];
       const idx = [];
       for (let i = 0; i <= segs; i++) {
         const a = (i / segs) * TAU;
-        const hh = h * (0.35 + R(i * 3, 0, segs * 3) * 0.8 + R(i * 11, 5, segs * 11) * 0.25);
+        let hh = h * (0.35 + R(i * 3 * (160 / segs), 0, 480) * 0.8 + R(i * 11 * (160 / segs), 5, 1760) * 0.25);
+        // tree crowns along the ridge
+        if (canopy) hh += h * 0.16 * Math.pow(Math.abs(Math.sin(i * 1.7 + R(i, 9, segs) * 6)), 0.6);
         const x = Math.cos(a) * r0, z = Math.sin(a) * r0;
         pos.push(x, -2, z, x, hh, z);
+        top.push(0, 1);
         if (i < segs) idx.push(i * 2, i * 2 + 2, i * 2 + 1, i * 2 + 1, i * 2 + 2, i * 2 + 3);
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('aTop', new THREE.Float32BufferAttribute(top, 1));
       g.setIndex(idx);
-      const mesh = new THREE.Mesh(g, hazeMat(color, haze));
+      const mesh = new THREE.Mesh(g, hazeMat(color, haze, canopy));
       mesh.material.side = THREE.DoubleSide;
       this.group.add(mesh);
     };
     ring(140, 30, 91, 0x5b6a86, 0.72);
-    ring(85, 16, 92, 0x4c6a44, 0.45);
-    ring(45, 7, 93, 0x3f6034, 0.22);
+    ring(85, 14, 92, 0x55733f, 0.45, 1.4);
+    ring(45, 6, 93, 0x4a6b33, 0.22, 1);
     // the castle
     const castle = new THREE.Group();
     const wallC = 0xf1e2d4;
@@ -662,6 +735,8 @@ export class World {
     // fairy lights twinkle softly
     const k = 0.85 + Math.sin(t * 1.7) * 0.08;
     this.fairy.mat.color.setRGB(4.5 * k, 3.0 * k, 1.4 * k);
+    const k2 = 0.9 + Math.sin(t * 1.3 + 1) * 0.1;
+    this.stringMat?.color.setRGB(5 * k2, 3.2 * k2, 1.4 * k2);
   }
 }
 

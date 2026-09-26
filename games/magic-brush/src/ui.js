@@ -13,6 +13,30 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 
+// a brush handle a little darker than its paint (white paint gets a wooden one)
+function shade(n) {
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  if (r + g + b > 690) return '#c98f55';
+  const k = 0.72;
+  return `rgb(${Math.round(r * k)},${Math.round(g * k)},${Math.round(b * k)})`;
+}
+
+// a fat paint brush loaded with a colour: a big wet tip (the colour to tap),
+// a shiny ferrule and a short handle
+function fatBrush(c, handle) {
+  return `<svg viewBox="0 0 48 64" aria-hidden="true">
+    <path d="M24 1c9 6 15 15 15 24 0 7-4 11-8 12H17c-4-1-8-5-8-12 0-9 6-18 15-24z" fill="${c}" stroke="rgba(0,0,0,.18)" stroke-width="1"/>
+    <path d="M16 28c-1-6 1-12 5-17M23 31c0-7 1-14 3-20M30 29c1-5 0-10-2-14" fill="none" stroke="rgba(0,0,0,.14)" stroke-width="1.3" stroke-linecap="round"/>
+    <path d="M17 10c-3 4-4 8-4 12" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="3" stroke-linecap="round"/>
+    <path d="M33 34c1 3 1 5-1 6-2 0-2-2-1-4z" fill="${c}"/>
+    <rect x="15" y="36" width="18" height="9" rx="2" fill="url(#g-ferrule)"/>
+    <path d="M16.5 45h15l-2.4 16.5a3 3 0 0 1-3 2.5h-4.2a3 3 0 0 1-3-2.5z" fill="${handle}"/>
+    <path d="M20 47l1 13" stroke="rgba(255,255,255,.35)" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>`;
+}
+
 // a friend's picture: its preview (rendered from the game) or its colours
 function picture(id) {
   const info = BY_ID[id];
@@ -116,7 +140,10 @@ export class UI {
       b.dataset.color = name;
       b.setAttribute('role', 'radio');
       b.setAttribute('aria-label', `${name} paint`);
-      b.style.setProperty('--c', hex(COLORS[name]));
+      const c = hex(COLORS[name]);
+      b.style.setProperty('--c', c);
+      // a swipe of wet paint above a brush dipped in it
+      b.innerHTML = fatBrush(c, shade(COLORS[name]));
       b.addEventListener('click', () => this.on.color(name));
       box.appendChild(b);
     }

@@ -24,11 +24,11 @@ vec3 skyBase(vec3 d) {
   float h = d.y;
   float mu = dot(d, uSunDir);
   float toward = smoothstep(-0.4, 1.0, mu);
-  vec3 zenith = vec3(0.13, 0.25, 0.6);
-  vec3 mid = mix(vec3(0.46, 0.43, 0.7), vec3(0.8, 0.62, 0.62), toward * 0.6);
-  vec3 hor = mix(vec3(1.0, 0.62, 0.6), vec3(1.7, 0.95, 0.5), toward);
+  vec3 zenith = vec3(0.2, 0.34, 0.72);
+  vec3 mid = mix(vec3(0.95, 0.7, 0.62), vec3(1.25, 0.8, 0.5), toward * 0.8);
+  vec3 hor = mix(vec3(1.6, 1.0, 0.58), vec3(2.2, 1.25, 0.5), toward);
   vec3 c = mix(hor, mid, smoothstep(-0.02, 0.22, h));
-  c = mix(c, zenith, smoothstep(0.18, 0.85, h));
+  c = mix(c, zenith, smoothstep(0.25, 0.9, h));
   c += vec3(1.4, 0.85, 0.4) * pow(max(mu, 0.0), 6.0) * 0.45;
   c += vec3(2.2, 1.5, 0.8) * pow(max(mu, 0.0), 48.0) * 1.2;
   if (h < 0.0) c = mix(hor * 0.85, vec3(0.42, 0.34, 0.3), smoothstep(0.0, -0.25, h));
@@ -89,7 +89,7 @@ void main() {
 export class Sky {
   constructor() {
     this.uniforms = {
-      uSunDir: { value: new THREE.Vector3(-0.55, 0.36, 0.75).normalize() },
+      uSunDir: { value: new THREE.Vector3(-0.6, 0.27, 0.76).normalize() },
       uSkyTime: { value: 0 },
       uCloudCover: { value: 0.42 },
       uEnv: { value: 0 },

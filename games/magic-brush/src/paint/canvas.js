@@ -120,6 +120,8 @@ if (cGlit > 0.02) {
 
 const FACE_EMISSIVE = /* glsl */ `
 {
+  // bounce light from the bright studio keeps the canvas reading white
+  totalEmissiveRadiance += diffuseColor.rgb * 0.55;
   float band = exp(-pow((vUvC.x - uSweep) / 0.035, 2.0));
   float spark = pow(cN21(vUvC * vec2(240.0, 180.0) + uTime * 2.0), 8.0) * 6.0;
   totalEmissiveRadiance += vec3(1.0, 0.82, 0.5) * uGlow * band * (0.8 + spark);

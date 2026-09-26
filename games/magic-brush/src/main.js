@@ -22,6 +22,7 @@ import { detectQuality, FrameGovernor } from './quality.js';
 import { Post } from './post.js';
 import { Sky } from './world/sky.js';
 import { World, walkable, groundAt } from './world/world.js';
+import { Motes, PaintDrops } from './world/air.js';
 import { Easel } from './paint/canvas.js';
 import { PaintEngine } from './paint/engine.js';
 import { Outline } from './paint/outline.js';
@@ -37,6 +38,9 @@ import { Store, newId } from './store.js';
 import { SUBJECTS, BY_ID, makeFriend } from './creatures/catalog.js';
 import { CANVAS_W, CANVAS_H } from './creatures/friend.js';
 import { UI } from './ui.js';
+import { guess, squeeze } from './guess.js';
+import { SHAPE_W, SHAPE_H } from './creatures/shapes.js';
+import { MASK_W, MASK_H } from './paint/outline.js';
 import { canFullscreen, enterFullscreen, toggleFullscreen, onFullscreenChange } from './fullscreen.js';
 
 export async function start(canvas, progress) {
@@ -102,7 +106,9 @@ class App {
     this.env = this.sky.environment(renderer, q.envSize);
     scene.environment = this.env.texture;
     scene.environmentIntensity = 0.6;
-    const sun = (this.sun = new THREE.DirectionalLight(new THREE.Color(1.0, 0.8, 0.58), 3.0));
+    // a low, warm late-afternoon sun and a soft haze that warms the distance
+    scene.fog = new THREE.FogExp2(new THREE.Color(0.85, 0.52, 0.27), 0.009);
+    const sun = (this.sun = new THREE.DirectionalLight(new THREE.Color(1.0, 0.7, 0.42), 4.0));
     sun.position.copy(this.sky.sunDir).multiplyScalar(14).add(new THREE.Vector3(-0.5, 0, -1.5));
     sun.target.position.set(-0.5, 0, -1.5);
     scene.add(sun, sun.target);
@@ -120,10 +126,10 @@ class App {
       sun.shadow.normalBias = 0.015;
       sun.shadow.radius = 3;
     }
-    this.hemi = new THREE.HemisphereLight(new THREE.Color(0.75, 0.82, 1.0), new THREE.Color(0.42, 0.34, 0.2), 0.5);
+    this.hemi = new THREE.HemisphereLight(new THREE.Color(0.75, 0.82, 1.0), new THREE.Color(0.42, 0.34, 0.2), 0.45);
     scene.add(this.hemi);
     // a soft warm fill from the studio side so faces facing the painter are never dark
-    const fill = new THREE.DirectionalLight(new THREE.Color(1.0, 0.86, 0.7), 0.55);
+    const fill = new THREE.DirectionalLight(new THREE.Color(1.0, 0.84, 0.68), 0.6);
     fill.position.set(1.5, 2.2, 4);
     scene.add(fill);
 
@@ -131,6 +137,9 @@ class App {
     await tick();
     this.world = new World({ quality: q, sky: this.sky });
     scene.add(this.world.group);
+
+    this.motes = new Motes(scene, q.tier === 'low' ? 90 : q.tier === 'medium' ? 150 : 220);
+    this.drops = new PaintDrops(scene, [COLORS.pink, COLORS.blue, COLORS.yellow, COLORS.purple, COLORS.green, COLORS.orange, COLORS.teal, COLORS.red, COLORS.sky]);
 
     progress(0.66, 'Stretching the canvas');
     await tick();
@@ -299,6 +308,7 @@ class App {
     this.renderer.setSize(w, h, false);
     this.post.setSize(w, h, dpr);
     this.fx.sparkles.setViewport(h * dpr);
+    this.motes?.setViewport(h * dpr);
     if (!first && this.state !== 'loading') {
       // keep the canvas framed when the screen turns
       if (this.state === 'paint' && !this.rig.moving) this.rig.snap(this.shot('paint'));
@@ -354,8 +364,8 @@ class App {
     }
     // menu: the easel in the studio, the garden beyond
     return tall
-      ? { pos: new THREE.Vector3(1.1, 1.35, 3.3), look: new THREE.Vector3(-0.15, 0.8, -0.4), fov: 52 }
-      : { pos: new THREE.Vector3(1.35, 1.3, 2.7), look: new THREE.Vector3(-0.3, 0.82, -0.5), fov: 40 };
+      ? { pos: new THREE.Vector3(1.1, 1.2, 3.3), look: new THREE.Vector3(-0.15, 0.95, -0.4), fov: 52 }
+      : { pos: new THREE.Vector3(1.35, 1.12, 2.7), look: new THREE.Vector3(-0.3, 1.0, -0.5), fov: 42 };
   }
 
   // ------------------------------------------------------------ flow
@@ -456,16 +466,20 @@ class App {
     }
     this.bigRect = rect;
     this.audio.magic('shimmer');
-    this.ui.showGuess(this.guessChoices(rect));
+    const g = guess(this.magic.paintedMap(), 128, 96, this.paintedWeights());
+    this.lastGuess = g;
+    this.ui.showGuess(g.sure ? [g.ranked[0].id] : g.ranked.slice(0, 3).map((r) => r.id));
   }
 
-  // the best guesses for a free painting (see guess.js once there are more friends)
-  guessChoices(rect) {
-    const aspect = ((rect[2] - rect[0]) * CANVAS_W) / Math.max(1e-3, (rect[3] - rect[1]) * CANVAS_H);
-    return SUBJECTS.map((s) => ({ id: s.id, d: Math.abs(Math.log(aspect / (s.aspect || 1.3))) }))
-      .sort((a, b) => a.d - b.d)
-      .slice(0, 3)
-      .map((c) => c.id);
+  // how much of each colour was painted (stroke length x width)
+  paintedWeights() {
+    const w = new Map();
+    for (const s of this.paint.history) {
+      if (s.brush.tool === 'sponge') continue;
+      const k = (s.len + s.brush.radius) * s.brush.radius;
+      w.set(s.brush.color, (w.get(s.brush.color) || 0) + k);
+    }
+    return [...w];
   }
 
   async guessed(id) {
@@ -551,7 +565,7 @@ class App {
       this.lineAlpha = 0;
       this.friends.add(f, record, { x: land.x, z: land.z, heading: land.yaw, fresh: true });
       this.records.unshift(record);
-      this.portraitFor = { f, record };
+      this.wantPortrait(f, record, 0.4);
       // the canvas is fresh and white again for the next friend
       this.paint.clearAll();
       this.outline.clear();
@@ -658,6 +672,7 @@ class App {
       if (!f) continue;
       const spot = this.freeSpot();
       this.friends.add(f, rec, { x: spot.x, z: spot.z, heading: rand(-Math.PI, Math.PI), fresh: false });
+      if (!rec.portrait) this.wantPortrait(f, rec, 1);
     }
   }
 
@@ -838,6 +853,8 @@ class App {
     const t = this.time;
     this.sky.update(t);
     this.world.update(dt, t);
+    this.motes.update(t);
+    this.drops.update(t);
     this.paint.update(dt);
     // the outline fades in (and the magic turns its dots into a line)
     const wantLine = this.state === 'paint' || this.state === 'magic' ? 1 : 0.0;
@@ -901,34 +918,50 @@ class App {
 
   render() {
     this.post.update(this.time);
+    const pq = this.portraits;
+    if (pq?.length && this.time >= pq[0].at) this.takePortrait(pq.shift());
     this.post.render();
-    if (this.portraitFor) this.takePortrait();
   }
 
-  // The shelf picture of a new friend: a square crop of the frame around it,
-  // taken right after a render (the drawing buffer is still there).
-  takePortrait() {
-    const { f, record } = this.portraitFor;
-    if (!f.object.parent) {
-      this.portraitFor = null;
-      return;
-    }
-    const c = f.bounds.getCenter(_v);
-    f.object.localToWorld(c);
-    _w.copy(c).project(this.camera);
-    if (Math.abs(_w.x) > 0.9 || Math.abs(_w.y) > 0.9) return;
-    const dist = this.camera.position.distanceTo(c);
-    const rpx = ((f.restRadius * f.object.scale.x) / (dist * Math.tan((this.camera.fov * Math.PI) / 360))) * (this.view.h / 2);
-    const sx = (_w.x * 0.5 + 0.5) * this.view.w;
-    const sy = (-_w.y * 0.5 + 0.5) * this.view.h;
-    const half = rpx * 1.25;
-    const k = this.renderer.domElement.width / this.view.w;
+  // The shelf picture of a new friend: one extra frame rendered from a
+  // portrait camera close on the friend (3/4 view, in the garden light),
+  // copied square from the canvas at once; the normal frame is drawn right
+  // after, so the portrait never shows.
+  wantPortrait(f, record, delay) {
+    (this.portraits ??= []).push({ f, record, at: this.time + delay });
+  }
+
+  takePortrait({ f, record }) {
+    if (!f.object.parent || !record) return;
+    const cam = this.camera;
+    const savePos = cam.position.clone();
+    const saveQ = cam.quaternion.clone();
+    const saveFov = cam.fov;
+    const c = f.worldCenter(new THREE.Vector3());
+    const r = f.restRadius * f.object.scale.x;
+    const fov = 30;
+    const dist = (r * 1.0) / Math.tan((fov * Math.PI) / 360);
+    // from the front, a little to the side and above
+    const yaw = f.object.rotation.y + 0.45;
+    cam.position.set(c.x + Math.sin(yaw) * dist * 0.94, c.y + dist * 0.28, c.z + Math.cos(yaw) * dist * 0.94);
+    cam.fov = fov;
+    cam.updateProjectionMatrix();
+    cam.lookAt(c);
+    cam.updateMatrixWorld();
+    this.post.setFocus(cam.position.distanceTo(c));
+    this.post.render();
+    const el = this.renderer.domElement;
+    const side = Math.min(el.width, el.height);
     const cv = document.createElement('canvas');
     cv.width = cv.height = 256;
-    const g = cv.getContext('2d');
-    g.drawImage(this.renderer.domElement, (sx - half) * k, (sy - half) * k, half * 2 * k, half * 2 * k, 0, 0, 256, 256);
-    record.portrait = cv.toDataURL('image/jpeg', 0.85);
-    this.portraitFor = null;
+    cv.getContext('2d').drawImage(el, (el.width - side) / 2, (el.height - side) / 2, side, side, 0, 0, 256, 256);
+    record.portrait = cv.toDataURL('image/jpeg', 0.86);
+    cam.position.copy(savePos);
+    cam.quaternion.copy(saveQ);
+    cam.fov = saveFov;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    this.post.setFocus(cam.position.distanceTo(this.rig.look));
     this.store.put('friends', record).catch(() => {});
   }
 
@@ -997,6 +1030,32 @@ class App {
       garden: () => app.toPlay(),
       menu: () => app.toMenu(),
       guess: (id) => app.guessed(id),
+      // every friend's silhouette for creatures/shapes.js (dev tool)
+      async shapes() {
+        const out = {};
+        for (const sub of SUBJECTS) {
+          let f;
+          try {
+            f = await makeFriend(sub.id, app.friendCtx);
+          } catch {
+            continue;
+          }
+          app.outline.clear();
+          app.outline.draw(f);
+          const d = app.outline.data;
+          const map = new Uint8Array(MASK_W * MASK_H);
+          for (let i = 0; i < map.length; i++) map[i] = d[i * 4] > 127 ? 1 : 0;
+          const sq = squeeze(map, MASK_W, MASK_H);
+          const bytes = new Uint8Array(Math.ceil((SHAPE_W * SHAPE_H) / 8));
+          sq.grid.forEach((v, i) => {
+            if (v >= 0.5) bytes[i >> 3] |= 1 << (i & 7);
+          });
+          out[sub.id] = { aspect: +((sq.aspect * MASK_H * CANVAS_W) / (MASK_W * CANVAS_H)).toFixed(3), bits: btoa(String.fromCharCode(...bytes)) };
+          f.dispose();
+        }
+        app.setSubject(app.subjectId);
+        return out;
+      },
       // a friend straight into the garden, in its own colours
       async pose(id, x = 0, z = 0.3, heading = 0) {
         const f = await makeFriend(id, app.friendCtx);

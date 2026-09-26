@@ -138,11 +138,20 @@
     <!-- the friends shelf -->
     <div id="shelf" class="overlay" hidden role="dialog" aria-label="Your friends">
       <div class="palette-board">
-        <div class="shelf-grid" role="list"></div>
-        <p class="shelf-empty" hidden>Paint a friend and it will wait for you here.</p>
-        <div class="shelf-paintings" role="list" aria-label="Kept paintings"></div>
-        <button type="button" class="round close" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
+        <span class="dab" style="--c: #e53935; left: 20%; top: 12%"></span>
+        <span class="dab" style="--c: #fb8c1a; left: 9%; top: 30%"></span>
+        <span class="dab" style="--c: #fdd835; left: 36%; top: 5%"></span>
+        <span class="dab" style="--c: #43b649; left: 88%; top: 30%"></span>
+        <span class="dab" style="--c: #1e88e5; left: 86%; top: 52%"></span>
+        <span class="dab" style="--c: #8e44d0; left: 50%; top: 88%"></span>
+        <span class="dab" style="--c: #f06ab0; left: 30%; top: 84%"></span>
+        <div class="shelf-scroll">
+          <div class="shelf-grid" role="list"></div>
+          <p class="shelf-empty" hidden>Paint a friend and it will wait for you here.</p>
+          <div class="shelf-paintings" role="list" aria-label="Kept paintings"></div>
+        </div>
       </div>
+      <button type="button" class="round close shelf-close" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
     </div>
 
     <div id="callout" aria-live="polite"></div>
