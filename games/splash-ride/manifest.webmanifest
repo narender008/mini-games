@@ -1,0 +1,17 @@
+{
+  "name": "Splash Ride",
+  "short_name": "Splash Ride",
+  "description": "Drive a little boat across a sunny lagoon, a sunset lake, a canal town and a glowing night bay. Spray, splashes, dolphins and sparkle rings. No losing, ever.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#0d3a4a",
+  "theme_color": "#0f5a6e",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

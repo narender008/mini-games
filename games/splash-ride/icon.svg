@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7cc8f0"/>
+      <stop offset="1" stop-color="#d9f1fb"/>
+    </linearGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2fc4d0"/>
+      <stop offset="1" stop-color="#0f7fa6"/>
+    </linearGradient>
+    <linearGradient id="hull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#d7e3ea"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#bfe8f7"/>
+      <stop offset="1" stop-color="#5ab9d6"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#sky)"/>
+  <circle cx="384" cy="132" r="46" fill="#fff4c4"/>
+  <path d="M0 300c40 0 52-18 88-18s48 18 88 18 52-18 88-18 48 18 88 18 52-18 88-18 48 18 72 18v212H0z" fill="url(#sea)"/>
+  <!-- wake -->
+  <path d="M46 346c50-10 92-30 132-40l-12 22c-38 10-76 22-120 30z" fill="#ffffff" opacity="0.85"/>
+  <path d="M60 392c60-4 104-30 132-58l4 26c-30 24-78 42-136 44z" fill="#ffffff" opacity="0.6"/>
+  <!-- boat -->
+  <path d="M150 300h266c-8 26-22 44-42 52H196c-22-10-38-28-46-52z" fill="url(#hull)" stroke="#8aa6b6" stroke-width="4"/>
+  <path d="M154 314h256" stroke="#ff6b4a" stroke-width="12" stroke-linecap="round"/>
+  <path d="M214 300l30-50h86l24 50z" fill="url(#glass)" stroke="#8aa6b6" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M262 256h48" stroke="#ffffff" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+  <!-- spray -->
+  <circle cx="424" cy="312" r="10" fill="#ffffff"/>
+  <circle cx="446" cy="290" r="8" fill="#ffffff" opacity="0.9"/>
+  <circle cx="440" cy="330" r="7" fill="#ffffff" opacity="0.85"/>
+  <circle cx="462" cy="314" r="5" fill="#ffffff" opacity="0.8"/>
+  <path d="M0 404c40 0 52-14 88-14s48 14 88 14 52-14 88-14 48 14 88 14 52-14 88-14 48 14 72 14" fill="none" stroke="#ffffff" stroke-width="6" opacity="0.35"/>
+</svg>

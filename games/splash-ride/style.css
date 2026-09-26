@@ -1,0 +1,763 @@
+/* Splash Ride: soft, rounded, frosted-glass UI in sea-glass white and
+   lagoon teal, so it reads over bright turquoise water, a golden lake, a
+   stone canal and a night bay alike. Big, generous touch targets; almost
+   nothing to read. */
+:root {
+  --font: ui-rounded, 'SF Pro Rounded', 'Arial Rounded MT Bold', 'Nunito', 'Baloo 2', 'Fredoka', 'Trebuchet MS', system-ui, sans-serif;
+  --ink: #12394a;
+  --ink-soft: rgba(18, 57, 74, 0.72);
+  --foam: #f4fbfc;
+  --panel: rgba(244, 251, 252, 0.8);
+  --panel-edge: rgba(255, 255, 255, 0.8);
+  --panel-shadow: 0 12px 30px rgba(4, 22, 32, 0.28);
+  --sun: #ffc94a;
+  --teal: #1aa6b7;
+  --focus: #ff7a59;
+  --tap: clamp(48px, 6.6vmin, 60px);
+  --edge: 12px;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0d3a4a;
+  color: var(--ink);
+  font-family: var(--font);
+  font-weight: 800;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+#scene {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+a:focus-visible,
+[role='slider']:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+svg {
+  display: block;
+}
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+body.cover #menu,
+body.cover #hud,
+body.cover .menu-fs,
+body.cover .menu-mute,
+body.cover #callout {
+  display: none !important;
+}
+
+/* ------------------------------------------------------------ loader */
+
+#loader {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  color: var(--foam);
+  background: radial-gradient(80% 60% at 50% 30%, #2a9bb0 0%, #11607a 55%, #0a3a4c 100%);
+  transition: opacity 0.7s ease;
+}
+
+#loader.done {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loader-logo {
+  width: 104px;
+  height: 104px;
+  animation: bob 1.8s ease-in-out infinite;
+}
+
+.loader-title {
+  margin: 0;
+  font-size: clamp(28px, 6vmin, 44px);
+  letter-spacing: 0.02em;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+#loader .bar {
+  width: min(280px, 70vw);
+  height: 12px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+
+#loader-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #8ff0ec, #ffe08a);
+  transform-origin: left;
+  transform: scaleX(0.02);
+  transition: transform 0.25s ease;
+  border-radius: inherit;
+}
+
+#loader-text {
+  margin: 0;
+  font-size: 15px;
+  opacity: 0.85;
+}
+
+#loader.error .bar {
+  display: none;
+}
+
+@keyframes bob {
+  50% {
+    transform: translateY(-6px) rotate(-2deg);
+  }
+}
+
+/* ------------------------------------------------------------ shared bits */
+
+.chip,
+.round {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel);
+  border: 1.5px solid var(--panel-edge);
+  box-shadow: var(--panel-shadow);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  backdrop-filter: blur(10px) saturate(1.2);
+  color: var(--ink);
+}
+
+.round {
+  width: var(--tap);
+  height: var(--tap);
+  border-radius: 50%;
+}
+
+.round svg {
+  width: 56%;
+  height: 56%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.round svg .fillc {
+  fill: currentColor;
+}
+
+.round.on {
+  background: #ffe9a8;
+}
+
+.mute .off,
+.mute.muted .on {
+  display: none;
+}
+
+.mute.muted .off {
+  display: inline;
+}
+
+.fs .exit,
+.fs.on .enter {
+  display: none;
+}
+
+.fs.on .exit {
+  display: inline;
+}
+
+.fs {
+  display: none;
+}
+
+body.can-fs .fs {
+  display: inline-flex;
+}
+
+body.can-fs .fs[hidden] {
+  display: none;
+}
+
+.chip {
+  gap: 6px;
+  height: 44px;
+  padding: 0 16px 0 10px;
+  border-radius: 99px;
+  text-decoration: none;
+  font-size: 16px;
+}
+
+.chip svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ------------------------------------------------------------ start screen */
+
+#menu {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: calc(var(--edge) + var(--safe-t) + 44px) calc(var(--edge) + var(--safe-r)) calc(var(--edge) + var(--safe-b) + 6px) calc(var(--edge) + var(--safe-l));
+  background: linear-gradient(180deg, rgba(4, 30, 42, 0.38) 0%, rgba(4, 30, 42, 0) 22%, rgba(4, 30, 42, 0) 50%, rgba(4, 30, 42, 0.45) 100%);
+}
+
+.home-link {
+  position: fixed;
+  top: calc(var(--edge) + var(--safe-t));
+  left: calc(var(--edge) + var(--safe-l));
+}
+
+.menu-fs,
+.menu-mute {
+  position: fixed;
+  z-index: 11;
+  top: calc(var(--edge) + var(--safe-t));
+}
+
+.menu-mute {
+  right: calc(var(--edge) + var(--safe-r));
+}
+
+.menu-fs {
+  right: calc(var(--edge) * 2 + var(--tap) + var(--safe-r));
+}
+
+.menu-main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  justify-items: center;
+  align-self: stretch;
+  gap: clamp(10px, 2.2vmin, 20px);
+  width: min(1100px, 100%);
+  min-height: 100%;
+}
+
+/* the boat shows through here (the camera frames it in this band) */
+.menu-gap {
+  min-height: clamp(60px, 18vh, 260px);
+}
+
+.logo {
+  margin: 0;
+  font-size: clamp(38px, 9vmin, 84px);
+  line-height: 1;
+  color: #ffffff;
+  letter-spacing: 0.01em;
+  text-shadow: 0 3px 0 #1587a0, 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+
+.modes,
+.steers {
+  display: flex;
+  gap: 10px;
+  padding: 6px;
+  border-radius: 99px;
+  background: var(--panel);
+  border: 1.5px solid var(--panel-edge);
+  box-shadow: var(--panel-shadow);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.mode,
+.steer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 6px 18px 6px 10px;
+  border-radius: 99px;
+  font-size: clamp(15px, 2.3vmin, 19px);
+  color: var(--ink-soft);
+}
+
+.mode svg,
+.steer svg {
+  width: 30px;
+  height: 30px;
+}
+
+.mode[aria-checked='true'],
+.steer[aria-checked='true'] {
+  background: linear-gradient(180deg, #e2fbfb, #9ee7ea);
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 rgba(10, 110, 130, 0.25);
+}
+
+.touch-only {
+  display: none;
+}
+
+body.touch .touch-only {
+  display: flex;
+}
+
+/* boats: four round-cornered pictures in a row; a tap selects */
+.boats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(6px, 1.2vmin, 12px);
+  width: min(640px, 100%);
+}
+
+.boat-card {
+  display: grid;
+  padding: 4px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1.5px solid var(--panel-edge);
+  box-shadow: var(--panel-shadow);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  transition: transform 0.15s ease;
+  min-width: 0;
+}
+
+.boat-card .pic {
+  display: block;
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  background-size: cover;
+  background-position: center;
+  background-color: #2b8fa6;
+}
+
+.boat-card[aria-checked='true'] {
+  outline: 3px solid var(--sun);
+  outline-offset: 1px;
+  transform: translateY(-2px);
+}
+
+.boat-card:active {
+  transform: scale(0.96);
+}
+
+/* places: a tap on a picture sets off */
+.places {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(8px, 1.6vmin, 16px);
+  width: 100%;
+}
+
+.place-card {
+  display: grid;
+  gap: 6px;
+  padding: 6px 6px 8px;
+  border-radius: 18px;
+  background: var(--panel);
+  border: 1.5px solid var(--panel-edge);
+  box-shadow: var(--panel-shadow);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  transition: transform 0.15s ease;
+  min-width: 0;
+}
+
+.place-card:active {
+  transform: scale(0.97);
+}
+
+.place-card .pic {
+  display: block;
+  aspect-ratio: 16 / 10;
+  border-radius: 13px;
+  background-size: cover;
+  background-position: center;
+  background-color: #1b7f95;
+}
+
+.place-card[data-place='lake'] .pic {
+  background-color: #b8703a;
+}
+
+.place-card[data-place='canal'] .pic {
+  background-color: #5d7a6a;
+}
+
+.place-card[data-place='bay'] .pic {
+  background-color: #182a55;
+}
+
+.place-card .name {
+  font-size: clamp(13px, 2vmin, 17px);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.place-card.on {
+  outline: 3px solid var(--sun);
+  outline-offset: 1px;
+}
+
+@media (max-aspect-ratio: 1/1) {
+  .places {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 560px;
+  }
+}
+
+/* short landscape (phones on their side): the title joins the top row and
+   everything tightens up so the place pictures fit whole */
+@media (max-height: 520px) and (min-aspect-ratio: 1/1) {
+  #menu {
+    padding-top: calc(var(--edge) + var(--safe-t) + 2px);
+  }
+  .menu-main {
+    gap: 8px;
+  }
+  .menu-gap {
+    min-height: 0;
+  }
+  .logo {
+    font-size: 32px;
+    line-height: 44px;
+  }
+  .place-card .name {
+    display: none;
+  }
+  .mode,
+  .steer {
+    min-height: 40px;
+  }
+  .boats {
+    width: min(400px, 100%);
+  }
+  .places {
+    width: min(620px, 100%);
+  }
+}
+
+/* ------------------------------------------------------------ in game */
+
+#hud {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+#hud > * {
+  pointer-events: auto;
+}
+
+.hud-buttons {
+  position: absolute;
+  top: calc(var(--edge) + var(--safe-t));
+  left: calc(var(--edge) + var(--safe-l));
+  display: flex;
+  gap: 10px;
+}
+
+body[data-mode='big'] .little-only,
+body[data-mode='little'] .big-only {
+  display: none !important;
+}
+
+#course {
+  position: absolute;
+  top: calc(var(--edge) + var(--safe-t));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 99px;
+  background: var(--panel);
+  border: 1.5px solid var(--panel-edge);
+  box-shadow: var(--panel-shadow);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
+#course > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 4px 6px;
+  border-radius: 99px;
+  font-size: clamp(14px, 2.2vmin, 18px);
+  white-space: nowrap;
+}
+
+#course svg {
+  width: 24px;
+  height: 24px;
+}
+
+.course-now {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.course-best {
+  color: var(--ink-soft);
+}
+
+#course.running .course-now {
+  background: #fff1c2;
+}
+
+#shells {
+  position: absolute;
+  top: calc(var(--edge) + var(--safe-t));
+  right: calc(var(--edge) + var(--safe-r));
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--tap);
+  padding: 0 16px 0 10px;
+  border-radius: 99px;
+  background: var(--panel);
+  border: 1.5px solid var(--panel-edge);
+  box-shadow: var(--panel-shadow);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  font-size: 20px;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
+#shells svg {
+  width: 30px;
+  height: 30px;
+}
+
+#shells.pop {
+  animation: pop 0.45s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+@keyframes pop {
+  40% {
+    transform: scale(1.18);
+  }
+}
+
+#target-arrow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 224, 102, 0.9);
+  box-shadow: 0 6px 16px rgba(4, 22, 32, 0.3);
+  pointer-events: none;
+  color: #8a4a08;
+}
+
+#target-arrow svg {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#wheel {
+  position: absolute;
+  left: calc(var(--edge) + 8px + var(--safe-l));
+  bottom: calc(var(--edge) + 8px + var(--safe-b));
+  width: clamp(120px, 20vmin, 168px);
+  height: clamp(120px, 20vmin, 168px);
+  border-radius: 50%;
+  touch-action: none;
+  filter: drop-shadow(0 8px 16px rgba(4, 22, 32, 0.35));
+  cursor: grab;
+}
+
+#wheel .wheel-rim {
+  width: 100%;
+  height: 100%;
+}
+
+.action-buttons {
+  position: absolute;
+  right: calc(var(--edge) + 8px + var(--safe-r));
+  bottom: calc(var(--edge) + 8px + var(--safe-b));
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.big-round {
+  width: clamp(64px, 10vmin, 84px);
+  height: clamp(64px, 10vmin, 84px);
+}
+
+.big-round svg {
+  stroke: none;
+  fill: currentColor;
+}
+
+.boost {
+  width: clamp(80px, 13vmin, 108px);
+  height: clamp(80px, 13vmin, 108px);
+  background: radial-gradient(circle at 50% 35%, rgba(255, 250, 230, 0.95), rgba(255, 214, 120, 0.85));
+  color: #b0541c;
+}
+
+.boost.on,
+.boost:active {
+  transform: scale(0.94);
+  background: radial-gradient(circle at 50% 35%, #fff4c8, #ffb84a);
+}
+
+#callout {
+  position: fixed;
+  z-index: 20;
+  left: 50%;
+  top: calc(16% + var(--safe-t));
+  transform: translate(-50%, -8px);
+  padding: 10px 20px;
+  border-radius: 99px;
+  background: var(--panel);
+  border: 1.5px solid var(--panel-edge);
+  box-shadow: var(--panel-shadow);
+  font-size: clamp(16px, 2.6vmin, 22px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  white-space: nowrap;
+}
+
+#callout.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ------------------------------------------------------------ settings */
+
+#settings {
+  position: fixed;
+  z-index: 30;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(900px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  overflow: auto;
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 22px 18px 18px;
+  border-radius: 26px;
+  background: rgba(244, 251, 252, 0.9);
+  border: 1.5px solid var(--panel-edge);
+  box-shadow: 0 20px 60px rgba(2, 16, 24, 0.45);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+#settings .place-card,
+#settings .boat-card,
+#settings .modes,
+#settings .steers {
+  box-shadow: none;
+}
+
+.settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+#settings .close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 44px;
+  height: 44px;
+}
+
+#settings .places {
+  padding-right: 34px;
+}
+
+.noscript {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  color: var(--foam);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loader-logo {
+    animation: none;
+  }
+  #shells.pop {
+    animation: none;
+  }
+}

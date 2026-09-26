@@ -56,4 +56,13 @@ window.MINI_GAMES = [
     imageAlt: 'Glass marbles rolling down a wooden toy marble run with a spiral funnel, a loop, a water wheel and brass bells in a sunlit playroom',
     tags: ['3D', 'Ages 2+', 'Touch friendly'],
   },
+  {
+    slug: 'splash-ride',
+    name: 'Splash Ride',
+    description: 'Steer a little boat across a sunny lagoon, a sunset lake, a canal town and a glowing night bay, with spray, splashes, dolphins and sparkle rings.',
+    path: 'games/splash-ride/',
+    image: 'games/splash-ride/cover.jpg',
+    imageAlt: 'A white speedboat with a dolphin leaping alongside, crossing a turquoise lagoon between palm islands',
+    tags: ['3D', 'Ages 2+', 'Touch friendly'],
+  },
 ];
