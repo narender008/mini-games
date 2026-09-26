@@ -18,10 +18,14 @@
 // ('live'), mixing with wet paint underneath; lifting the brush commits it.
 // Bristles each carry their own load of paint and run dry at different
 // points along the stroke, which leaves the streaky dry-brush ends of a real
-// stroke. Undo replays the remaining strokes from their records.
+// stroke. Undo replays the remaining strokes from their records over the
+// floor, the painting under the last UNDO strokes (older ones are baked in).
 import * as THREE from 'three';
 
 export const TOOLS = { brush: 0, water: 1, glitter: 2, sponge: 3 };
+
+// how many strokes can be taken back
+const UNDO = 30;
 
 // pigments: sRGB colour of a full-strength swatch, as density
 export function densityOf(hex) {
@@ -230,6 +234,7 @@ export class PaintEngine {
     this.res = new THREE.Vector2(this.w, this.h);
     this.base = rtMRT(this.w, this.h);
     this.live = rtMRT(this.w, this.h);
+    this.floor = rtMRT(this.w, this.h);
     this.stroke = new THREE.WebGLRenderTarget(this.w, this.h, { type: THREE.HalfFloatType, depthBuffer: false, generateMipmaps: false });
     this.camera = new THREE.Camera();
     const quad = new THREE.PlaneGeometry(1, 1).translate(0.5, 0.5, 0);
@@ -273,6 +278,7 @@ export class PaintEngine {
     this.mesh = new THREE.Mesh(quad, this.segMat);
     this.mesh.frustumCulled = false;
     this.history = [];
+    this.baked = [];
     this.current = null;
     this.dirty = null;
     this.clock = 0;
@@ -307,10 +313,17 @@ export class PaintEngine {
   }
 
   clearAll() {
+    this._pass(this.clearMat, this.floor);
     this._pass(this.clearMat, this.base);
     this._pass(this.clearMat, this.live);
     this.history = [];
+    this.baked = [];
     this.changed++;
+  }
+
+  // every stroke in the painting, oldest first
+  get strokes() {
+    return this.baked.concat(this.history);
   }
 
   // ------------------------------------------------------------ strokes
@@ -380,10 +393,10 @@ export class PaintEngine {
     this.needCompose = true;
   }
 
-  _compose(c, box) {
+  _compose(c, box, under = this.base) {
     const u = this.composeMat.uniforms;
-    u.tP.value = this.base.textures[0];
-    u.tH.value = this.base.textures[1];
+    u.tP.value = under.textures[0];
+    u.tH.value = under.textures[1];
     u.uTool.value = TOOLS[c.brush.tool] ?? 0;
     u.uAbs.value.copy(densityOf(c.brush.color ?? 0xffffff));
     u.uNow.value = c.time + 0.5;
@@ -415,7 +428,10 @@ export class PaintEngine {
     if (this.dirty) this._copy(this.live, this.base, this.dirty.map((v) => Math.round(v)));
     this.current = null;
     this.history.push(c);
-    if (this.history.length > 400) this.history.shift();
+    if (this.history.length > UNDO) {
+      this._bake();
+      this._copy(this.base, this.live);
+    }
     this.changed++;
     return c;
   }
@@ -433,33 +449,46 @@ export class PaintEngine {
     return true;
   }
 
+  // paint recorded strokes again over the floor (baking in any past the undo limit)
   replay(strokes) {
-    const keep = strokes.slice();
-    this._pass(this.clearMat, this.base);
-    this._pass(this.clearMat, this.live);
-    const r = this.renderer;
-    for (const s of keep) {
-      const prev = r.getRenderTarget();
-      r.setRenderTarget(this.stroke);
-      r.setClearColor(0x000000, 0);
-      r.clear(true, false, false);
-      r.setRenderTarget(prev);
-      this.dirty = null;
-      const c = { ...s, pts: [], len: 0 };
-      for (let i = 0; i < s.pts.length; i++) {
-        const p = s.pts[i];
-        const last = s.pts[i - 1] || p;
-        this._segment(last, p, c);
-      }
-      if (this.dirty) {
-        this._compose(c, this.dirty);
-        this._copy(this.live, this.base, this.dirty.map((v) => Math.round(v)));
-      }
-    }
-    this.history = keep;
+    this.history = strokes.slice();
+    this._bake();
+    this._copy(this.floor, this.base);
+    for (const s of this.history) this._lay(s, this.base);
+    this._copy(this.base, this.live);
     this.dirty = null;
     this.needCompose = false;
     this.changed++;
+  }
+
+  // strokes past the undo limit go into the floor for good
+  _bake() {
+    while (this.history.length > UNDO) {
+      const s = this.history.shift();
+      this._lay(s, this.floor);
+      this.baked.push(s);
+    }
+  }
+
+  // one recorded stroke painted again onto `under` (through live)
+  _lay(s, under) {
+    const r = this.renderer;
+    const prev = r.getRenderTarget();
+    r.setRenderTarget(this.stroke);
+    r.setClearColor(0x000000, 0);
+    r.clear(true, false, false);
+    r.setRenderTarget(prev);
+    this.dirty = null;
+    const c = { ...s, pts: [], len: 0 };
+    for (let i = 0; i < s.pts.length; i++) {
+      const p = s.pts[i];
+      const last = s.pts[i - 1] || p;
+      this._segment(last, p, c);
+    }
+    if (this.dirty) {
+      this._compose(c, this.dirty, under);
+      this._copy(this.live, under, this.dirty.map((v) => Math.round(v)));
+    }
   }
 
   // commit whatever is live (after the magic fill, say)
@@ -477,6 +506,7 @@ export class PaintEngine {
   dispose() {
     this.base.dispose();
     this.live.dispose();
+    this.floor.dispose();
     this.stroke.dispose();
     for (const m of [this.segMat, this.composeMat, this.copyMat, this.clearMat]) m.dispose();
     this.mesh.geometry.dispose();

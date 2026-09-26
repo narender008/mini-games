@@ -385,8 +385,8 @@ class App {
     this.rig.go(this.shot('paint'), this.rig.pos.distanceTo(this.shot('paint').pos) > 0.05 ? 1.5 : 0.01, 0.1);
     this.showOutline();
     if (!this.canvasFriend && this.mode === 'little') this.setSubject(this.subjectId);
-    if (this.mode === 'little' && !direct && !this.paint.history.length && !QUERY.has('pick')) {
-      setTimeout(() => this.state === 'paint' && !this.paint.history.length && this.ui.showPicker(), REDUCED_MOTION.matches ? 100 : 900);
+    if (this.mode === 'little' && !direct && !this.paint.strokes.length && !QUERY.has('pick')) {
+      setTimeout(() => this.state === 'paint' && !this.paint.strokes.length && this.ui.showPicker(), REDUCED_MOTION.matches ? 100 : 900);
     }
     this.checkCoverage();
   }
@@ -408,7 +408,12 @@ class App {
   async setSubject(id) {
     this.subjectId = id;
     const token = ++this.subjectToken;
-    const f = await makeFriend(id, this.friendCtx);
+    let f;
+    try {
+      f = await makeFriend(id, this.friendCtx);
+    } catch {
+      return;
+    }
     if (token !== this.subjectToken) {
       f.dispose();
       return;
@@ -442,7 +447,7 @@ class App {
 
   checkCoverage() {
     if (this.mode !== 'little' || !this.canvasFriend) {
-      this.ui.setReady(this.paint.history.length > 0);
+      this.ui.setReady(this.paint.strokes.length > 0);
       return;
     }
     const c = this.magic.coverage(this.outline.mask);
@@ -476,7 +481,7 @@ class App {
   // how much of each colour was painted (stroke length x width)
   paintedWeights() {
     const w = new Map();
-    for (const s of this.paint.history) {
+    for (const s of this.paint.strokes) {
       if (s.brush.tool === 'sponge') continue;
       const k = (s.len + s.brush.radius) * s.brush.radius;
       w.set(s.brush.color, (w.get(s.brush.color) || 0) + k);
@@ -487,7 +492,13 @@ class App {
   async guessed(id) {
     if (this.state !== 'paint' || this.alive.busy) return;
     this.setState('magic');
-    const f = await makeFriend(id, this.friendCtx);
+    let f;
+    try {
+      f = await makeFriend(id, this.friendCtx);
+    } catch {
+      this.setState('paint');
+      return;
+    }
     // the friend takes the place and size of the painting
     f.computeProjection(this.bigRect);
     this.outline.clear();
@@ -567,11 +578,13 @@ class App {
       this.lineAlpha = 0;
       this.friends.add(f, record, { x: land.x, z: land.z, heading: land.yaw, fresh: true });
       this.records.unshift(record);
+      this.store.put('friends', record).catch(() => {});
       this.wantPortrait(f, record, 0.4);
       // the canvas is fresh and white again for the next friend
       this.paint.clearAll();
       this.outline.clear();
       this.easel.setOutline(null, null);
+      this.canvasFriend?.dispose();
       this.canvasFriend = null;
       if (this.mode === 'little') this.setSubject(this.subjectId);
       this.toPlayAt = this.time + 1.2;
@@ -595,7 +608,7 @@ class App {
   paintedColors() {
     const seen = new Set();
     const out = [];
-    for (const s of this.paint.history) {
+    for (const s of this.paint.strokes) {
       if (s.brush.tool === 'sponge') continue;
       const c = s.brush.color;
       if (seen.has(c)) continue;
@@ -628,7 +641,7 @@ class App {
 
   savePainting() {
     // the picture for the shelf, and the strokes themselves to hang it again
-    const strokes = this.paint.history.map((c) => ({ brush: c.brush, seed: c.seed, time: c.time, pts: c.pts }));
+    const strokes = this.paint.strokes.map((c) => ({ brush: c.brush, seed: c.seed, time: c.time, pts: c.pts }));
     const rec = { id: newId(), image: this.magic.paintingImage(), strokes, made: Date.now() };
     this.paintings.unshift(rec);
     this.store.put('paintings', rec).catch(() => {});
@@ -638,7 +651,7 @@ class App {
   }
 
   keepPainting() {
-    if (this.state !== 'paint' || !this.paint.history.length) return;
+    if (this.state !== 'paint' || !this.paint.strokes.length) return;
     this.endStroke();
     this.savePainting();
     this.audio.magic('shimmer');
@@ -677,6 +690,10 @@ class App {
       if (this.friends.has(rec)) continue;
       const f = await this.friendFromRecord(rec);
       if (!f) continue;
+      if (this.friends.has(rec)) {
+        f.dispose();
+        continue;
+      }
       const spot = this.freeSpot();
       this.friends.add(f, rec, { x: spot.x, z: spot.z, heading: rand(-Math.PI, Math.PI), fresh: false });
       if (!rec.portrait) this.wantPortrait(f, rec, 1);
@@ -712,14 +729,19 @@ class App {
 
   async fromShelf(rec) {
     this.audio.click();
-    const playing = this.friends.list.find((e) => e.record?.id === rec.id && !e.leaving);
+    const playing = () => this.friends.list.find((e) => e.record?.id === rec.id && !e.leaving);
     if (this.state !== 'play') this.toPlay();
-    if (playing) {
-      this.friends.play(playing, this.camera);
+    const out = playing();
+    if (out) {
+      this.friends.play(out, this.camera);
       return;
     }
     const f = await this.friendFromRecord(rec);
     if (!f) return;
+    if (playing()) {
+      f.dispose();
+      return;
+    }
     const spot = this.freeSpot();
     const e = this.friends.add(f, rec, { x: spot.x, z: spot.z, heading: rand(-Math.PI, Math.PI), fresh: true });
     this.fx.sparkles.burst(_v.copy(e.pos).setY(e.pos.y + 0.12), 50, { colors: [[1.8, 1.4, 0.8], [1.3, 1.2, 1.9]], speed: 0.9, up: 0.6 });
@@ -919,8 +941,7 @@ class App {
 
     this.rig.update(dt);
     // focus: the canvas when painting, the friends when playing
-    const focus = this.state === 'paint' || this.state === 'magic' ? this.rig.look : this.rig.look;
-    this.post.setFocus(this.camera.position.distanceTo(focus));
+    this.post.setFocus(this.camera.position.distanceTo(this.rig.look));
   }
 
   render() {
@@ -956,7 +977,7 @@ class App {
     // from the front, a little to the side and above
     const yaw = f.object.rotation.y + 0.45;
     cam.position.set(c.x + Math.sin(yaw) * dist * 0.94, c.y + dist * 0.28, c.z + Math.cos(yaw) * dist * 0.94);
-    cam.fov = fov;
+    cam.fov = squareFov(fov, cam.aspect);
     cam.updateProjectionMatrix();
     cam.lookAt(c);
     cam.updateMatrixWorld();
@@ -1099,12 +1120,12 @@ class App {
         const c = f.worldCenter(new THREE.Vector3());
         const d = ((f.portraitRadius ?? f.restRadius) * f.object.scale.x * k) / Math.tan((fov * Math.PI) / 360);
         const a = (abs ? 0 : f.object.rotation.y) + (yaw * Math.PI) / 180;
-        app.rig.snap({ pos: new THREE.Vector3(c.x + Math.sin(a) * d * 0.94, c.y + d * 0.26, c.z + Math.cos(a) * d * 0.94), look: c, fov });
+        app.rig.snap({ pos: new THREE.Vector3(c.x + Math.sin(a) * d * 0.94, c.y + d * 0.26, c.z + Math.cos(a) * d * 0.94), look: c, fov: squareFov(fov, app.camera.aspect) });
       },
       // the i-th friend in the garden as a square jpeg data URL (picker pictures)
       portrait: (i = 0, size = 256, quality = 0.86) => app.friends.list[i] && app.portraitOf(app.friends.list[i].friend, size, quality),
       friends: () => app.friends.list.map((e) => ({ kind: e.friend.info.id, x: +e.pos.x.toFixed(2), z: +e.pos.z.toFixed(2), state: e.state })),
-      state: () => ({ state: app.state, mode: app.mode, coverage: +app.coverage.toFixed(3), strokes: app.paint.history.length, busy: app.alive.busy, magic: app.magicRun?.phase ?? null, scale: app.governor.scale, strain: app.governor.strain }),
+      state: () => ({ state: app.state, mode: app.mode, coverage: +app.coverage.toFixed(3), strokes: app.paint.strokes.length, busy: app.alive.busy, magic: app.magicRun?.phase ?? null, scale: app.governor.scale, strain: app.governor.strain }),
     };
   }
 }
@@ -1118,6 +1139,11 @@ function capture(el, id, on) {
   } catch {
     // painting carries on without capture
   }
+}
+
+// the vertical field of view that shows at least `fov` across the narrower side of the screen
+function squareFov(fov, aspect) {
+  return aspect >= 1 ? fov : (360 / Math.PI) * Math.atan(Math.tan((fov * Math.PI) / 360) / aspect);
 }
 
 function loadTexture(url) {

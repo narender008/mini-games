@@ -66,7 +66,14 @@ function runMesher(prims, nb, opts) {
   if (!w) return Promise.resolve(meshField(prims, nb, opts));
   return new Promise((resolve, reject) => {
     const id = ++jobId;
-    jobs.set(id, { resolve, reject, fallback: () => resolve(meshField(prims, nb, opts)) });
+    const fallback = () => {
+      try {
+        resolve(meshField(prims, nb, opts));
+      } catch (err) {
+        reject(err);
+      }
+    };
+    jobs.set(id, { resolve, reject, fallback });
     w.postMessage({ id, prims, nb, opts });
   });
 }

@@ -57,13 +57,13 @@ export class FrameGovernor {
     this.scale = 1;
     this.samples = [];
     this.cooldown = 3;
-    // extra help when even the lowest render scale is not enough: fewer fur
-    // shells, fewer friends about
+    // extra help when even the lowest render scale cannot hold 30 fps (a
+    // steady 30 may be the browser saving battery): fewer fur shells, fewer
+    // friends about
     this.strain = 0;
   }
 
   sample(realDt) {
-    if (realDt > 0.25) return;
     this.samples.push(realDt);
     this.cooldown -= realDt;
     if (this.samples.length < 90 || this.cooldown > 0) return;
@@ -73,7 +73,7 @@ export class FrameGovernor {
     let next = this.scale;
     if (p75 > 1 / 45) {
       next = Math.max(0.55, this.scale * 0.85);
-      if (next === this.scale) this.strain = Math.min(1, this.strain + 0.25);
+      if (next === this.scale && p75 > 1 / 25) this.strain = Math.min(1, this.strain + 0.25);
     } else if (p75 < 1 / 58) {
       if (this.strain > 0) this.strain = Math.max(0, this.strain - 0.125);
       else if (this.scale < 1) next = Math.min(1, this.scale * 1.08);

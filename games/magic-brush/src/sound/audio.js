@@ -121,6 +121,7 @@ export class Audio {
     this.buildAmbience();
     this.music = new Music(ctx, this.master, this.verbIn);
     this.ready = true;
+    if (this.scene) this.setScene(this.scene);
     if (this.wantMusic) this.music.start();
   }
 
