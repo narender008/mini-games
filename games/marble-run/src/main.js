@@ -287,6 +287,8 @@ class App {
     this.audio.unlock();
     this.audio.click();
     this.state = 'playing';
+    // time on the start screen is not idle play time
+    this.lastInput = performance.now();
     save('mode', this.sel.mode);
     this.ui.show('playing');
     this.startMode();
