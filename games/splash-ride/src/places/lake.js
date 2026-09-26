@@ -540,8 +540,9 @@ export async function build({ quality }) {
   // forest on the hills behind them
   const spots = [];
   const far = [];
-  const maxTrees = low ? 300 : 700;
-  const maxFar = low ? 2500 : 6000;
+  const tier = quality.tier;
+  const maxTrees = tier === 'high' ? 700 : tier === 'medium' ? 450 : 260;
+  const maxFar = tier === 'high' ? 6000 : tier === 'medium' ? 4000 : 2200;
   let tries = 0;
   const glade = (x, z) => noise.fbm(x * 0.02 + 40, z * 0.02, 3) > 0.25;
   while (spots.length < maxTrees * 0.85 && tries++ < 40000) {

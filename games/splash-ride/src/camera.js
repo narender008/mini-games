@@ -54,10 +54,11 @@ export class ChaseCam {
   }
 
   // on the start screen the boat shows in the band between the title and
-  // the pictures, so the view is shifted down a little
+  // the pictures, so the view is shifted down a little; on a tall portrait
+  // screen the horizon rides higher so there is more water and less sky
   applyOffset() {
     const cam = this.camera;
-    const want = this.menu ? 0.2 : 0;
+    const want = this.menu ? 0.2 : this.aspect < 0.8 ? 0.1 : 0;
     if (want === this.offset) return;
     this.offset = want;
     if (want) cam.setViewOffset(1000 * this.aspect, 1000, 0, 1000 * want, 1000 * this.aspect, 1000);
@@ -80,7 +81,7 @@ export class ChaseCam {
       this.yaw += angleDiff(this.yaw, target) * (1 - Math.exp(-(calm ? 1.4 : 2.3) * k * dt));
     }
     const speed = boat.speed;
-    const want = f.distance * (1 + 0.14 * smoothstep(6, 15, speed)) * (portrait ? 1.2 : 1) * (this.menu ? 0.95 : 1);
+    const want = f.distance * (1 + 0.14 * smoothstep(6, 15, speed)) * (portrait ? 1.1 : 1) * (this.menu ? 0.95 : 1);
     this.dist = damp(this.dist, want, 1.5 * k, dt);
     // hops lift the camera only a little
     this.base = damp(this.base, Math.max(0, boat.pos.y) * (calm ? 0.2 : 0.35), 3 * k, dt);

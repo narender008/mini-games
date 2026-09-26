@@ -461,19 +461,34 @@ body.touch .touch-only {
   }
 }
 
+/* short landscape (phones on their side): the title joins the top row and
+   everything tightens up so the place pictures fit whole */
 @media (max-height: 520px) and (min-aspect-ratio: 1/1) {
+  #menu {
+    padding-top: calc(var(--edge) + var(--safe-t) + 2px);
+  }
+  .menu-main {
+    gap: 8px;
+  }
+  .menu-gap {
+    min-height: 0;
+  }
   .logo {
-    font-size: 34px;
+    font-size: 32px;
+    line-height: 44px;
   }
   .place-card .name {
     display: none;
   }
   .mode,
   .steer {
-    min-height: 42px;
+    min-height: 40px;
   }
   .boats {
-    width: min(460px, 100%);
+    width: min(400px, 100%);
+  }
+  .places {
+    width: min(620px, 100%);
   }
 }
 

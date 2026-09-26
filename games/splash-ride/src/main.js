@@ -9,7 +9,7 @@
 // hides the interface; ?touch shows the touch controls; ?debug exposes
 // window.__sr (see the end of this file).
 import * as THREE from 'three';
-import { QUERY, DEBUG, REDUCED_MOTION, PLACES, BOATS, MODES, STEERS, load, save, pickValid, clamp, damp, rand, lerp } from './config.js';
+import { QUERY, DEBUG, PLACES, BOATS, MODES, STEERS, load, save, pickValid, clamp, damp, rand } from './config.js';
 import { detectQuality, FrameGovernor } from './quality.js';
 import { makeTextures } from './textures.js';
 import { Sky } from './sky.js';
@@ -477,9 +477,11 @@ class App {
   placeBumps() {
     const d = this.place.def;
     for (let i = 0; i < 8; i++) this.shape.clearBump(i, true);
+    // (8 slots: big kids swap a bump or two for their ramps)
+    const ramps = this.sel.mode === 'big' ? d.ramps.slice(0, 3) : [];
     let i = 0;
-    for (const b of d.bumps) if (i < 8) this.shape.setBump(i++, { ...b, kind: 'bump' });
-    if (this.sel.mode === 'big') for (const b of d.ramps) if (i < 8) this.shape.setBump(i++, { ...b, kind: 'ramp' });
+    for (const b of d.bumps) if (i < 8 - ramps.length) this.shape.setBump(i++, { ...b, kind: 'bump' });
+    for (const b of ramps) this.shape.setBump(i++, { ...b, kind: 'ramp' });
     for (const b of this.shape.bumps) b.fade = b.active ? 1 : 0;
   }
 

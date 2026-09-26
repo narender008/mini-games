@@ -255,7 +255,7 @@ export class Wake {
     this.rings.visible = live > 0;
 
     const prev = renderer.getRenderTarget();
-    const prevClear = renderer.getClearColor(new THREE.Color());
+    const prevClear = renderer.getClearColor(this._clear || (this._clear = new THREE.Color()));
     const prevAlpha = renderer.getClearAlpha();
     renderer.setRenderTarget(this.target);
     renderer.setClearColor(0x000000, 0);

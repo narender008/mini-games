@@ -119,6 +119,7 @@ export class Rings {
     this.motes.layers.set(LAYER_FX);
     scene.add(this.motes);
     this.chainId = 0;
+    this._q = new THREE.Quaternion();
   }
 
   setViewport(h) {
@@ -256,7 +257,7 @@ export class Rings {
       }
       // the halo always faces the camera
       r.glow.quaternion.copy(camera.quaternion);
-      r.glow.quaternion.premultiply(r.root.quaternion.clone().invert());
+      r.glow.quaternion.premultiply(this._q.copy(r.root.quaternion).invert());
     }
     this.motes.geometry.attributes.position.needsUpdate = true;
     if (ahead === 0) this.spawnChain(boat);
