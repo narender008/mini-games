@@ -176,6 +176,10 @@ class WorldPass extends Pass {
     this.water.uniforms.uCamNF.value.set(camera.near, camera.far);
     // this frame's shadows, drawn by whichever render comes first
     renderer.shadowMap.needsUpdate = true;
+    // the mirror is built from the camera's world matrix, which the
+    // renderer would only refresh in the next render: bring it up to date
+    // first so the reflection doesn't lag a frame behind
+    camera.updateMatrixWorld();
     if (this.reflection) this.reflection.render(renderer, scene, camera);
     camera.layers.set(LAYER_WORLD);
     renderer.setRenderTarget(this.opaque);
