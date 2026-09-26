@@ -371,12 +371,13 @@ void main() {
   float blot = texture2D(uNoise, fp * 0.061 + vec2(uTime * 0.002, 0.0)).g * 0.55
     + texture2D(uNoise, fp * 0.13 - vec2(0.0, uTime * 0.004)).b * 0.3
     + texture2D(uNoise, fp * 0.47).b * 0.15;
-  float lace = texture2D(uCaustics, fp * 0.33).g;
+  float lace = texture2D(uCaustics, fp * 0.21).g;
   float pattern = clamp((blot - 0.5) * 1.9 + 0.5, 0.0, 1.0);
-  float fine = texture2D(uNoise, p * 0.83 + vec2(uTime * 0.011, 0.0)).a;
-  pattern = pattern * 0.8 + fine * 0.2;
+  // fine bubbly break-up (smooth noise: cellular noise read as tiles here)
+  float fine = texture2D(uNoise, p * 0.71 + vec2(uTime * 0.011, 0.0)).b * 0.6 + texture2D(uNoise, p * 1.9).b * 0.4;
+  pattern = pattern * 0.78 + fine * 0.22;
   float fm = smoothstep(1.0 - foamAmt, 1.2 - foamAmt, pattern) * smoothstep(0.0, 0.3, foamAmt) * (0.55 + 0.45 * clamp(foamAmt, 0.0, 1.0));
-  fm *= 0.72 + 0.28 * lace;
+  fm *= 0.82 + 0.18 * lace;
   vec3 foamCol = 0.8 * (uSunColor * (0.55 + 0.45 * nl) / 3.14159 + uAmbient) * (0.82 + 0.18 * fine);
   col = mix(col, foamCol, clamp(fm, 0.0, 0.95));
 

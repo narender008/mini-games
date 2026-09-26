@@ -91,13 +91,13 @@ export const PLACE = {
   sky: {
     sunDir: dirFrom(8, 5.5),
     sunColor: C('#ffc27a', 3.4),
-    zenith: C('#3a5ea6', 0.5),
-    horizon: C('#ffb98a', 1.05),
+    zenith: C('#2d56b4', 0.78),
+    horizon: C('#ffae72', 1.1),
     ground: C('#3b3040', 0.45),
-    glow: C('#ffae5c', 1.0),
-    gradient: 0.36,
-    glowWidth: 7,
-    glowStrength: 1.3,
+    glow: C('#ff9a48', 1.25),
+    gradient: 0.6,
+    glowWidth: 14,
+    glowStrength: 1.6,
     sunSize: 1.0,
     cloud: { cover: 0.36, soft: 0.28, bright: 1.25, scale: 1.3, lit: C('#ffd2ae'), shade: C('#9a7898') },
   },
@@ -112,7 +112,7 @@ export const PLACE = {
   exposure: 1.05,
   fog: 0.00028,
   bloom: { strength: 0.22, threshold: 1.9, radius: 0.5 },
-  grade: { saturation: 1.08, contrast: 0.1, vignette: 0.2 },
+  grade: { saturation: 1.16, contrast: 0.12, vignette: 0.2 },
   water: {
     // clear mountain water with a peaty green-brown tint in the depths
     absorb: [0.5, 0.2, 0.28],

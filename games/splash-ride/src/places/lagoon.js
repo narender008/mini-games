@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { rng } from '../config.js';
 import { dirFrom } from '../sky.js';
-import { makeNoise, islandHeight, smax, rockGeometry, instances } from './common.js';
+import { makeNoise, islandHeight, smax, smoothstep, rockGeometry, instances } from './common.js';
 import { makePalms } from './palms.js';
 
 const noise = makeNoise(21);
@@ -289,22 +289,51 @@ export async function build({ quality }) {
   hut.position.set(-140 + 52, 0, -40 + 18);
   group.add(hut);
 
-  // a far volcanic island on the horizon
-  const far = new THREE.Mesh(
-    new THREE.ConeGeometry(420, 260, 48, 8),
-    new THREE.MeshStandardMaterial({ color: 0x3f5a3a, roughness: 1 }),
-  );
-  {
-    const p = far.geometry.attributes.position;
-    const v = new THREE.Vector3();
-    for (let i = 0; i < p.count; i++) {
-      v.fromBufferAttribute(p, i);
-      const k = 1 + 0.18 * noise.fbm(v.x * 0.01 + 5, v.z * 0.01, 4);
-      p.setXYZ(i, v.x * k, v.y * (0.9 + 0.2 * noise.noise(v.x * 0.02, v.z * 0.02)), v.z * k);
+  // a far volcanic island on the horizon: a jungle-green peak furrowed by
+  // gullies, bare rock towards the top
+  const far = (() => {
+    const segA = 160;
+    const segR = 36;
+    const R = 640;
+    const pos = [];
+    const col = [];
+    const idx = [];
+    const n = makeNoise(61);
+    const jungle = new THREE.Color('#2f4a24');
+    const ridge = new THREE.Color('#43622e');
+    const rock = new THREE.Color('#5a534a');
+    const c = new THREE.Color();
+    for (let j = 0; j <= segR; j++) {
+      const t = j / segR;
+      for (let i = 0; i <= segA; i++) {
+        const a = (i / segA) * Math.PI * 2;
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        const rr = t * R * (1 + 0.12 * n.fbm(ca * 1.5 + 3, sa * 1.5, 3));
+        // gullies: ridged noise that sharpens towards the summit
+        const g = Math.pow(1 - Math.abs(n.noise(a * 16 + t * 3, t * 4)), 2);
+        const peak = Math.pow(1 - t, 1.5) * 210 + Math.exp(-t * t * 40) * 30;
+        const y = peak * (0.72 + 0.28 * g) + n.fbm(ca * rr * 0.012, sa * rr * 0.012, 4) * 22 * (1 - t) - 40 * t * t;
+        pos.push(ca * rr, y, sa * rr);
+        c.copy(jungle).lerp(ridge, g * 0.6).lerp(rock, smoothstep(150, 220, y));
+        col.push(c.r, c.g, c.b);
+      }
     }
-    far.geometry.computeVertexNormals();
-  }
-  far.position.set(-1500, 60, -2600);
+    for (let j = 0; j < segR; j++) {
+      for (let i = 0; i < segA; i++) {
+        const a = j * (segA + 1) + i;
+        const b = a + segA + 1;
+        idx.push(a, b, a + 1, a + 1, b, b + 1);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
+  })();
+  far.position.set(-1500, -10, -2600);
   group.add(far);
 
   return {

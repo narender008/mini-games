@@ -765,7 +765,7 @@ if (vHpGir.y >= 0.0) {
   // clinker laps: each plank's lower edge stands proud of the next
   float pk = vHpGir.y * hpPlank.x;
   float pf = fract(pk);
-  float w = clamp(fwidth(pk) * 1.5, 0.02, 0.5);
+  float w = clamp(fwidth(pk) * 2.0, 0.08, 0.5);
   hpH += ((1.0 - pf) - (1.0 - smoothstep(0.0, w, pf))) * hpPlank.y;
   hpC *= 1.0 - 0.1 * (1.0 - smoothstep(0.0, w * 2.0 + 0.05, pf));
 }

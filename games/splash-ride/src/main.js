@@ -6,7 +6,8 @@
 // ?place=lagoon|lake|canal|bay, ?boat=speedboat|sailboat|duck|jetski,
 // ?mode=little|big pick the start; ?quality=high|medium|low, ?msaa=N,
 // ?shadows=0, ?reflect=0..1, ?tone=agx|aces|neutral tune rendering; ?cover
-// hides the interface; ?debug exposes window.__sr (see the end of this file).
+// hides the interface; ?touch shows the touch controls; ?debug exposes
+// window.__sr (see the end of this file).
 import * as THREE from 'three';
 import { QUERY, DEBUG, REDUCED_MOTION, PLACES, BOATS, MODES, STEERS, load, save, pickValid, clamp, damp, rand, lerp } from './config.js';
 import { detectQuality, FrameGovernor } from './quality.js';
@@ -36,6 +37,8 @@ const formatTime = (t) => {
 const PLACE_MODULES = {
   lagoon: () => import('./places/lagoon.js'),
   lake: () => import('./places/lake.js'),
+  canal: () => import('./places/canal.js'),
+  bay: () => import('./places/bay.js'),
 };
 
 // used if the sound module cannot start (every call does nothing)
@@ -177,7 +180,7 @@ class App {
     this.ui.setBoat(this.sel.boat);
     this.ui.setSteer(this.sel.steer);
     document.body.classList.toggle('can-fs', canFullscreen);
-    document.body.classList.toggle('touch', matchMedia('(pointer: coarse)').matches);
+    document.body.classList.toggle('touch', matchMedia('(pointer: coarse)').matches || QUERY.has('touch'));
     this.ui.setFullscreen(isFullscreen());
     onFullscreenChange(() => {
       this.ui.setFullscreen(isFullscreen());
@@ -385,7 +388,13 @@ class App {
 
   async loadPlace(id) {
     if (this.places[id]) return this.places[id];
-    const mod = await (PLACE_MODULES[id] || PLACE_MODULES.lagoon)();
+    let mod;
+    try {
+      mod = await PLACE_MODULES[id]();
+    } catch (err) {
+      console.warn(`place ${id} unavailable`, err);
+      mod = await PLACE_MODULES.lagoon();
+    }
     const def = mod.PLACE;
     const q = this.quality;
     const land = new LandField({ ...def.area, cell: 2, solid: def.solid });
@@ -647,8 +656,15 @@ class App {
     o.position.copy(d.pos);
     o.rotation.set(d.pitch.x, d.heading, d.roll.x, 'YXZ');
     const wind = this._wind || (this._wind = new THREE.Vector3());
-    // apparent wind in boat space: a breeze from the place plus the boat's own speed
-    wind.set(0, 0, d.speed + 3);
+    // apparent wind in boat space (x to starboard, z aft): the place's breeze
+    // on the beam fills the sail, swinging it across as the boat turns
+    // through the wind; steering hard or slowing right down lets it flap
+    const ww = this.place.def.water.wind || [1, 0];
+    const wl = Math.hypot(ww[0], ww[1]) || 1;
+    const across = (ww[0] * Math.cos(d.heading) - ww[1] * Math.sin(d.heading)) / wl;
+    this.windSide = damp(this.windSide ?? 1, clamp(across * 3, -1, 1), 1.2, dt);
+    const side = Math.abs(this.windSide) < 0.25 ? Math.sign(this.windSide || 1) * 0.25 : this.windSide;
+    wind.set(7 * side, 0, d.speed * 0.35 + 1 + Math.abs(d.steer) * 6 + (d.speed < 3 ? 5 : 0));
     this.boatView.update(dt, {
       time: this.time,
       speed: d.speed,
@@ -697,15 +713,16 @@ class App {
       const z = d.pos.z + rz * lx - fz * lz;
       const out = rand(1.2, 3.2) * (0.5 + k);
       this.spray.emit(x, 0.15, z, rx * side * out + d.vel.x * 0.55, rand(0.8, 2.6) * (0.6 + k), rz * side * out + d.vel.y * 0.55, rand(0.5, 1.0), rand(0.03, 0.07), 0);
-      if (Math.random() < 0.35) this.spray.emit(x, 0.3, z, rx * side * out * 0.6 + d.vel.x * 0.5, rand(0.4, 1.2), rz * side * out * 0.6 + d.vel.y * 0.5, rand(0.7, 1.3), rand(0.4, 0.8), 1, null, 1.5);
+      // a little fine mist that stays close to the hull
+      if (Math.random() < 0.2) this.spray.emit(x, 0.25, z, rx * side * out * 0.35 + d.vel.x * 0.6, rand(0.3, 0.9), rz * side * out * 0.35 + d.vel.y * 0.6, rand(0.5, 0.9), rand(0.18, 0.35), 1, null, 1.5);
     }
     // churned mist behind
-    this.mistAcc = (this.mistAcc || 0) + dt * k * 14;
+    this.mistAcc = (this.mistAcc || 0) + dt * k * 24;
     while (this.mistAcc > 1) {
       this.mistAcc -= 1;
       const sx = d.pos.x - fx * spec.length * 0.5;
       const sz = d.pos.z - fz * spec.length * 0.5;
-      this.spray.emit(sx + rand(-0.4, 0.4), 0.2, sz + rand(-0.4, 0.4), d.vel.x * 0.35 + rand(-0.5, 0.5), rand(0.3, 1.0), d.vel.y * 0.35 + rand(-0.5, 0.5), rand(0.8, 1.4), rand(0.6, 1.2), 1, null, 1.2);
+      this.spray.emit(sx + rand(-0.4, 0.4), 0.15, sz + rand(-0.4, 0.4), d.vel.x * 0.35 + rand(-0.4, 0.4), rand(0.2, 0.6), d.vel.y * 0.35 + rand(-0.4, 0.4), rand(0.6, 1.1), rand(0.3, 0.6), 1, null, 1.2);
     }
   }
 
@@ -750,6 +767,12 @@ class App {
       },
       place: (id) => app.setPlace(id),
       boat: (id) => app.setBoat(id),
+      // call the dolphins over now (if the place has them and they are away)
+      dolphins() {
+        const pod = app.place.animals?.dolphins;
+        if (pod && pod.state === 'away') pod.timer = 0;
+        return pod ? pod.state : null;
+      },
       teleport(x, z, heading) {
         app.drive.place(x, z, heading ?? app.drive.heading);
         app.wake.reset();
