@@ -73,21 +73,21 @@ const MOTHER = {
   z0: -0.2,
   len: 0.45,
   neck: [
-    [0, 0.216, -0.262],
-    [0, 0.218, -0.225],
-    [0, 0.198, -0.19],
-    [0, 0.14, -0.168],
-    [0, 0.07, -0.13],
+    [0, 0.172, -0.262],
+    [0, 0.178, -0.225],
+    [0, 0.166, -0.192],
+    [0, 0.12, -0.17],
+    [0, 0.07, -0.14],
   ],
   neckProf: [
-    [0.0, 0.016, 0.016, 0.014],
-    [0.1, 0.028, 0.03, 0.024],
-    [0.28, 0.034, 0.038, 0.03],
-    [0.45, 0.03, 0.03, 0.03],
-    [0.65, 0.027, 0.026, 0.028],
-    [1.0, 0.045, 0.045, 0.045],
+    [0.0, 0.02, 0.02, 0.017],
+    [0.12, 0.031, 0.036, 0.03],
+    [0.3, 0.036, 0.04, 0.035],
+    [0.5, 0.036, 0.036, 0.038],
+    [0.7, 0.042, 0.036, 0.044],
+    [1.0, 0.055, 0.05, 0.055],
   ],
-  bill: { base: [0, 0.212, -0.256], tip: [0, 0.198, -0.314], w: [0.013, 0.012], h: [0.009, 0.004] },
+  bill: { base: [0, 0.168, -0.252], tip: [0, 0.154, -0.312], w: [0.0145, 0.0135], h: [0.026, 0.01] },
   foot: { x: 0.045, y: -0.075, z: 0.04, len: 0.05, width: 0.045 },
   neckPivot: [0, 0.09, -0.14],
 };
@@ -104,19 +104,19 @@ const KID = {
   z0: -0.045,
   len: 0.105,
   neck: [
-    [0, 0.07, -0.062],
-    [0, 0.071, -0.04],
-    [0, 0.058, -0.024],
-    [0, 0.035, -0.018],
+    [0, 0.06, -0.066],
+    [0, 0.064, -0.043],
+    [0, 0.052, -0.026],
+    [0, 0.03, -0.018],
   ],
   neckProf: [
-    [0.0, 0.01, 0.01, 0.009],
-    [0.2, 0.019, 0.02, 0.017],
-    [0.45, 0.021, 0.022, 0.02],
-    [0.75, 0.018, 0.017, 0.018],
-    [1.0, 0.02, 0.02, 0.02],
+    [0.0, 0.012, 0.012, 0.011],
+    [0.2, 0.021, 0.022, 0.019],
+    [0.45, 0.023, 0.024, 0.022],
+    [0.75, 0.02, 0.02, 0.02],
+    [1.0, 0.022, 0.022, 0.022],
   ],
-  bill: { base: [0, 0.066, -0.06], tip: [0, 0.062, -0.075], w: [0.0065, 0.0055], h: [0.004, 0.0025] },
+  bill: { base: [0, 0.057, -0.062], tip: [0, 0.053, -0.077], w: [0.0065, 0.0056], h: [0.007, 0.003] },
   foot: { x: 0.013, y: -0.012, z: 0.012, len: 0.016, width: 0.014 },
   neckPivot: [0, 0.03, -0.02],
 };
@@ -186,7 +186,7 @@ vec3 rotY(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(v.x * c +
 }
 
 const DUCK_DEFORM = /* glsl */ `
-if (aPart > 0.5 && aPart < 3.5 && aPart != 2.0) {
+if (aPart > 0.5 && aPart < 3.5) {
   // neck and head: a smooth weight up the neck
   float w = smoothstep(D_NECK.y, D_NECK.y + 0.6 * (0.0 - D_NECK.z) + 0.02, p.y);
   float bob = sin(aDuck.x) * 0.06;
@@ -215,20 +215,29 @@ function motherMaterial() {
     vertexMain: 'vSeed = aDuck.w;',
     fragment: /* glsl */ `
 varying float vSeed;
-const vec3 M_DARK = ${glslColor('#3f2c1d')};
-const vec3 M_BUFF = ${glslColor('#b98b58')};
+const vec3 M_DARK = ${glslColor('#553b26')};
+const vec3 M_BUFF = ${glslColor('#c29560')};
 const vec3 M_PALE = ${glslColor('#cfb187')};
-const vec3 M_EYE = vec3(0.029, 0.224, -0.232);
-// scalloped feathers: dark centres, buff margins round the rear edge
+const vec3 M_EYE = vec3(0.032, 0.186, -0.232);
+// Scalloped feathers lying like roof tiles, tips pointing back: each is
+// dark brown with a buff fringe round its rounded tip. uv.x runs along the
+// body (to the tail), uv.y across. Returns the fringe (1 on the buff edge).
 float feather(vec2 uv, vec2 size, out float id) {
   vec2 g = uv / size;
   float row = floor(g.y);
   g.x += 0.5 * mod(row, 2.0);
   vec2 c = floor(g);
-  vec2 f = fract(g) - vec2(0.5, 0.4);
+  vec2 f = fract(g);
   id = anHash2(c);
-  float d = length(f * vec2(1.0, 1.25)) + (id - 0.5) * 0.12;
-  return 1.0 - smoothstep(0.2, 0.36, d);
+  float across = f.y * 2.0 - 1.0;
+  float wob = anNoise(vec3(uv * 180.0, id * 9.0)) - 0.5;
+  float tip = 0.9 - (0.4 + 0.25 * id) * across * across + (id - 0.5) * 0.18 + wob * 0.12;
+  float edge = tip - f.x;
+  float width = 0.08 + 0.12 * anHash2(c + 3.3);
+  float fringe = smoothstep(-0.02, 0.03, edge) * (1.0 - smoothstep(width, width + 0.1, edge));
+  // a pale mark down the middle of some feathers
+  fringe = max(fringe, (1.0 - smoothstep(0.04, 0.1, abs(across))) * smoothstep(0.25, 0.5, edge) * (1.0 - smoothstep(0.5, 0.75, edge)) * step(0.55, id) * 0.6);
+  return fringe;
 }
 `,
     paint: /* glsl */ `
@@ -242,9 +251,9 @@ if (vPart < 0.5) {
   vec2 uv = an.y > an.x * 1.2 ? vec2(p.z, p.x) : vec2(p.z, p.y);
   float fine = 1.0 - smoothstep(0.15, 0.3, s);
   float id;
-  float f = feather(uv, mix(vec2(0.021, 0.015), vec2(0.012, 0.009), fine), id);
-  // a thin dark shaft in the middle of each feather
-  col = mix(M_BUFF, M_DARK, f * (0.75 + 0.25 * id));
+  float f = feather(uv, mix(vec2(0.026, 0.02), vec2(0.014, 0.011), fine), id);
+  col = mix(M_DARK * (0.8 + 0.4 * id), M_BUFF * (0.85 + 0.25 * anHash2(vec2(id, 1.7))), f * 0.8);
+  col = mix(col, col * 0.8, smoothstep(0.55, 0.9, q) * 0.8);
   col = mix(col, M_PALE, fine * 0.35);
   // the belly (mostly under water) is paler and plainer
   col = mix(col, M_PALE * (0.9 + 0.2 * n1), smoothstep(-0.2, -0.6, q));
@@ -261,13 +270,15 @@ if (vPart < 0.5) {
   anBump = f * 0.0012 + n1 * 0.0004;
 } else if (vPart < 1.5) {
   // head and neck: fine brown streaks, dark crown and eye-stripe, buff face
-  float streak = anNoise(vec3(p.x * 160.0, p.y * 160.0, p.z * 30.0));
-  col = mix(${glslColor('#c09868')}, ${glslColor('#5a4130')}, smoothstep(0.35, 0.75, streak) * 0.8);
-  col = mix(col, M_DARK, smoothstep(0.45, 0.8, q) * step(p.y, 0.26) * step(0.15, p.y));
-  float stripeY = 0.224 - (p.z + 0.25) * 0.25;
+  float streak = anNoise(vec3(p.x * 420.0, p.y * 420.0, p.z * 60.0)) * 0.6 + anNoise(p * 150.0) * 0.4;
+  col = mix(${glslColor('#b8915f')}, ${glslColor('#5a4130')}, smoothstep(0.3, 0.8, streak) * 0.6);
+  // the lower neck blends into the breast
+  col = mix(col, mix(M_BUFF, M_DARK, 0.45), smoothstep(0.7, 0.95, s) * 0.7);
+  col = mix(col, M_DARK, smoothstep(0.45, 0.8, q) * step(0.13, p.y));
+  float stripeY = 0.186 - (p.z + 0.232) * 0.3;
   float stripe = (1.0 - smoothstep(0.004, 0.008, abs(p.y - stripeY))) * step(-0.265, p.z) * step(p.z, -0.18) * step(0.012, abs(p.x));
   col = mix(col, M_DARK, stripe * 0.9);
-  col = mix(col, ${glslColor('#d2b28a')}, smoothstep(-0.2, -0.7, q) * step(0.16, p.y) * 0.6);
+  col = mix(col, ${glslColor('#d2b28a')}, smoothstep(-0.2, -0.7, q) * step(0.14, p.y) * 0.6);
   float de = length(vec3(abs(p.x), p.y, p.z) - M_EYE);
   float eye = 1.0 - smoothstep(0.0045, 0.006, de);
   col = mix(col, vec3(0.02, 0.012, 0.008), eye);
@@ -304,7 +315,7 @@ function kidMaterial() {
 varying float vSeed;
 const vec3 K_DARK = ${glslColor('#3a2a1a')};
 const vec3 K_YEL = ${glslColor('#e3c25a')};
-const vec3 K_EYE = vec3(0.0165, 0.074, -0.047);
+const vec3 K_EYE = vec3(0.0185, 0.067, -0.05);
 `,
     paint: /* glsl */ `
 vec3 p = vRest;
@@ -322,7 +333,7 @@ if (vPart < 0.5) {
 } else if (vPart < 1.5) {
   // yellow face, dark crown and a dark stripe through the eye
   col = mix(K_YEL, K_DARK, smoothstep(0.5, 0.75, q) * step(0.055, p.y));
-  float stripe = (1.0 - smoothstep(0.0025, 0.0045, abs(p.y - (0.074 - (p.z + 0.06) * 0.2)))) * step(-0.058, p.z) * step(0.008, abs(p.x));
+  float stripe = (1.0 - smoothstep(0.0025, 0.0045, abs(p.y - (0.067 - (p.z + 0.062) * 0.2)))) * step(-0.062, p.z) * step(0.008, abs(p.x));
   col = mix(col, K_DARK, stripe);
   col = mix(col, K_DARK, smoothstep(0.02, 0.05, p.z + 0.05) * smoothstep(0.3, 0.6, q) * step(0.04, p.y));
   float de = length(vec3(abs(p.x), p.y, p.z) - K_EYE);
@@ -413,8 +424,8 @@ export class Ducks {
     const w = this.world;
     const ma = this.mAttr.array;
     const ka = this.kAttr.array;
-    let ki = 0;
-    this.families.forEach((f, fi) => {
+    for (let fi = 0; fi < this.families.length; fi++) {
+      const f = this.families[fi];
       const m = f.mother;
       // the shore: distance every frame, direction now and then
       f.ld = w.landDistance(m.x, m.z);
@@ -478,7 +489,8 @@ export class Ducks {
       }
       // ducklings: a line behind her, a huddle when she stops
       let lead = m;
-      f.kids.forEach((k, j) => {
+      for (let j = 0; j < f.kids.length; j++) {
+        const k = f.kids[j];
         let tx;
         let tz;
         if (f.pause > 0 && !near) {
@@ -499,7 +511,7 @@ export class Ducks {
         else this.move(k, dt, -Math.sin(k.heading), -Math.cos(k.heading), 0, 7, 4);
         this.keepOut(k, boat);
         lead = k;
-      });
+      }
       // write
       this.pose(m, dt, time, bd);
       const surf = w.heightAt(m.x, m.z);
@@ -507,8 +519,11 @@ export class Ducks {
       const hf = w.heightAt(m.x - Math.sin(m.heading) * 0.25, m.z - Math.cos(m.heading) * 0.25);
       const hr = w.heightAt(m.x + Math.cos(m.heading) * 0.25, m.z - Math.sin(m.heading) * 0.25);
       place(this.mothers, fi, m.x, surf, m.z, m.heading, Math.atan2(hf - surf, 0.25), -Math.atan2(hr - surf, 0.25), m.scale);
-      ma.set([m.phase, m.headYaw, m.headPitch, m.seed], fi * 4);
-      this.ripples(m, bd, 0.7, 0.14);
+      ma[fi * 4] = m.phase;
+      ma[fi * 4 + 1] = m.headYaw;
+      ma[fi * 4 + 2] = m.headPitch;
+      ma[fi * 4 + 3] = m.seed;
+      this.ripples(m, dt, bd, m.speed > 0.6 ? 1.2 : 2.4, 0.14);
       for (let j = 0; j < MAX_KIDS; j++) {
         const i = fi * MAX_KIDS + j;
         const k = f.kids[j];
@@ -518,11 +533,13 @@ export class Ducks {
         }
         this.pose(k, dt, time, bd);
         place(this.kidsMesh, i, k.x, w.heightAt(k.x, k.z), k.z, k.heading, 0, 0, k.scale);
-        ka.set([k.phase, k.headYaw, k.headPitch, k.seed], i * 4);
-        this.ripples(k, bd, 1.8, 0.06);
+        ka[i * 4] = k.phase;
+        ka[i * 4 + 1] = k.headYaw;
+        ka[i * 4 + 2] = k.headPitch;
+        ka[i * 4 + 3] = k.seed;
+        if (k.speed > 0.6) this.ripples(k, dt, bd, 2.6, 0.07);
       }
-      ki += MAX_KIDS;
-    });
+    }
     this.mothers.instanceMatrix.needsUpdate = true;
     this.kidsMesh.instanceMatrix.needsUpdate = true;
     this.mAttr.needsUpdate = true;
@@ -568,14 +585,15 @@ export class Ducks {
     d.headPitch = damp(d.headPitch, d.speed > 0.6 ? -0.08 : 0, 3, dt);
   }
 
-  // Little rings behind a paddling duck (only near the boat, where they show).
-  ripples(d, bd, every, strength) {
-    if (bd > 50 || d.speed < 0.1) return;
-    d.rippleT -= 1 / 60 + 0 * every;
+  // Little rings behind a paddling duck (only near the boat, where they show;
+  // the ducklings add theirs only when hurrying).
+  ripples(d, dt, bd, every, strength) {
+    if (bd > 40 || d.speed < 0.15) return;
+    d.rippleT -= dt;
     if (d.rippleT > 0) return;
-    d.rippleT = every * rand(0.8, 1.2) * 60 / 60;
+    d.rippleT = every * rand(0.8, 1.2);
     const back = 0.18 * d.scale;
-    this.events.ripple(d.x + Math.sin(d.heading) * back, d.z + Math.cos(d.heading) * back, clamp(strength * (0.6 + d.speed), 0.04, 0.35));
+    this.events.softRipple(d.x + Math.sin(d.heading) * back, d.z + Math.cos(d.heading) * back, clamp(strength * (0.6 + d.speed), 0.04, 0.35));
   }
 
   dispose() {

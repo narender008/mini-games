@@ -359,7 +359,7 @@ void main() {
 
   // --- foam
   float shore = 0.0;
-  if (!sky) shore = smoothstep(0.45, 0.02, depthBelow);
+  if (!sky) shore = (1.0 - smoothstep(0.02, 0.45, depthBelow));
   vec2 luv = (p - uLandInfo.xy) / uLandInfo.zw;
   float land = texture2D(uLand, luv).r;
   float nB = texture2D(uNoise, p * 0.013).g;

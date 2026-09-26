@@ -4,7 +4,7 @@
 // chains laid out ahead of the boat through open water, so wherever a child
 // steers there is always another one to find.
 import * as THREE from 'three';
-import { rand, clamp, angleDiff, TAU } from './config.js';
+import { rand, clamp, TAU } from './config.js';
 import { LAYER_FX } from './post.js';
 import { canvasTexture } from './places/common.js';
 
@@ -269,5 +269,3 @@ export class Rings {
     this.onCollect(r, this.streak);
   }
 }
-
-export { angleDiff };

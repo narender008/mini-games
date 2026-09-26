@@ -29,10 +29,10 @@ varying float vAcross;
 varying vec4 vData;
 void main() {
   float a = vAcross;
-  float prof = uTrail > 0.5 ? smoothstep(1.0, 0.35, abs(a)) : exp(-a * a * 3.0);
+  float prof = uTrail > 0.5 ? (1.0 - smoothstep(0.35, 1.0, abs(a))) : exp(-a * a * 3.0);
   // arms: a crest with a shallow trough outside it
   float h = uTrail > 0.5 ? vData.y * prof : vData.y * (exp(-a * a * 4.0) - 0.35 * exp(-(a - 0.9) * (a - 0.9) * 6.0));
-  float bub = smoothstep(1.0, 0.15, abs(a));
+  float bub = (1.0 - smoothstep(0.15, 1.0, abs(a)));
   gl_FragColor = vec4(vData.x * prof, h, vData.z * prof, vData.w * bub);
 }`;
 
@@ -58,11 +58,16 @@ void main() {
   float r = length(vLocal) * R;
   float front = 0.25 + age * 1.6;
   float x = r - front;
+  // (smoothstep needs edge0 < edge1: reversed edges are undefined in GLSL
+  // and blow up on some GPUs, so the inner wavelets are written out)
+  float inside = 1.0 - smoothstep(-2.5, 0.0, x);
   float env = s * exp(-age * 0.55) * exp(-x * x * 0.8) * smoothstep(0.0, 0.1, age);
-  float trail = s * exp(-age * 0.8) * smoothstep(0.0, -2.5, x) * exp(x * 0.5) * 0.5;
-  float h = cos(x * 4.2) * (env + trail) * 0.09;
-  float foam = s * exp(-age * 1.1) * exp(-r * r / (0.6 + s * 2.0 + age * 3.0)) * 1.3 + env * 0.06;
-  gl_FragColor = vec4(foam, h, vParams.w * (foam + env * 0.6), foam * 0.6);
+  float trail = s * exp(-age * 0.8) * inside * exp(min(x, 0.0) * 0.5) * 0.5;
+  // everything fades out well inside the quad, so its square edge never shows
+  float edge = 1.0 - smoothstep(0.8, 0.98, length(vLocal));
+  float h = cos(x * 4.2) * (env + trail) * 0.09 * edge;
+  float foam = (s * exp(-age * 1.1) * exp(-r * r / (0.6 + s * 2.0 + age * 3.0)) * 1.3 + env * 0.06) * edge;
+  gl_FragColor = vec4(foam, h, vParams.w * (foam + env * 0.6 * edge), foam * 0.6);
 }`;
 
 export class Wake {

@@ -242,7 +242,7 @@ if (vPart < 0.5) {
   col = mix(col, D_BELLY, belly);
   // lower jaw pale below the mouth line, which curves up into a smile
   float mouthY = -0.058 + 0.016 * smoothstep(0.045, 0.09, sn);
-  float jaw = smoothstep(0.003, -0.004, p.y - mouthY) * (1.0 - smoothstep(0.075, 0.12, sn));
+  float jaw = (1.0 - smoothstep(-0.004, 0.003, p.y - mouthY)) * (1.0 - smoothstep(0.075, 0.12, sn));
   col = mix(col, D_BELLY * 0.92, jaw);
   float mouth = (1.0 - smoothstep(0.0012, 0.0035, abs(p.y - mouthY))) * (1.0 - smoothstep(0.086, 0.094, sn)) * step(0.003, sn);
   col *= 1.0 - 0.6 * mouth;

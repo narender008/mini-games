@@ -51,7 +51,7 @@ float skyCloudDensity(vec3 d, out float thick) {
 }
 vec3 skyColor(vec3 d, bool withSun) {
   vec3 c = skyGradient(d);
-  if (d.y < 0.0) c = mix(c, uSkyGround, smoothstep(0.0, -0.08, d.y));
+  if (d.y < 0.0) c = mix(c, uSkyGround, (1.0 - smoothstep(-0.08, 0.0, d.y)));
   float mu = dot(d, uSunDir);
   // stars and the moon
   if (uNight.w > 0.0 && d.y > 0.0) {

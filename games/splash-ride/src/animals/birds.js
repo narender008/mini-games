@@ -28,15 +28,15 @@ const SPECIES = {
     count: [4, 6],
     body: { z0: -0.3, len: 0.5 },
     prof: [
-      [0.0, 0.013, 0.013, 0.012, 0.022],
-      [0.06, 0.03, 0.03, 0.026, 0.026],
-      [0.13, 0.035, 0.034, 0.03, 0.024],
-      [0.21, 0.031, 0.03, 0.032, 0.014],
-      [0.33, 0.05, 0.048, 0.056, 0.0],
-      [0.5, 0.058, 0.054, 0.062, 0.0],
-      [0.7, 0.05, 0.045, 0.048, 0.002],
-      [0.88, 0.032, 0.028, 0.026, 0.006],
-      [1.0, 0.016, 0.012, 0.01, 0.01],
+      [0.0, 0.015, 0.015, 0.014, 0.022],
+      [0.06, 0.034, 0.034, 0.03, 0.026],
+      [0.13, 0.04, 0.039, 0.035, 0.024],
+      [0.21, 0.037, 0.035, 0.038, 0.012],
+      [0.33, 0.06, 0.056, 0.066, 0.0],
+      [0.5, 0.068, 0.064, 0.072, 0.0],
+      [0.7, 0.058, 0.052, 0.056, 0.002],
+      [0.88, 0.036, 0.03, 0.028, 0.006],
+      [1.0, 0.017, 0.013, 0.011, 0.01],
     ],
     bill: { len: 0.058, w: 0.009, h: 0.013, hook: 0.006 },
     wing: [
@@ -106,14 +106,14 @@ const SPECIES = {
     ],
     bill: { len: 0.018, w: 0.005, h: 0.006, hook: 0.002 },
     wing: [
-      [0.012, -0.03, 0.06, 0.008],
-      [0.06, -0.045, 0.075, 0.009],
-      [0.12, -0.052, 0.07, 0.009],
-      [0.17, -0.05, 0.058, 0.007],
-      [0.22, -0.035, 0.06, 0.004],
-      [0.27, -0.005, 0.07, 0.0],
-      [0.305, 0.03, 0.078, -0.002],
-      [0.325, 0.058, 0.082, -0.003],
+      [0.012, -0.035, 0.07, 0.008],
+      [0.06, -0.05, 0.09, 0.009],
+      [0.12, -0.058, 0.088, 0.009],
+      [0.17, -0.056, 0.078, 0.007],
+      [0.22, -0.042, 0.078, 0.004],
+      [0.26, -0.018, 0.08, 0.0],
+      [0.295, 0.012, 0.084, -0.002],
+      [0.318, 0.045, 0.086, -0.003],
     ],
     shoulder: 0.015,
     wrist: 0.14,
@@ -281,7 +281,7 @@ float rough = 0.78;
   }
 #else
   // feral pigeon: blue-grey, darker head, glossy green-purple neck, two black wing bars
-  vec3 grey = ${glslColor('#8a919c')};
+  vec3 grey = ${glslColor('#737a86')};
   if (vPart < 0.5) {
     col = mix(grey, ${glslColor('#666d78')}, 1.0 - smoothstep(0.12, 0.2, s));
     float neck = smoothstep(0.1, 0.18, s) * (1.0 - smoothstep(0.3, 0.4, s));
@@ -291,11 +291,11 @@ float rough = 0.78;
     col = mix(col, ${glslColor('#b0441e')}, eye);
   } else if (vPart < 1.5) {
     if (q > 0.0) {
-      col = mix(${glslColor('#9ea5af')}, ${glslColor('#3f434b')}, smoothstep(0.62, 0.8, k));
+      col = mix(${glslColor('#848b96')}, ${glslColor('#3a3e46')}, smoothstep(0.62, 0.8, k));
       float bars = max(1.0 - smoothstep(0.004, 0.008, abs(p.z - 0.022)), 1.0 - smoothstep(0.004, 0.008, abs(p.z - 0.048)));
       col = mix(col, vec3(0.03), bars * (1.0 - smoothstep(0.35, 0.5, k)));
     } else {
-      col = mix(${glslColor('#c9cdd3')}, ${glslColor('#6a6f78')}, smoothstep(0.7, 0.9, k));
+      col = mix(${glslColor('#b9bec6')}, ${glslColor('#62676f')}, smoothstep(0.7, 0.9, k));
     }
   } else if (vPart < 2.5) {
     col = mix(grey, vec3(0.04), smoothstep(0.165, 0.175, p.z));
@@ -312,6 +312,7 @@ anRough = rough;
 // ------------------------------------------------------------ behaviour
 
 const G = 9.81;
+const _call = new THREE.Vector3();
 
 export class Birds {
   constructor({ root, quality, world, events }, kind) {
@@ -406,7 +407,7 @@ export class Birds {
     if (this.kind === 'gull' && this.callT <= 0) {
       this.callT = rand(15, 35);
       const b = this.list[Math.floor(Math.random() * this.n)];
-      if (Math.hypot(b.x - boat.pos.x, b.z - boat.pos.z) < 80) this.events.sound('gull', new THREE.Vector3(b.x, b.y, b.z));
+      if (Math.hypot(b.x - boat.pos.x, b.z - boat.pos.z) < 80) this.events.sound('gull', _call.set(b.x, b.y, b.z));
     }
     this.mesh.instanceMatrix.needsUpdate = true;
     this.flapAttr.needsUpdate = true;
@@ -518,7 +519,7 @@ export class Birds {
     if (b.dip && b.y < surf + 0.12) {
       b.dip = false;
       b.ty = rand(1, 3);
-      this.events.ripple(b.x, b.z, 0.15);
+      this.events.softRipple(b.x, b.z, 0.15);
     }
     this.flap(b, dt, { freq: 8, amp: 0.7, flap: [0.3, 0.7], glide: [0.25, 0.8], dihedral: 0.04, sweep: 0.1, glideSweep: 0.55 });
   }

@@ -20,13 +20,22 @@ import { Boat } from './drive.js';
 import { ChaseCam } from './camera.js';
 import { Spray } from './fx.js';
 import { Rings } from './rings.js';
+import { Course } from './course.js';
+import { Shells } from './shells.js';
+import { Animals } from './animals/index.js';
 import { Controls, WheelControl } from './input.js';
 import { UI } from './ui.js';
 import { canFullscreen, enterFullscreen, toggleFullscreen, isFullscreen, onFullscreenChange } from './fullscreen.js';
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
+const formatTime = (t) => {
+  const m = Math.floor(t / 60);
+  const s = t - m * 60;
+  return `${m}:${s < 10 ? '0' : ''}${s.toFixed(1)}`;
+};
 const PLACE_MODULES = {
   lagoon: () => import('./places/lagoon.js'),
+  lake: () => import('./places/lake.js'),
 };
 
 // used if the sound module cannot start (every call does nothing)
@@ -123,6 +132,10 @@ class App {
     }
     this.rings = new Rings({ scene, land: null });
     this.rings.onCollect = (r, n) => this.onRing(r, n);
+    this.course = new Course({ scene, audio: this.audio, makeGhost: (id) => this.makeGhost(id) });
+    this.course.onEvent = (kind, e) => this.onCourse(kind, e);
+    this.shells = new Shells({ scene });
+    this.shells.onCollect = (s, n) => this.onShell(s, n);
 
     progress(0.62, 'Launching the boat');
     this.drive = new Boat({ shape: this.shape, land: null, spec: standInBoat().spec, id: this.sel.boat });
@@ -231,6 +244,15 @@ class App {
     this.audio.startMusic?.();
     if (this.sel.steer === 'tilt') this.controls.enableTilt();
     this.rings.clear();
+    this.applyMode();
+  }
+
+  // Big kid extras show only while playing in Big kid mode
+  applyMode() {
+    const big = this.sel.mode === 'big' && this.state === 'playing';
+    this.course.setVisible(big);
+    this.shells.setVisible(big);
+    this.ui.setShells(this.shells.found);
   }
 
   toMenu() {
@@ -240,6 +262,7 @@ class App {
     this.controls.reset();
     this.audio.setScene?.('menu');
     this.ui.show('menu');
+    this.applyMode();
   }
 
   toggleMute() {
@@ -280,6 +303,7 @@ class App {
       this.controls.mode = id;
       this.drive.little = id === 'little';
       this.placeBumps();
+      this.applyMode();
     } else if (key === 'steer') {
       this.ui.setSteer(id);
     }
@@ -303,6 +327,29 @@ class App {
     const dist = this.camera.position.distanceTo(this.drive.pos);
     const px = (this.drive.spec.length * 0.55 / (2 * dist * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)))) * this.view.h;
     return Math.hypot(x - sx, y - sy) < Math.max(56, px);
+  }
+
+  makeGhost(id) {
+    if (!this.boatsModule) return null;
+    const g = this.boatsModule.makeGhost(id, { quality: this.quality });
+    return g;
+  }
+
+  onCourse(kind, e) {
+    if (kind === 'start') this.ui.callout('Go!', 1200);
+    else if (kind === 'buoy') this.spray.sparkle(e.x, 1.2, e.z, 24, [1, 0.8, 0.4]);
+    else if (kind === 'finish') {
+      this.ui.callout(e.isBest ? `New best! ${formatTime(e.time)}` : `Round in ${formatTime(e.time)}`, 3200);
+      const p = this.drive.pos;
+      this.spray.sparkle(p.x, 2, p.z, e.isBest ? 90 : 40, [1, 0.85, 0.45]);
+    }
+  }
+
+  onShell(s, n) {
+    this.audio.shell();
+    this.spray.sparkle(s.x, 0.6, s.z, 36, [1, 0.8, 0.85]);
+    this.ui.setShells(n, true);
+    if (this.shells.items.every((x) => !x.live)) setTimeout(() => this.shells.scatter(this.place.land, this.place.def.area, 7), 2500);
   }
 
   onRing(r, n) {
@@ -338,7 +385,7 @@ class App {
 
   async loadPlace(id) {
     if (this.places[id]) return this.places[id];
-    const mod = await PLACE_MODULES[id]();
+    const mod = await (PLACE_MODULES[id] || PLACE_MODULES.lagoon)();
     const def = mod.PLACE;
     const q = this.quality;
     const land = new LandField({ ...def.area, cell: 2, solid: def.solid });
@@ -352,6 +399,29 @@ class App {
     this.sky.set(def.sky);
     const env = this.sky.environment(this.renderer, q.envSize);
     const P = { id, def, land, group, scenery, env };
+    try {
+      P.animals = new Animals({
+        scene: group,
+        quality: q,
+        world: {
+          heightAt: (x, z) => this.shape.heightAt(x, z),
+          depthAt: (x, z) => -def.height(x, z),
+          landDistance: (x, z) => land.distance(x, z),
+          bounds: def.area,
+        },
+        kinds: def.animals,
+        events: {
+          splash: (pos, s) => this.spray.splash(pos.x, pos.y, pos.z, s, 0, 0, 0.5 + s),
+          sound: (kind, pos) => {
+            const d = this.drive.pos;
+            this.audio.animal?.(kind, this.pan(pos.x, pos.z), Math.hypot(pos.x - d.x, pos.z - d.z));
+          },
+          ripple: (x, z, s) => this.wake.ripple(x, z, s, this.time, this.glow()),
+        },
+      });
+    } catch (err) {
+      console.warn('animals unavailable', err);
+    }
     this.places[id] = P;
     return P;
   }
@@ -383,6 +453,9 @@ class App {
     this.drive.land = P.land;
     this.rings.land = P.land;
     this.rings.clear();
+    this.course.setCourse(d.course, id);
+    this.shells.scatter(P.land, d.area, PLACES.indexOf(id) + 1);
+    this.ui?.setShells(this.shells.found);
     this.audio.setPlace?.(id);
     this.drive.place(d.spawn.x, d.spawn.z, d.spawn.heading);
     this.wake.reset();
@@ -406,7 +479,7 @@ class App {
   async setBoat(id, first = false) {
     let view;
     try {
-      const mod = await import('./boats.js');
+      const mod = (this.boatsModule = await import('./boats.js'));
       view = mod.makeBoat(id, { quality: this.quality });
       view.spec = mod.BOAT_SPECS[id];
     } catch (err) {
@@ -449,6 +522,17 @@ class App {
     return clamp(this._v.set(x, 0.5, z).project(this.camera).x, -1, 1) * 0.8;
   }
 
+  // the boat as the animals see it (reused object)
+  animalBoat() {
+    const d = this.drive;
+    const b = this._ab || (this._ab = { pos: d.pos, heading: 0, speed: 0, vel: new THREE.Vector3() });
+    b.pos = d.pos;
+    b.heading = d.heading;
+    b.speed = d.speed;
+    b.vel.set(d.vel.x, d.vy, d.vel.y);
+    return b;
+  }
+
   glow() {
     return this.place?.def.water.glowStrength ? 1 : 0;
   }
@@ -487,10 +571,28 @@ class App {
     this.updateBoatView(dt);
     this.updateSpray(dt);
     this.place.scenery.update?.(dt, t);
+    this.place.animals?.update(dt, t, this.animalBoat());
     this.sky.update(t);
     this.water.update(t, this.camera);
     this.spray.update(dt);
     if (this.state === 'playing') this.rings.update(dt, d, this.camera);
+    if (this.course.group.visible) {
+      this.course.update(dt, t, d);
+      this.shells.update(dt, t, d, (x, z) => this.shape.heightAt(x, z));
+      const st = this.course.status();
+      this.ui.setCourse(st.now, st.best, st.running);
+      this.updateTargetArrow();
+      // shells twinkle so they can be spotted from afar
+      this.twinkle = (this.twinkle || 0) - dt;
+      if (this.twinkle <= 0) {
+        this.twinkle = 0.35;
+        const live = this.shells.items.filter((x) => x.live);
+        if (live.length) {
+          const s = live[Math.floor(Math.random() * live.length)];
+          this.spray.sparkle(s.x, 0.45, s.z, 4, [1, 0.85, 0.9]);
+        }
+      }
+    }
     this.rig.update(dt, d, this.place.land);
     this.audio.drive?.({
       speed: d.speed,
@@ -511,6 +613,32 @@ class App {
     this.sun.position.set(p.x + sd.x * 200, sd.y * 200, p.z + sd.z * 200);
     this.sun.target.position.set(p.x, 0, p.z);
     this.post.update(t);
+  }
+
+  // an arrow at the screen edge towards the next buoy or the start flags
+  updateTargetArrow() {
+    const el = this.arrowEl || (this.arrowEl = document.getElementById('target-arrow'));
+    const tp = this.course.targetPoint();
+    if (!tp) {
+      el.hidden = true;
+      return;
+    }
+    const p = this._v.set(tp.x, 1.5, tp.z).project(this.camera);
+    const behind = p.z > 1;
+    let x = p.x;
+    let y = p.y;
+    if (behind) {
+      x = -x;
+      y = -y;
+    }
+    const onScreen = !behind && Math.abs(x) < 0.92 && Math.abs(y) < 0.85;
+    el.hidden = onScreen;
+    if (onScreen) return;
+    const a = Math.atan2(y, x);
+    const k = 0.86 / Math.max(Math.abs(Math.cos(a)) / 1, Math.abs(Math.sin(a)) / 0.8);
+    const sx = (Math.cos(a) * k * 0.5 + 0.5) * this.view.w;
+    const sy = (-Math.sin(a) * k * 0.5 + 0.5) * this.view.h;
+    el.style.transform = `translate(${sx}px, ${sy}px) rotate(${-a}rad)`;
   }
 
   updateBoatView(dt) {
@@ -611,6 +739,9 @@ class App {
         app.controls.forced = s ?? null;
       },
       play: () => app.startGame(),
+      mode: (m) => app.choose('mode', m),
+      course: () => ({ state: app.course.state, target: app.course.target, clock: app.course.clock, best: app.course.best && app.course.best.time, buoys: app.course.buoys.map((b) => [b.x, b.z, +app.place.land.distance(b.x, b.z).toFixed(1)]) }),
+      shells: () => app.shells.items.map((s) => [Math.round(s.x), Math.round(s.z), s.live]),
       menu: () => app.toMenu(),
       horn: () => app.horn(),
       ring() {

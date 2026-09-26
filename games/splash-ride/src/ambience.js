@@ -897,7 +897,7 @@ export function dolphinCall(sr, seed, variant = 0) {
   const whistle = (t0) => {
     const dur = 0.35 + 0.45 * r();
     const shape = Math.floor(r() * 3);
-    const a = 2200 + 900 * r();
+    const a = 1800 + 700 * r();
     const b = a * (1.3 + 0.4 * r());
     const rate = 2 + 2 * r();
     const f = shape === 0 ? (u) => a * (b / a) ** u : shape === 1 ? (u) => (a + b) / 2 + ((b - a) / 2) * Math.sin(TAU * rate * u * dur) : (u) => a + (b - a) * Math.sin(Math.PI * u);
@@ -910,8 +910,8 @@ export function dolphinCall(sr, seed, variant = 0) {
     let ici = 0.03;
     for (let k = 0; k < count; k++) {
       const at = Math.floor(t * sr);
-      grain(out, at, secs(sr, 0.0006), 2, 0.12, r);
-      damped(out, sr, at, 3300 + 500 * r(), 0.15, 0.0004);
+      grain(out, at, secs(sr, 0.0008), secs(sr, 0.0003), 0.03, r);
+      damped(out, sr, at, 3000 + 500 * r(), 0.04, 0.0006);
       t += ici;
       ici = Math.max(0.008, ici * 0.94);
     }
@@ -928,7 +928,7 @@ export function dolphinCall(sr, seed, variant = 0) {
   if (variant === 0) whistle(blow(0.01) + 0.05);
   else if (variant === 1) whistle(whistle(0.01) - 0.1);
   else if (variant === 2) whistle(clicks(0.01) + 0.05);
-  else clicks(blow(0.01));
+  else blow(clicks(blow(0.01)) + 0.1);
   filt(out, sr, 'highpass', 250, 0.7);
   filt(out, sr, 'lowpass', 6000, 0.6);
   return finish([out], sr, 0.5, 40);
@@ -1142,7 +1142,7 @@ export function evenOut({ sr, ch }, rms = 0.12) {
 }
 
 // Loudness of each call at 10 m (calls are evened out, see above).
-const CALL_LEVEL = { gull: 0.8, tern: 0.5, duck: 0.5, pigeon: 0.25, frog: 0.25, dolphin: 0.5, splashfish: 0.5, robin: 0.35, blackbird: 0.4, thrush: 0.35, bell: 2 };
+const CALL_LEVEL = { gull: 0.8, tern: 0.5, duck: 0.5, pigeon: 0.25, frog: 0.25, dolphin: 0.5, splashfish: 1.5, robin: 0.35, blackbird: 0.4, thrush: 0.35, bell: 2 };
 
 // how loud and how dark something `dist` metres away is
 export const distGain = (d) => clamp(12 / (Math.max(0, d) + 2), 0.03, 1.5);
@@ -1172,12 +1172,12 @@ const BEDS = {
     ['white', 0.012, [['bandpass', 3200, 0.8], ['lowpass', 6000]], { gust: 0.7, flutter: 0.3, spread: 0.7 }],
   ],
   lake: [
-    ['shore', 0.3, [['lowpass', 3800]], { spread: 0.5 }],
+    ['shore', 0.4, [['lowpass', 3800]], { spread: 0.5 }],
     ['pink', 0.02, [['lowpass', 500]], { gust: 0.5 }],
     ['cricketC', 0.006, [], { pan: 0.7 }],
   ],
   canal: [
-    ['stone', 0.16, [['lowpass', 4200]], { spread: 0.7, wet: 0.35 }],
+    ['stone', 0.24, [['lowpass', 4200]], { spread: 0.7, wet: 0.35 }],
     // the town's quiet air: a very low far-off hum, no voices
     ['pink', 0.035, [['lowpass', 220], ['highpass', 40]], {}],
   ],

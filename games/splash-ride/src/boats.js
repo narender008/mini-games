@@ -26,38 +26,45 @@ import {
 
 export const BOAT_IDS = ['speedboat', 'sailboat', 'duck', 'jetski'];
 
-// Sizes in metres, measured on the models (see _dev/boats.html).
+// Sizes in metres, measured on the models. Boat space: x starboard, y up
+// from the waterline, z aft (the bow points to -z). length/beam are the
+// hull's; draft is the hull's depth below the waterline (the outboard leg,
+// centreboard and rudder reach deeper); freeboard is the sheer height
+// midships; mastTop the highest point. bowZ/sternZ are the hull's ends (the
+// outboard, rudder, jet nozzle and duck's beak and wheel overhang them).
+// spray: where bow spray leaves the hull at speed; wash: where the prop,
+// jet or wheel churns; hornAt: where the horn sounds from.
 export const BOAT_SPECS = {
   speedboat: {
-    length: 4.6, beam: 1.9, draft: 0.35, freeboard: 0.76, mastTop: 1.72,
-    bowZ: -1.6, sternZ: 2.3,
-    spray: [[0.42, 0.02, -1.25], [-0.42, 0.02, -1.25], [0.7, 0.0, -0.5], [-0.7, 0.0, -0.5]],
-    wash: [0, 0, 2.62],
+    length: 4.6, beam: 1.9, draft: 0.33, freeboard: 0.76, mastTop: 1.74,
+    bowZ: -2.3, sternZ: 2.3,
+    spray: [[0.45, 0.02, -1.2], [-0.45, 0.02, -1.2], [0.78, 0.0, -0.45], [-0.78, 0.0, -0.45]],
+    wash: [0, 0, 2.7],
     hornAt: [0.16, 0.9, -0.72],
     camera: { distance: 10, height: 3.5, lookHeight: 0.8 },
   },
   sailboat: {
-    length: 4.2, beam: 1.6, draft: 0.22, freeboard: 0.55, mastTop: 5.62,
-    bowZ: -1.94, sternZ: 2.1,
+    length: 4.2, beam: 1.6, draft: 0.2, freeboard: 0.57, mastTop: 5.67,
+    bowZ: -2.1, sternZ: 2.11,
     spray: [[0.3, 0.02, -1.6], [-0.3, 0.02, -1.6]],
-    wash: [0, 0, 2.15],
-    hornAt: [0, 1.05, -1.03],
+    wash: [0, 0, 2.2],
+    hornAt: [0, 1.0, -1.03],
     camera: { distance: 11.5, height: 4.2, lookHeight: 1.8 },
   },
   duck: {
-    length: 3.0, beam: 1.7, draft: 0.2, freeboard: 0.95, mastTop: 2.1,
-    bowZ: -1.3, sternZ: 1.36,
-    spray: [[0.45, 0.02, -1.05], [-0.45, 0.02, -1.05]],
-    wash: [0, 0, 1.55],
-    hornAt: [0, 1.62, -1.45],
+    length: 3.0, beam: 1.7, draft: 0.16, freeboard: 0.95, mastTop: 2.01,
+    bowZ: -1.3, sternZ: 1.31,
+    spray: [[0.5, 0.02, -1.0], [-0.5, 0.02, -1.0]],
+    wash: [0, 0, 1.5],
+    hornAt: [0, 1.42, -1.45],
     camera: { distance: 9.5, height: 3.4, lookHeight: 1.0 },
   },
   jetski: {
-    length: 3.1, beam: 1.15, draft: 0.26, freeboard: 0.4, mastTop: 0.98,
-    bowZ: -1.17, sternZ: 1.55,
-    spray: [[0.3, 0.02, -0.85], [-0.3, 0.02, -0.85]],
-    wash: [0, 0, 1.6],
-    hornAt: [0, 0.86, -0.62],
+    length: 3.1, beam: 1.15, draft: 0.26, freeboard: 0.4, mastTop: 1.09,
+    bowZ: -1.55, sternZ: 1.55,
+    spray: [[0.36, 0.02, -0.8], [-0.36, 0.02, -0.8]],
+    wash: [0, -0.02, 1.66],
+    hornAt: [0, 0.88, -0.6],
     camera: { distance: 8.5, height: 3.1, lookHeight: 0.7 },
   },
 };
@@ -784,7 +791,7 @@ function inflatable(o) {
     roughness: o.rough ?? 0.32,
     clearcoat: 1,
     clearcoatRoughness: o.coatRough ?? 0.08,
-    sheen: 0.25,
+    sheen: 0.12,
     sheenRoughness: 0.5,
     sheenColor: col('#ffffff'),
   });
@@ -848,7 +855,15 @@ function sailMaterial(tex) {
     side: THREE.DoubleSide,
   });
   m.onBeforeCompile = (sh) => {
-    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+#ifdef USE_NORMALMAP
+{
+  // the sail number printed on the far face shows through only faintly
+  float sa = texture2D(normalMap, vNormalMapUv).a * 2.0 - 1.0;
+  float ghost = gl_FrontFacing ? max(-sa, 0.0) : max(sa, 0.0);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.83, 0.79, 0.69), ghost * 0.74);
+}
+#endif`).replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
 #if NUM_DIR_LIGHTS > 0
 for (int i = 0; i < NUM_DIR_LIGHTS; i++) {
   float back = saturate(-dot(normal, directionalLights[i].direction));
@@ -974,11 +989,11 @@ function library(tier) {
   }));
   mat('jetHull', () => hullPaint({
     top: '#ecece8', stripe: '#0f9aa0', pin: '#2a2d31', boot: '#ecece8', bottom: '#e6e6e1', deck: '#0e98a0',
-    stripeG: [0.0, 0.07, 0.085, 0.1], bootY: [-9, -9, -9, 0], rough: 0.12, bottomRough: 0.2, bottomCoat: 0.9, deckRough: 0.16,
+    stripeG: [0.0, 0.2, 0.225, 0.245], bootY: [-9, -9, -9, 0], rough: 0.12, bottomRough: 0.2, bottomCoat: 0.9, deckRough: 0.16,
   }));
-  mat('duckYellow', () => inflatable({ color: '#e9ab0c', seamA: [1, 0, 0, 0], seamAFrom: 0.62, seamB: [0, 1, 0, 0.4], glow: 0.07 }));
-  mat('duckHead', () => inflatable({ color: '#e9ab0c', seamA: [1, 0, 0, 0], seamAFrom: 0.62, seamB: [0, 1, 0, 0.12], glow: 0.07 }));
-  mat('beak', () => inflatable({ color: '#e9780f', seamA: [0, 1, 0, -0.01], seamAFrom: -9, glow: 0.05, wobble: 0.0005 }));
+  mat('duckYellow', () => inflatable({ color: '#f7bf00', seamA: [1, 0, 0, 0], seamAFrom: 0.62, seamB: [0, 1, 0, 0.4], glow: 0.07 }));
+  mat('duckHead', () => inflatable({ color: '#f7bf00', seamA: [1, 0, 0, 0], seamAFrom: 0.55, seamB: [0, 1, 0, 0.12], glow: 0.07 }));
+  mat('beak', () => inflatable({ color: '#e9780f', seamA: [0, 1, 0, 0.728], seamAFrom: -9, glow: 0.05, wobble: 0.0005 }));
   mat('collar', () => inflatable({ color: '#44576b', rough: 0.4, coatRough: 0.14, seamB: [0, 1, 0, 0.04], seamBMaxNy: 0.35, glow: 0.02 }));
   LIB = { tex, M, made };
   return LIB;
@@ -1533,6 +1548,7 @@ function buildSpeedboat(M, tier) {
   // outboard motor, steering on its swivel bracket
   const motor = new THREE.Group();
   motor.position.set(0, sheerY(1) - 0.08, zAt(1) + 0.1);
+  motor.scale.setScalar(0.92);
   group.add(motor);
   {
     const MK = kit(M);
@@ -1852,16 +1868,38 @@ function buildSailboat(M, tier, T) {
     for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i), p.getZ(i));
     K.add('mahogany', d);
   }
-  // ribs (steamed timbers) inside the planking
+  // cockpit sole just above the waterline, so the water never shows inside
+  // the boat; the hull's inside below it is out of sight
+  const SOLE = 0.1;
+  const innerBeam = (s, y) => {
+    const h = inset(halfSection(s), 0.014);
+    for (let i = 0; i < h.length - 1; i++) {
+      const [x0, y0] = h[i];
+      const [x1, y1] = h[i + 1];
+      if ((y0 - y) * (y1 - y) <= 0 && y0 !== y1) return lerp(x0, x1, (y - y0) / (y1 - y0));
+    }
+    return 0;
+  };
+  {
+    const rows = [];
+    for (let k = 0; k <= 16; k++) {
+      const s = lerp(0.2, 0.93, k / 16);
+      const hw = innerBeam(s, SOLE) + 0.004;
+      const row = [];
+      for (let i = 0; i <= 6; i++) row.push([lerp(hw, -hw, i / 6), SOLE, zAt(s)]);
+      rows.push(row);
+    }
+    K.add('sailHull', zoned(loft(rows, { flip: true }), 1, [0.5, 0.5, 1]));
+  }
+  // ribs (steamed timbers) up each side from the sole
   for (let k = 0; k < 11; k++) {
     const s = lerp(0.27, 0.88, k / 10);
-    const h = inset(halfSection(s), 0.018);
+    const h = inset(halfSection(s), 0.018).filter(([, y]) => y > SOLE - 0.03);
     const z = zAt(s);
-    const pts = [];
-    for (let i = h.length - 1; i >= 0; i--) pts.push(new THREE.Vector3(-h[i][0], h[i][1], z));
-    for (let i = 1; i < h.length; i++) pts.push(new THREE.Vector3(h[i][0], h[i][1], z));
-    const rib = sweep(pts.filter((v, i) => i % 2 === 0 || i === pts.length - 1), rect(0.025, 0.012), { caps: true, up: new THREE.Vector3(0, 0, 1) });
-    K.add('mahogany', rib);
+    for (const sd of [1, -1]) {
+      const pts = h.filter((_, i) => i % 2 === 0 || i === h.length - 1).map(([x, y]) => new THREE.Vector3(sd * x, y, z));
+      K.add('mahogany', sweep(pts, rect(0.025, 0.012), { caps: true, up: new THREE.Vector3(0, 0, 1) }));
+    }
   }
   // thwarts
   const thwart = (s, y, d = 0.2) => {
@@ -1880,7 +1918,7 @@ function buildSailboat(M, tier, T) {
     for (let k = 0; k < 4; k++) {
       const x = sd * (0.07 + k * 0.09);
       const g = roundedBox(0.07, 0.016, 1.9 - k * 0.22, 0.005);
-      xf(g, [x, -0.1 + k * 0.02, zAt(0.58)]);
+      xf(g, [x, SOLE + 0.01, zAt(0.58)]);
       boxUV(g, 'z');
       K.add('mahogany', g);
     }
@@ -1974,14 +2012,11 @@ function buildSailboat(M, tier, T) {
       roundRect(0.035, 0.05, 0.014),
       { caps: true, up: new THREE.Vector3(1, 0, 0), scale: (t) => 1 - 0.3 * t },
     );
-    rudder.add(mesh(merge([blade, stock, tiller]), M.mahogany));
+    // tiller extension in varnished ash, part of the same mesh
     const ext = rod(new THREE.Vector3(0, 0.67, -0.95), new THREE.Vector3(0.18, 0.63, -1.6), 0.011, 8);
-    rudder.add(mesh(ext, M.blackSatin));
-    const pintles = merge([
-      xf(roundedBox(0.03, 0.04, 0.05, 0.008), [0, 0.1, -0.02]),
-      xf(roundedBox(0.03, 0.04, 0.05, 0.008), [0, 0.42, -0.02]),
-    ]);
-    rudder.add(mesh(pintles, M.bronze));
+    rudder.add(mesh(merge([blade, stock, tiller, ext]), M.mahogany));
+    // gudgeons on the transom stay put while the rudder swings
+    for (const y of [0.1, 0.42]) K.add('bronze', xf(roundedBox(0.03, 0.04, 0.05, 0.008), [0, y, zAt(1) + 0.03]));
   }
 
   // sails: one mesh holding the main and the jib, reshaped every frame
@@ -2051,7 +2086,8 @@ function buildSailboat(M, tier, T) {
   const bflag = makeFlag(0.26, 0.13, [0.52, 0.04], [0.98, 0.96], 8, 3);
   const bmesh = mesh(bflag.geometry, M.flag, { cast: false });
   bmesh.position.set(0, 0.1, 0.01);
-  burgee.add(bmesh, mesh(rod(new THREE.Vector3(0, -0.02, 0), new THREE.Vector3(0, 0.13, 0), 0.004, 5), M.spruce, { cast: false }));
+  burgee.add(bmesh);
+  K.add('spruce', rod(mastAt(MAST_TOP).add(new THREE.Vector3(0, -0.02, 0)), mastAt(MAST_TOP).add(new THREE.Vector3(0, 0.13, 0)), 0.004, 5));
 
   // a small bronze bell on the mast: it swings when the horn sounds
   const bell = new THREE.Group();
@@ -2119,7 +2155,7 @@ function buildSailboat(M, tier, T) {
       chord.copy(Q).sub(P);
       const cl = chord.length();
       jn.set(chord.z, 0, -chord.x).normalize().multiplyScalar(side);
-      const depth = cl * fill * 0.11 * smoothstep(0.0, 0.1, v) * smoothstep(1.0, 0.8, v);
+      const depth = cl * fill * 0.11 * smoothstep(0.0, 0.1, v) * (1.0 - smoothstep(0.8, 1.0, v));
       for (let i = 0; i <= JU; i++) {
         const u = i / JU;
         const cam = 4 * u * (1 - u) * (1 - 0.25 * (2 * u - 1));
@@ -2191,7 +2227,7 @@ function buildDuck(M, tier) {
   const WHEEL = { y: 0.08, z: 1.3 };
   const body = (x, y, z) => {
     let d = sdEllipsoid(x, y - 0.4, z - 0.12, 0.75, 0.52, 1.2);
-    d = smin(d, sdEllipsoid(x, y - 0.46, z + 0.72, 0.64, 0.48, 0.52), 0.25);
+    d = smin(d, sdEllipsoid(x, y - 0.55, z + 0.72, 0.64, 0.52, 0.52), 0.25);
     // tail: tipped up and back
     const ty = y - 0.82;
     const tz = z - 1.08;
@@ -2221,12 +2257,12 @@ function buildDuck(M, tier) {
 
   // head and neck in their own group, so the head can bob and nod
   const PIV = new THREE.Vector3(0, 0.7, -0.78);
-  const HC = [0, 0.96, -0.12]; // head centre, pivot space
+  const HC = [0, 0.85, -0.12]; // head centre, pivot space
   const headFn = (x, y, z) => {
     // a short, thick neck under a big round head with full cheeks
-    let d = sdCapsule(x, y, z, 0, -0.1, 0.02, 0, 0.42, -0.04, 0.32);
-    d = smin(d, sdEllipsoid(x, y - HC[1], z - HC[2], 0.43, 0.42, 0.45), 0.12);
-    d = smin(d, sdEllipsoid(x, y - 0.84, z + 0.28, 0.37, 0.27, 0.33), 0.12);
+    let d = sdCapsule(x, y, z, 0, -0.12, 0.02, 0, 0.3, -0.05, 0.36);
+    d = smin(d, sdEllipsoid(x, y - HC[1], z - HC[2], 0.45, 0.46, 0.47), 0.3);
+    d = smin(d, sdEllipsoid(x, y - 0.72, z + 0.28, 0.39, 0.29, 0.35), 0.12);
     return d;
   };
   const head = new THREE.Group();
@@ -2239,15 +2275,15 @@ function buildDuck(M, tier) {
   const beakFn = (x, y, z) => {
     // widen towards the rounded tip, like a real bill
     const w = 1 + 0.25 * clamp(-z / 0.25, 0, 1);
-    const ty = y - 0.03 * (z / 0.25) ** 2;
-    let d = sdEllipsoid(x / w, ty - 0.015, z + 0.05, 0.19, 0.075, 0.24) * Math.min(1, w);
-    d = smin(d, sdEllipsoid(x / w, ty + 0.045, z + 0.02, 0.16, 0.05, 0.2) * Math.min(1, w), 0.04);
-    const mouth = Math.abs(ty + 0.012) - 0.003;
-    d = smax(d, -mouth - clamp((z + 0.1) * 0.5, 0, 0.02), 0.006);
+    let d = sdEllipsoid(x / w, y - 0.02, z + 0.05, 0.19, 0.085, 0.23);
+    d = smin(d, sdEllipsoid(x / w, y + 0.045, z + 0.03, 0.16, 0.06, 0.19), 0.04);
+    // a shallow mouth line along the front half
+    const mouth = Math.abs(y + 0.012) - 0.0025;
+    d = smax(d, -mouth - clamp((z + 0.06) * 0.4, 0, 0.02), 0.005);
     return d;
   };
   const beakGeo = surfaceNets(beakFn, [-0.3, -0.13, -0.33], [0.3, 0.13, 0.2], hi ? 0.016 : 0.022);
-  xf(beakGeo, [0, 0.83, -0.5]);
+  xf(beakGeo, [0, 0.74, -0.52]);
   head.add(mesh(beakGeo, M.beak));
   // eyes: printed ovals set into the vinyl, found by marching from the
   // head's centre out to its surface
@@ -2256,12 +2292,12 @@ function buildDuck(M, tier) {
     for (const sd of [1, -1]) {
       const dir = new THREE.Vector3(sd * 0.6, 0.3, -0.74).normalize();
       const c = new THREE.Vector3(...HC);
-      let tt = 0.2;
-      for (let k = 0; k < 40; k++) {
+      let tt = 0.8;
+      for (let k = 0; k < 60; k++) {
         const p = c.clone().addScaledVector(dir, tt);
         const d = headFn(p.x, p.y, p.z);
-        if (Math.abs(d) < 1e-4) break;
-        tt += d;
+        if (Math.abs(d) < 1e-5) break;
+        tt -= d * 0.8;
       }
       const p = c.clone().addScaledVector(dir, tt);
       const e = 1e-3;
@@ -2276,13 +2312,14 @@ function buildDuck(M, tier) {
       const duv = disc.attributes.uv;
       const R = Math.sin(0.55);
       for (let i = 0; i < dp.count; i++) {
-        duv.setXY(i, 0.5 + (dp.getX(i) / R) * 0.5 * sd, 0.5 - (dp.getZ(i) / R) * 0.5);
+        duv.setXY(i, 0.5 + (dp.getX(i) / R) * 0.5 * sd, 0.5 + (dp.getZ(i) / R) * 0.5);
       }
-      xf(disc, [0, -Math.cos(0.55), 0], [0, 0, 0], [0.047 / R, 0.045, 0.062 / R]);
+      xf(disc, [0, -Math.cos(0.55), 0]);
+      xf(disc, [0, 0, 0], [0, 0, 0], [0.047 / R, 0.045, 0.062 / R]);
       // local frame: y along the surface normal, z along the head's "up"
       const upv = new THREE.Vector3(0, 1, 0).addScaledVector(n, -n.y).normalize();
       const xv = new THREE.Vector3().crossVectors(n, upv);
-      const basis = new THREE.Matrix4().makeBasis(xv, n, upv.negate());
+      const basis = new THREE.Matrix4().makeBasis(xv, n, upv);
       disc.applyMatrix4(basis);
       xf(disc, p.addScaledVector(n, 0.001).toArray());
       eyes.push(disc);
@@ -2294,7 +2331,7 @@ function buildDuck(M, tier) {
   // with its grab line and patches
   const collarPath = [];
   const cN = hi ? 72 : 48;
-  const cx = 0.62;
+  const cx = 0.65;
   const cz = 1.2;
   const collarAt = (a) => {
     const c = Math.cos(a);
@@ -2457,13 +2494,13 @@ function buildJetski(M, tier) {
   const L = 3.1;
   const z0 = -1.55;
   const zAt = (s) => z0 + s * L;
-  const gunY = (s) => 0.36 + 0.2 * Math.pow(1 - s, 3);
-  const gunHB = (s) => 0.575 * Math.pow(Math.sin((Math.min(1, s / 0.46) * Math.PI) / 2), 0.75) * (1 - 0.07 * smoothstep(0.82, 1, s));
+  const gunY = (s) => 0.3 + 0.3 * Math.pow(1 - s, 2.2);
+  const gunHB = (s) => 0.575 * Math.pow(Math.sin((Math.min(1, s / 0.5) * Math.PI) / 2), 0.92) * (1 - 0.07 * smoothstep(0.82, 1, s));
   const S_FF = 0.3;
   const SC0 = 0.07;
   const keelY = (s) => (s < S_FF ? -0.26 + (gunY(0) + 0.26) * Math.pow(1 - s / S_FF, 1.5) : -0.26);
   const chineY = (s) => (s <= SC0 ? keelY(s) : -0.06 + (keelY(SC0) + 0.06) * Math.pow(1 - smoothstep(SC0, 0.55, s), 1.6));
-  const chineHB = (s) => (s <= SC0 ? 0 : 0.47 * Math.pow(Math.sin((Math.PI / 2) * Math.min(1, (s - SC0) / (0.55 - SC0))), 0.75) * (1 - 0.05 * smoothstep(0.85, 1, s)));
+  const chineHB = (s) => (s <= SC0 ? 0 : 0.44 * Math.pow(Math.sin((Math.PI / 2) * Math.min(1, (s - SC0) / (0.55 - SC0))), 0.75) * (1 - 0.05 * smoothstep(0.85, 1, s)));
   const NT = hi ? 8 : 6;
   const NB = hi ? 8 : 6;
   const halfSection = (s) => {
@@ -2475,7 +2512,8 @@ function buildJetski(M, tier) {
     const pts = [];
     for (let k = 0; k <= NT; k++) {
       const t = k / NT;
-      pts.push([lerp(hS, hC, t) + 0.03 * Math.sin(Math.PI * t) * smoothstep(0, 0.2, s), lerp(yS, yC, t)]);
+      // flared topsides: the side kicks out just under the rub rail
+      pts.push([hC + (hS - hC) * Math.pow(1 - t, 1.5) + 0.012 * Math.sin(Math.PI * t) * smoothstep(0, 0.2, s), lerp(yS, yC, t)]);
     }
     pts.push([hC, yC]);
     for (let k = 1; k <= NB; k++) {
@@ -2499,9 +2537,9 @@ function buildJetski(M, tier) {
   const S_FW = 0.37;
   const S_PE = 0.87;
   const yFw = 0.27;
-  const yP = 0.6;
+  const yP = 0.62;
   const xP = 0.19;
-  const hoodTop = (s) => gunY(0) + 0.16 * Math.pow(smoothstep(0, 0.34, s), 0.8);
+  const hoodTop = (s) => gunY(0) + 0.25 * Math.pow(smoothstep(0, 0.35, s), 0.7);
   const deckHalf = (s, state) => {
     const yG = gunY(s);
     const hG = gunHB(s);
@@ -2512,18 +2550,20 @@ function buildJetski(M, tier) {
       const out = [...lip];
       for (let k = 0; k < 9; k++) {
         const x = (hG - 0.07 * q) * (1 - k / 8);
-        const f = Math.pow(Math.max(0, 1 - Math.pow(x / Math.max(hG, 1e-3), 2.4)), 0.55);
+        const f = Math.pow(Math.max(0, 1 - Math.pow(x / Math.max(hG, 1e-3), 2.8)), 0.45);
         out.push([x, yG + 0.042 * q + (top - yG - 0.042 * q) * f * q]);
       }
       return out;
     }
     if (state === 'well') {
-      return [...lip, [hG - 0.08, yG + 0.005], [hG - 0.09, yFw + 0.01], [hG - 0.09, yFw + 0.01], [xP + 0.03, yFw], [xP + 0.03, yFw],
-        [xP, yFw + 0.05], [xP - 0.008, yP - 0.05], [xP - 0.04, yP], [0, yP + 0.012]];
+      // the seat pedestal's sides lean in, as moulded
+      return [...lip, [hG - 0.08, yG + 0.005], [hG - 0.09, yFw + 0.01], [hG - 0.09, yFw + 0.01], [xP + 0.06, yFw], [xP + 0.06, yFw],
+        [xP + 0.035, yFw + 0.04], [xP, yP - 0.06], [xP - 0.035, yP], [0, yP + 0.012]];
     }
-    // rear platform
-    const out = [...lip, [hG - 0.08, yG + 0.005], [hG - 0.09, yFw + 0.01], [hG - 0.09, yFw + 0.01]];
-    for (let k = 0; k < 6; k++) out.push([(hG - 0.1) * (1 - (k + 1) / 6), yFw]);
+    // rear boarding platform, flush with the rub rail and open at the stern
+    const yPl = yG + 0.012;
+    const out = [[hG, yG], [hG - 0.01, yG + 0.009], [hG - 0.025, yPl]];
+    for (let k = 0; k < 9; k++) out.push([(hG - 0.04) * (1 - k / 8), yPl]);
     return out;
   };
   const deckRow = (s, state) => full(deckHalf(s, state), zAt(s), true);
@@ -2551,11 +2591,11 @@ function buildJetski(M, tier) {
   }
   // pod on the hood where the handlebars come out; display and visor
   {
-    const pod = roundedBox(0.3, 0.14, 0.36, 0.06);
-    xf(pod, [0, hoodTop(0.33) + 0.02, zAt(0.31)], [0.12, 0, 0]);
+    const pod = roundedBox(0.32, 0.2, 0.34, 0.07);
+    xf(pod, [0, hoodTop(0.33) + 0.03, zAt(0.315)], [0.18, 0, 0]);
     K.add('jetHull', zoned(pod, 1));
     const disp = roundedBox(0.16, 0.012, 0.09, 0.004);
-    xf(disp, [0, hoodTop(0.3) + 0.085, zAt(0.285)], [0.38, 0, 0]);
+    xf(disp, [0, hoodTop(0.3) + 0.115, zAt(0.285)], [0.5, 0, 0]);
     K.add('gauge', disp);
     // smoked visor in front of the pod
     const rows = [];
@@ -2563,7 +2603,7 @@ function buildJetski(M, tier) {
       const row = [];
       for (let i = 0; i <= 10; i++) {
         const t = i / 10 - 0.5;
-        row.push([t * 0.42, hoodTop(0.27) + 0.03 + h, zAt(0.255) + back + 0.1 * t * t]);
+        row.push([t * 0.42, hoodTop(0.27) + 0.06 + h, zAt(0.255) + back + 0.1 * t * t]);
       }
       rows.push(row);
     }
@@ -2591,7 +2631,7 @@ function buildJetski(M, tier) {
       const s = lerp(sa, sb, t);
       const endF = Math.min(1, Math.min(t / 0.07, (1 - t) / 0.06));
       const ef = Math.sqrt(Math.max(0, 1 - (1 - endF) ** 2));
-      const top = 0.77 + 0.02 * smoothstep(0.55, 0.75, s) - 0.012 * Math.sin(Math.PI * (s - 0.45) / 0.2) * (s > 0.45 && s < 0.65 ? 1 : 0);
+      const top = 0.815 - 0.035 * smoothstep(0.42, 0.55, s) + 0.03 * smoothstep(0.64, 0.74, s);
       const hw = 0.215 * (0.35 + 0.65 * ef);
       const yb = yP - 0.01;
       const hgt = (top - yb) * (0.3 + 0.7 * ef);
@@ -2623,31 +2663,36 @@ function buildJetski(M, tier) {
       }
     }
     K.add('vinylBlack', g);
-    // grab handle behind the seat
+    // grab handle wrapped round the back of the seat
     const hp = [];
-    for (let k = 0; k <= 12; k++) {
-      const a = (k / 12) * Math.PI;
-      hp.push(new THREE.Vector3(Math.cos(a) * 0.17, yP - 0.02 + Math.sin(a) * 0.08, zAt(0.885)));
+    for (let k = 0; k <= 14; k++) {
+      const a = (k / 14) * Math.PI;
+      hp.push(new THREE.Vector3(Math.cos(a) * 0.2, yP - 0.035, zAt(S_PE) - 0.06 + Math.sin(a) * 0.1));
     }
     K.add('blackSatin', sweep(hp, circle(0.016, 8), { caps: true }));
   }
-  // footwell and platform mats
-  for (const sd of [1, -1]) {
+  // footwell mats and the platform mat
+  const matPiece = (s0, s1, rowAt, flip) => {
     const rows = [];
-    for (let k = 0; k <= 14; k++) {
-      const s = lerp(S_FW + 0.015, 0.99, k / 14);
-      const hG = gunHB(s);
-      const inner = s < S_PE ? xP + 0.04 : 0.0;
-      const row = [];
-      for (let i = 0; i <= 4; i++) row.push([sd * lerp(hG - 0.1, inner, i / 4), yFw + 0.006, zAt(s)]);
-      rows.push(row);
-    }
-    const g = loft(rows, { flip: sd > 0 });
+    for (let k = 0; k <= 12; k++) rows.push(rowAt(lerp(s0, s1, k / 12)));
+    const g = loft(rows, { flip });
     const p = g.attributes.position;
     const uv = g.attributes.uv;
     for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i), p.getZ(i));
     K.add('mat', g);
+  };
+  for (const sd of [1, -1]) {
+    matPiece(S_FW + 0.015, S_PE - 0.008, (s) => {
+      const row = [];
+      for (let i = 0; i <= 4; i++) row.push([sd * lerp(gunHB(s) - 0.1, xP + 0.04, i / 4), yFw + 0.006, zAt(s)]);
+      return row;
+    }, sd > 0);
   }
+  matPiece(S_PE + 0.012, 0.985, (s) => {
+    const row = [];
+    for (let i = 0; i <= 6; i++) row.push([lerp(gunHB(s) - 0.06, -(gunHB(s) - 0.06), i / 6), gunY(s) + 0.016, zAt(s)]);
+    return row;
+  }, true);
   // rub rail round the gunwale, sponsons, intake grate, ride plate, tow eye
   {
     const path = [];
@@ -2687,12 +2732,17 @@ function buildJetski(M, tier) {
     xf(ride, [0, keelY(0.95) + 0.03, zAt(0.95)]);
     K.add('steel', ride);
     K.add('chrome', xf(new THREE.TorusGeometry(0.03, 0.008, 6, 12), [0, 0.3, zAt(0.07) - 0.02], [0, Math.PI / 2, 0]));
-    K.add('chrome', xf(new THREE.TorusGeometry(0.03, 0.008, 6, 12), [0, yFw + 0.03, zAt(1) + 0.01], [0, Math.PI / 2, 0]));
+    K.add('chrome', xf(new THREE.TorusGeometry(0.03, 0.008, 6, 12), [0, gunY(1) - 0.09, zAt(1) + 0.01], [0, Math.PI / 2, 0]));
+    // fold-down reboarding step on the transom, off-centre above the nozzle
+    const step = roundedBox(0.2, 0.022, 0.09, 0.008);
+    xf(step, [0.2, gunY(1) - 0.2, zAt(1) + 0.055]);
+    K.add('blackSatin', step);
+    for (const sx of [0.13, 0.27]) K.add('blackSatin', rod(new THREE.Vector3(sx, gunY(1) - 0.05, zAt(1) + 0.004), new THREE.Vector3(sx, gunY(1) - 0.2, zAt(1) + 0.02), 0.009, 6));
   }
 
   // handlebars on a column tilted back, turning with the steering
   const steerTilt = new THREE.Group();
-  steerTilt.position.set(0, hoodTop(0.34) + 0.02, zAt(0.335));
+  steerTilt.position.set(0, hoodTop(0.34) + 0.06, zAt(0.335));
   steerTilt.rotation.x = 0.55;
   group.add(steerTilt);
   const steer = new THREE.Group();
@@ -2726,10 +2776,10 @@ function buildJetski(M, tier) {
 
   // steerable jet nozzle below the platform
   const nozzle = new THREE.Group();
-  nozzle.position.set(0, -0.02, zAt(1) - 0.02);
+  nozzle.position.set(0, -0.02, zAt(1) - 0.07);
   group.add(nozzle);
   {
-    const n = lathe([[0.095, 0.0], [0.09, 0.08], [0.075, 0.2], [0.07, 0.22], [0.06, 0.22], [0.064, 0.18], [0.08, 0.06], [0.085, 0.0]], 18);
+    const n = lathe([[0.085, 0.0], [0.08, 0.07], [0.066, 0.16], [0.062, 0.175], [0.052, 0.175], [0.056, 0.14], [0.07, 0.05], [0.075, 0.0]], 18);
     xf(n, [0, 0, 0], [Math.PI / 2, 0, 0]);
     nozzle.add(mesh(n, M.steel));
   }

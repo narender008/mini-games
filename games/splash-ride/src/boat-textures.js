@@ -236,7 +236,7 @@ export function teakTextures(size = 512) {
 // ------------------------------------------------------------ wood
 
 const WOODS = {
-  mahogany: { early: '#8a4327', late: '#5a2415', ray: '#9c5433', rings: 26, ribbon: 0.5, pores: 0.6 },
+  mahogany: { early: '#784222', late: '#4a2412', ray: '#8a522d', rings: 26, ribbon: 0.5, pores: 0.6 },
   spruce: { early: '#e2c088', late: '#b8894f', ray: '#e8cc9a', rings: 34, ribbon: 0.12, pores: 0.1 },
 };
 
@@ -472,37 +472,54 @@ export function sailTextures(size = 1024) {
       line(ctx, mainPx, [x1 - 0.1, y], [x1, y + 0.02], 14, isH ? '#ffffff' : 'rgba(150,135,110,0.3)');
     });
   }
-  // emblem: a red wave in a ring, and the sail number under it
-  {
-    const cx = 0.62;
-    const cy = 0.8 * m.luff;
-    const sx = ((half - 1) * 0.86) / m.foot / 100; // px per cm
-    const sy = ((H - 1) * 0.96) / m.luff / 100;
-    const [px, py] = mainPx(cx, cy);
-    g.save();
-    g.translate(px, py);
-    g.scale(sx, sy);
-    g.strokeStyle = '#1d3b6e';
-    g.lineWidth = 5;
-    g.beginPath();
-    g.arc(0, 0, 20, 0, Math.PI * 2);
-    g.stroke();
-    g.fillStyle = '#c8392f';
-    g.beginPath();
-    g.moveTo(-15, 4);
-    g.bezierCurveTo(-8, -10, 0, -10, 2, 0);
-    g.bezierCurveTo(4, 8, 12, 8, 15, -2);
-    g.lineTo(15, 8);
-    g.bezierCurveTo(8, 16, -8, 16, -15, 8);
-    g.closePath();
-    g.fill();
-    g.fillStyle = '#1d3b6e';
-    g.font = 'bold 44px "Helvetica Neue", Arial, sans-serif';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillText('27', 0, 62);
-    g.restore();
-  }
+  // emblem: a red wave in a ring, printed right through; the sail number is
+  // on both faces, the starboard one higher (as class rules have it). The
+  // starboard number is drawn mirrored, and the mask canvas (red = port
+  // number, green = starboard) lets the shader ghost whichever number is
+  // seen through the cloth from the other side.
+  const mc = document.createElement('canvas');
+  mc.width = W;
+  mc.height = H;
+  const mg = mc.getContext('2d');
+  mg.fillStyle = '#000';
+  mg.fillRect(0, 0, W, H);
+  const sx = ((half - 1) * 0.86) / m.foot / 100; // px per cm
+  const sy = ((H - 1) * 0.96) / m.luff / 100;
+  const stamp = (ctx, x, y, mirror, draw) => {
+    const [px, py] = mainPx(x, y);
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.scale(mirror ? -sx : sx, sy);
+    draw(ctx);
+    ctx.restore();
+  };
+  stamp(g, 0.33, 3.16, false, (c) => {
+    c.strokeStyle = '#1d3b6e';
+    c.lineWidth = 5;
+    c.beginPath();
+    c.arc(0, 0, 19, 0, Math.PI * 2);
+    c.stroke();
+    c.fillStyle = '#c8392f';
+    c.beginPath();
+    c.moveTo(-14, 4);
+    c.bezierCurveTo(-7, -9, 0, -9, 2, 0);
+    c.bezierCurveTo(4, 8, 11, 8, 14, -2);
+    c.lineTo(14, 8);
+    c.bezierCurveTo(7, 15, -7, 15, -14, 8);
+    c.closePath();
+    c.fill();
+  });
+  const number = (style) => (c) => {
+    c.fillStyle = style;
+    c.font = 'bold 42px "Helvetica Neue", Arial, sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText('27', 0, 0);
+  };
+  stamp(g, 0.46, 2.64, true, number('#1d3b6e'));
+  stamp(g, 0.5, 2.12, false, number('#1d3b6e'));
+  stamp(mg, 0.46, 2.64, true, number('#0f0'));
+  stamp(mg, 0.5, 2.12, false, number('#f00'));
 
   // --- jib
   const jt = [0, 0];
@@ -554,7 +571,16 @@ export function sailTextures(size = 1024) {
   for (let y = 0; y < H; y++) hfl.set(hb.subarray((H - 1 - y) * W, (H - y) * W), y * W);
   const map = canvasTexture(cv, true);
   map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
-  const normalMap = dataTexture(normalsFromHeight(hfl, W, H, 1.2, false), W, H, { wrap: false });
+  // normal map alpha: 0.5 plain cloth, towards 1 on the port number, 0 on the starboard one
+  const nd = normalsFromHeight(hfl, W, H, 1.2, false);
+  const mimg = mg.getImageData(0, 0, W, H).data;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const src = ((H - 1 - y) * W + x) * 4;
+      nd[(y * W + x) * 4 + 3] = Math.round(128 + 127 * (mimg[src] / 255) - 128 * (mimg[src + 1] / 255));
+    }
+  }
+  const normalMap = dataTexture(nd, W, H, { wrap: false });
   // UV rectangles of each sail inside the atlas, in metres -> uv
   const uvMain = (x, y) => [mainPx(x, y)[0] / W, 1 - mainPx(x, y)[1] / H];
   const uvJib = (x, y) => [jibPx(x, y)[0] / W, 1 - jibPx(x, y)[1] / H];

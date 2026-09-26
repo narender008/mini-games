@@ -161,6 +161,20 @@ export const PLACE = {
     { x: -230, z: -150, angle: 0.9 },
     { x: 60, z: 250, angle: 3.3 },
   ],
+  // Big kid buoy course: through the flags, round the little palm islet
+  // and back
+  course: {
+    gate: { x: 70, z: 95, angle: 0, width: 14 },
+    buoys: [
+      [82, 32],
+      [60, -38],
+      [4, -62],
+      [-58, -12],
+      [-48, 58],
+      [-8, 108],
+      [32, 128],
+    ],
+  },
   ramps: [
     { x: -30, z: -110, angle: 1.6 },
     { x: 200, z: -100, angle: 2.2 },

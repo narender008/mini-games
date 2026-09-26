@@ -17,7 +17,7 @@
 // shader; colours and patterns come from the fragment shader per species.
 import * as THREE from 'three';
 import { TAU, clamp, damp, rand, angleDiff } from '../config.js';
-import { MeshBuilder, profiles, animalMaterial, glslColor, instanced, instanceAttr, placeScaled, hide, awayFromLand, tierOf } from './shared.js';
+import { MeshBuilder, profiles, animalMaterial, glslColor, instanced, instanceAttr, placeScaled, hide, awayFromLand, boatFrame, keepClearOfBoat, HULL, tierOf } from './shared.js';
 
 const Z0 = -0.45; // snout, unit fish
 const BODY = profiles(
@@ -108,7 +108,7 @@ function fishGeometry(tier) {
 function fishMaterial() {
   return animalMaterial({
     name: 'fish',
-    physical: { roughness: 0.35, metalness: 0, clearcoat: 0.4, clearcoatRoughness: 0.2, specularIntensity: 0.6 },
+    physical: { roughness: 0.35, metalness: 0, clearcoat: 0.25, clearcoatRoughness: 0.2, specularIntensity: 0.6 },
     vertex: /* glsl */ `
 attribute vec4 aFish; // tail phase, wiggle amplitude, species, seed
 varying vec2 vFish;
@@ -118,6 +118,8 @@ float fWave(float s) {
 }
 `,
     deform: /* glsl */ `
+// a yellow tang's tall sail fins
+if (aFish.z < 0.5 && aPart > 0.5 && aPart < 2.5) p.y += sign(p.y) * max(0.0, abs(p.y) - 0.1) * 1.6;
 float s = p.z + 0.45;
 float x0 = fWave(s);
 float sx = (fWave(s + 0.01) - fWave(s - 0.01)) / 0.02;
@@ -143,7 +145,7 @@ float metal = 0.0;
 vec3 emis = vec3(0.0);
 if (sp == 0) {
   // yellow tang, with the little white spine by the tail
-  col = ${glslColor('#e9b90c')} * (0.95 + 0.1 * n1);
+  col = ${glslColor('#f4c400')} * (0.95 + 0.1 * n1);
   col = mix(col, ${glslColor('#d9a409')}, fin * 0.5);
   float spine = (1.0 - smoothstep(0.012, 0.02, length(vec2(p.y - 0.0, (p.z - 0.26) * 0.45)))) * (1.0 - fin);
   col = mix(col, vec3(0.8), spine);
@@ -176,14 +178,13 @@ if (sp == 0) {
   col = mix(col, vPart > 1.5 ? ${glslColor('#c0582a')} : ${glslColor('#6d6a58')}, fin);
   if (vPart > 2.5) col = mix(col, ${glslColor('#c0582a')}, step(p.y, 0.0) * 0.8);
 } else {
-  // glow fish: dark body, two rows of glowing spots along the belly
-  col = mix(${glslColor('#2a3a48')}, ${glslColor('#141d27')}, up);
-  vec2 g = vec2(p.z * 26.0, 0.0);
-  float row1 = 1.0 - smoothstep(0.012, 0.02, abs(p.y + 0.045));
-  float row2 = 1.0 - smoothstep(0.01, 0.018, abs(p.y + 0.085));
-  float dots = (1.0 - smoothstep(0.18, 0.32, abs(fract(g.x) - 0.5))) * max(row1, row2) * step(-0.35, p.z) * step(p.z, 0.25);
-  emis = ${glslColor('#4be3cf')} * (dots * 3.5 + 0.12 + 0.25 * fin);
-  col = mix(col, ${glslColor('#9ff2e6')}, dots * 0.5);
+  // glow fish: a soft blue-green glow, brightest along the belly, and a
+  // row of little round lights down each side
+  col = mix(${glslColor('#2c4c58')}, ${glslColor('#16262f')}, up);
+  float cz = (fract(p.z * 15.0) - 0.5) / 15.0;
+  float dots = (1.0 - smoothstep(0.009, 0.016, length(vec2(cz, p.y + 0.05)))) * step(-0.3, p.z) * step(p.z, 0.2) * (1.0 - fin);
+  emis = ${glslColor('#4be3cf')} * (dots * 2.2 + 0.18 + 0.3 * (1.0 - up) + 0.35 * fin);
+  col = mix(col, ${glslColor('#9ff2e6')}, dots * 0.4);
 }
 // eye: dark, glassy, with a thin light ring
 float de = length(vec3(abs(p.x), p.y, p.z) - F_EYE);
@@ -203,6 +204,7 @@ anEmis = emis;
 
 const _g = { x: 0, z: 0 };
 const _v = new THREE.Vector3();
+const _fr = { along: 0, across: 0 };
 
 export class Fish {
   constructor({ root, quality, world, events }, kind) {
@@ -470,6 +472,25 @@ export class Fish {
     P[i3] += Vv[i3] * dt;
     P[i3 + 1] = clamp(P[i3 + 1] + Vv[i3 + 1] * dt, -maxDepth, -0.35);
     P[i3 + 2] += Vv[i3 + 2] * dt;
+    // never in the hull's way: near the boat a fish keeps well below the keel,
+    // or slips aside where the water is too shallow for that
+    boatFrame(boat, P[i3], P[i3 + 2], _fr);
+    const out = Math.max(Math.abs(_fr.along) - HULL.half, Math.abs(_fr.across) - HULL.beam);
+    if (out < 1.5) {
+      if (maxDepth >= 1.4) {
+        const ceil = -0.35 - 0.95 * Math.min(1, (1.5 - out) / 1.5);
+        if (P[i3 + 1] > ceil) {
+          P[i3 + 1] = ceil;
+          Vv[i3 + 1] = Math.min(Vv[i3 + 1], 0);
+        }
+      } else {
+        _v.set(P[i3], 0, P[i3 + 2]);
+        if (keepClearOfBoat(boat, _v, 0.5)) {
+          P[i3] = _v.x;
+          P[i3 + 2] = _v.z;
+        }
+      }
+    }
   }
 
   // One fish near the boat leaps with a plop now and then.

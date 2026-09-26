@@ -49,7 +49,8 @@ void main() {
     col = vTint * (1.5 + 4.0 * core);
   } else {
     // water: mist (kind 1) is soft and wide, droplets (kind 0) are rounder
-    float soft = vKind > 0.5 ? exp(-r2 * 2.2) : smoothstep(1.0, 0.45, r2);
+    // (mist falls all the way to nothing at the sprite's rim, so no disc edge shows)
+    float soft = vKind > 0.5 ? (exp(-r2 * 3.0) - 0.0498) / 0.9502 : (1.0 - smoothstep(0.45, 1.0, r2));
     a = soft * (1.0 - vLife * vLife) * (vKind > 0.5 ? 0.16 : 0.85);
     col = vTint * (uAmbient * 0.95 + uSunColor * 0.22);
     // droplets catch the sun as a tiny bright glint

@@ -34,11 +34,11 @@
 //
 // Everything runs on any BaseAudioContext, so _dev/audio.html renders and
 // measures every sound offline without playing anything aloud.
-import { load, save, clamp, rand, pick, smoothstep, BOATS, TAU } from './config.js';
+import { load, save, clamp, rand, smoothstep, BOATS, TAU } from './config.js';
 import { Music, KEYS, LEADS, penta, renderNote, NOTE_RATE, styleNotes } from './music.js';
 import {
-  Ambience, CALLS, distGain, distCut, seeded, secs, logRand, Biquad, filt, lp1, white, pinkify, grain, damped, bubble, voiced, mix, normalise,
-  fadeTail, trim, finish, toBuffer, renderIR, rushLoop, fizzLoop, burbleLoop, lapLoop, chuckleLoop, gustLoop, flutterLoop, removeDC, periodic,
+  Ambience, CALLS, distGain, distCut, seeded, secs, logRand, Biquad, filt, white, pinkify, grain, damped, bubble, voiced, mix, normalise,
+  fadeTail, finish, toBuffer, renderIR, rushLoop, fizzLoop, burbleLoop, lapLoop, chuckleLoop, gustLoop, flutterLoop, removeDC, periodic,
 } from './ambience.js';
 
 // ------------------------------------------------------------ levels
@@ -58,7 +58,7 @@ const CAP = { splash: 6, slap: 4, bump: 3, animal: 4, amb: 6, paddle: 4, flap: 4
 const K = {
   rush: 0.13, wake: 0.06, spray: 0.05, wind: 0.035, lap: 0.25,
   motor: 0.17, burble: 0.1, prop: 0.06,
-  jet: 0.055, core: 0.028, jetSpray: 0.035,
+  jet: 0.06, core: 0.035, jetSpray: 0.035,
   whirr: 0.022, hiss: 0.008, churn: 0.07, paddle: 0.12,
   chuckle: 0.3, sailWind: 0.06, luff: 0.05, flap: 0.12, creak: 0.06,
 };
@@ -71,16 +71,17 @@ const LV = {
   click: 0.12, select: 0.12, fill: 0.14,
 };
 // the animals, at 10 m
-const ANIMAL = { dolphin: 0.24, duck: 0.17, gull: 0.15, frog: 0.17, splashfish: 0.24 };
+const ANIMAL = { dolphin: 0.24, duck: 0.35, gull: 0.25, frog: 0.35, splashfish: 1 };
 
 // How each hull colours a wave slap and a bump: playback rate, brightness.
-// A sailboat and a pedal boat slip through the water more quietly, so they
-// get less of the common rush and spray (`water`).
+// A sailboat and a pedal boat slip through the water more quietly, and a
+// jet ski skims on top of it, so they get less of the common rush and spray
+// (`water`) and a duller rush (`bright`, scales its lowpass).
 const HULL = {
-  speedboat: { rate: 1, cut: 3200, gain: 1, water: 1 },
-  sailboat: { rate: 0.85, cut: 2600, gain: 1, water: 0.7 },
-  duck: { rate: 0.75, cut: 1700, gain: 0.9, water: 0.7 },
-  jetski: { rate: 1.12, cut: 3000, gain: 0.85, water: 1 },
+  speedboat: { rate: 1, cut: 3200, gain: 1, water: 1, bright: 1 },
+  sailboat: { rate: 0.85, cut: 2600, gain: 1, water: 0.7, bright: 1 },
+  duck: { rate: 0.75, cut: 1700, gain: 0.9, water: 0.7, bright: 0.9 },
+  jetski: { rate: 1.12, cut: 3000, gain: 0.85, water: 0.8, bright: 0.7 },
 };
 
 // Each place's space (a generated impulse response: reverb time, how the
@@ -1148,9 +1149,10 @@ export class Audio {
     const W = this.water;
     // in the air the water lets go at once
     const tw = air ? 0.04 : 0.1;
-    const hw = HULL[this.boat].water;
+    const hull = HULL[this.boat];
+    const hw = hull.water;
     set(W.rushG.gain, K.rush * hw * v ** 1.3 * (1 + 0.35 * Math.abs(turn) * v) * wet, tw);
-    set(W.rushLP.frequency, 700 + 4300 * v ** 0.8, 0.12);
+    set(W.rushLP.frequency, (700 + 4300 * v ** 0.8) * hull.bright, 0.12);
     set(W.wakeG.gain, K.wake * unit(s.wake01) * (air ? 0.5 : 1), 0.2);
     // bow spray is thrown to the outside of a turn
     set(W.sprayG.gain, K.spray * hw * unit(s.spray01) * wet, tw);
@@ -1288,7 +1290,7 @@ export class Audio {
       v.coreG = level();
       v.core.connect(filter(ctx, 'lowpass', 600, 0.7)).connect(v.coreG);
       v.jsG = level();
-      const jl = filter(ctx, 'lowpass', 2400, 0.6);
+      const jl = filter(ctx, 'lowpass', 2000, 0.6);
       jl.connect(filter(ctx, 'highpass', 500, 0.6)).connect(v.jsG);
       src('fizz', 0.85, 0, jl);
       src('rush', 1.1, 0, jl);
@@ -1343,8 +1345,8 @@ export class Audio {
       set(v.washG.gain, K.prop * x * wet * (1 + 0.3 * boost), air ? 0.04 : 0.1);
     } else if (v.kind === 'jetski') {
       const y = x + 0.15 * boost;
-      set(v.jetBP.frequency, 350 + 700 * y, 0.2);
-      set(v.jetLP.frequency, 900 + 700 * y, 0.2);
+      set(v.jetBP.frequency, 300 + 500 * y, 0.2);
+      set(v.jetLP.frequency, 800 + 500 * y, 0.2);
       set(v.jetG.gain, K.jet * (0.3 + 0.7 * x) * (1 + 0.25 * boost) * (air ? 0.8 : 1), 0.15);
       set(v.core.frequency, (55 + 95 * x) * (1 + 0.06 * boost) * (air ? 1.12 : 1), air ? 0.12 : 0.25);
       set(v.coreG.gain, K.core * (0.4 + 0.6 * x), 0.15);

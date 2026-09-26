@@ -583,6 +583,32 @@ body[data-mode='little'] .big-only {
   }
 }
 
+#target-arrow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 224, 102, 0.9);
+  box-shadow: 0 6px 16px rgba(4, 22, 32, 0.3);
+  pointer-events: none;
+  color: #8a4a08;
+}
+
+#target-arrow svg {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 #wheel {
   position: absolute;
   left: calc(var(--edge) + 8px + var(--safe-l));

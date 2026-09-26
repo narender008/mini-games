@@ -575,16 +575,38 @@ export function awayFromLand(world, x, z, out, h = 1.5) {
 // Heading (rotation.y) of a direction (dx, dz) in the game's convention.
 export const headingOf = (dx, dz) => Math.atan2(-dx, -dz);
 
-// Events with every hook present, so callers never need to check.
+// Events with every hook present, so callers never need to check. Ripples
+// are rationed: the game's water keeps only a few dozen rings at once, and
+// the boat's own splashes matter more. `ripple` (a dolphin surfacing, a
+// turtle breathing, a fish landing) may use the whole allowance; `softRipple`
+// (a duck paddling, a swallow dipping) only what is left over.
 const noop = () => {};
+const RIPPLE_RATE = 1.2; // rings a second, on average
+const RIPPLE_BURST = 5;
 export function safeEvents(events = {}) {
-  return {
-    splash: events.splash || noop,
+  const ripple = events.ripple || noop;
+  const splash = events.splash || noop;
+  const ev = {
+    splash,
     sound: events.sound || noop,
-    ripple: events.ripple || noop,
+    tokens: RIPPLE_BURST,
+    ripple(x, z, s) {
+      if (ev.tokens < 1) return;
+      ev.tokens -= 1;
+      ripple(x, z, s);
+    },
+    softRipple(x, z, s) {
+      if (ev.tokens < 2.5) return;
+      ev.tokens -= 1;
+      ripple(x, z, s);
+    },
     // optional: a dolphin's breath (a small puff of mist); falls back to a tiny splash
-    blow: events.blow || ((pos) => (events.splash || noop)(pos, 0.08)),
+    blow: events.blow || ((pos) => splash(pos, 0.08)),
+    tick(dt) {
+      ev.tokens = Math.min(RIPPLE_BURST, ev.tokens + dt * RIPPLE_RATE);
+    },
   };
+  return ev;
 }
 
 // Quality tier helper: 'high' | 'medium' | 'low'.

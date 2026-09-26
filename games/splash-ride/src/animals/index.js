@@ -13,7 +13,8 @@
 //           birds: 'gull'|'swallow'|'pigeon'|null, ducks: n families }
 // events: { splash(pos, strength01), sound(kind, pos), ripple(x, z, strength01),
 //           blow?(pos) } - blow (a dolphin's breath) is optional and falls back
-//           to a tiny splash.
+//           to a tiny splash. Ripples are rationed to about 1.2 rings a
+//           second in all, so they never crowd out the boat's own.
 // boat:   { pos: Vector3, heading, speed, vel: Vector3 }
 //
 // Every kind is one InstancedMesh (one draw call, plus one shadow pass where
@@ -31,7 +32,8 @@ export class Animals {
     this.root = new THREE.Group();
     this.root.name = 'animals';
     scene.add(this.root);
-    const ctx = { root: this.root, quality, world, events: safeEvents(events) };
+    this.events = safeEvents(events);
+    const ctx = { root: this.root, quality, world, events: this.events };
     this.dolphins = kinds.dolphins ? new Dolphins(ctx) : null;
     this.turtles = kinds.turtles > 0 ? new Turtles(ctx, kinds.turtles) : null;
     this.fish = kinds.fish ? new Fish(ctx, kinds.fish) : null;
@@ -43,6 +45,7 @@ export class Animals {
   update(dt, time, boat) {
     if (!this.root.visible) return;
     const step = Math.min(Math.max(dt, 0), 0.1);
+    this.events.tick(step);
     for (const p of this.parts) p.update(step, time, boat);
   }
 

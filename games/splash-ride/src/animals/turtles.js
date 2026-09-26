@@ -270,7 +270,7 @@ if (vPart < 0.5) {
   float size = vPart < 1.5 ? 0.019 : vPart < 2.5 ? 0.024 : 0.018;
   vec3 cells = anCells(uv / size + vSeed * 9.0);
   float edge = 1.0 - smoothstep(0.025, 0.075, cells.x);
-  float under = smoothstep(0.0, -0.5, vRestN.y);
+  float under = (1.0 - smoothstep(-0.5, 0.0, vRestN.y));
   vec3 sc = mix(T_SCALE, T_BASE * 0.9, cells.y * 0.6);
   sc = mix(sc, T_PLAST * 0.9, under * 0.85);
   col = mix(sc, mix(T_EDGE, T_PLAST, under), edge);
