@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="0.5" cy="0.35" r="0.75">
+      <stop offset="0" stop-color="#8a5f8c"/>
+      <stop offset="1" stop-color="#3b2a4a"/>
+    </radialGradient>
+    <linearGradient id="rainbow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff6b6b"/>
+      <stop offset="0.25" stop-color="#ffc93c"/>
+      <stop offset="0.5" stop-color="#6ed36e"/>
+      <stop offset="0.75" stop-color="#4fa8ff"/>
+      <stop offset="1" stop-color="#b16cff"/>
+    </linearGradient>
+    <linearGradient id="ferrule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#9aa0a8"/>
+      <stop offset="0.45" stop-color="#f4f6f8"/>
+      <stop offset="1" stop-color="#8a9098"/>
+    </linearGradient>
+    <linearGradient id="handle" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e0574a"/>
+      <stop offset="1" stop-color="#9c2a20"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M104 372c46-110 110-160 176-128s96 14 112-50" stroke="url(#rainbow)" stroke-width="58" fill="none" stroke-linecap="round"/>
+  <g transform="translate(318 236) rotate(35)">
+    <rect x="-22" y="16" width="44" height="178" rx="18" fill="url(#handle)"/>
+    <rect x="-27" y="-36" width="54" height="54" rx="4" fill="url(#ferrule)"/>
+    <path d="M-27-36c0-48 13-74 27-100 14 26 27 52 27 100z" fill="#ffd04a"/>
+    <path d="M-9-52c0-20 4-38 9-52" stroke="#fff4c0" stroke-width="7" fill="none" stroke-linecap="round"/>
+  </g>
+  <g fill="#fff">
+    <path d="M118 120l10 24 24 10-24 10-10 24-10-24-24-10 24-10z"/>
+    <path d="M400 88l7 16 16 7-16 7-7 16-7-16-16-7 16-7z"/>
+    <circle cx="190" cy="84" r="9"/>
+    <circle cx="430" cy="200" r="7"/>
+  </g>
+</svg>
