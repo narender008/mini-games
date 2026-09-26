@@ -779,7 +779,7 @@ class App {
       p.hover = uv.clone();
       p.speed = 0;
       p.lastUv = uv.clone();
-      this.canvas.setPointerCapture?.(e.pointerId);
+      capture(this.canvas, e.pointerId, true);
       this.paint.begin(this.brushSpec(), uv.x * this.paint.w, uv.y * this.paint.h, this.pressureOf(e));
       this.idleSinceStroke = 0;
     } else if (this.state === 'play' || this.state === 'menu') {
@@ -812,7 +812,7 @@ class App {
 
   endStroke() {
     const p = this.pointer;
-    if (p.id !== null) this.canvas.releasePointerCapture?.(p.id);
+    if (p.id !== null) capture(this.canvas, p.id, false);
     p.id = null;
     p.down = false;
     if (this.paint.painting) {
@@ -1106,6 +1106,17 @@ class App {
       friends: () => app.friends.list.map((e) => ({ kind: e.friend.info.id, x: +e.pos.x.toFixed(2), z: +e.pos.z.toFixed(2), state: e.state })),
       state: () => ({ state: app.state, mode: app.mode, coverage: +app.coverage.toFixed(3), strokes: app.paint.history.length, busy: app.alive.busy, magic: app.magicRun?.phase ?? null, scale: app.governor.scale, strain: app.governor.strain }),
     };
+  }
+}
+
+// pointer capture throws for a pointer the browser no longer tracks (lifted
+// already, or synthetic); that must never leave the brush stuck down
+function capture(el, id, on) {
+  try {
+    if (on) el.setPointerCapture?.(id);
+    else el.releasePointerCapture?.(id);
+  } catch {
+    // painting carries on without capture
   }
 }
 
