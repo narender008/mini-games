@@ -240,6 +240,7 @@ export class Layout {
       const lift = { inst, ride, intake, speed: ride.kinematic.speed, spacing: 0.034, riders: [], phase: 0, running: 0 };
       intake.end = { type: 'lift', lift };
       ride.start = { type: 'wall' };
+      inst.laneByName.outlet.start = { type: 'wall' };
       inst.lift = lift;
       inst.mech.lift = lift;
     }

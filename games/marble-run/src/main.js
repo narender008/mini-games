@@ -273,7 +273,7 @@ class App {
       // a piece held in Big kid goes back into the old level's run first
       if (this.build?.active) this.build.releaseGhost();
       this.ui.setLevel(id);
-      this.setLevel(id).then(() => this.build?.levelChanged?.());
+      this.levelLoad = this.setLevel(id).then(() => this.build?.levelChanged?.());
     } else if (key === 'mode') {
       document.body.dataset.mode = id;
       this.ui.setMode(id);
@@ -283,15 +283,18 @@ class App {
 
   // ------------------------------------------------------------ flow
 
-  startGame() {
+  async startGame() {
     this.audio.unlock();
     this.audio.click();
     this.state = 'playing';
     save('mode', this.sel.mode);
     this.ui.show('playing');
     this.startMode();
-    // a first marble so something happens straight away
-    if (this.sel.mode === 'little' && this.views.size === 0) setTimeout(() => this.dropMarble(), 600);
+    // a first marble so something happens straight away (once the level is in)
+    await this.levelLoad;
+    setTimeout(() => {
+      if (this.state === 'playing' && this.sel.mode === 'little' && this.views.size === 0 && this.level.id === this.levelId) this.dropMarble();
+    }, 600);
   }
 
   startMode() {
@@ -321,7 +324,6 @@ class App {
     this.stopBuild();
     this.state = 'menu';
     this.rig.stopFollow();
-    this.ui.setFollow(false);
     this.ui.show('menu');
   }
 
@@ -336,7 +338,6 @@ class App {
     this.audio.click();
     if (this.rig.following) this.rig.stopFollow();
     else this.followSomeone();
-    this.ui.setFollow(this.rig.following);
   }
 
   followSomeone() {
@@ -345,12 +346,10 @@ class App {
       // drop one and ride along with it (if there is anywhere to drop it)
       const m = this.dropMarble();
       if (m) this.rig.follow(m);
-      this.ui.setFollow(!!m);
       return;
     }
     // the newest marble has the most run ahead of it
     this.rig.follow(list[list.length - 1]);
-    this.ui.setFollow(true);
   }
 
   // ------------------------------------------------------------ marbles
@@ -416,10 +415,7 @@ class App {
     v.fade = 0.0001;
     this.fx.sparkle(m.pos.clone(), 1);
     this.audio.sparkle();
-    if (this.rig.followTarget === m) {
-      this.rig.stopFollow();
-      this.ui.setFollow(false);
-    }
+    if (this.rig.followTarget === m) this.rig.stopFollow();
   }
 
   clearMarbles() {
@@ -430,7 +426,6 @@ class App {
     this.views.clear();
     this.sim.clear();
     this.rig.stopFollow();
-    this.ui?.setFollow(false);
     // the bowl fills up again
     for (const o of this.bowlMarbles) o.visible = true;
   }
@@ -513,7 +508,6 @@ class App {
       this.lastInput = performance.now();
       this.rig.zoom(Math.exp(e.deltaY * 0.0012));
       this.rig.stopFollow();
-      this.ui?.setFollow(false);
     }, { passive: false });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('keydown', (e) => {
@@ -575,16 +569,12 @@ class App {
       }
       this.pinch = s;
       this.rig.stopFollow();
-      this.ui?.setFollow(false);
       return;
     }
     if (p.moved < 6) return;
     if (p.button === 2 || e.shiftKey) this.rig.pan(dx / h, dy / h);
     else this.rig.orbit((-dx / h) * 2.6, (dy / h) * 2.2);
-    if (this.rig.following) {
-      this.rig.stopFollow();
-      this.ui?.setFollow(false);
-    }
+    if (this.rig.following) this.rig.stopFollow();
   }
 
   onUp(e, cancelled = false) {
@@ -703,10 +693,8 @@ class App {
       this.followSomeone();
       this.lastInput = performance.now();
     }
-    if (this.rig.following && (!this.rig.followTarget || this.rig.followTarget.lost || this.rig.followTarget.state === 'gone')) {
-      this.rig.stopFollow();
-      this.ui?.setFollow(false);
-    }
+    if (this.rig.following && (!this.rig.followTarget || this.rig.followTarget.lost || this.rig.followTarget.state === 'gone')) this.rig.stopFollow();
+    this.ui?.setFollow(this.rig.following);
     this.rig.update(dt);
     // sharp where the camera looks (the ridden marble when following)
     this.post.setFocus(this.rig.focusDistance());

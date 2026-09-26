@@ -83,7 +83,12 @@ export class Builder {
     this.padGeo = new THREE.PlaneGeometry(CELL * 0.92, CELL * 0.92).rotateX(-Math.PI / 2);
     this.padMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.5, depthWrite: false });
     this.makeUI();
-    addEventListener('keydown', (e) => this.key(e));
+    addEventListener('keydown', (e) => {
+      this.pointed = false;
+      this.key(e);
+    });
+    addEventListener('pointerdown', () => (this.pointed = true), true);
+    addEventListener('focusin', (e) => (this.clickedControl = this.pointed ? e.target : null));
   }
 
   get def() {
@@ -179,8 +184,23 @@ export class Builder {
   changed() {
     this.app.applyLayout();
     this.refresh();
-    if (this.view === 'build') save(`build.${this.def.id}`, this.app.layout.toJSON());
+    if (this.view === 'build') this.store();
     else if (this.puzzle?.solved) this.unsolve();
+  }
+
+  // The run as kept on this device: a piece picked up and not yet put down
+  // still counts where it came from.
+  runJSON() {
+    const list = this.app.layout.toJSON();
+    if (this.ghost?.from) {
+      const { id, ...p } = this.ghost.from;
+      list.push(p);
+    }
+    return list;
+  }
+
+  store() {
+    save(`build.${this.def.id}`, this.runJSON());
   }
 
   pushUndo() {
@@ -357,8 +377,8 @@ export class Builder {
     this.releaseGhost();
     this.pushUndo();
     this.app.layout.remove(p.id);
-    this.changed();
     this.ghost = { type: p.type, rot: p.rot, i: p.i, j: p.j, level: p.level, h: p.h, out: p.out, from: { ...p }, joined: false, ok: true };
+    this.changed();
     this.showGhost();
     this.app.audio.pickup();
     this.showTools();
@@ -413,12 +433,12 @@ export class Builder {
   cancelGhost(quiet = false) {
     const g = this.ghost;
     if (!g) return;
+    this.dropGhost();
     if (g.from) {
       this.app.layout.add(g.from);
       this.undoStack.pop();
       this.changed();
     }
-    this.dropGhost();
     if (!quiet) this.app.audio.click();
   }
 
@@ -454,6 +474,7 @@ export class Builder {
     if (!g) return;
     const at = g.group.getWorldPosition(new THREE.Vector3());
     this.dropGhost();
+    if (this.view === 'build') this.store();
     this.app.audio.remove();
     this.app.fx.puff(at, 0.6);
   }
@@ -563,8 +584,10 @@ export class Builder {
   }
 
   key(e) {
+    if (!this.active || this.app.state !== 'playing' || e.target.closest?.('input')) return;
     const k = e.key;
-    if (!this.active || this.app.state !== 'playing' || e.target.closest?.(k === 'Enter' ? 'button, input, select, textarea, a' : 'input')) return;
+    const control = e.target.closest?.('button, select, textarea, a');
+    if (k === 'Enter' && control && control !== this.clickedControl) return;
     if (this.ghost) {
       if (k === 'r' || k === 'R') this.rotateGhost();
       else if (k === 'Enter') this.placeGhost();
@@ -680,7 +703,7 @@ export class Builder {
     } catch {
       /* no picture then */
     }
-    list.unshift({ t: Date.now(), layout: a.layout.toJSON(), pic });
+    list.unshift({ t: Date.now(), layout: this.runJSON(), pic });
     while (list.length > MAX_SAVES) list.pop();
     save(`saves.${this.def.id}`, list);
     a.audio.success?.(1);
@@ -748,7 +771,7 @@ export class Builder {
   left(type) {
     const pz = this.puzzle;
     if (!pz) return Infinity;
-    const used = this.app.layout.placements.filter((p) => !p.locked && p.type === type).length;
+    const used = this.app.layout.placements.filter((p) => !p.locked && p.type === type).length + (this.ghost?.from?.type === type ? 1 : 0);
     return (pz.kit[type] || 0) - used;
   }
 
@@ -891,6 +914,7 @@ export class Builder {
     this.toolsEl.hidden = !g;
     this.trayEl.classList.toggle('dim', !!g);
     if (g) this.toolsEl.querySelector('[data-act=remove]').hidden = !g.from;
+    this.updateTray();
   }
 
   toggleMore() {

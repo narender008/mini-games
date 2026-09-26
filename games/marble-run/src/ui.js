@@ -87,9 +87,11 @@ export class UI {
   }
 
   setFollow(on) {
+    if (this.following === on) return;
+    this.following = on;
     const b = $('follow-btn');
-    b.setAttribute('aria-pressed', String(!!on));
-    b.classList.toggle('on', !!on);
+    b.setAttribute('aria-pressed', String(on));
+    b.classList.toggle('on', on);
   }
 
   toggleSettings() {
