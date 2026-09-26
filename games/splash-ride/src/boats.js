@@ -6,10 +6,13 @@
 // a sharp stem, a flat transom); the duck is an inflatable, so it is a smooth
 // union of blobs turned into a mesh with surface nets. Parts that share a
 // material are merged, so each boat is about a dozen draw calls. Paint
-// stripes, clinker laps, welded vinyl seams and the slight waviness of
-// moulded and inflated skins are worked out in the shaders from each
-// vertex's place on the hull; upholstery, teak, varnished wood, sail cloth
-// and rope use the baked maps from boat-textures.js.
+// stripes, clinker laps, welded vinyl seams, the duck's moulded feathers,
+// non-slip decks, the scum line and wet band at the waterline, clearcoat
+// smudges and the slight waviness of moulded and inflated skins are worked
+// out in the shaders from each vertex's place on the boat, and names and
+// numbers are projected onto hulls from a decal atlas; upholstery, teak,
+// varnished wood, sail cloth and rope use the baked maps from
+// boat-textures.js.
 //
 // Every boat faces -z with its origin on the waterline, midships. The part
 // below y = 0 is the underwater hull, closed and painted, since clear water
@@ -21,7 +24,7 @@ import * as THREE from 'three';
 import { clamp, lerp, damp, smoothstep, TAU } from './config.js';
 import {
   vinylTextures, teakTextures, woodTextures, ropeTextures, matTextures,
-  sailTextures, eyeTexture, flagTexture, SAIL, mainChord,
+  sailTextures, eyeTexture, flagTexture, decalAtlas, SAIL, mainChord,
 } from './boat-textures.js';
 
 export const BOAT_IDS = ['speedboat', 'sailboat', 'duck', 'jetski'];
@@ -407,6 +410,7 @@ function merge(list) {
       const a = g.attributes[k];
       if (a) arrays[k].set(a.array.subarray(0, c * size), vo * size);
       else if (k === 'aGirth') for (let i = 0; i < c; i++) arrays[k].set([-1, -1, 1], (vo + i) * 3);
+      else if (k === 'aAO') arrays[k].fill(1, vo, vo + c);
     }
     if (g.index) for (let i = 0; i < g.index.count; i++) idx[io + i] = g.index.array[i] + vo;
     else for (let i = 0; i < c; i++) idx[io + i] = vo + i;
@@ -635,6 +639,29 @@ function surfaceNets(f, lo, hi, cell) {
   return orient(g);
 }
 
+// Ambient occlusion baked into a mesh from its SDF (IQ): how much the field
+// closes in along each vertex normal, stored as aAO (1 open, 0 buried).
+function bakeAO(g, f, offset = [0, 0, 0], k = 2.2) {
+  const p = g.attributes.position;
+  const n = g.attributes.normal;
+  const ao = new Float32Array(p.count);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i) + offset[0];
+    const y = p.getY(i) + offset[1];
+    const z = p.getZ(i) + offset[2];
+    let occ = 0;
+    let w = 1;
+    for (let s = 1; s <= 5; s++) {
+      const h = 0.025 + 0.055 * s;
+      occ += (h - f(x + n.getX(i) * h, y + n.getY(i) * h, z + n.getZ(i) * h)) * w;
+      w *= 0.7;
+    }
+    ao[i] = clamp(1 - k * occ, 0, 1);
+  }
+  g.setAttribute('aAO', new THREE.BufferAttribute(ao, 1));
+  return g;
+}
+
 // SDF primitives (IQ)
 const sdEllipsoid = (x, y, z, rx, ry, rz) => {
   const k0 = Math.hypot(x / rx, y / ry, z / rz);
@@ -694,11 +721,78 @@ float bhBand(float x, float a, float b) {
 }
 `;
 
+// Decals projected in the boat's own space: a centre, two axes across the
+// print (each with 1 / half its size), how deep the projection reaches and a
+// cell of the decal atlas. With `mirror` the print repeats on the port side,
+// still reading left to right; it only lands on faces turned towards the
+// viewer of the print. Patched
+// into a material after its colour is worked out, so hull paint, vinyl and
+// varnish can all carry names and numbers without an extra draw call.
+function decalUniforms(atlas, list) {
+  const v4 = () => list.map(() => new THREE.Vector4());
+  const u = { bdMap: { value: atlas.map }, bdC: { value: v4() }, bdU: { value: v4() }, bdV: { value: v4() }, bdR: { value: v4() } };
+  list.forEach((d, i) => {
+    const U = new THREE.Vector3(...d.u).normalize();
+    const V = new THREE.Vector3(...d.v).normalize();
+    u.bdC.value[i].set(...d.at, (d.mirror ? -1 : 1) * (d.depth ?? 0.1));
+    u.bdU.value[i].set(U.x, U.y, U.z, 2 / d.size[0]);
+    u.bdV.value[i].set(V.x, V.y, V.z, 2 / d.size[1]);
+    u.bdR.value[i].set(...atlas.rect(d.cell));
+  });
+  return u;
+}
+
+function patchDecals(sh, u, count, rough = 0.3) {
+  if (!count) return;
+  Object.assign(sh.uniforms, u);
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', '#include <common>\nvarying vec3 vBdPos;\nvarying vec3 vBdNrm;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBdPos = position;\nvBdNrm = objectNormal;');
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', /* glsl */ `#include <common>
+#define BD_N ${count}
+uniform sampler2D bdMap;
+uniform vec4 bdC[BD_N];
+uniform vec4 bdU[BD_N];
+uniform vec4 bdV[BD_N];
+uniform vec4 bdR[BD_N];
+varying vec3 vBdPos;
+varying vec3 vBdNrm;
+float bdApply(vec3 p, vec3 n, inout vec3 col) {
+  float a = 0.0;
+  for (int i = 0; i < BD_N; i++) {
+    vec3 q = p;
+    vec3 m = n;
+    float sx = 1.0;
+    if (bdC[i].w < 0.0) {
+      sx = q.x < 0.0 ? -1.0 : 1.0;
+      q.x = abs(q.x);
+      m.x = abs(m.x);
+    }
+    vec3 d = q - bdC[i].xyz;
+    vec3 f = cross(bdU[i].xyz, bdV[i].xyz);
+    vec2 st = vec2(dot(d, bdU[i].xyz) * bdU[i].w * sx, dot(d, bdV[i].xyz) * bdV[i].w) * 0.5 + 0.5;
+    float inside = step(0.0, st.x) * step(st.x, 1.0) * step(0.0, st.y) * step(st.y, 1.0)
+      * smoothstep(0.15, 0.35, dot(normalize(m), f)) * step(abs(dot(d, f)), abs(bdC[i].w));
+    vec4 c = texture2D(bdMap, mix(bdR[i].xy, bdR[i].zw, clamp(st, 0.0, 1.0)));
+    c.a *= inside;
+    col = mix(col, c.rgb, c.a);
+    a = max(a, c.a);
+  }
+  return a;
+}`)
+    .replace('#include <color_fragment>', '#include <color_fragment>\nfloat bdA = bdApply(vBdPos, vBdNrm, diffuseColor.rgb);')
+    .replace('#include <metalnessmap_fragment>', `roughnessFactor = mix(roughnessFactor, ${rough.toFixed(3)}, bdA);\n#include <metalnessmap_fragment>`);
+}
+
 // Painted or gelcoated hull. Zone 0 is the outside: topside colour, a sheer
 // stripe and pinstripe at set distances below the sheer, a boot stripe and
-// bottom paint by height. Zone 1 is the deck, liner or inside of the boat.
-// Optional clinker laps (planks per side) and a faint orange-peel waviness.
-function hullPaint(o) {
+// bottom paint by height, a faint scum line at the waterline with the skin
+// wet and glossier just above it. Zone 1 is the deck, liner or inside of the
+// boat, with a moulded non-slip pattern on its level walking surfaces.
+// Optional clinker laps (planks per side), a faint orange-peel waviness,
+// smudges in the clearcoat and printed decals.
+function hullPaint(o, atlas) {
   const m = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
     roughness: 0.2,
@@ -717,13 +811,17 @@ function hullPaint(o) {
     hpBootY: { value: new THREE.Vector4(...(o.bootY ?? [-9, -9, -9, 0])) },
     hpK: { value: new THREE.Vector4(o.rough ?? 0.2, o.bottomRough ?? 0.6, o.bottomCoat ?? 0, o.deckRough ?? 0.3) },
     hpPlank: { value: new THREE.Vector4(o.planks ?? 0, o.lap ?? 0, o.peel ?? 0.00012, o.deckCoat ?? 1) },
+    // scum line height, its strength, top of the wet band, non-slip on the deck
+    hpWet: { value: new THREE.Vector4(o.waterline ?? 0.012, o.scum ?? 0.6, o.wetTop ?? 0.07, o.nonSlip ?? 0) },
   };
   const planks = o.planks ? 1 : 0;
+  const decals = o.decals && atlas ? o.decals : [];
+  const du = decals.length ? decalUniforms(atlas, decals) : null;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec3 aGirth;\nattribute float aZone;\nvarying vec3 vHpPos;\nvarying vec3 vHpGir;\nvarying float vHpZone;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvHpPos = position;\nvHpGir = aGirth;\nvHpZone = aZone;');
+      .replace('#include <common>', '#include <common>\nattribute vec3 aGirth;\nattribute float aZone;\nvarying vec3 vHpPos;\nvarying vec3 vHpGir;\nvarying float vHpZone;\nvarying float vHpUp;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvHpPos = position;\nvHpGir = aGirth;\nvHpZone = aZone;\nvHpUp = objectNormal.y;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 #define HP_PLANKS ${planks}
@@ -737,15 +835,18 @@ uniform vec4 hpStripeG;
 uniform vec4 hpBootY;
 uniform vec4 hpK;
 uniform vec4 hpPlank;
+uniform vec4 hpWet;
 varying vec3 vHpPos;
 varying vec3 vHpGir;
 varying float vHpZone;
+varying float vHpUp;
 ${GLSL_LIB}`)
       .replace('#include <map_fragment>', /* glsl */ `
 vec3 hpC = hpTop;
 float hpR = hpK.x;
 float hpCoat = 1.0;
 float hpH = 0.0;
+float hpCR = 0.0;
 if (vHpZone < 0.5) {
   hpC = mix(hpC, hpStripe, bhBand(vHpGir.x, hpStripeG.x, hpStripeG.y));
   hpC = mix(hpC, hpPin, bhBand(vHpGir.x, hpStripeG.z, hpStripeG.w));
@@ -755,10 +856,32 @@ if (vHpZone < 0.5) {
   hpC = mix(hpC, hpBottom, bot);
   hpR = mix(hpR, hpK.y, bot);
   hpCoat = mix(1.0, hpK.z, bot);
+  // waterline: a thin, broken yellow-brown film where the water laps, the
+  // skin darker and glossier with wet just above it
+  float ns = bhNoise(vHpPos * vec3(2.5, 1.0, 9.0));
+  float wl = vHpPos.y + (bhNoise(vHpPos * vec3(1.5, 0.0, 18.0)) - 0.5) * 0.012;
+  float scum = bhBand(wl, hpWet.x - 0.004, hpWet.x + 0.01 + ns * 0.012) * hpWet.y * smoothstep(0.25, 0.6, ns + 0.2);
+  hpC = mix(hpC, hpC * vec3(0.78, 0.72, 0.52), scum);
+  float wet = (1.0 - smoothstep(hpWet.x, hpWet.z, wl + (ns - 0.5) * 0.03)) * step(-0.02, vHpPos.y);
+  hpC *= 1.0 - 0.07 * wet;
+  hpR = mix(hpR, 0.05, wet * 0.7);
 } else {
   hpC = hpDeck;
   hpR = hpK.w;
   hpCoat = hpPlank.w;
+  // moulded non-slip on level walking surfaces: a fine raised diamond
+  // pattern, faded out with distance before it can shimmer
+  float ns = hpWet.w * smoothstep(0.86, 0.95, vHpUp);
+  if (ns > 0.0) {
+    vec2 g = vHpPos.xz * 160.0;
+    vec2 f = abs(fract(vec2(g.x + g.y, g.x - g.y) * 0.5) - 0.5);
+    float pad = smoothstep(0.06, 0.16, min(f.x, f.y));
+    float fade = 1.0 - smoothstep(0.35, 0.9, fwidth(g.x));
+    hpH += pad * 0.00035 * ns * fade;
+    hpR = mix(hpR, 0.62, ns);
+    hpCoat *= 1.0 - 0.75 * ns;
+    hpC *= 1.0 - 0.05 * ns * (1.0 - pad) * fade;
+  }
 }
 #if HP_PLANKS == 1
 if (vHpGir.y >= 0.0) {
@@ -771,20 +894,27 @@ if (vHpGir.y >= 0.0) {
 }
 #endif
 hpH += (bhNoise(vHpPos * 55.0) - 0.5) * hpPlank.z + (bhNoise(vHpPos * 6.0) - 0.5) * hpPlank.z * 4.0;
+// the clearcoat is never perfect: faint smudges and polish swirls
+hpCR = (bhNoise(vHpPos * 3.0 + 5.0) - 0.4) * 0.07 + pow(bhNoise(vHpPos * vec3(40.0, 40.0, 7.0)), 6.0) * 0.12;
 diffuseColor.rgb = hpC;`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = hpR;')
       .replace('#include <normal_fragment_maps>', 'normal = bhBump(-vViewPosition, normal, hpH, faceDirection);')
       .replace('#include <clearcoat_normal_fragment_maps>', '#ifdef USE_CLEARCOAT\nclearcoatNormal = normalize(mix(nonPerturbedNormal, normal, 0.9));\n#endif')
-      .replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\n#ifdef USE_CLEARCOAT\nmaterial.clearcoat *= hpCoat;\n#endif');
+      .replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\n#ifdef USE_CLEARCOAT\nmaterial.clearcoat *= hpCoat;\nmaterial.clearcoatRoughness = clamp(material.clearcoatRoughness + hpCR, 0.03, 1.0);\n#endif');
+    patchDecals(sh, du, decals.length, 0.22);
   };
-  m.customProgramCacheKey = () => `boat-hull-${planks}`;
+  m.customProgramCacheKey = () => `boat-hull-${planks}-${decals.length}`;
   m.userData.uniforms = u;
   return m;
 }
 
 // Glossy PVC for the inflatable: welded seams (a raised bead with the skin
-// pillowing into it) along two planes, a slightly wobbly inflated surface and
-// a little light bleeding through the vinyl at glancing angles.
+// pillowing into it and gathered into little puckers) along two planes and,
+// on a tube, across it every few tens of centimetres; a slightly wobbly
+// inflated surface with a fine embossed grain; handled, duller patches in
+// the gloss; a wet band and scum line at the waterline; a little light
+// bleeding through the vinyl at glancing angles. The duck's body also has
+// its tail and wing feathers moulded in, and baked crease occlusion (aAO).
 function inflatable(o) {
   const m = new THREE.MeshPhysicalMaterial({
     color: col(o.color),
@@ -799,44 +929,144 @@ function inflatable(o) {
     dvSeamA: { value: new THREE.Vector4(...(o.seamA ?? [0, 0, 0, 99])) },
     dvSeamB: { value: new THREE.Vector4(...(o.seamB ?? [0, 0, 0, 99])) },
     dvMask: { value: new THREE.Vector4(o.seamAFrom ?? -9, o.seamBMaxNy ?? 0.7, o.wobble ?? 0.0012, o.glow ?? 0.06) },
+    // tube segment length (0: none), top of the wet band, scum strength
+    dvSeg: { value: new THREE.Vector4(o.segment ?? 0, o.wetTop ?? -9, o.scum ?? 0, 0) },
   };
+  const feathers = o.feathers ? 1 : 0;
+  const ao = o.ao ? 1 : 0;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vDvPos;\nvarying vec3 vDvNrm;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvDvPos = position;\nvDvNrm = objectNormal;');
+      .replace('#include <common>', `#include <common>
+#define DV_AO ${ao}
+varying vec3 vDvPos;
+varying vec3 vDvNrm;
+varying vec2 vDvUv;
+#if DV_AO == 1
+attribute float aAO;
+varying float vDvAO;
+#endif`)
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvDvPos = position;\nvDvNrm = objectNormal;\nvDvUv = uv;\n#if DV_AO == 1\nvDvAO = aAO;\n#endif');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
+#define DV_FEATHERS ${feathers}
+#define DV_AO ${ao}
 uniform vec4 dvSeamA;
 uniform vec4 dvSeamB;
 uniform vec4 dvMask;
+uniform vec4 dvSeg;
 varying vec3 vDvPos;
 varying vec3 vDvNrm;
-${GLSL_LIB}`)
+varying vec2 vDvUv;
+#if DV_AO == 1
+varying float vDvAO;
+#endif
+${GLSL_LIB}
+// a groove of depth 1 and half-width w at distance d
+float dvGroove(float d, float w) { return 1.0 - smoothstep(0.0, w, d); }`)
       .replace('#include <map_fragment>', /* glsl */ `
 #include <map_fragment>
 float dvH = 0.0;
 float dvBead = 0.0;
+float dvRough = 0.0;
+float dvCoatR = 0.0;
 {
-  float dA = abs(dot(vDvPos, dvSeamA.xyz) - dvSeamA.w);
-  float mA = smoothstep(dvMask.x - 0.02, dvMask.x + 0.02, vDvPos.y);
-  float dB = abs(dot(vDvPos, dvSeamB.xyz) - dvSeamB.w);
-  float mB = 1.0 - smoothstep(dvMask.y - 0.1, dvMask.y, abs(normalize(vDvNrm).y));
-  dvBead = max(mA * (1.0 - smoothstep(0.0015, 0.0045, dA)), mB * (1.0 - smoothstep(0.0015, 0.0045, dB)));
-  dvH -= mA * 0.005 * exp(-dA / 0.03) + mB * 0.005 * exp(-dB / 0.03);
+  vec3 P = vDvPos;
+  vec3 N = normalize(vDvNrm);
+  float px = length(fwidth(P));
+  float dA = abs(dot(P, dvSeamA.xyz) - dvSeamA.w);
+  float mA = smoothstep(dvMask.x - 0.02, dvMask.x + 0.02, P.y);
+  float dB = abs(dot(P, dvSeamB.xyz) - dvSeamB.w);
+  float mB = 1.0 - smoothstep(dvMask.y - 0.1, dvMask.y, abs(N.y));
+  float dC = 9.0;
+  if (dvSeg.x > 0.0 && vDvUv.x > 0.001) dC = abs(fract(vDvUv.x / dvSeg.x) - 0.5) * dvSeg.x;
+  float bw = max(0.0045, px * 1.2);
+  dvBead = max(max(mA * dvGroove(dA, bw), mB * dvGroove(dB, bw)), dvGroove(dC, bw));
+  float near = mA * exp(-dA / 0.02) + mB * exp(-dB / 0.02) + exp(-dC / 0.02);
+  dvH -= (mA * exp(-dA / 0.03) + mB * exp(-dB / 0.03) + exp(-dC / 0.03)) * 0.005;
   dvH += dvBead * 0.0012;
-  dvH += (bhNoise(vDvPos * 3.2) - 0.5) * dvMask.z + (bhNoise(vDvPos * 9.0 + 7.0) - 0.5) * dvMask.z * 0.35;
+  // puckers: short wrinkles across each weld where the skin was gathered
+  float along = (P.x + P.y + P.z) * 150.0;
+  float wr = sin(along + bhNoise(P * 18.0) * 7.0) * smoothstep(0.35, 0.8, bhNoise(P * 9.0 + 3.0));
+  dvH += wr * 0.0007 * near * (1.0 - smoothstep(0.004, 0.012, px));
+  // the inflated skin: a slight waviness, and a fine embossed grain
+  dvH += (bhNoise(P * 3.2) - 0.5) * dvMask.z + (bhNoise(P * 9.0 + 7.0) - 0.5) * dvMask.z * 0.35;
+  dvH += (bhNoise(P * 700.0) - 0.5) * 0.00004 * (1.0 - smoothstep(0.0006, 0.0016, px));
+  // gloss that has been handled and sun-dulled in patches
+  float sm = bhNoise(P * 2.1 + 11.0);
+  dvRough += (sm - 0.45) * 0.16 + (bhNoise(P * 13.0) - 0.5) * 0.06;
+  dvCoatR += max(sm - 0.5, 0.0) * 0.14;
+#if DV_FEATHERS == 1
+  {
+    // tail: a flat, upswept fan (as the body's SDF) with four grooves
+    // between five feathers, fanning out towards the tip
+    vec3 q = P - vec3(0.0, 0.9, 1.08);
+    float al = q.z * 0.6600 + q.y * 0.7513;
+    float t = clamp(al / 0.5, 0.0, 1.0);
+    float w = 0.36 * (1.0 - 0.5 * t);
+    float xn = P.x / w;
+    float g = fract(xn * 2.5 + 0.5);
+    float gd = min(g, 1.0 - g) / 2.5 * w;
+    float onTail = smoothstep(0.06, 0.2, al) * (1.0 - smoothstep(0.85, 1.05, abs(xn)));
+    float groove = dvGroove(gd, 0.012) * step(0.2, abs(xn));
+    float quill = dvGroove(abs(min(g, 1.0 - g) - 0.5) / 2.5 * w, 0.02);
+    dvH += onTail * (-0.006 * groove + 0.0015 * quill);
+    diffuseColor.rgb *= 1.0 - onTail * groove * 0.12;
+    // wings: four long primaries moulded into the back half of each wing
+    vec3 wq = vec3(abs(P.x) - 0.69, P.y - 0.56, P.z - 0.28);
+    float wy = wq.y * 0.9838 - wq.z * 0.1790;
+    float wz = wq.y * 0.1790 + wq.z * 0.9838;
+    float onWing = smoothstep(0.04, 0.1, abs(P.x) - 0.6) * smoothstep(-0.05, 0.2, wz) * (1.0 - smoothstep(0.17, 0.24, abs(wy + 0.02)));
+    float ly = (wy + 0.16 * (wz / 0.6) * (wz / 0.6)) / 0.075;
+    float lg = fract(ly + 0.5);
+    float ld = min(lg, 1.0 - lg) * 0.075;
+    // each feather ends in a rounded tip, staggered along the wing
+    float tipZ = 0.46 - 0.05 * floor(ly + 0.5);
+    float tip = dvGroove(abs(wz - tipZ - 0.04 * sqrt(max(0.0, 1.0 - pow(fract(ly) * 2.0 - 1.0, 2.0)))), 0.01) * smoothstep(0.1, 0.2, wz);
+    dvH += onWing * (-0.005 * dvGroove(ld, 0.01) * smoothstep(0.05, 0.2, wz) - 0.004 * tip);
+    diffuseColor.rgb *= 1.0 - onWing * dvGroove(ld, 0.01) * 0.1;
+  }
+#endif
   diffuseColor.rgb *= 1.0 - 0.16 * dvBead;
+  // waterline: darker and glossy where wet, a broken brownish scum line
+  float nw = bhNoise(P * vec3(3.0, 1.0, 3.0) + 2.0);
+  float wl = P.y + (bhNoise(P * vec3(20.0, 0.0, 20.0)) - 0.5) * 0.012;
+  float wet = 1.0 - smoothstep(dvSeg.y - 0.03, dvSeg.y + 0.02, wl + (nw - 0.5) * 0.04);
+  diffuseColor.rgb *= 1.0 - 0.14 * wet;
+  dvRough -= 0.22 * wet;
+  float scum = bhBand(wl, 0.0, 0.012 + nw * 0.012) * dvSeg.z * smoothstep(0.3, 0.6, nw + 0.15);
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.62, 0.56, 0.4) + vec3(0.02, 0.018, 0.01), scum);
+  dvRough += scum * 0.3;
+#if DV_AO == 1
+  diffuseColor.rgb *= 0.72 + 0.28 * vDvAO;
+#endif
 }`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor + dvRough, 0.06, 1.0);')
       .replace('#include <normal_fragment_maps>', 'normal = bhBump(-vViewPosition, normal, dvH, faceDirection);')
       .replace('#include <clearcoat_normal_fragment_maps>', '#ifdef USE_CLEARCOAT\nclearcoatNormal = normal;\n#endif')
+      .replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\n#ifdef USE_CLEARCOAT\nmaterial.clearcoatRoughness = clamp(material.clearcoatRoughness + dvCoatR, 0.03, 1.0);\n#endif')
+      .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+#if DV_AO == 1
+{
+  float ambientOcclusion = mix(1.0, vDvAO, 0.9);
+  reflectedLight.indirectDiffuse *= ambientOcclusion;
+  #if defined( USE_CLEARCOAT )
+  clearcoatSpecularIndirect *= ambientOcclusion;
+  #endif
+  #if defined( USE_SHEEN )
+  sheenSpecularIndirect *= ambientOcclusion;
+  #endif
+  float dotNV = saturate(dot(geometryNormal, geometryViewDir));
+  reflectedLight.indirectSpecular *= computeSpecularOcclusion(dotNV, ambientOcclusion, material.roughness);
+}
+#endif`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 {
   float ndv = clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
   totalEmissiveRadiance += diffuseColor.rgb * dvMask.w * (0.3 + 0.7 * pow(1.0 - ndv, 2.0));
 }`);
   };
-  m.customProgramCacheKey = () => 'boat-inflatable';
+  m.customProgramCacheKey = () => `boat-inflatable-${feathers}-${ao}`;
   return m;
 }
 
@@ -903,6 +1133,30 @@ function glassMaterial(color, opacity) {
   return m;
 }
 
+// A boat's lower surfaces mirror the water, not the sky: every boat material
+// dims the environment's reflection for rays heading down, so the undersides
+// of tubes, chines and rails do not glow white at the waterline.
+const BELOW_GLSL = /* glsl */ `#include <lights_fragment_maps>
+{
+  vec3 bwR = inverseTransformDirection(reflect(-geometryViewDir, geometryNormal), viewMatrix);
+  float bwK = 1.0 - 0.78 * smoothstep(0.03, -0.3, bwR.y);
+  radiance *= bwK;
+  #ifdef USE_CLEARCOAT
+  clearcoatRadiance *= bwK;
+  #endif
+}`;
+
+function underWater(m) {
+  const prev = m.onBeforeCompile;
+  const key = m.customProgramCacheKey;
+  m.onBeforeCompile = (sh, r) => {
+    prev.call(m, sh, r);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_maps>', BELOW_GLSL);
+  };
+  m.customProgramCacheKey = () => `${key.call(m)}-bw`;
+  return m;
+}
+
 // Everything on every boat, made once and shared by all boats and ghosts.
 let LIB = null;
 let libUsers = 0;
@@ -928,6 +1182,7 @@ function library(tier) {
     sail: lazy(() => sailTextures(big ? 1024 : 512)),
     eye: lazy(() => eyeTexture()),
     flag: lazy(() => flagTexture()),
+    decal: lazy(() => decalAtlas(big ? 1024 : 512)),
   };
   // clones of a tiled texture set with its repeat for metre uv
   const tiled = (set, extra = 1) => {
@@ -942,15 +1197,18 @@ function library(tier) {
   };
   const M = {};
   const mat = (name, fn) => {
-    Object.defineProperty(M, name, { get: lazy(fn), enumerable: true });
+    Object.defineProperty(M, name, { get: lazy(() => underWater(fn())), enumerable: true });
   };
-  mat('chrome', () => new THREE.MeshStandardMaterial({ color: col('#e3e6ea'), metalness: 1, roughness: 0.1 }));
-  mat('steel', () => new THREE.MeshStandardMaterial({ color: col('#b9bdc2'), metalness: 1, roughness: 0.3 }));
+  // polished 316 stainless is a little darker and softer than chrome
+  mat('chrome', () => new THREE.MeshStandardMaterial({ color: col('#d2d5d8'), metalness: 1, roughness: 0.15 }));
+  mat('steel', () => new THREE.MeshStandardMaterial({ color: col('#b4b8bc'), metalness: 1, roughness: 0.32 }));
   mat('bronze', () => new THREE.MeshStandardMaterial({ color: col('#c89458'), metalness: 1, roughness: 0.34 }));
   mat('rubber', () => new THREE.MeshPhysicalMaterial({ color: col('#18191b'), roughness: 0.6, sheen: 0.3, sheenRoughness: 0.6, sheenColor: col('#666a70') }));
   mat('blackGloss', () => new THREE.MeshPhysicalMaterial({ color: col('#0c0d0e'), roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.06 }));
   mat('blackSatin', () => new THREE.MeshPhysicalMaterial({ color: col('#1b1c1e'), roughness: 0.42, clearcoat: 0.4, clearcoatRoughness: 0.25 }));
-  mat('whitePlastic', () => new THREE.MeshPhysicalMaterial({ color: col('#e6e6e1'), roughness: 0.3, clearcoat: 0.8, clearcoatRoughness: 0.12 }));
+  mat('whitePlastic', () => new THREE.MeshPhysicalMaterial({ color: col('#e4e3dd'), roughness: 0.4, clearcoat: 0.35, clearcoatRoughness: 0.22 }));
+  // printed parts mapped straight onto the decal atlas (the duck's stern board, tape, labels)
+  mat('print', () => new THREE.MeshPhysicalMaterial({ map: tex.decal().map, roughness: 0.38, clearcoat: 0.45, clearcoatRoughness: 0.14 }));
   mat('fender', () => new THREE.MeshPhysicalMaterial({ color: col('#ebebe6'), roughness: 0.28, clearcoat: 0.7, clearcoatRoughness: 0.15, sheen: 0.3 }));
   mat('windscreen', () => glassMaterial('#5b6b66', 0.34));
   mat('visor', () => glassMaterial('#3a4248', 0.55));
@@ -967,7 +1225,14 @@ function library(tier) {
   const varnish = (set) => new THREE.MeshPhysicalMaterial({
     color: 0xffffff, ...tiled(set), roughness: 0.42, normalScale: new THREE.Vector2(0.3, 0.3), clearcoat: 1, clearcoatRoughness: 0.07,
   });
-  mat('mahogany', () => varnish(tex.mahogany()));
+  mat('mahogany', () => {
+    // the dinghy's name in gold leaf on the port side of her transom
+    const m = varnish(tex.mahogany());
+    const du = decalUniforms(tex.decal(), [{ cell: 'sailName', at: [-0.33, 0.33, 2.112], u: [1, 0, 0], v: [0, 1, 0], size: [0.4, 0.1], depth: 0.03 }]);
+    m.onBeforeCompile = (sh) => patchDecals(sh, du, 1, 0.12);
+    m.customProgramCacheKey = () => 'boat-varnish-name';
+    return m;
+  });
   mat('spruce', () => varnish(tex.spruce()));
   const rope = (c) => new THREE.MeshPhysicalMaterial({
     color: col(c), ...tiled(tex.rope()), roughness: 0.85, sheen: 0.5, sheenRoughness: 0.6, sheenColor: col('#ffffff'),
@@ -981,20 +1246,35 @@ function library(tier) {
   mat('speedHull', () => hullPaint({
     top: '#ebebe6', stripe: '#d4463a', pin: '#1f2a44', boot: '#d4463a', bottom: '#e4e4de', deck: '#e9e8e2',
     stripeG: [0.07, 0.19, 0.225, 0.237], bootY: [0.03, 0.1, -9, 0], rough: 0.14, bottomRough: 0.22, bottomCoat: 0.8, deckRough: 0.3,
-  }));
+    nonSlip: 1, scum: 0.55,
+    decals: [
+      { cell: 'speedName', at: [0, 0.3, 2.3], u: [1, 0, 0], v: [0, 1, 0], size: [1.5, 0.375], depth: 0.05 },
+      { cell: 'speedReg', at: [0.5, 0.56, -1.38], u: [0, 0, -1], v: [0, 1, 0], size: [0.72, 0.09], depth: 0.3, mirror: true },
+    ],
+  }, tex.decal()));
   mat('sailHull', () => hullPaint({
     top: '#1b2c52', stripe: '#ecebe4', pin: '#ecebe4', boot: '#ecebe4', bottom: '#8e3526', deck: '#e4dcc6',
     stripeG: [0.03, 0.07, -2, -2], bootY: [0.0, 0.045, 0.0, 0], rough: 0.2, bottomRough: 0.75, bottomCoat: 0, deckRough: 0.42,
-    planks: 7, lap: 0.009, peel: 0.0002, coatRough: 0.07, deckCoat: 0.5,
+    planks: 7, lap: 0.009, peel: 0.0002, coatRough: 0.07, deckCoat: 0.5, waterline: 0.008, scum: 0.7, wetTop: 0.05,
   }));
   mat('jetHull', () => hullPaint({
     top: '#ecece8', stripe: '#0f9aa0', pin: '#2a2d31', boot: '#ecece8', bottom: '#e6e6e1', deck: '#0e98a0',
-    stripeG: [0.0, 0.2, 0.225, 0.245], bootY: [-9, -9, -9, 0], rough: 0.12, bottomRough: 0.2, bottomCoat: 0.9, deckRough: 0.16,
+    stripeG: [0.0, 0.11, 0.125, 0.14], bootY: [-9, -9, -9, 0], rough: 0.17, bottomRough: 0.24, bottomCoat: 0.8, deckRough: 0.42,
+    deckCoat: 0.25, scum: 0.5,
+    decals: [
+      { cell: 'jetGraphic', at: [0.5, 0.12, 0.37], u: [0, 0, -1], v: [0, 1, 0], size: [1.3, 0.13], depth: 0.4, mirror: true },
+      { cell: 'jetReg', at: [0.35, 0.3, -0.93], u: [0, 0, -1], v: [0, 1, 0], size: [0.5, 0.0625], depth: 0.3, mirror: true },
+    ],
+  }, tex.decal()));
+  // PVC yellow as it really comes, a touch warmer and less pure than paint
+  mat('duckYellow', () => inflatable({
+    color: '#f6bd08', seamA: [1, 0, 0, 0], seamAFrom: 0.62, seamB: [0, 1, 0, 0.4], glow: 0.07, feathers: true, ao: true, wetTop: 0.05, scum: 0.5,
   }));
-  mat('duckYellow', () => inflatable({ color: '#f7bf00', seamA: [1, 0, 0, 0], seamAFrom: 0.62, seamB: [0, 1, 0, 0.4], glow: 0.07 }));
-  mat('duckHead', () => inflatable({ color: '#f7bf00', seamA: [1, 0, 0, 0], seamAFrom: 0.55, seamB: [0, 1, 0, 0.12], glow: 0.07 }));
+  mat('duckHead', () => inflatable({ color: '#f6bd08', seamA: [1, 0, 0, 0], seamAFrom: 0.55, seamB: [0, 1, 0, 0.12], glow: 0.07, ao: true }));
   mat('beak', () => inflatable({ color: '#e9780f', seamA: [0, 1, 0, 0.728], seamAFrom: -9, glow: 0.05, wobble: 0.0005 }));
-  mat('collar', () => inflatable({ color: '#44576b', rough: 0.4, coatRough: 0.14, seamB: [0, 1, 0, 0.04], seamBMaxNy: 0.35, glow: 0.02 }));
+  mat('collar', () => inflatable({
+    color: '#44576b', rough: 0.4, coatRough: 0.14, seamB: [0, 1, 0, 0.04], seamBMaxNy: 0.35, glow: 0.02, segment: 0.46, wetTop: 0.07, scum: 0.7,
+  }));
   LIB = { tex, M, made };
   return LIB;
 }
@@ -1174,6 +1454,19 @@ function cleat(len = 0.15) {
   const f1 = xf(new THREE.CylinderGeometry(r * 0.9, r * 1.3, len * 0.2, 8), [0, len * 0.1, -len * 0.18]);
   const f2 = xf(new THREE.CylinderGeometry(r * 0.9, r * 1.3, len * 0.2, 8), [0, len * 0.1, len * 0.18]);
   return merge([horn, f1, f2]);
+}
+
+// A coil of rope lying flat on a deck, centred on the origin: a few loops
+// of slightly different sizes, each a little off centre and tilted.
+function ropeCoil(r = 0.1, loops = 4, thick = 0.008, hi = true) {
+  const list = [];
+  for (let k = 0; k < loops; k++) {
+    const g = new THREE.TorusGeometry(r * (1 - 0.06 * k), thick, hi ? 5 : 4, hi ? 22 : 14);
+    xf(g, [0, 0, 0], [Math.PI / 2 + 0.05 * Math.sin(k * 2.1), 0.3 * k, 0.04 * Math.cos(k * 1.7)]);
+    xf(g, [0.008 * Math.sin(k * 2.4), thick * (0.9 + 0.6 * k), 0.01 * Math.cos(k * 1.3)]);
+    list.push(g);
+  }
+  return merge(list);
 }
 
 // ================================================================ speedboat
@@ -1504,7 +1797,7 @@ function buildSpeedboat(M, tier) {
     K.add('fender', f);
     const eye = xf(new THREE.TorusGeometry(0.018, 0.006, 6, 12), [x, top + 0.012, zAt(s)], [0, Math.PI / 2, 0]);
     K.add('fender', eye);
-    K.add('rubber', rod(new THREE.Vector3(x, top + 0.02, zAt(s)), new THREE.Vector3(sd * (sheerHB(s) - 0.06), sheerY(s) + 0.03, zAt(s) + 0.04), 0.006, 6, false));
+    K.add('ropeCream', rod(new THREE.Vector3(x, top + 0.02, zAt(s)), new THREE.Vector3(sd * (sheerHB(s) - 0.06), sheerY(s) + 0.03, zAt(s) + 0.04), 0.006, 6, false));
   }
 
   // deck hardware: bow cleat, bow eye, grab rails, stern cleats, horns, lights
@@ -1652,6 +1945,36 @@ function buildSpeedboat(M, tier) {
       K.add('chrome', sweep(rail, circle(0.011, 8), { caps: true }));
     }
     for (const ry of [0.32, 0.02, -0.28]) K.add('chrome', rod(new THREE.Vector3(lx - 0.13, ry, zt + 0.095), new THREE.Vector3(lx + 0.13, ry, zt + 0.095), 0.012, 8));
+  }
+  // VHF whip antenna on a ratchet mount at the starboard gunwale, a coiled
+  // stern line on the aft deck, and a bilge pump outlet above the waterline
+  {
+    const s = 0.53;
+    const base = new THREE.Vector3(sheerHB(s) - 0.06, sheerY(s) + 0.016, zAt(s));
+    K.add('chrome', xf(new THREE.CylinderGeometry(0.018, 0.024, 0.07, 12), [base.x, base.y + 0.035, base.z]));
+    const tip = base.clone().add(new THREE.Vector3(0.05, 1.32, 0.18));
+    const whip = sweep([base.clone().setY(base.y + 0.06), tip], circle(0.009, 6), { caps: true, scale: (t) => 1 - 0.65 * t });
+    K.add('fender', whip);
+    const coil = ropeCoil(0.1, hi ? 4 : 3, 0.008, hi);
+    xf(coil, [0.42, sheerY(0.95) + 0.024, zAt(0.955)]);
+    K.add('ropeCream', coil);
+    const cz = zAt(0.94);
+    K.add('ropeCream', sweep([
+      new THREE.Vector3(0.5, sheerY(0.95) + 0.03, zAt(0.955) - 0.07), new THREE.Vector3(0.68, sheerY(0.94) + 0.035, cz - 0.02),
+      new THREE.Vector3(sheerHB(0.94) - 0.08, sheerY(0.94) + 0.05, cz),
+    ], circle(0.008, 6), { caps: true }));
+    // outlet: a chrome ring round a dark hole, on the starboard quarter
+    const so = 0.82;
+    const h = halfSection(so);
+    let ox = h[0][0];
+    for (let i = 0; i < h.length - 1; i++) {
+      if ((h[i][1] - 0.2) * (h[i + 1][1] - 0.2) <= 0) {
+        ox = lerp(h[i][0], h[i + 1][0], (0.2 - h[i][1]) / (h[i + 1][1] - h[i][1]));
+        break;
+      }
+    }
+    K.add('chrome', xf(new THREE.TorusGeometry(0.018, 0.005, 6, 14), [ox + 0.003, 0.2, zAt(so)], [0, Math.PI / 2, 0]));
+    K.add('gauge', xf(new THREE.CylinderGeometry(0.014, 0.014, 0.004, 12), [ox + 0.001, 0.2, zAt(so)], [0, 0, Math.PI / 2]));
   }
   const flagX = sheerHB(0.97) - 0.1;
   const flagY = sheerY(0.97) + 0.016;
@@ -2072,6 +2395,9 @@ function buildSailboat(M, tier, T) {
   group.add(mainsheet, jibSheet);
   const traveller = new THREE.Vector3(0, sheerY(0.82) - 0.03, zAt(0.82) - 0.08);
   K.add('bronze', xf(roundedBox(0.05, 0.05, 0.05, 0.012), traveller.toArray()));
+  // halyard tail coiled on the mast thwart, the painter coiled on the foredeck
+  K.add('ropeCream', xf(ropeCoil(0.085, hi ? 4 : 3, 0.006, hi), [0.26, 0.374, MAST_Z + 0.03]));
+  K.add('ropeCream', xf(ropeCoil(0.07, 3, 0.007, hi), [-0.1, sheerY(0.1) + 0.05, zAt(0.1)], [0, 0, 0.04]));
   const stretch = (m, a, b) => {
     m.position.copy(a);
     const d = _tmpV.copy(b).sub(a);
@@ -2217,23 +2543,26 @@ const _up = new THREE.Vector3(0, 1, 0);
 
 // ================================================================ duck
 
-function buildDuck(M, tier) {
+function buildDuck(M, tier, T) {
   const group = new THREE.Group();
   const K = kit(M);
   const hi = tier !== 'low';
-  // the body: an egg of a duck with a raised tail, fat wings, and an oval
-  // cockpit scooped out of its back
+  // the body: an egg of a duck with a flat tail swept up to a point, fat
+  // wings, and an oval cockpit scooped out of its back
   const COCK = { z: 0.12, hx: 0.47, hz: 0.6, floor: 0.2 };
   const WHEEL = { y: 0.08, z: 1.3 };
   const body = (x, y, z) => {
     let d = sdEllipsoid(x, y - 0.4, z - 0.12, 0.75, 0.52, 1.2);
     d = smin(d, sdEllipsoid(x, y - 0.55, z + 0.72, 0.64, 0.52, 0.52), 0.25);
-    // tail: tipped up and back
-    const ty = y - 0.82;
+    // tail: a flat fan swept up and back (0.85 rad), narrowing to a tip
+    // that flicks up; the feather grooves on it are in the vinyl's shader
+    const ty = y - 0.9;
     const tz = z - 1.08;
-    const ca = Math.cos(0.6);
-    const sa = Math.sin(0.6);
-    d = smin(d, sdEllipsoid(x, ty * ca + tz * sa, -ty * sa + tz * ca, 0.3, 0.2, 0.44), 0.3);
+    const al = tz * 0.6600 + ty * 0.7513;
+    const up = ty * 0.6600 - tz * 0.7513;
+    const tt = clamp(al / 0.5, 0, 1);
+    const tw = 1 - 0.5 * tt;
+    d = smin(d, sdEllipsoid(x / tw, up - 0.08 * tt * tt, al, 0.36, 0.15, 0.5) * (0.3 + 0.7 * tw), 0.2);
     // wings
     for (const sd of [1, -1]) {
       const wy = y - 0.56;
@@ -2252,9 +2581,6 @@ function buildDuck(M, tier) {
     d = smax(d, -(y + 0.1), 0.05);
     return d;
   };
-  const bodyGeo = surfaceNets(body, [-0.9, -0.16, -1.3], [0.9, 1.3, 1.7], hi ? 0.05 : 0.066);
-  K.add('duckYellow', bodyGeo);
-
   // head and neck in their own group, so the head can bob and nod
   const PIV = new THREE.Vector3(0, 0.7, -0.78);
   const HC = [0, 0.85, -0.12]; // head centre, pivot space
@@ -2265,11 +2591,15 @@ function buildDuck(M, tier) {
     d = smin(d, sdEllipsoid(x, y - 0.72, z + 0.28, 0.39, 0.29, 0.35), 0.12);
     return d;
   };
+  // body and head together, for the creases' occlusion
+  const whole = (x, y, z) => Math.min(body(x, y, z), headFn(x - PIV.x, y - PIV.y, z - PIV.z));
+  const bodyGeo = surfaceNets(body, [-0.9, -0.16, -1.3], [0.9, 1.45, 1.7], hi ? 0.05 : 0.066);
+  K.add('duckYellow', bakeAO(bodyGeo, whole));
   const head = new THREE.Group();
   head.position.copy(PIV);
   group.add(head);
   const headGeo = surfaceNets(headFn, [-0.5, -0.12, -0.66], [0.5, 1.46, 0.4], hi ? 0.034 : 0.046);
-  head.add(mesh(headGeo, M.duckHead));
+  head.add(mesh(bakeAO(headGeo, whole, PIV.toArray()), M.duckHead));
   // beak: a wide flat bill with a smile line
   // beak: a broad, flat bill, slightly upturned, with a shallow mouth line
   const beakFn = (x, y, z) => {
@@ -2399,6 +2729,72 @@ function buildDuck(M, tier) {
     }
     K.add('ropeNavy', sweep(pts, circle(0.0065, 6), { caps: true }));
   }
+  // a point on the collar's skin: a along the collar, phi round the tube
+  // (0 outboard, up is positive), lifted r off the centreline
+  const tubeAt = (a, phi, r) => {
+    const p = collarAt(a);
+    const o = new THREE.Vector3(p.x, 0, p.z - 0.1).normalize();
+    return p.addScaledVector(o, r * Math.cos(phi)).setY(0.03 + r * Math.sin(phi));
+  };
+  const tubeNormal = (a, phi) => tubeAt(a, phi, 1).sub(tubeAt(a, phi, 0)).normalize();
+  const TUBE_R = 0.19;
+  // a patch of skin-hugging grid over the tube, uv'd onto an atlas cell
+  const tubePatch = (a0p, a1p, ph0, ph1, rect, nu = 6, nv = 3) => {
+    const rows = [];
+    for (let i = 0; i <= nu; i++) {
+      const row = [];
+      for (let j = 0; j <= nv; j++) row.push(tubeAt(lerp(a0p, a1p, i / nu), lerp(ph0, ph1, j / nv), TUBE_R + 0.0015).toArray());
+      rows.push(row);
+    }
+    let g = loft(rows);
+    const gn = g.attributes.normal;
+    if (gn.getX(0) * tubeNormal(a0p, ph0).x + gn.getY(0) * tubeNormal(a0p, ph0).y + gn.getZ(0) * tubeNormal(a0p, ph0).z < 0) g = loft(rows, { flip: true });
+    const uv = g.attributes.uv;
+    for (let i = 0; i <= nu; i++) {
+      for (let j = 0; j <= nv; j++) uv.setXY(i * (nv + 1) + j, lerp(rect[0], rect[2], i / nu), lerp(rect[1], rect[3], j / nv));
+    }
+    g.deleteAttribute('aGirth');
+    g.deleteAttribute('aZone');
+    return g;
+  };
+  const atlas = T.decal();
+  {
+    // silver retro-reflective tape by every other grab-line patch
+    const tape = atlas.rect('tape');
+    for (const k of [1, 3, 5, 7, 9, 11]) {
+      const a = lerp(a0 + 0.25, a1 - 0.25, k / 12);
+      K.add('print', tubePatch(a - 0.075, a + 0.075, 0.16, 0.42, tape));
+    }
+    // black rubber grab handles on each end of the collar
+    for (const [b0, b1] of [[a0 + 0.06, a0 + 0.34], [a1 - 0.34, a1 - 0.06]]) {
+      const path = [];
+      for (let i = 0; i <= 10; i++) {
+        const t = i / 10;
+        path.push(tubeAt(lerp(b0, b1, t), 1.2, TUBE_R + 0.005 + 0.045 * Math.sin(Math.PI * t) ** 0.7));
+      }
+      K.add('blackSatin', sweep(path, [[-0.004, -0.017], [0.004, -0.017], [0.004, -0.017], [0.004, 0.017], [0.004, 0.017], [-0.004, 0.017], [-0.004, 0.017], [-0.004, -0.017]], {
+        caps: true, frame: (i) => tubeNormal(lerp(b0, b1, i / 10), 1.2),
+      }));
+      for (const b of [b0, b1]) {
+        const pad = roundedBox(0.07, 0.008, 0.05, 0.003, 1);
+        const n = tubeNormal(b, 1.2);
+        const t = tubeAt(b + 0.01, 1.2, TUBE_R).sub(tubeAt(b - 0.01, 1.2, TUBE_R)).normalize();
+        pad.applyMatrix4(new THREE.Matrix4().makeBasis(t, n, new THREE.Vector3().crossVectors(t, n)));
+        xf(pad, tubeAt(b, 1.2, TUBE_R + 0.003).toArray());
+        K.add('blackSatin', pad);
+      }
+    }
+  }
+  // inflation valve: a black flange welded into the skin and a white cap
+  const valve = (p, n) => {
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n);
+    const base = new THREE.CylinderGeometry(0.036, 0.04, 0.01, hi ? 16 : 10).applyQuaternion(q);
+    const cap = new THREE.CylinderGeometry(0.022, 0.024, 0.018, hi ? 14 : 8).translate(0, 0.012, 0).applyQuaternion(q);
+    K.add('blackSatin', xf(base, p.toArray()));
+    K.add('whitePlastic', xf(cap, p.toArray()));
+    if (hi) K.add('blackSatin', xf(new THREE.TorusGeometry(0.018, 0.0035, 5, 10).rotateY(Math.PI / 2).translate(0.035, 0.012, 0).applyQuaternion(q), p.toArray()));
+  };
+  for (const a of [a0 + 0.46, a1 - 0.46]) valve(tubeAt(a, 1.45, TUBE_R + 0.002), tubeNormal(a, 1.45));
   // floor of the cockpit (grey non-slip) and the bench
   {
     const rows = [];
@@ -2429,9 +2825,21 @@ function buildDuck(M, tier) {
     const lever = rod(new THREE.Vector3(0, COCK.floor + 0.1, COCK.z - 0.05), new THREE.Vector3(0.0, COCK.floor + 0.48, COCK.z - 0.12), 0.014, 8);
     K.add('blackSatin', lever);
     K.add('blackSatin', xf(new THREE.SphereGeometry(0.035, 12, 8), [0, COCK.floor + 0.5, COCK.z - 0.125]));
-    // inflation valve on the side
-    const valve = xf(new THREE.CylinderGeometry(0.03, 0.034, 0.02, 14), [0.72, 0.62, 0.62], [0, 0, -Math.PI / 2 + 0.35]);
-    K.add('whitePlastic', valve);
+    // the body's own valve, on its starboard flank behind the wing
+    {
+      const n = new THREE.Vector3(0.75, 0.45, 0.45).normalize();
+      let tt = 1.2;
+      const c = new THREE.Vector3(0, 0.6, 0.8);
+      for (let k = 0; k < 60; k++) tt -= body(c.x + n.x * tt, c.y + n.y * tt, c.z + n.z * tt) * 0.8;
+      const p = c.clone().addScaledVector(n, tt);
+      const e = 1e-3;
+      const nn = new THREE.Vector3(
+        body(p.x + e, p.y, p.z) - body(p.x - e, p.y, p.z),
+        body(p.x, p.y + e, p.z) - body(p.x, p.y - e, p.z),
+        body(p.x, p.y, p.z + e) - body(p.x, p.y, p.z - e),
+      ).normalize();
+      valve(p.addScaledVector(nn, 0.004), nn);
+    }
   }
   // paddle wheel under the tail, in a white housing
   const wheel = new THREE.Group();
@@ -2452,19 +2860,43 @@ function buildDuck(M, tier) {
     }
     parts.push(xf(new THREE.CylinderGeometry(0.03, 0.03, 0.42, 10), [0, 0, 0], [0, 0, Math.PI / 2]));
     wheel.add(mesh(merge(parts), M.whitePlastic));
-    for (const sx of [0.215, -0.215]) {
-      const side = roundedBox(0.025, 0.32, 0.34, 0.012);
-      xf(side, [sx, WHEEL.y + 0.05, WHEEL.z]);
+    // its housing: side plates, a cover over the top and a stern board
+    // across the back with the boat's name, number and a safety stripe
+    for (const sx of [0.24, -0.24]) {
+      const side = roundedBox(0.026, 0.37, 0.46, 0.012);
+      xf(side, [sx, 0.275, 1.35]);
       K.add('whitePlastic', side);
     }
+    const cover = roundedBox(0.52, 0.03, 0.44, 0.012);
+    xf(cover, [0, 0.455, 1.36]);
+    K.add('whitePlastic', cover);
+    const board = roundedBox(0.56, 0.345, 0.03, 0.012);
+    const r = atlas.rect('duckBoard');
+    const bp = board.attributes.position;
+    const bn = board.attributes.normal;
+    const buv = board.attributes.uv;
+    for (let i = 0; i < bp.count; i++) {
+      if (bn.getZ(i) > 0.3) buv.setXY(i, lerp(r[0], r[2], clamp((bp.getX(i) + 0.28) / 0.56, 0, 1)), lerp(r[1], r[3], clamp((bp.getY(i) + 0.1725) / 0.345, 0, 1)));
+      else buv.setXY(i, r[0] + 0.004, r[3] - 0.006);
+    }
+    xf(board, [0, 0.29, 1.585]);
+    K.add('print', board);
+    // all-round white light on a short stalk above the board
+    K.add('blackSatin', rod(new THREE.Vector3(0, 0.47, 1.52), new THREE.Vector3(0, 0.6, 1.52), 0.011, 8));
+    K.add('blackSatin', xf(new THREE.CylinderGeometry(0.026, 0.026, 0.02, 14), [0, 0.6, 1.52]));
   }
+  const lens = lensMaterial('#f3f0e6', '#fff4d8');
+  group.add(mesh(xf(new THREE.SphereGeometry(0.024, 14, 8, 0, TAU, 0, Math.PI / 2), [0, 0.61, 1.52]), lens, { cast: false }));
 
   K.build(group);
 
-  const hs = { nod: 0, nodV: 0, horn: 0, turn: 0, wheel: 0 };
+  const hs = { nod: 0, nodV: 0, horn: 0, turn: 0, wheel: 0, flash: 0 };
   return {
     group,
+    lens,
     update(dt, s) {
+      hs.flash = Math.max(0, hs.flash - dt);
+      lens.emissiveIntensity = 0.4 + (hs.flash > 0 ? 6 * (Math.sin(hs.flash * 22) > 0 ? 1 : 0.1) : 0);
       hs.turn = damp(hs.turn, s.turn, 4, dt);
       hs.wheel = (hs.wheel + (1.2 + 5 * s.speed01 + 3 * s.boost) * dt) % TAU;
       wheel.rotation.x = hs.wheel;
@@ -2481,6 +2913,7 @@ function buildDuck(M, tier) {
     },
     horn() {
       hs.nodV += 3.2;
+      hs.flash = 0.7;
     },
   };
 }

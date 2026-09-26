@@ -2,7 +2,8 @@
 // textures and shared by every boat and its ghost: vinyl upholstery with
 // stitched seams, teak decking with black caulking, varnished mahogany and
 // spruce, Dacron sail cloth with its panel seams and battens, laid rope,
-// moulded non-slip mats, the duck's printed eyes and two little flags.
+// moulded non-slip mats, the duck's printed eyes, two little flags and an
+// atlas of printed names, numbers and stickers.
 //
 // Tileable maps are value noise on a wrapping lattice, so they repeat without
 // a seam. Height fields become tangent-space normal maps (OpenGL convention,
@@ -614,6 +615,162 @@ export function eyeTexture() {
   const t = canvasTexture(cv, true);
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
   return t;
+}
+
+// Printed and painted details for every boat on one canvas: transom names,
+// registration numbers, the jet ski's side graphic, the duck's stern board
+// and silver reflective tape. Hull decals are transparent around the print;
+// the stern board and tape cells are opaque, for parts mapped straight onto
+// them. `rect(name)` gives a cell as [u0, v0, u1, v1] in texture uv.
+const DECALS = {
+  speedName: [0, 0, 512, 128],
+  sailName: [512, 0, 512, 128],
+  speedReg: [0, 128, 512, 64],
+  jetReg: [512, 128, 512, 64],
+  jetGraphic: [0, 192, 1024, 64],
+  duckBoard: [0, 256, 416, 256],
+  tape: [416, 256, 256, 64],
+};
+
+export function decalAtlas(size = 1024) {
+  const W = size;
+  const H = size / 2;
+  const k = size / 1024;
+  const cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const g = cv.getContext('2d');
+  const cell = (name, draw) => {
+    const [x, y, w, h] = DECALS[name];
+    g.save();
+    g.translate(x * k, y * k);
+    g.scale(k, k);
+    g.beginPath();
+    g.rect(0, 0, w, h);
+    g.clip();
+    draw(w, h);
+    g.restore();
+  };
+  const sans = '"Helvetica Neue", Helvetica, Arial, sans-serif';
+  const serif = 'Georgia, "Times New Roman", serif';
+  const text = (s, x, y, font, fill, { align = 'center', stroke = null, lw = 0, sx = 1, sy = 1, spacing = 0 } = {}) => {
+    g.save();
+    g.translate(x, y);
+    g.scale(sx, sy);
+    g.font = font;
+    g.textAlign = align;
+    g.textBaseline = 'middle';
+    if ('letterSpacing' in g) g.letterSpacing = `${spacing}px`;
+    if (stroke) {
+      g.lineJoin = 'round';
+      g.strokeStyle = stroke;
+      g.lineWidth = lw;
+      g.strokeText(s, 0, 0);
+    }
+    g.fillStyle = fill;
+    g.fillText(s, 0, 0);
+    g.restore();
+  };
+
+  // speedboat transom: the name either side of the outboard's leg
+  cell('speedName', (w, h) => {
+    text('Little', w / 2 - 44, h / 2, `italic bold 60px ${serif}`, '#1f2a44', { align: 'right' });
+    text('Splash', w / 2 + 44, h / 2, `italic bold 60px ${serif}`, '#1f2a44', { align: 'left' });
+  });
+  // dinghy transom: gold leaf with a dark keyline
+  cell('sailName', (w, h) => {
+    const grad = g.createLinearGradient(0, h * 0.2, 0, h * 0.8);
+    grad.addColorStop(0, '#f1d58a');
+    grad.addColorStop(0.5, '#c9973e');
+    grad.addColorStop(1, '#8f6424');
+    text('Puffin', w / 2, h / 2, `italic bold 92px ${serif}`, grad, { stroke: '#2a1a0c', lw: 7 });
+  });
+  cell('speedReg', (w, h) => text('SR 2718 KD', w / 2, h / 2 + 2, `bold 50px ${sans}`, '#1c2230', { sx: 0.92, spacing: 4 }));
+  cell('jetReg', (w, h) => text('SR 4471 JS', w / 2, h / 2 + 2, `bold 50px ${sans}`, '#23272c', { sx: 0.92, spacing: 4 }));
+  // jet ski side graphic: slashes of teal and charcoal and a wordmark. The
+  // cell is 16:1 but lands on a 10:1 patch of hull, so it is drawn squashed.
+  cell('jetGraphic', () => {
+    const band = (x0, x1, y0, y1, c) => {
+      g.fillStyle = c;
+      g.beginPath();
+      g.moveTo(x0, y1);
+      g.lineTo(x0 + 26, y0);
+      g.lineTo(x1 + 26, y0);
+      g.lineTo(x1, y1);
+      g.closePath();
+      g.fill();
+    };
+    band(40, 520, 6, 22, '#0e98a0');
+    band(70, 560, 26, 34, '#2a2d31');
+    band(560, 980, 6, 14, '#0e98a0');
+    text('SPLASH', 760, 38, `italic 900 44px ${sans}`, '#2a2d31', { sy: 0.62, spacing: 3 });
+    text('RS 3', 930, 39, `italic 900 44px ${sans}`, '#0e98a0', { sy: 0.62 });
+  });
+  // the duck's stern board: moulded white plastic with its name, number and
+  // a red and white safety stripe along the bottom
+  cell('duckBoard', (w, h) => {
+    g.fillStyle = '#e8e7e1';
+    g.fillRect(0, 0, w, h);
+    const sh = g.createLinearGradient(0, 0, 0, h);
+    sh.addColorStop(0, 'rgba(255,255,255,0.0)');
+    sh.addColorStop(1, 'rgba(120,120,110,0.08)');
+    g.fillStyle = sh;
+    g.fillRect(0, 0, w, h);
+    text('SUNNY', w / 2, h * 0.3, `900 72px ${sans}`, '#1f3566', { spacing: 6 });
+    text('SR 27 DK', w / 2, h * 0.56, `bold 34px ${sans}`, '#23272c', { spacing: 3 });
+    // chevron stripe
+    const y0 = h * 0.72;
+    const y1 = h * 0.9;
+    g.save();
+    g.beginPath();
+    g.rect(22, y0, w - 44, y1 - y0);
+    g.clip();
+    g.fillStyle = '#f1f0ea';
+    g.fillRect(0, y0, w, y1 - y0);
+    g.fillStyle = '#c8322b';
+    for (let x = -40; x < w + 40; x += 36) {
+      g.beginPath();
+      g.moveTo(x, y1);
+      g.lineTo(x + 18, y1);
+      g.lineTo(x + 18 + (y1 - y0), y0);
+      g.lineTo(x + (y1 - y0), y0);
+      g.closePath();
+      g.fill();
+    }
+    g.restore();
+    // round red reflectors screwed on at the top corners
+    for (const x of [34, w - 34]) {
+      const rg = g.createRadialGradient(x - 4, 30, 2, x, 34, 18);
+      rg.addColorStop(0, '#ff6a5c');
+      rg.addColorStop(0.6, '#b3201a');
+      rg.addColorStop(1, '#5e0e0b');
+      g.fillStyle = rg;
+      g.beginPath();
+      g.arc(x, 34, 17, 0, Math.PI * 2);
+      g.fill();
+    }
+  });
+  // retro-reflective tape: silver, printed with a fine cell pattern
+  cell('tape', (w, h) => {
+    g.fillStyle = '#c6c9cb';
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(90,96,100,0.35)';
+    g.lineWidth = 1.2;
+    for (let y = 0; y < h + 8; y += 7) {
+      for (let x = (y / 7) % 2 ? 4 : 0; x < w + 8; x += 8) {
+        g.beginPath();
+        g.arc(x, y, 3.2, 0, Math.PI * 2);
+        g.stroke();
+      }
+    }
+  });
+  const map = canvasTexture(cv, true);
+  map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
+  const rect = (name) => {
+    const [x, y, w, h] = DECALS[name];
+    return [x / 1024, 1 - (y + h) / 512, (x + w) / 1024, 1 - y / 512];
+  };
+  return { map, rect };
 }
 
 // Flags: left half the speedboat's pennant (coral with a white stripe),
