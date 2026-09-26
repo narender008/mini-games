@@ -57,7 +57,9 @@ export function addTranslucency(sh, amount = 0.6, tint = 'vec3(1.05, 1.15, 0.5)'
 // by its own flat normal flashes bright or black as it turns; a crown whose
 // normals point away from its middle shades softly, like a rounded mass.
 // centre(v, out) gives the crown's middle for a vertex; k = how much to bend.
-export function crownNormals(geo, centre, k = 0.6, lift = 0.25) {
+// outward = true: both faces share one outward normal (use with
+// volumeNormals) for dense clumps that shade as a mass, not as thin leaves.
+export function crownNormals(geo, centre, k = 0.6, lift = 0.25, outward = false) {
   const p = geo.attributes.position;
   const n = geo.attributes.normal;
   const v = new THREE.Vector3();
@@ -73,7 +75,10 @@ export function crownNormals(geo, centre, k = 0.6, lift = 0.25) {
     f.fromBufferAttribute(n, i);
     // bend within the face's own side, so a double-sided card still turns
     // its lit side to whoever looks at it
-    if (f.dot(o) < 0) o.negate();
+    if (f.dot(o) < 0) {
+      if (outward) f.negate();
+      else o.negate();
+    }
     f.lerp(o, k).normalize();
     n.setXYZ(i, f.x, f.y, f.z);
   }
@@ -159,6 +164,17 @@ export function vertexAttr(geo, name, size, fn) {
   }
   geo.setAttribute(name, new THREE.BufferAttribute(a, size));
   return geo;
+}
+
+// Call from onBeforeCompile of a double-sided material whose normals were
+// bent with crownNormals(..., outward = true): keep the outward normal on
+// both faces, so the side of a crown away from the sun stays in shade
+// instead of half its cards turning their faces to the light.
+export function volumeNormals(sh) {
+  sh.fragmentShader = sh.fragmentShader.replace(
+    '#include <normal_fragment_begin>',
+    THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''),
+  );
 }
 
 // ------------------------------------------------------------ conifer impostors

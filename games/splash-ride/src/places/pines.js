@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { rng } from '../config.js';
 import { canvasTexture, instances, normalFromHeight } from './common.js';
-import { makeImpostorWoods, CONIFER, texSize, addTranslucency, crownNormals, mergeIndexed, gridGeometry, vertexAttr } from './foliage.js';
+import { makeImpostorWoods, CONIFER, texSize, addTranslucency, crownNormals, volumeNormals, mergeIndexed, gridGeometry, vertexAttr } from './foliage.js';
 
 let shared = null;
 
@@ -55,7 +55,7 @@ function branchAtlas() {
         for (const s of [-1, 1]) {
           const a = base + s * (0.7 + r() * 0.6);
           const l = len * (0.7 + r() * 0.5) * (1 - t * 0.35);
-          g.strokeStyle = hsl(100 + r() * 30, 26 + r() * 18, l0 + (l1 - l0) * t + r() * 5);
+          g.strokeStyle = hsl(118 + r() * 34, 22 + r() * 16, l0 + (l1 - l0) * t + r() * 4);
           g.lineWidth = wid;
           g.beginPath();
           g.moveTo(x, y);
@@ -66,8 +66,8 @@ function branchAtlas() {
     };
     // the dense dark body first, then the needles, then the fresh tips
     for (const sh of shoots) {
-      g.strokeStyle = hsl(110 + r() * 16, 28, 9 + r() * 3);
-      g.lineWidth = 14 + r() * 6;
+      g.strokeStyle = hsl(128 + r() * 16, 26, 8 + r() * 3);
+      g.lineWidth = 10 + r() * 5;
       g.lineCap = 'round';
       g.beginPath();
       g.moveTo(sh.x, sh.y);
@@ -77,12 +77,12 @@ function branchAtlas() {
     g.lineCap = 'butt';
     for (const sh of shoots) {
       const n = Math.hypot(sh.ex - sh.x, sh.ey - sh.y) * 0.7;
-      brush(sh.x, sh.y, sh.ex, sh.ey, n, 16, 10, 20, 1.6);
+      brush(sh.x, sh.y, sh.ex, sh.ey, n, 16, 9, 16, 1.5);
     }
     for (const sh of shoots) {
       const fx = sh.x + (sh.ex - sh.x) * 0.72;
       const fy = sh.y + (sh.ey - sh.y) * 0.72;
-      brush(fx, fy, sh.ex + (sh.ex - sh.x) * 0.08, sh.ey + (sh.ey - sh.y) * 0.08, 10, 11, 24, 34, 1.4);
+      brush(fx, fy, sh.ex + (sh.ex - sh.x) * 0.08, sh.ey + (sh.ey - sh.y) * 0.08, 10, 11, 17, 24, 1.3);
     }
     // dead spray: bare grey twigs with a few rusty needles
     const dx = 384;
@@ -176,7 +176,7 @@ function barkTextures() {
 function materials() {
   if (shared) return shared;
   const time = { value: 0 };
-  const needles = new THREE.MeshStandardMaterial({ map: branchAtlas(), alphaTest: 0.45, side: THREE.DoubleSide, vertexColors: true, roughness: 0.86 });
+  const needles = new THREE.MeshStandardMaterial({ map: branchAtlas(), alphaTest: 0.5, side: THREE.DoubleSide, vertexColors: true, roughness: 0.9 });
   needles.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = time;
     sh.vertexShader = sh.vertexShader
@@ -193,11 +193,12 @@ function materials() {
   transformed.z += cos(uTime * 0.7 + ph * 1.3) * 0.12 * sway;`,
       );
     addTranslucency(sh, 0.12, 'vec3(0.8, 1.1, 0.5)', 0.25);
+    volumeNormals(sh);
   };
-  needles.customProgramCacheKey = () => 'pine-needles-2';
+  needles.customProgramCacheKey = () => 'pine-needles-3';
   const { map, normal } = barkTextures();
   const bark = new THREE.MeshStandardMaterial({ map, normalMap: normal, roughness: 0.93 });
-  const core = new THREE.MeshStandardMaterial({ color: 0x141f12, roughness: 0.95 });
+  const core = new THREE.MeshStandardMaterial({ color: 0x0b130a, roughness: 1 });
   shared = { needles, bark, core, time };
   return shared;
 }
@@ -234,10 +235,13 @@ function pineVariant(seed, kind) {
     g.rotateY(az);
     g.translate(0, y, 0);
     vertexAttr(g, 'sway', 1, (v) => (v.y / height) ** 2 * Math.min(1, Math.hypot(v.x, v.z) / 2 + 0.3));
+    // each spray its own shade of green, darker in towards the trunk
+    const k = 0.78 + r() * 0.3;
+    const blue = 0.94 + r() * 0.14;
     vertexAttr(g, 'color', 3, (v) => {
       const out = Math.min(1, Math.hypot(v.x, v.z) / (0.3 + (1 - t) * height * 0.2));
-      const c = (0.38 + 0.62 * out ** 0.8) * (0.72 + 0.28 * t);
-      return [c, c, c];
+      const c = (0.38 + 0.62 * out ** 0.8) * (0.72 + 0.28 * t) * k;
+      return [c * 0.92, c, c * blue];
     });
     parts.push(g);
   };
@@ -268,10 +272,10 @@ function pineVariant(seed, kind) {
     add(b, y, r() * Math.PI * 2, 0.5);
   }
   const crown = mergeIndexed(parts);
-  crownNormals(crown, (v, out) => out.set(0, Math.max(base, v.y - 0.5), 0), 0.6, 0.3);
+  crownNormals(crown, (v, out) => out.set(0, Math.max(base, v.y - 0.5), 0), 0.7, 0.2, true);
   // a dark inner cone behind the sprays so the crown reads dense, not see-through
   const coreH = height - base;
-  const core = new THREE.ConeGeometry(spruce ? height * 0.11 : height * 0.085, coreH * 0.9, 9, 1, true);
+  const core = new THREE.ConeGeometry(spruce ? height * 0.075 : height * 0.06, coreH * 0.85, 9, 1, true);
   core.translate(0, base + coreH * 0.47, 0);
   return { trunk, crown, core, height };
 }
