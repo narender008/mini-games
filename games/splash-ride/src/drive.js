@@ -60,6 +60,7 @@ export class Boat {
     this.ringBoost = 0;
     this.boostHeld = false;
     this.boost01 = 0;
+    this.slow01 = 0;
     this.assist = 0;
     this.assistHeading = 0;
     this.bumpCool = 0;
@@ -108,7 +109,8 @@ export class Boat {
     const base = this.little ? h.little : h.cruise;
     const top = h.boost;
     const b = Math.max(this.ringBoost, this.boostHeld ? 1 : 0);
-    return lerp(base, top, b) * (1 - 0.12 * Math.abs(this.steer));
+    // easing off (Down or S) drops to a gentle potter, never to a stop
+    return lerp(base, top, b) * (1 - 0.12 * Math.abs(this.steer)) * (1 - 0.55 * this.slow01);
   }
 
   // surface height under the hull and its fore-aft / side slopes
@@ -134,7 +136,8 @@ export class Boat {
     };
   }
 
-  // input: { steer: -1..1 (right +), boost: bool }
+  // input: { steer: -1..1 (right +), active: bool (someone is steering),
+  // boost: bool, slow: bool }
   update(dt, input) {
     const h = this.h;
     this.bumpCool = Math.max(0, this.bumpCool - dt);
@@ -142,22 +145,27 @@ export class Boat {
     this.ringBoost = Math.max(0, this.ringBoost - dt * 0.55);
     this.boostHeld = !!input.boost;
     this.boost01 = damp(this.boost01, Math.max(this.ringBoost, this.boostHeld ? 1 : 0), 4, dt);
+    this.slow01 = damp(this.slow01, input.slow ? 1 : 0, 3, dt);
 
     // steering, with the bounce assist turning the boat back to open water
     let want = clamp(input.steer, -1, 1);
     if (this.assist > 0) {
+      // someone steering takes over again a moment after the bounce
+      if (input.active) this.assist = Math.min(this.assist, 0.35);
       this.assist = Math.max(0, this.assist - dt);
       const d = angleDiff(this.heading, this.assistHeading);
       const k = smoothstep(0, 0.3, this.assist);
       want = lerp(want, clamp(-d * 3, -1, 1), k);
       if (Math.abs(d) < 0.12) this.assist = Math.min(this.assist, 0.3);
     }
-    this.steer = damp(this.steer, want, 7, dt);
+    // quick enough that a held key turns at once and letting go
+    // straightens up within about half a second, still smooth
+    this.steer = damp(this.steer, want, 10, dt);
     const speed = this.vel.length();
     let turnK = clamp(speed / 4, 0.35, 1) * (this.airborne ? 0.35 : 1);
     // after a bump the boat swings round briskly, even while slow
     if (this.assist > 0 && !this.airborne) turnK = Math.max(turnK, 1) * 1.7;
-    this.yawRate = damp(this.yawRate, -this.steer * h.turn * turnK, 3.2, dt);
+    this.yawRate = damp(this.yawRate, -this.steer * h.turn * turnK, 5, dt);
     this.heading += this.yawRate * dt;
 
     // speed along the heading, drift sideways
@@ -312,8 +320,8 @@ export class Boat {
     return Math.atan2(-x, -z);
   }
 
-  // Little ones: gently steer round shores before touching them (most of
-  // the time), and drift towards a sparkle ring ahead.
+  // Little ones, while nobody is steering: gently steer round shores before
+  // touching them (most of the time), and drift towards a sparkle ring ahead.
   littleAssist(input, ring) {
     const land = this.land;
     const fx = this.fwdX;
@@ -321,7 +329,9 @@ export class Boat {
     const look = clamp(this.speed * 1.9, 10, 22);
     const d = land.distance(this.pos.x + fx * look, this.pos.z + fz * look);
     let s = input.steer;
-    if (d < 8) {
+    // only while nobody is steering: a held side or key always turns the
+    // boat that way (the shore is a soft bumper anyway)
+    if (d < 8 && !input.active) {
       const a = 0.6;
       // right-hand side is (-fz, fx)
       const rx = this.pos.x + (fx * Math.cos(a) - fz * Math.sin(a)) * look;
@@ -332,7 +342,7 @@ export class Boat {
       const dr = land.distance(rx, rz);
       const k = smoothstep(8, 0, d) * 0.85;
       // while the child is steering the same way, let them
-      s = lerp(s, dr > dl ? 1 : -1, input.active && Math.sign(input.steer) === (dr > dl ? 1 : -1) ? 0 : k);
+      s = lerp(s, dr > dl ? 1 : -1, k);
     }
     if (ring && !input.active) {
       const dx = ring.x - this.pos.x;

@@ -6,8 +6,20 @@
 // when chosen in the settings, turns the tablet or phone into a steering
 // wheel (iPhone and iPad ask permission for it on a tap).
 // Big kid: drag anywhere, turn the on-screen wheel, or use the arrow keys or
-// A/D; boost with the button or Space, horn with the button or H.
+// A/D; boost with the button, Space, Up or W, ease off with Down or S, horn
+// with the button or H. The keys work in both modes, and every way of
+// steering agrees: left is left on screen, right is right.
 import { clamp } from './config.js';
+
+// Keys by what they do. Both the character and the physical key count, so
+// the letters work on any keyboard layout (A/D sit where Q/D are on AZERTY).
+const KEYS = {
+  left: ['ArrowLeft', 'a', 'KeyA'],
+  right: ['ArrowRight', 'd', 'KeyD'],
+  faster: [' ', 'Space', 'ArrowUp', 'w', 'KeyW'],
+  slower: ['ArrowDown', 's', 'KeyS'],
+};
+const GAME_KEYS = new Set(Object.values(KEYS).flat());
 
 const TILT_RANGE = 24; // degrees of tilt for a full turn
 const TILT_DEAD = 2.5;
@@ -57,13 +69,24 @@ export class Controls {
     el.addEventListener('pointercancel', (e) => this.pointers.delete(e.pointerId));
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('keydown', (e) => {
-      if (e.target.closest?.('input, textarea')) return;
-      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '].includes(e.key) && !e.target.closest?.('button, a')) e.preventDefault();
-      if (e.key === ' ' && e.target.closest?.('button, a')) return;
-      this.keys.add(e.key.length === 1 ? e.key.toLowerCase() : e.key);
+      if (e.target.closest?.('input, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      if (!GAME_KEYS.has(key) && !GAME_KEYS.has(e.code)) return;
+      // the start screen and settings keep their own keyboard use (Space or
+      // arrows on a focused card); the round buttons over the game do not
+      // steal the driving keys
+      const control = e.target.closest?.('button, a, [role="slider"]');
+      if (control && !control.closest('#hud')) return;
+      // (on the start screen the arrows may still scroll a short menu)
+      if (document.body.dataset.state === 'playing') e.preventDefault();
+      this.keys.add(key);
+      this.keys.add(e.code);
       this.onAnyInput();
     });
-    addEventListener('keyup', (e) => this.keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key));
+    addEventListener('keyup', (e) => {
+      this.keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key);
+      this.keys.delete(e.code);
+    });
     addEventListener('blur', () => {
       this.keys.clear();
       this.pointers.clear();
@@ -122,14 +145,18 @@ export class Controls {
     }
   }
 
-  // --- read once per frame: { steer, active, boost }
+  held(what) {
+    for (const key of KEYS[what]) if (this.keys.has(key)) return true;
+    return false;
+  }
+
+  // --- read once per frame: { steer, active, boost, slow }
 
   read() {
     let s = 0;
     let active = false;
-    const k = this.keys;
-    const kl = k.has('ArrowLeft') || k.has('a');
-    const kr = k.has('ArrowRight') || k.has('d');
+    const kl = this.held('left');
+    const kr = this.held('right');
     if (kl || kr) {
       s += (kr ? 1 : 0) - (kl ? 1 : 0);
       active = true;
@@ -158,7 +185,13 @@ export class Controls {
       s = this.forced;
       active = true;
     }
-    return { steer: this.enabled ? clamp(s, -1, 1) : 0, active: this.enabled && active, boost: this.enabled && (this.boostButton || k.has(' ')) };
+    const faster = this.boostButton || this.held('faster');
+    return {
+      steer: this.enabled ? clamp(s, -1, 1) : 0,
+      active: this.enabled && active,
+      boost: this.enabled && faster,
+      slow: this.enabled && !faster && this.held('slower'),
+    };
   }
 
   reset() {
