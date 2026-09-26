@@ -331,7 +331,7 @@ class App {
       const sideBar = aspect > 1 && h <= 520;
       // what share of the screen the canvas may fill
       const fillV = sideBar ? 0.84 : aspect < 0.8 ? 0.62 : 0.72;
-      const fillH = sideBar ? 0.72 : 0.9;
+      const fillH = sideBar ? 0.72 : aspect < 0.8 ? 0.96 : 0.9;
       const dV = CANVAS_H / 2 / (t * fillV);
       const dH = CANVAS_W / 2 / (t * aspect * fillH);
       const d = Math.max(dV, dH) * 1.04;

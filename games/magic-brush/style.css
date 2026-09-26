@@ -787,6 +787,10 @@ body.cover #callout {
 }
 /* phones held upright: the toolbar wraps into two rows below the canvas */
 @media (orientation: portrait) and (max-width: 760px) {
+  .logo {
+    top: calc(74px + var(--safe-t));
+    font-size: clamp(38px, 12vw, 64px);
+  }
   #toolbar {
     flex-wrap: wrap;
     justify-content: center;

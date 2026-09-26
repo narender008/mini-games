@@ -65,4 +65,13 @@ window.MINI_GAMES = [
     imageAlt: 'A white speedboat with a dolphin leaping alongside, crossing a turquoise lagoon between palm islands',
     tags: ['3D', 'Ages 2+', 'Touch friendly'],
   },
+  {
+    slug: 'magic-brush',
+    name: 'Magic Brush',
+    description: 'Paint a friend on a real canvas and watch it come alive in your colours, leap off the easel and play in a golden-hour garden.',
+    path: 'games/magic-brush/',
+    image: 'games/magic-brush/cover.jpg',
+    imageAlt: 'A baby dragon in a child\'s painted colours leaping out of a canvas on an easel in a treehouse art studio at golden hour',
+    tags: ['3D', 'Ages 2+', 'Touch friendly'],
+  },
 ];
