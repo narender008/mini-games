@@ -121,7 +121,10 @@ class App {
           this.audio.click();
         },
         follow: () => this.toggleFollow(),
-        drop: () => this.dropMarble(),
+        drop: () => {
+          this.lastInput = performance.now();
+          this.dropMarble();
+        },
         build: (action, arg) => this.build?.action(action, arg),
       },
       this.sel,
@@ -519,6 +522,7 @@ class App {
         toggleFullscreen();
       } else if (e.key === ' ' && this.state === 'playing' && !e.target.closest?.('button, input, select, textarea, a')) {
         e.preventDefault();
+        this.lastInput = performance.now();
         this.dropMarble();
       } else if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && this.state === 'playing' && this.build?.active) {
         e.preventDefault();
