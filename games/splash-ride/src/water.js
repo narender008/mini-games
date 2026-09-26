@@ -350,7 +350,9 @@ void main() {
     float rz = texture2D(uReflectDepth, rc).x;
     if (rz < 1.0) {
       vec4 rv = uReflectInvProj * vec4(rc * 2.0 - 1.0, rz * 2.0 - 1.0, 1.0);
-      float rdist = length(rv.xyz / rv.w);
+      // (the oblique mirror projection can put w near zero at its far edge)
+      float rdist = abs(rv.w) > 1e-6 ? min(length(rv.xyz / rv.w), 1e5) : 1e5;
+      if (!(rdist >= 0.0)) rdist = 1e5;
       float rhf = 0.4 + 0.6 * exp(-max(cameraPosition.y + R.y * rdist * 0.5, 0.0) / 60.0);
       refl = mix(refl, skyHaze(R), 1.0 - exp(-rdist * uWorldFog * rhf));
     }
