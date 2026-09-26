@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>Splash Ride · Mini Games</title>
+    <meta name="description" content="Drive a little boat across photoreal water: a sunny lagoon, a sunset lake, a canal town and a glowing night bay. Spray, a foamy wake, wave hops, dolphins and sparkle rings. The boat goes by itself, you just steer. No losing, ever." />
+    <meta name="theme-color" content="#0f5a6e" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <!-- "Add to Home Screen" opens the game full screen, with no browser bars -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Splash Ride" />
+    <link rel="stylesheet" href="style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../../vendor/three/build/three.module.js",
+          "three/addons/": "../../vendor/three/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body data-state="loading" data-mode="little" data-place="lagoon" data-boat="speedboat">
+    <canvas id="scene" aria-label="Splash Ride: a little boat on sparkling water"></canvas>
+
+    <div id="loader" role="progressbar" aria-label="Loading Splash Ride" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <svg class="loader-logo" viewBox="0 0 64 64" aria-hidden="true"><use href="#i-logo" /></svg>
+      <p class="loader-title">Splash Ride</p>
+      <div class="bar"><span id="loader-fill"></span></div>
+      <p id="loader-text">Loading…</p>
+    </div>
+
+    <!-- start screen -->
+    <section id="menu" hidden aria-labelledby="title">
+      <a class="chip home-link" href="../../index.html" aria-label="Back to all games">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Games</span>
+      </a>
+      <div class="menu-main">
+        <h1 id="title" class="logo"><span class="sr">Splash Ride</span><span aria-hidden="true">Splash&nbsp;Ride</span></h1>
+        <div class="menu-gap"></div>
+        <div class="modes" role="radiogroup" aria-label="Who is driving">
+          <button type="button" class="mode" data-mode="little" role="radio" aria-checked="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-duck" /></svg><span>Little ones</span>
+          </button>
+          <button type="button" class="mode" data-mode="big" role="radio" aria-checked="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-wheel" /></svg><span>Big kid</span>
+          </button>
+        </div>
+        <div class="boats" data-where="menu" role="radiogroup" aria-label="Pick a boat"></div>
+        <div class="places" data-where="menu" role="list" aria-label="Pick a place and go"></div>
+      </div>
+    </section>
+    <button type="button" class="round fs menu-fs" aria-pressed="false" aria-label="Full screen" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path class="enter" d="M4 9.5V4h5.5M14.5 4H20v5.5M20 14.5V20h-5.5M9.5 20H4v-5.5" /><path class="exit" d="M9.5 4v5.5H4M20 9.5h-5.5V4M14.5 20v-5.5H20M4 14.5h5.5V20" /></svg>
+    </button>
+    <button type="button" class="round mute menu-mute" aria-pressed="false" aria-label="Sound off" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg>
+    </button>
+
+    <!-- in-game HUD -->
+    <div id="hud" hidden>
+      <div class="hud-buttons">
+        <button type="button" class="round" id="to-menu" aria-label="Back to the start screen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5V20h-5.5v-5h-5v5H4z" class="fillc" /></svg>
+        </button>
+        <button type="button" class="round" id="settings-btn" aria-label="Change the place or the boat" aria-expanded="false" aria-controls="settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-gear" /></svg>
+        </button>
+        <button type="button" class="round mute" aria-pressed="false" aria-label="Sound off">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg>
+        </button>
+        <button type="button" class="round fs" aria-pressed="false" aria-label="Full screen" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="enter" d="M4 9.5V4h5.5M14.5 4H20v5.5M20 14.5V20h-5.5M9.5 20H4v-5.5" /><path class="exit" d="M9.5 4v5.5H4M20 9.5h-5.5V4M14.5 20v-5.5H20M4 14.5h5.5V20" /></svg>
+        </button>
+      </div>
+
+      <!-- Big kid: the buoy course, shells, wheel, boost and horn -->
+      <div id="course" class="big-only" aria-live="polite">
+        <div class="course-now"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-flag" /></svg><span id="course-time">Find the start</span></div>
+        <div class="course-best"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-ghost" /></svg><span id="course-best">No best yet</span></div>
+      </div>
+      <div id="shells" class="big-only" aria-label="Shells found"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-shell" /></svg><span id="shell-count">0</span></div>
+      <div id="wheel" class="big-only" aria-label="Steering wheel: turn to steer" role="slider" aria-valuemin="-1" aria-valuemax="1" aria-valuenow="0">
+        <svg class="wheel-rim" viewBox="0 0 100 100" aria-hidden="true"><use href="#i-bigwheel" /></svg>
+      </div>
+      <div class="big-only action-buttons">
+        <button type="button" class="round big-round" id="horn-btn" aria-label="Horn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-horn" /></svg>
+        </button>
+        <button type="button" class="round big-round boost" id="boost-btn" aria-label="Boost">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-boost" /></svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="callout" aria-live="polite"></div>
+
+    <!-- settings overlay: the ride keeps going behind it -->
+    <aside id="settings" hidden aria-label="Change the place or the boat">
+      <div class="places" data-where="settings" role="list" aria-label="Pick a place"></div>
+      <div class="boats" data-where="settings" role="radiogroup" aria-label="Pick a boat"></div>
+      <div class="settings-row">
+        <div class="modes" role="radiogroup" aria-label="Who is driving">
+          <button type="button" class="mode" data-mode="little" role="radio" aria-checked="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-duck" /></svg><span>Little ones</span>
+          </button>
+          <button type="button" class="mode" data-mode="big" role="radio" aria-checked="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-wheel" /></svg><span>Big kid</span>
+          </button>
+        </div>
+        <div class="steers touch-only" role="radiogroup" aria-label="How to steer">
+          <button type="button" class="steer" data-steer="touch" role="radio" aria-checked="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-touch" /></svg><span>Touch</span>
+          </button>
+          <button type="button" class="steer" data-steer="tilt" role="radio" aria-checked="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-tilt" /></svg><span>Tilt</span>
+          </button>
+        </div>
+      </div>
+      <button type="button" class="round close" id="settings-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      </button>
+    </aside>
+
+    <noscript><p class="noscript">Splash Ride needs JavaScript to run.</p></noscript>
+
+    <!-- icons -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <linearGradient id="g-sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3fd0d4" /><stop offset="1" stop-color="#0f7fa8" /></linearGradient>
+        <linearGradient id="g-hull" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" /><stop offset="1" stop-color="#d9e4ea" /></linearGradient>
+        <linearGradient id="g-duck" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe066" /><stop offset="1" stop-color="#f5b418" /></linearGradient>
+        <radialGradient id="g-shell" cx="0.5" cy="0.9" r="0.9"><stop offset="0" stop-color="#fff4e8" /><stop offset="1" stop-color="#f3a98c" /></radialGradient>
+        <symbol id="i-gear" viewBox="0 0 24 24"><path d="M10.3 2.5h3.4l.5 2.6 1.9.8 2.2-1.5 2.4 2.4-1.5 2.2.8 1.9 2.5.5v3.4l-2.5.5-.8 1.9 1.5 2.2-2.4 2.4-2.2-1.5-1.9.8-.5 2.6h-3.4l-.5-2.6-1.9-.8-2.2 1.5-2.4-2.4 1.5-2.2-.8-1.9-2.6-.5v-3.4l2.6-.5.8-1.9-1.5-2.2 2.4-2.4 2.2 1.5 1.9-.8z" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="3.2" fill="#f4fbfc" stroke="none" /></symbol>
+        <symbol id="i-duck" viewBox="0 0 24 24"><path d="M4 14c0 3.5 3 5.5 8 5.5s8.5-2 8.5-6c-2 1-4 1.2-6 .8.9-.9 1.4-2 1.4-3.4a4 4 0 0 0-8 0c0 1.2.4 2.2 1 3-2.2.2-3.6.2-4.9.1z" fill="url(#g-duck)" stroke="#c88a0c" stroke-width="0.8" /><path d="M15.2 9.2l2.9.7-2.8 1.2z" fill="#f07a24" stroke="none" /><circle cx="12.8" cy="9.2" r="0.9" fill="#2b2118" stroke="none" /></symbol>
+        <symbol id="i-wheel" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" stroke-width="2.4" /><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" /><path d="M12 9.8V3.8M9.9 13.2l-5.4 3M14.1 13.2l5.4 3" stroke="currentColor" stroke-width="2" /></symbol>
+        <symbol id="i-bigwheel" viewBox="0 0 100 100"><circle cx="50" cy="50" r="44" fill="none" stroke="#8a5a34" stroke-width="9" /><circle cx="50" cy="50" r="44" fill="none" stroke="#c48a55" stroke-width="5" /><g stroke="#8a5a34" stroke-width="6" stroke-linecap="round"><path d="M50 50V8M50 50 13.6 71M50 50 86.4 71" /></g><circle cx="50" cy="50" r="11" fill="#e9eef0" stroke="#8a5a34" stroke-width="4" /><circle cx="50" cy="6" r="4" fill="#ff7a59" /></symbol>
+        <symbol id="i-horn" viewBox="0 0 24 24"><path d="M3.5 10h3l7-4.5v13l-7-4.5h-3z" fill="currentColor" stroke="none" /><path d="M16.5 9c1 .8 1.5 1.8 1.5 3s-.5 2.2-1.5 3M19 6.5c1.6 1.4 2.5 3.4 2.5 5.5s-.9 4.1-2.5 5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></symbol>
+        <symbol id="i-boost" viewBox="0 0 24 24"><path d="M4 7l6 5-6 5zM11 7l6 5-6 5z" fill="currentColor" stroke="none" /><path d="M19 6.5v11" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" /></symbol>
+        <symbol id="i-shell" viewBox="0 0 24 24"><path d="M12 3.5c-4.8 0-8.5 4.2-8.5 8.4 0 2.6 1.3 4.6 3.3 5.8L8 20.5h8l1.2-2.8c2-1.2 3.3-3.2 3.3-5.8 0-4.2-3.7-8.4-8.5-8.4z" fill="url(#g-shell)" stroke="#c9735a" stroke-width="0.9" /><path d="M12 20V5M12 20 7 7.5M12 20 17 7.5M12 20 4.5 11M12 20 19.5 11" stroke="#d98b70" stroke-width="0.8" fill="none" /></symbol>
+        <symbol id="i-flag" viewBox="0 0 24 24"><path d="M6 21V3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" /><path d="M6.5 4h11l-2.5 3.5L17.5 11h-11z" fill="#ff7a59" stroke="none" /></symbol>
+        <symbol id="i-ghost" viewBox="0 0 24 24"><path d="M3 15.5c2.5 1.6 5.5 2.3 9 2.3s6.5-.7 9-2.3l-1.8 3.3c-2.1.9-4.5 1.3-7.2 1.3s-5.1-.4-7.2-1.3z" fill="#9fd8ff" opacity="0.8" stroke="none" /><path d="M7 15.5l2.2-5h6.2l2.2 5" fill="none" stroke="#9fd8ff" stroke-width="1.6" /></symbol>
+        <symbol id="i-touch" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8" /><circle cx="7.5" cy="11" r="2" fill="currentColor" stroke="none" /><circle cx="16.5" cy="11" r="2" fill="currentColor" stroke="none" /><path d="M10.5 11h3" stroke="currentColor" stroke-width="1.4" stroke-dasharray="1 1.4" /></symbol>
+        <symbol id="i-tilt" viewBox="0 0 24 24"><g transform="rotate(-18 12 12)"><rect x="3" y="7" width="18" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8" /></g><path d="M5 20.5a9 9 0 0 1 14 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /><path d="M17.2 18.2l1.8 2.3-2.8.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-logo" viewBox="0 0 64 64"><path d="M2 44c6 0 7-4 12-4s6 4 12 4 7-4 12-4 6 4 12 4 7-4 12-4v20H2z" fill="url(#g-sea)" /><path d="M13 36h36l-4 7H18z" fill="url(#g-hull)" stroke="#9fb7c4" stroke-width="1" /><path d="M19 36l5-7h13l3 7" fill="#e8f2f6" stroke="#9fb7c4" stroke-width="1" /><path d="M24 30.5h12" stroke="#5ab9d6" stroke-width="2" /><path d="M13.5 38.5h35" stroke="#ff7a59" stroke-width="2" /><circle cx="8" cy="36" r="2.2" fill="#fff" opacity="0.9" /><circle cx="4.5" cy="33" r="1.4" fill="#fff" opacity="0.8" /><circle cx="10" cy="31" r="1.2" fill="#fff" opacity="0.7" /></symbol>
+      </defs>
+    </svg>
+
+    <script type="module" src="src/boot.js"></script>
+  </body>
+</html>
