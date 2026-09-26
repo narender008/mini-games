@@ -16,7 +16,7 @@
 // ?tone=agx|aces|neutral tune rendering; ?cover hides the interface;
 // ?debug exposes window.__mr (see the end of this file).
 import * as THREE from 'three';
-import { QUERY, DEBUG, REDUCED_MOTION, LEVELS, MODES, R_MARBLE, load, save, pickValid, clamp, damp, rand } from './config.js';
+import { QUERY, DEBUG, REDUCED_MOTION, LEVELS, MODES, R_MARBLE, load, save, pickValid, clamp, rand } from './config.js';
 import { detectQuality, FrameGovernor } from './quality.js';
 import { Post } from './post.js';
 import { Layout } from './track/layout.js';
@@ -738,7 +738,7 @@ class App {
         for (let i = 0; i < n; i++) app.update(Math.min(ms, 16.7) / 1000);
         app.render();
       },
-      drop: (k) => app.dropMarble(k === undefined ? null : null),
+      drop: () => app.dropMarble(),
       level: (id) => app.choose('level', id),
       mode: (id) => app.choose('mode', id),
       follow: () => app.followSomeone(),
@@ -768,5 +768,3 @@ export async function start(canvas, progress) {
   await app.init();
   return app;
 }
-
-export { damp };

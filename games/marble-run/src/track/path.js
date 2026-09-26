@@ -13,7 +13,6 @@
 // Hermite blends, helices, loops) in the piece's own frame; the builder
 // chains them, resamples by arc length and fills in the frames.
 import * as THREE from 'three';
-import { R_MARBLE } from '../config.js';
 
 export const DS = 0.002; // sample spacing along a lane, metres
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -46,7 +45,6 @@ export class Lane {
     this.name = opts.name || '';
     this.events = opts.events || []; // [{ s, type, ... }] sorted by s
     this.kinematic = opts.kinematic || null; // lifts: { speed }
-    this.intoBowl = opts.intoBowl || null; // the lane ends at a funnel's rim
     // what lies beyond each end: { type: 'wall' } | { type: 'open' } |
     // { type: 'link', lane, atEnd } | { type: 'switch', ... }
     this.start = { type: 'wall' };
@@ -115,21 +113,6 @@ export class Lane {
     f.w.crossVectors(f.t, f.u);
     lerp3(this.curv, a, b, k, f.k);
     return f;
-  }
-
-  point(s, out) {
-    const x = Math.max(0, Math.min(this.length, s)) / DS;
-    let i = Math.floor(x);
-    if (i >= this.n - 1) i = this.n - 2;
-    return lerp3(this.pos, i * 3, i * 3 + 3, x - i, out);
-  }
-
-  // Where the marble centre is for a given cross-section offset q (from the
-  // channel axis, along S and U).
-  centre(s, qs, qu, out, f = this._f || (this._f = makeFrame())) {
-    this.frame(s, f);
-    const axis = this.rc - R_MARBLE;
-    return out.copy(f.p).addScaledVector(f.u, axis + qu).addScaledVector(f.w, qs);
   }
 
   // Nearest sample to a world point (brute force over a window, or all).

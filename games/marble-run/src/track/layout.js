@@ -7,7 +7,7 @@
 // `level`, turned `rot` quarter turns clockwise seen from above (rot 1 sends
 // a piece's east, the way marbles leave, to the south, towards the camera).
 import * as THREE from 'three';
-import { CELL, LEVEL, R_MARBLE } from '../config.js';
+import { CELL, LEVEL } from '../config.js';
 import { Lane, DS } from './path.js';
 import { PIECES, FACES, portsOf, portY } from './pieces.js';
 
@@ -133,6 +133,8 @@ export class Layout {
         channel: spec.channel,
         surface: spec.surface,
         rmf: spec.rmf,
+        rr: spec.rr,
+        e: spec.e,
         up0: spec.up0 ? rotDir(spec.up0) : null,
         kinematic: spec.kinematic,
         piece: inst,
@@ -346,27 +348,6 @@ export class Layout {
     for (const list of byInst.values()) kept.push(list[Math.floor(list.length / 2)]);
     return kept;
   }
-
-  // Would this placement overlap anything (other than `ignore`)?
-  fits(p, ignore = null) {
-    const inst = this.buildPiece(p);
-    const g = this.grid;
-    for (const e of inst.extent) {
-      if (e.i < g.min[0] || e.j < g.min[1] || e.i > g.max[0] || e.j > g.max[1]) return false;
-      if (g.blocked?.(e.i, e.j)) return false;
-      if (e.lo < g.origin.y - 0.002 + (inst.def.lift ? -0.01 : 0)) return false;
-    }
-    for (const q of this.placements) {
-      if (q.id === ignore || q.id === p.id) continue;
-      const other = this.buildPiece(q);
-      for (const a of inst.extent) {
-        for (const b of other.extent) {
-          if (a.i === b.i && a.j === b.j && a.lo < b.hi - 0.002 && b.lo < a.hi - 0.002) return false;
-        }
-      }
-    }
-    return true;
-  }
 }
 
 function linkLanes(a, b) {
@@ -396,5 +377,3 @@ function join(out, inp) {
   if (bEnd === 'start') b.start = { type: 'link', lane: a, atEnd: end === 'end' };
   else b.end = { type: 'link', lane: a, atEnd: end === 'end' };
 }
-
-export const MARBLE_R = R_MARBLE;

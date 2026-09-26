@@ -563,8 +563,8 @@ export class Builder {
   }
 
   key(e) {
-    if (!this.active || this.app.state !== 'playing' || e.target.closest?.('input')) return;
     const k = e.key;
+    if (!this.active || this.app.state !== 'playing' || e.target.closest?.(k === 'Enter' ? 'button, input, select, textarea, a' : 'input')) return;
     if (this.ghost) {
       if (k === 'r' || k === 'R') this.rotateGhost();
       else if (k === 'Enter') this.placeGhost();
