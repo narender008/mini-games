@@ -483,7 +483,7 @@ class App {
     const w = new Map();
     for (const s of this.paint.strokes) {
       if (s.brush.tool === 'sponge') continue;
-      const k = (s.len + s.brush.radius) * s.brush.radius;
+      const k = (s.pts[s.pts.length - 1][3] + s.brush.radius) * s.brush.radius;
       w.set(s.brush.color, (w.get(s.brush.color) || 0) + k);
     }
     return [...w];

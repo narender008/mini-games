@@ -332,7 +332,7 @@ export class PaintEngine {
   begin(brush, x, y, pressure = 0.5, time = this.clock) {
     this.end();
     const seed = Math.random() * 100;
-    this.current = { brush: { ...brush }, seed, time, pts: [], len: 0 };
+    this.current = { brush: { ...brush }, seed, time, pts: [] };
     this.r = this.renderer;
     // clear the stroke buffer
     const r = this.renderer;
@@ -360,12 +360,13 @@ export class PaintEngine {
     const pts = c.pts;
     const r = this._radius(b, pressure);
     const last = pts[pts.length - 1];
+    let len = 0;
     if (last) {
       const d = Math.hypot(x - last[0], y - last[1]);
       if (d < Math.max(0.6, r * 0.08)) return;
-      c.len += d;
+      len = last[3] + d;
     }
-    const p = [x, y, r, c.len];
+    const p = [x, y, r, len];
     pts.push(p);
     this._segment(last || p, p, c);
   }
@@ -479,14 +480,13 @@ export class PaintEngine {
     r.clear(true, false, false);
     r.setRenderTarget(prev);
     this.dirty = null;
-    const c = { ...s, pts: [], len: 0 };
     for (let i = 0; i < s.pts.length; i++) {
       const p = s.pts[i];
       const last = s.pts[i - 1] || p;
-      this._segment(last, p, c);
+      this._segment(last, p, s);
     }
     if (this.dirty) {
-      this._compose(c, this.dirty, under);
+      this._compose(s, this.dirty, under);
       this._copy(this.live, under, this.dirty.map((v) => Math.round(v)));
     }
   }
