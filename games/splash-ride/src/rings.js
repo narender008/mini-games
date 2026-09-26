@@ -120,6 +120,7 @@ export class Rings {
     scene.add(this.motes);
     this.chainId = 0;
     this._q = new THREE.Quaternion();
+    this.clear();
   }
 
   setViewport(h) {
@@ -131,6 +132,9 @@ export class Rings {
       r.live = false;
       r.root.visible = false;
     }
+    const pos = this.motes.geometry.attributes.position;
+    for (let k = 0; k < pos.count; k++) pos.array[k * 3 + 1] = -100;
+    pos.needsUpdate = true;
     this.streak = 0;
   }
 
