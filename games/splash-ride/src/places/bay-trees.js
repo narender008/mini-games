@@ -3,9 +3,13 @@
 // the shape that stands along sandy coasts. Trunks, limbs, needles and the
 // dark heart of each clump all come from one painted atlas, so each variant
 // is a single instanced draw; the tops sway gently in the night breeze.
+// Each clump's normals are bent outwards so it shades like a rounded tuft,
+// darker in its heart. The woods on the hills behind are painted conifer
+// impostors shared with the lake (see foliage.js).
 import * as THREE from 'three';
 import { rng } from '../config.js';
 import { canvasTexture, merge } from './common.js';
+import { makeImpostorWoods, CONIFER, texSize, addTranslucency, crownNormals } from './foliage.js';
 
 let shared = null;
 
@@ -14,8 +18,11 @@ let shared = null;
 // away in the smaller mipmaps. Solid patches in the bottom corners are for
 // bark (left) and the shadowy heart of a clump (right).
 function atlas() {
-  return canvasTexture(256, 512, (g, w, h) => {
+  return canvasTexture(texSize(256), texSize(512), (g, w, h) => {
     g.clearRect(0, 0, w, h);
+    g.scale(w / 256, h / 512);
+    w = 256;
+    h = 512;
     const r = rng(19);
     g.fillStyle = '#5a4535';
     g.fillRect(0, h - 26, 26, 26);
@@ -46,6 +53,8 @@ function atlas() {
       g.fill();
       needles(x, y, rad * 1.9, 34, -Math.PI / 2, Math.PI * 2, 12);
       needles(x, y - rad * 0.3, rad * 1.5, 16, -Math.PI / 2, 2.2, 20);
+      // fresh, paler tufts at the top of the clump
+      needles(x, y - rad * 0.6, rad * 1.1, 12, -Math.PI / 2, 1.6, 28);
     };
     g.strokeStyle = '#3d2f22';
     g.lineWidth = 5;
@@ -73,7 +82,7 @@ function atlas() {
 
 function materials() {
   if (shared) return shared;
-  const mat = new THREE.MeshStandardMaterial({ map: atlas(), alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.85 });
+  const mat = new THREE.MeshStandardMaterial({ map: atlas(), alphaTest: 0.4, side: THREE.DoubleSide, vertexColors: true, roughness: 0.85 });
   const time = { value: 0 };
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = time;
@@ -91,8 +100,9 @@ function materials() {
   transformed.x += sin(uTime * 0.8 + ph) * 0.22 * sway * gust;
   transformed.z += cos(uTime * 0.63 + ph * 1.4) * 0.15 * sway * gust;`,
       );
+    addTranslucency(sh, 0.15, 'vec3(0.9, 1.1, 0.6)', 0.3);
   };
-  mat.customProgramCacheKey = () => 'bay-pine';
+  mat.customProgramCacheKey = () => 'bay-pine-2';
   shared = { mat, time };
   return shared;
 }
@@ -101,12 +111,13 @@ const BARK_UV = [0.04, 0.025];
 const CORE_UV = [0.96, 0.025];
 
 // set every uv of a geometry to one texel of the atlas, and add a sway value
-function solidUV(g, uv, sway) {
+function solidUV(g, uv, sway, shade = 1) {
   const n = g.attributes.position.count;
   const a = new Float32Array(n * 2);
   for (let i = 0; i < n; i++) a.set(uv, i * 2);
   g.setAttribute('uv', new THREE.BufferAttribute(a, 2));
   g.setAttribute('sway', new THREE.BufferAttribute(new Float32Array(n).fill(sway), 1));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(shade), 3));
   return g;
 }
 
@@ -215,15 +226,24 @@ function pineVariant(seed) {
       g.rotateY((k / n) * Math.PI * 2 + r() * 0.5);
       g.translate(end.x, end.y, end.z);
       g.setAttribute('sway', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(sw), 1));
+      // darker in the heart of the clump, paler at its tips
+      const p = g.attributes.position;
+      const col = new Float32Array(p.count * 3);
+      for (let v = 0; v < p.count; v++) {
+        const d = Math.min(1, Math.hypot(p.getX(v) - end.x, p.getY(v) - end.y, p.getZ(v) - end.z) / size);
+        col.fill(0.5 + 0.5 * d, v * 3, v * 3 + 3);
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      crownNormals(g, (v, out) => out.set(end.x, end.y - size * 0.2, end.z), 0.55, 0.3);
       parts.push(g);
     }
     const heart = new THREE.IcosahedronGeometry(size * 0.42, 0);
     heart.scale(1, 0.6, 1);
     heart.translate(end.x, end.y + size * 0.12, end.z);
-    parts.push(solidUV(heart, CORE_UV, sw));
+    parts.push(solidUV(heart, CORE_UV, sw, 0.6));
   }
   const geo = merge(parts.map((g) => {
-    for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'sway'].includes(k)) g.deleteAttribute(k);
+    for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'sway', 'color'].includes(k)) g.deleteAttribute(k);
     return g;
   }));
   return geo;
@@ -264,132 +284,23 @@ export function makeSeaPines(spots, seed = 1) {
 
 // ------------------------------------------------------------ distant woods
 
-// Two painted trees side by side: a tall fir with tiers of drooping boughs
-// (left) and a round-headed pine (right), dark green, a little moonlit at
-// the top.
-function woodsAtlas() {
-  return canvasTexture(512, 512, (g, w, h) => {
-    g.clearRect(0, 0, w, h);
-    const r = rng(29);
-    const blob = (x, y, rx, ry, l) => {
-      g.fillStyle = `hsl(${100 + r() * 30}, ${24 + r() * 16}%, ${l}%)`;
-      g.beginPath();
-      for (let k = 0; k <= 16; k++) {
-        const a = (k / 16) * Math.PI * 2;
-        const rr = 0.72 + r() * 0.4;
-        g.lineTo(x + Math.cos(a) * rx * rr, y + Math.sin(a) * ry * rr);
-      }
-      g.fill();
-    };
-    // the fir: narrow trunk, boughs widening down the tree
-    const fx = 128;
-    g.fillStyle = '#2a2018';
-    g.fillRect(fx - 4, 60, 8, h - 60);
-    for (let i = 0; i < 26; i++) {
-      const t = i / 25;
-      const y = 22 + t * (h - 70);
-      const half = 8 + t * 104 * (0.85 + r() * 0.3);
-      for (const s of [-1, 1]) {
-        g.fillStyle = `hsl(${105 + r() * 25}, ${25 + r() * 12}%, ${8 + r() * 5}%)`;
-        g.beginPath();
-        g.moveTo(fx, y - 6);
-        g.quadraticCurveTo(fx + s * half * 0.6, y - 4 - r() * 6, fx + s * half, y + 10 + r() * 14);
-        g.lineTo(fx + s * half * 0.55, y + 18 + r() * 8);
-        g.lineTo(fx, y + 16);
-        g.fill();
-      }
-      if (r() < 0.6) blob(fx + (r() - 0.5) * half, y + 6, 10 + r() * 8, 5, 13 + r() * 6);
-    }
-    // the pine: a bare trunk up to a broad head of needle clumps
-    const px = 384;
-    g.strokeStyle = '#2e241b';
-    g.lineWidth = 10;
-    g.beginPath();
-    g.moveTo(px, h);
-    g.quadraticCurveTo(px + 10, h * 0.6, px - 6, h * 0.32);
-    g.stroke();
-    for (let i = 0; i < 26; i++) {
-      const a = r() * Math.PI;
-      const d = r();
-      blob(px + Math.cos(a) * d * 100, 170 - Math.sin(a) * d * 110 + r() * 60, 30 + r() * 26, 20 + r() * 14, 8 + r() * 6);
-    }
-    for (let i = 0; i < 12; i++) blob(px + (r() - 0.6) * 150, 70 + r() * 90, 18 + r() * 14, 11 + r() * 8, 15 + r() * 7);
-  });
-}
-
-let woodsShared = null;
-function woodsMaterial() {
-  if (woodsShared) return woodsShared;
-  const mat = new THREE.MeshStandardMaterial({ map: woodsAtlas(), alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.9 });
-  mat.onBeforeCompile = (sh) => {
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float variant;')
-      .replace('#include <uv_vertex>', '#include <uv_vertex>\n  vMapUv.x += variant * 0.5;');
-  };
-  mat.customProgramCacheKey = () => 'bay-woods';
-  woodsShared = mat;
-  return mat;
-}
-
-// three upright cards crossed through the trunk, their normals turned
-// outwards and up so the tree shades like a rounded mass, not a flat board
-function woodsGeometry() {
-  const pos = [];
-  const nrm = [];
-  const uv = [];
-  for (let k = 0; k < 3; k++) {
-    const a = (k / 3) * Math.PI;
-    const c = Math.cos(a);
-    const s = Math.sin(a);
-    const quad = [[-1, 0], [1, 0], [1, 1], [-1, 0], [1, 1], [-1, 1]];
-    for (const [u, v] of quad) {
-      pos.push(u * 0.5 * c, v, u * 0.5 * s);
-      const n = new THREE.Vector3(u * c * 0.75, 0.65, u * s * 0.75).normalize();
-      nrm.push(n.x, n.y, n.z);
-      uv.push((u + 1) * 0.25, v);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  return g;
-}
-
-// Plant distant woods at spots [{ x, y, z, ry, s, pine }]: one draw per
-// quarter of the map, so the quarters out of view are skipped.
+// Plant distant woods at spots [{ x, y, z, ry, s, pine }]: painted firs,
+// spruces and round-headed pines that turn to face the camera, dark and
+// cool under the moon. One draw per quarter of the map.
 export function makeWoods(spots, seed = 1) {
   const r = rng(seed);
-  const mat = woodsMaterial();
-  const geo = woodsGeometry();
-  const group = new THREE.Group();
-  group.name = 'woods';
-  const quarters = [[], [], [], []];
-  for (const s of spots) quarters[(s.x > 0 ? 1 : 0) + (s.z > 0 ? 2 : 0)].push(s);
-  const m = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  const up = new THREE.Vector3(0, 1, 0);
-  const p = new THREE.Vector3();
-  const sc = new THREE.Vector3();
-  const c = new THREE.Color();
-  for (const list of quarters) {
-    if (!list.length) continue;
-    const g = geo.clone();
-    g.setAttribute('variant', new THREE.InstancedBufferAttribute(new Float32Array(list.map((s) => (s.pine ? 1 : 0))), 1));
-    const mesh = new THREE.InstancedMesh(g, mat, list.length);
-    list.forEach((s, i) => {
-      const H = (s.pine ? 11 : 15) * s.s;
-      q.setFromAxisAngle(up, s.ry);
-      p.set(s.x, s.y, s.z);
-      sc.set(H * (s.pine ? 0.75 : 0.5), H, H * (s.pine ? 0.75 : 0.5));
-      m.compose(p, q, sc);
-      mesh.setMatrixAt(i, m);
-      c.setHSL(0.26 + r() * 0.08, 0.3, 0.55 + r() * 0.25);
-      mesh.setColorAt(i, c);
-    });
-    mesh.receiveShadow = true;
-    mesh.computeBoundingSphere();
-    group.add(mesh);
-  }
-  return group;
+  const kinds = spots.map((s) => {
+    if (s.pine) return CONIFER.pine;
+    const k = r();
+    return k < 0.45 ? CONIFER.spruce : k < 0.8 ? CONIFER.fir : CONIFER.broad;
+  });
+  return makeImpostorWoods(spots, {
+    name: 'woods',
+    kind: (s, i) => kinds[i],
+    size: (s, kind) => {
+      const h = (kind === CONIFER.pine ? 12 : 15) * s.s;
+      return [h, h * (kind === CONIFER.pine ? 0.6 : 0.5)];
+    },
+    tint: (c) => c.setHSL(0.24 + r() * 0.1, 0.2 + r() * 0.15, 0.45 + r() * 0.25),
+  });
 }
