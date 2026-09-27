@@ -1,0 +1,17 @@
+{
+  "name": "Magic Brush",
+  "short_name": "Magic Brush",
+  "description": "Paint a friend on a real canvas and watch it come alive and leap into a golden-hour garden. Little ones colour in an outline; big kids paint freely. No losing, ever.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#3b2a4a",
+  "theme_color": "#3b2a4a",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}
