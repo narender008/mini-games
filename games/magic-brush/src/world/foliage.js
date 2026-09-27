@@ -283,7 +283,8 @@ function flowerGeometry(petals = 6) {
 }
 
 // clumps of little flowers: positions [[x, z, radius, count, colours[]], ...]
-export function flowerBeds({ beds, seed = 5, headSize = 0.045, stem = 0.22 }) {
+// avoid(x, z): true where no flower may grow
+export function flowerBeds({ beds, avoid, seed = 5, headSize = 0.045, stem = 0.22 }) {
   const R = rng(seed);
   let total = 0;
   for (const b of beds) total += b[3];
@@ -336,6 +337,7 @@ export function flowerBeds({ beds, seed = 5, headSize = 0.045, stem = 0.22 }) {
       const r = Math.sqrt(R()) * br;
       const x = bx + Math.cos(a) * r;
       const z = bz + Math.sin(a) * r;
+      if (avoid?.(x, z)) continue;
       const h = stem * (0.6 + R() * 0.8) * (1 - (r / br) * 0.35);
       p.set(x, 0, z);
       sc.set(1, h, 1);
@@ -354,6 +356,7 @@ export function flowerBeds({ beds, seed = 5, headSize = 0.045, stem = 0.22 }) {
       n++;
     }
   }
+  heads.count = stems.count = n;
   heads.castShadow = false;
   heads.receiveShadow = true;
   stems.receiveShadow = true;

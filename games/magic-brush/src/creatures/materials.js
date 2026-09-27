@@ -202,6 +202,7 @@ const HIDE_COLOR = /* glsl */ `
 vec3 mbBase = vTint;
 if (vMix.x > 0.001) mbBase = mix(vTint, mbPaint(vPaintUv), vMix.x);
 float mbPat = vMix.w;
+float mbFur = min(vMix.y, 1.0);
 float mbH = 0.0;
 float mbScaleId = 0.0;
 float mbCrease = 0.0;
@@ -220,7 +221,7 @@ if (mbPat > 0.01) {
 #endif
 #ifdef FURRY
 // the undercoat between hairs is a little darker than the tips
-mbBase *= mix(1.0, 0.8 + 0.2 * mbNoise(vRest * 400.0), vMix.y);
+mbBase *= mix(1.0, 0.8 + 0.2 * mbNoise(vRest * 400.0), mbFur);
 #endif
 // wet paint while not yet alive
 float mbPaintState = 1.0 - vAlive;
@@ -252,10 +253,10 @@ material.iridescence *= vMix.w * (0.75 + 0.5 * mbScaleId);
 material.iridescenceThickness = mix(260.0, 520.0, mbScaleId);
 #endif
 #ifdef USE_SHEEN
-material.sheenColor *= mix(vec3(0.0), mbBase * 0.7 + 0.3, vMix.y);
+material.sheenColor *= mix(vec3(0.0), mbBase * 0.7 + 0.3, mbFur);
 #endif
 #ifdef USE_CLEARCOAT
-material.clearcoat *= (1.0 - vMix.y) * (1.0 - mbPat * 0.5);
+material.clearcoat *= (1.0 - mbFur) * (1.0 - mbPat * 0.5);
 #endif
 `;
 

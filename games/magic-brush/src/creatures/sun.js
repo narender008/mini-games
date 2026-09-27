@@ -247,7 +247,7 @@ export class Sun extends Friend {
 
     this.glowU.uSunGlow.value = 0.42 + Math.sin(t * 1.5) * 0.05 + fl * 0.5;
     if (this.trick) this.trickPose(this.trick, dt);
-    else this.spinV = lerp(this.spinV, 0.25, 1 - Math.exp(-dt * 1.5));
+    if (this.trick?.name !== 'spin') this.spinV = lerp(this.spinV, 0.25, 1 - Math.exp(-dt * 1.5));
   }
 
   trickPose(tr, dt) {

@@ -224,13 +224,11 @@ svg {
   z-index: 8;
   pointer-events: none;
 }
-#menu > * {
-  pointer-events: auto;
-}
 .home-link {
   position: fixed;
   top: calc(12px + var(--safe-t));
   left: calc(12px + var(--safe-l));
+  pointer-events: auto;
 }
 .menu-main {
   position: fixed;

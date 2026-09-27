@@ -78,7 +78,7 @@ export class Audio {
   // Browsers only allow sound after a tap: call this from any input.
   unlock() {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended' && !this.hidden) this.ctx.resume();
+      if (this.ctx.state !== 'running' && !this.hidden) this.ctx.resume().catch(() => {});
       return;
     }
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -122,7 +122,7 @@ export class Audio {
     this.music = new Music(ctx, this.master, this.verbIn);
     this.ready = true;
     if (this.scene) this.setScene(this.scene);
-    if (this.wantMusic) this.music.start();
+    this.music.start();
   }
 
   setMuted(m) {
@@ -134,8 +134,8 @@ export class Audio {
   pageHidden(h) {
     this.hidden = h;
     if (!this.ctx) return;
-    if (h) this.ctx.suspend();
-    else this.ctx.resume();
+    if (h) this.ctx.suspend().catch(() => {});
+    else this.ctx.resume().catch(() => {});
   }
 
   // ------------------------------------------------------------ painting
@@ -464,10 +464,6 @@ export class Audio {
     this.music.setLevel(scene === 'menu' ? 0.8 : scene === 'play' ? 0.75 : 0.55);
   }
 
-  startMusic() {
-    this.wantMusic = true;
-    if (this.ready) this.music.start();
-  }
 
   update(dt) {
     if (!this.ready) return;

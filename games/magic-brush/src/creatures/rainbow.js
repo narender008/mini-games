@@ -397,7 +397,8 @@ const GLOW = /* glsl */ `
 {
   float a = vRb.x / 3.14159265;
   float sh = 0.5 + 0.5 * sin(a * 14.0 - uT2 * 2.2);
-  float wave = uWaveAmp * exp(-pow((a - uWave) * 5.0, 2.0));
+  float wd = (a - uWave) * 5.0;
+  float wave = uWaveAmp * exp(-wd * wd);
   float alive = uAliveOn > 0.5 ? vAlive : 1.0;
   totalEmissiveRadiance += diffuseColor.rgb * (uGlowK * (0.75 + 0.25 * sh) + wave * 1.6) * alive;
 }`;

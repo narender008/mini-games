@@ -135,7 +135,8 @@ const FACE_EMISSIVE = /* glsl */ `
     float gloss = cWet * (1.0 - S.a) + cov * 0.18;
     totalEmissiveRadiance += vec3(1.0, 0.95, 0.88) * sp * gloss;
   }
-  float band = exp(-pow((vUvC.x - uSweep) / 0.035, 2.0));
+  float sb = (vUvC.x - uSweep) / 0.035;
+  float band = exp(-sb * sb);
   float spark = pow(cN21(vUvC * vec2(240.0, 180.0) + uTime * 2.0), 8.0) * 6.0;
   totalEmissiveRadiance += vec3(1.0, 0.82, 0.5) * uGlow * band * (0.8 + spark);
   // glitter twinkles a little by itself too

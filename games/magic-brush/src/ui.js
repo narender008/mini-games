@@ -66,7 +66,7 @@ export class UI {
     this.kind = 'brush';
     this.size = 'medium';
     this.state = 'loading';
-    document.addEventListener('pointerdown', () => on.any?.(), { capture: true });
+    for (const type of ['pointerdown', 'pointerup']) document.addEventListener(type, () => on.any?.(), { capture: true });
 
     // start screen
     for (const b of $$('.mode')) b.addEventListener('click', () => on.mode(b.dataset.mode));

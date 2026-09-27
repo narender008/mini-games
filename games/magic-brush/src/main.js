@@ -79,6 +79,7 @@ class App {
     this.subjectId = pickValid(QUERY.get('pick'), SUBJECTS.map((s) => s.id)) || 'dragon';
     this.canvasFriend = null;
     this.subjectToken = 0;
+    this.picked = false;
     this.records = [];
     this.paintings = [];
   }
@@ -211,7 +212,6 @@ class App {
       start: () => {
         enterFullscreen();
         this.audio.unlock();
-        this.audio.startMusic();
         this.audio.click();
         this.startPainting();
       },
@@ -245,8 +245,8 @@ class App {
       },
       pick: (id) => {
         this.audio.select();
-        this.newCanvas();
-        this.setSubject(id);
+        if (this.mode === 'little') this.newCanvas();
+        this.setSubject(id, true);
       },
       world: () => {
         this.audio.click();
@@ -280,6 +280,7 @@ class App {
   }
 
   setMode(m) {
+    if (m !== this.mode) this.picked = false;
     this.mode = m;
     save('mode', m);
     this.ui.setMode(m);
@@ -386,7 +387,7 @@ class App {
     this.showOutline();
     if (!this.canvasFriend && this.mode === 'little') this.setSubject(this.subjectId);
     if (this.mode === 'little' && !direct && !this.paint.strokes.length && !QUERY.has('pick')) {
-      setTimeout(() => this.state === 'paint' && !this.paint.strokes.length && this.ui.showPicker(), REDUCED_MOTION.matches ? 100 : 900);
+      setTimeout(() => this.state === 'paint' && !this.paint.strokes.length && !this.paint.painting && !this.ui.overlayOpen && this.ui.showPicker(), REDUCED_MOTION.matches ? 100 : 900);
     }
     this.checkCoverage();
   }
@@ -405,7 +406,8 @@ class App {
   }
 
   // the friend to paint next: built now, its outline drawn on the canvas
-  async setSubject(id) {
+  // (picked: a child chose it, which gives Big kids its outline too)
+  async setSubject(id, picked = false) {
     this.subjectId = id;
     const token = ++this.subjectToken;
     let f;
@@ -420,6 +422,7 @@ class App {
     }
     if (this.canvasFriend) this.canvasFriend.dispose();
     this.canvasFriend = f;
+    if (picked) this.picked = true;
     this.outline.clear();
     this.outline.draw(f);
     this.lineAlpha = 0;
@@ -427,8 +430,13 @@ class App {
     this.checkCoverage();
   }
 
+  // painting a chosen friend's outline: always for Little ones, for Big kids once they pick one
+  get outlined() {
+    return this.mode === 'little' || this.picked;
+  }
+
   showOutline() {
-    if (this.mode === 'little' && this.canvasFriend) this.easel.setOutline(this.outline.lines, this.outline.mask);
+    if (this.outlined && this.canvasFriend) this.easel.setOutline(this.outline.lines, this.outline.mask);
     else this.easel.setOutline(null, null);
     this.lineSolid = 0;
   }
@@ -460,7 +468,7 @@ class App {
     if (this.state !== 'paint' || this.alive.busy) return;
     this.audio.unlock();
     this.endStroke();
-    if (this.mode === 'little') {
+    if (this.outlined) {
       if (!this.canvasFriend) return;
       this.startMagic(this.canvasFriend);
       return;
@@ -586,6 +594,7 @@ class App {
       this.easel.setOutline(null, null);
       this.canvasFriend?.dispose();
       this.canvasFriend = null;
+      this.picked = false;
       if (this.mode === 'little') this.setSubject(this.subjectId);
       this.toPlayAt = this.time + 1.2;
     });
@@ -642,7 +651,7 @@ class App {
   savePainting() {
     // the picture for the shelf, and the strokes themselves to hang it again
     const strokes = this.paint.strokes.map((c) => ({ brush: c.brush, seed: c.seed, time: c.time, pts: c.pts }));
-    const rec = { id: newId(), image: this.magic.paintingImage(), strokes, made: Date.now() };
+    const rec = { id: newId(), image: this.magic.paintingImage(), strokes, w: this.paint.w, made: Date.now() };
     this.paintings.unshift(rec);
     this.store.put('paintings', rec).catch(() => {});
     // the shelf keeps the newest few dozen
@@ -670,7 +679,15 @@ class App {
     this.newCanvas();
     const last = p.strokes[p.strokes.length - 1].time;
     const now = this.paint.clock;
-    this.paint.replay(p.strokes.map((c) => ({ ...c, time: now - 120 - (last - c.time) })));
+    const k = this.paint.w / (p.w ?? 1024);
+    this.paint.replay(
+      p.strokes.map((c) => ({
+        ...c,
+        brush: { ...c.brush, radius: c.brush.radius * k, load: c.brush.load * k },
+        pts: c.pts.map(([x, y, r, len]) => [x * k, y * k, r * k, len * k]),
+        time: now - 120 - (last - c.time),
+      })),
+    );
     this.checkCoverage();
   }
 
@@ -887,7 +904,7 @@ class App {
     this.paint.update(dt);
     // the outline fades in (and the magic turns its dots into a line)
     const wantLine = this.state === 'paint' || this.state === 'magic' ? 1 : 0.0;
-    this.lineAlpha = damp(this.lineAlpha, this.mode === 'little' || this.magicRun ? wantLine : 0, 3, dt);
+    this.lineAlpha = damp(this.lineAlpha, this.outlined || this.magicRun ? wantLine : 0, 3, dt);
     const u = this.easel.uniforms;
     u.uLineAlpha.value = this.lineAlpha;
     u.uLineSolid.value = this.lineSolid;

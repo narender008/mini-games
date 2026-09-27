@@ -97,7 +97,6 @@ export class Friends {
     e.leaving = 0.001;
     e.state = 'leaving';
     e.speed = 0;
-    e.friend.startTrick('bye', 1.2);
   }
 
   has(record) {
@@ -157,7 +156,11 @@ export class Friends {
       const f = e.friend;
       let shrink = 1;
       if (e.leaving) {
-        e.leaving += dt;
+        if (!e.waving && !f.trick) {
+          e.waving = true;
+          f.startTrick('bye', 1.2);
+        }
+        if (e.waving) e.leaving += dt;
         const k = clamp((e.leaving - 0.8) / 0.6, 0, 1);
         shrink = Math.max(0.001, 1 - k);
         if (k > 0 && !e.poofed) {
@@ -195,7 +198,7 @@ export class Friends {
           const dx = e.pos.x - o.pos.x;
           const dz = e.pos.z - o.pos.z;
           const d = Math.hypot(dx, dz);
-          const want = (f.restRadius + o.friend.restRadius) * 0.8;
+          const want = (f.restRadius * f.object.scale.x + o.friend.restRadius * o.friend.object.scale.x) * 0.8;
           if (d < want && d > 1e-4) {
             const push = (want - d) * 2.5 * dt;
             e.pos.x += (dx / d) * push;

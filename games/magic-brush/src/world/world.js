@@ -22,6 +22,12 @@ const DECK_Z1 = 2.8;
 const DECK_X = 3.0;
 
 export const POND = { x: -2.3, z: -4.2, r: 1.15 };
+// lantern posts along the path: x, z, light
+const POSTS = [
+  [0.95, -2.2, 0.35],
+  [-0.9, -4.6, 0.35],
+  [1.1, -6.9, 0],
+];
 export const TREES = [
   { x: 3.4, z: -5.2, r: 0.3 },
   { x: -4.6, z: -2.2, r: 0.2 },
@@ -39,6 +45,7 @@ export function walkable(x, z) {
   const circ = (cx, cz, r) => r - Math.hypot(x - cx, z - cz);
   d = Math.max(d, circ(POND.x, POND.z, POND.r + 0.25));
   for (const t of TREES) d = Math.max(d, circ(t.x, t.z, t.r + 0.2));
+  for (const [px, pz] of POSTS) d = Math.max(d, circ(px, pz, 0.2));
   d = Math.max(d, circ(0, -0.2, 0.55)); // the easel
   d = Math.max(d, circ(-1.05, 0.55, 0.55)); // the worktable
   return d;
@@ -54,7 +61,7 @@ export const WATER_Y = -0.02;
 // garden beds and lawn, the sun and rainbows up over the garden, boats on
 // the pond. taken: [{x, z}] already used, to keep them apart.
 const HOMES = {
-  garden: [[-3.1, -1.6], [-2.7, -3.0], [-0.7, -5.2], [1.0, -5.9], [2.3, -3.2], [3.1, -1.9], [1.8, -6.0], [-1.6, -3.6], [-3.6, -2.4], [0.2, -4.4], [2.9, -4.6], [-1.3, -1.8]],
+  garden: [[-3.1, -1.6], [-2.6, -2.5], [-0.7, -5.2], [1.0, -5.9], [2.3, -3.2], [3.1, -1.9], [1.8, -6.0], [-1.0, -3.3], [-3.6, -2.4], [0.2, -4.4], [2.9, -4.6], [-1.3, -1.8]],
   sky: [[-1.4, -4.6, 1.7], [1.2, -5.2, 1.9], [-3.0, -3.2, 1.6], [2.6, -3.6, 1.6], [0.0, -6.5, 2.1], [-2.2, -6.2, 2.0]],
   pond: [[POND.x + 0.35, POND.z + 0.2], [POND.x - 0.4, POND.z - 0.1], [POND.x + 0.05, POND.z - 0.5], [POND.x - 0.2, POND.z + 0.5]],
 };
@@ -449,6 +456,7 @@ export class World {
     const warm = [0xffc93c, 0xff9a3c, 0xf36b4b, 0xfff1a8];
     this.group.add(
       flowerBeds({
+        avoid: (x, z) => Math.hypot(x - POND.x, z - POND.z) < POND.r + 0.1,
         beds: [
           [-3.6, -1.2, 0.9, 70, pinks],
           [-3.2, -3.1, 0.7, 50, blues],
@@ -536,7 +544,7 @@ export class World {
     this.stringMat = lights.userData.mat;
     // lanterns on posts along the path
     const postMat = new THREE.MeshStandardMaterial({ color: 0x3b2c22, roughness: 0.6, metalness: 0.4 });
-    for (const [x, z, lit] of [[0.95, -2.2, 0.35], [-0.9, -4.6, 0.35], [1.1, -6.9, 0]]) {
+    for (const [x, z, lit] of POSTS) {
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.03, 1.05, 8), postMat);
       post.position.set(x, 0.52, z);
       post.castShadow = true;
