@@ -174,7 +174,6 @@ class Leg {
   }
 }
 
-
 // The shell: a dome (a polar grid seen from above) with the plates pressed
 // into it: a groove along every border, fine growth rings inside each
 // plate, each plate gently puffed up; then a rim that flares a little and

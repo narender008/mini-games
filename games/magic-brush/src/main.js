@@ -7,15 +7,13 @@
 // with their own colours, and the friend (creatures/) lifts off the canvas
 // half paint, half alive (alive.js) and leaps into the garden to play
 // (friends.js). Big kids paint freely; GO asks what it is (guess.js) and the
-// friend takes its shape from their painting. Friends are kept on this
+// friend takes its shape from their painting, unless they picked a friend,
+// which gives them its outline as for Little ones. Friends are kept on this
 // device (store.js) and wait on the friends shelf.
 //
-// Debug (?debug): window.__mb has freeze, thaw, step(ms), paint(points,
-// opts) and stroke(x0, y0, x1, y1) in canvas uv, go, pick(id), mode(id),
-// play, menu, pose(id) (a friend in the garden), trick(name), friends, state
-// and app. ?play starts straight at the easel, ?mode=little|big, ?pick=<id>,
-// ?cover hides the UI, plus ?quality=, ?msaa=, ?shadows=0, ?ao=0, ?dof=0,
-// ?fur=, ?tone=.
+// ?play starts straight at the easel, ?mode=little|big, ?pick=<id>, ?cover
+// hides the UI, plus ?quality=, ?msaa=, ?shadows=0, ?ao=0, ?dof=0, ?fur=,
+// ?tone=; ?debug exposes window.__mb (see the end of this file).
 import * as THREE from 'three';
 import { QUERY, DEBUG, REDUCED_MOTION, MODES, load, save, pickValid, clamp, damp, rand, lin, tick } from './config.js';
 import { detectQuality, FrameGovernor } from './quality.js';

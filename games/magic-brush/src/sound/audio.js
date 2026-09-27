@@ -464,7 +464,6 @@ export class Audio {
     this.music.setLevel(scene === 'menu' ? 0.8 : scene === 'play' ? 0.75 : 0.55);
   }
 
-
   update(dt) {
     if (!this.ready) return;
     const t = this.ctx.currentTime;
