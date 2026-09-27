@@ -763,7 +763,7 @@ class App {
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('keydown', (e) => {
       if (e.key === 'f' || e.key === 'F') {
-        if (e.target.closest?.('input, textarea')) return;
+        if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('input, textarea')) return;
         toggleFullscreen();
       } else if ((e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey) && this.state === 'paint') {
         e.preventDefault();

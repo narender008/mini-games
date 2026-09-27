@@ -205,7 +205,6 @@ export class Flower extends Friend {
         this.open.kick(9);
         this.emit('sparkle', { at: this.restPoint('head', [0, HC[1], 0.03]), count: 30, colors: [[2.0, 1.7, 0.6], [1.9, 1.1, 1.5]], speed: 0.6, up: 0.7, size: 0.018 });
       }
-      if (this.grow > 1.7) this.grewOpen = false;
     }
 
     // the head looks about, bobbing on its stem

@@ -584,6 +584,7 @@ export class Dragon extends Friend {
     pose(B.wingTipL, 0, 0, lerp(0.05, 0.35 + beat * 0.4, spread));
     pose(B.wingTipR, 0, 0, -lerp(0.05, 0.35 + beat * 0.4, spread));
 
+    m.fly = 0;
     if (this.trick) this.trickPose(this.trick, dt);
   }
 
@@ -630,11 +631,9 @@ export class Dragon extends Friend {
       }
       if (!tr.landed && t > 2.3) {
         tr.landed = true;
-        this.motion.fly = 0;
         this.emit('land', { at: this.bonePoint('root') });
         this.emit('sound', { name: 'happy' });
       }
-      if (t > 2.3) this.motion.fly = 0;
     } else if (tr.name === 'wiggle') {
       // a little dance: hops, a wiggle, a wag
       const hop = Math.max(0, Math.sin(t * Math.PI * 2.2)) * (1 - ramp(t, 2.0, 2.4));

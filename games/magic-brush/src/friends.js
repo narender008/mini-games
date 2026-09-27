@@ -96,6 +96,7 @@ export class Friends {
   leave(e) {
     e.leaving = 0.001;
     e.state = 'leaving';
+    e.speed = 0;
     e.friend.startTrick('bye', 1.2);
   }
 
