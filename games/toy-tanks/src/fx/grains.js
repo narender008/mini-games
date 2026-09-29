@@ -221,6 +221,7 @@ export class Grains {
       if (this.S[i * N + ST] === 0) break;
       i = i + 1 === this.capacity ? 0 : i + 1;
     }
+    if (this.S[i * N + ST] !== 0) i = this.head;
     this.head = i + 1 === this.capacity ? 0 : i + 1;
     if (i >= this.high) this.high = i + 1;
     const S = this.S;

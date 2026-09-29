@@ -248,6 +248,13 @@ export class Targets {
     return y;
   }
 
+  // the nearest target standing on the ground (bonus stars float overhead)
+  get front() {
+    let x = Infinity;
+    for (const it of this.items) if (it.kind !== 'bonus') x = Math.min(x, it.x);
+    return x;
+  }
+
   collect(shape) {
     const it = shape.target;
     if (!it || !it.alive) return 0;

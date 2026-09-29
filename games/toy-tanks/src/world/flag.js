@@ -65,4 +65,12 @@ transformed.x *= 0.55 + 0.45 * k;`,
     this.angle += (want - this.angle) * Math.min(1, dt * 2);
     this.pivot.rotation.y = this.angle;
   }
+
+  dispose() {
+    this.object.traverse((o) => {
+      if (!o.isMesh) return;
+      o.geometry.dispose();
+      o.material.dispose();
+    });
+  }
 }

@@ -383,7 +383,7 @@ export class UI {
           `<div class="side" style="color:${hex(s.view.spec?.color ?? 0x1fb3b0)}"><svg viewBox="0 0 32 24"><use href="#i-tank" /></svg><span style="color:var(--ink)">${s.score}</span>${s.score === best && (mode === 'cpu' || mode === 'duo') ? '<span class="crown" aria-label="Top score">👑</span>' : ''}</div>`,
       )
       .join('');
-    setTimeout(() => {
+    this.partyT = setTimeout(() => {
       el.party.hidden = false;
       el.hud.hidden = true;
     }, 900);
@@ -393,6 +393,7 @@ export class UI {
   }
 
   hideParty() {
+    clearTimeout(this.partyT);
     this.el.party.hidden = true;
   }
 

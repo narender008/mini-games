@@ -107,7 +107,7 @@ export const STAGE = {
 // The scenery around the lane.
 export async function build({ app, quality, terrain, layout, softUniforms }) {
   const THREE = await import('three');
-  const [{ Grass }, { WindFlag }, { Flowers }, rocksMod, { Trees, scatterTrees }, { Plants }, { Puddles }, { Rain }, { loadProp }] = await Promise.all([
+  const [{ Grass }, { WindFlag }, { Flowers }, rocksMod, { Trees, scatterTrees }, { Plants }, { Puddles }, { Rain }, { tryProp }] = await Promise.all([
     import('../world/grass.js'),
     import('../world/flag.js'),
     import('../world/flowers.js'),
@@ -116,7 +116,7 @@ export async function build({ app, quality, terrain, layout, softUniforms }) {
     import('../world/plants.js'),
     import('../world/puddles.js'),
     import('../world/rain.js'),
-    import('../props.js'),
+    import('../world/tryprop.js'),
   ]);
   const group = new THREE.Group();
   const H = (x, z) => terrain.baseAt(x, z);
@@ -229,26 +229,27 @@ export async function build({ app, quality, terrain, layout, softUniforms }) {
 
   // ---------------------------------------------------------------- fence, can
   // one-metre fence tiles from the props kit, standing on the raised bed and meeting end to end
-  const fenceTiles = [];
   for (let i = -4; i <= 3; i++) {
-    const tile = await loadProp('fence');
+    const tile = await tryProp('fence');
+    if (!tile) break;
     const x = i + 0.5;
     const lean = Math.sin(i * 12.9898) * 0.5;
     tile.position.set(x, H(x, FENCE_Z) - 0.01, FENCE_Z + lean * 0.03);
     tile.rotation.set(0, lean * 0.03, lean * 0.012);
     tile.scale.set(1, 0.86 + 0.1 * Math.sin(i * 4.1 + 1), 1.2);
     group.add(tile);
-    fenceTiles.push(tile);
   }
 
   // the watering can stands just behind the lane between the tanks, near
   // enough for a burst to knock it about
-  const can = await loadProp('watering-can');
-  const cx = (t0 + t1) / 2 + 0.22;
-  const cz = -0.34;
-  can.position.set(cx, H(cx, cz) - 0.004, cz);
-  can.rotation.y = 0.5;
-  group.add(can);
+  const can = await tryProp('watering-can');
+  if (can) {
+    const cx = (t0 + t1) / 2 + 0.22;
+    const cz = -0.34;
+    can.position.set(cx, H(cx, cz) - 0.004, cz);
+    can.rotation.y = 0.5;
+    group.add(can);
+  }
 
   // ---------------------------------------------------------------- water and rain
   const puddles = new Puddles({ terrain, level: PUDDLE, area: [-2.8, 2.8, -0.9, 1.7], color: 0x6a5238, deep: 0x2a2014, rough: 0.03, ior: 1.9, tilt: 0.16 });
@@ -307,6 +308,7 @@ export async function build({ app, quality, terrain, layout, softUniforms }) {
       farTrees.dispose();
       puddles.dispose();
       rain.dispose();
+      flag.dispose();
       for (const d of disposers) d();
     },
   };

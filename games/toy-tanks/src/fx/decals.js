@@ -55,11 +55,13 @@ export class Decals {
     const ctx = this.ctx;
     const world = ctx.world;
     const cap = this.cap;
+    // a dead slot near the head; if none within a short scan, the oldest (the head itself)
     let i = this.head;
-    for (let n = 0; n < cap; n++) {
+    for (let n = 0; n < 24; n++) {
       if (this.state[i] === 0) break;
       i = i + 1 === cap ? 0 : i + 1;
     }
+    if (this.state[i] !== 0) i = this.head;
     this.head = i + 1 === cap ? 0 : i + 1;
     if (i >= this.high) this.high = i + 1;
     const y = world.heightAt(x, z);

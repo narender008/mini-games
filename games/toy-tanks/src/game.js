@@ -24,6 +24,8 @@ export class Game {
     this.turn = 0;
     this.timer = 0;
     this.pts = new Float32Array(400);
+    // the dotted arc's own points (the Arc keeps drawing them after a shot)
+    this.arcPts = new Float32Array(400);
     // one blast event, reused for every burst (see world/react.js)
     this.craterInfo = { x: 0, z: 0, r: 0, depth: 0 };
     this.blastEvent = { x: 0, y: 0, z: 0, power: 0, great: false, kind: '', ground: '', water: false, scale: 1, radius: 0, vx: 0, vy: 0, time: 0, crater: null, tank: null };
@@ -236,9 +238,11 @@ export class Game {
   }
 
   fire() {
+    if (this.phase === 'aim' && this.side?.human) this.launch();
+  }
+
+  launch() {
     const s = this.side;
-    if (this.phase !== 'aim' && this.phase !== 'think') return;
-    if (this.phase === 'aim' && !s.human) return;
     const app = this.app;
     s.driveDir = 0;
     s.view.drive(0);
@@ -494,7 +498,7 @@ export class Game {
         this.showArc(s, s.quick ? 1 : 0.45);
         if (this.timer > dur + (s.quick ? 0.05 : 0.45)) {
           s.quick = false;
-          this.fire();
+          this.launch();
         }
         break;
       }
@@ -537,10 +541,10 @@ export class Game {
 
   showArc(s, fraction) {
     const app = this.app;
-    const m = this.muzzleAt(s, s.shownAngle);
-    launchVelocity(s.shownAngle, s.power, s.facing, this._v);
-    const n = app.flight.predict(s.ball, m.x, m.y, this._v.x, this._v.y, this.pts, 3, 200, this.land, app.flight.shapes, s.view);
-    app.arc.set(this.pts, n, fraction ?? this.arcFraction());
+    const m = this.muzzleAt(s, s.angle);
+    launchVelocity(s.angle, s.power, s.facing, this._v);
+    const n = app.flight.predict(s.ball, m.x, m.y, this._v.x, this._v.y, this.arcPts, 3, 200, this.land, app.flight.shapes, s.view);
+    app.arc.set(this.arcPts, n, fraction ?? this.arcFraction());
   }
 
   // how much of the path the dotted arc shows
@@ -551,14 +555,21 @@ export class Game {
   }
 
   // shoved by a burst: slide, dragging to a stop within a few centimetres,
-  // never off the strip or into the other tank
+  // never off the strip, into the other tank or into a target
   slideStep(s, dt) {
-    const o = s === this.sides[0] ? this.sides[1] : this.sides[0];
-    let nx = clamp(s.x + s.slideV * dt, -2.2, 2.2);
-    if (o && o.view.object.visible && Math.abs(nx - o.x) < 0.4) nx = s.x;
-    s.x = nx;
+    s.x = this.room(s, s.x + s.slideV * dt);
     s.slideV *= Math.exp(-dt * 9);
     if (Math.abs(s.slideV) < 0.002) s.slideV = 0;
+  }
+
+  // where a tank may move to: on the strip, a friendly gap from the other
+  // tank, and short of the targets standing in the lane
+  room(s, nx) {
+    const o = s === this.sides[0] ? this.sides[1] : this.sides[0];
+    nx = clamp(nx, -2.2, 2.2);
+    if (o.view.object.visible && Math.abs(nx - o.x) < 0.4) return s.x;
+    if (this.mode === 'targets') nx = Math.min(nx, Math.max(s.x, this.app.targets.front - 0.15));
+    return nx;
   }
 
   driveStep(s, dt) {
@@ -571,12 +582,7 @@ export class Game {
       }
       return;
     }
-    const other = this.other;
-    const step = s.driveDir * DRIVE_SPEED * dt;
-    let nx = s.x + step;
-    // stay on the strip and keep a friendly gap from the other tank
-    nx = clamp(nx, -2.2, 2.2);
-    if (Math.abs(nx - other.x) < 0.4) nx = s.x;
+    const nx = this.room(s, s.x + s.driveDir * DRIVE_SPEED * dt);
     const moved = Math.abs(nx - s.x);
     s.fuel = Math.max(0, s.fuel - moved / DRIVE_PER_TURN);
     s.x = nx;
@@ -608,6 +614,7 @@ export class Game {
     const a = this.sides[0];
     const b = this.mode === 'targets' ? { x: this.targetsFar(), y: Math.min(a.y, this.app.targets.low) } : this.sides[1];
     for (const s of this.sides) s.view.celebrate(true);
+    app.audio.wind(0);
     this.frameLane(Math.min(a.x, b.x) - 0.25, Math.max(a.x, b.x) + 0.25, Math.min(a.y, b.y) - 0.05, Math.max(a.y, b.y) + 0.4, { pace: 1.6, yaw: 0 });
     app.onCelebrate(this.sides, this.mode);
   }
@@ -621,5 +628,6 @@ export class Game {
     }
     this.app.targets?.clear();
     this.app.arc.show(false);
+    this.app.audio.wind(0);
   }
 }

@@ -144,9 +144,10 @@ export async function build({ app, quality, terrain, layout }) {
   // the lawn thins out over the moss on the knolls
   const moss = patchFor(layout);
   // (none at all on the knolls' moss, so the tanks stand up clear of it)
+  const B = rng(31);
   const bare = (x, z) => {
     const m = moss(x, z);
-    return m > 0.3 || Math.random() < m * 3;
+    return m > 0.3 || B() < m * 3;
   };
   const grass = new Grass({ terrain, quality, spec: STAGE.grass, keepOut: bare });
   group.add(grass.mesh);
@@ -289,6 +290,7 @@ export async function build({ app, quality, terrain, layout }) {
       farTrees.dispose();
       water.dispose();
       motes.dispose();
+      flag.dispose();
     },
   };
 }

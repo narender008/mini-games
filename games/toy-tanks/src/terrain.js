@@ -487,9 +487,11 @@ float gAO;`,
   // Dig a crater. radius and depth in metres; kind shapes it: 'sand' slumps
   // to a soft bowl, 'snow' keeps a crisp rim, 'mud' splashes wet.
   crater(x, z, radius, depth, kind = 'grass') {
-    // keep the whole crater inside the strip
-    x = clamp(x, -STRIP_X + radius * 2.4, STRIP_X - radius * 2.4);
-    z = clamp(z, -STRIP_Z + radius * 2.4, STRIP_Z - radius * 2.4);
+    // keep the whole crater inside the strip (in the middle of it, if it is wider than the strip)
+    const mx = Math.max(0, STRIP_X - radius * 2.4);
+    const mz = Math.max(0, STRIP_Z - radius * 2.4);
+    x = clamp(x, -mx, mx);
+    z = clamp(z, -mz, mz);
     const rim = kind === 'sand' ? 0.18 : kind === 'snow' ? 0.34 : kind === 'mud' ? 0.3 : 0.26;
     // the heights the game reads change at once...
     this.stamp(x, z, radius, depth, rim, kind);

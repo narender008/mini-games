@@ -1220,19 +1220,16 @@ export class Audio {
   // The wind: a soft gust layer, its loudness following `strength01` smoothly.
   // It holds its level until told otherwise (no need to call every frame).
   wind(strength01 = 0) {
-    if (!this.ready()) return;
     const s = unit(strength01);
-    const now = this.now();
     let v = this.vox.wind;
-    if (!v) {
-      if (s < 0.01) return;
-      v = this.buildWind(now);
-    }
-    v.last = now;
     if (s < 0.01) {
-      this.fadeVoice(v, now);
+      if (v) this.fadeVoice(v, this.now());
       return;
     }
+    if (!this.ready()) return;
+    const now = this.now();
+    v ??= this.buildWind(now);
+    v.last = now;
     if (!v.on) {
       v.on = true;
       v.out.gain.cancelScheduledValues(now);

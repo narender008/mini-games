@@ -2,7 +2,7 @@
 
 Every file in `assets/env/` and `assets/tex/` was made from the CC0 originals below (Poly Haven and ambientCG, CC0 1.0, no attribution required; authors are credited anyway). They were cropped, regraded, resized and re-encoded; the originals are not in this repository. Everything else in the game (tanks, props, scenery, effects and sound) is made in code or in the Blender scripts in `blender/`.
 
-`assets/env/<stage>-light.png` is the stage's HDRI with the sun taken out, packed as RGBM; `<stage>-backdrop.webp` is a crop of the same HDRI for the sky. `assets/tex/<name>-{col,nrm,orm}.webp` are 1024 px tiling sets (colour, OpenGL normal, AO/roughness/height).
+`assets/env/<stage>-light.png` is the stage's HDRI with the sun taken out, packed as RGBE in an 8-bit PNG; `<stage>-backdrop.webp` is a crop of the same HDRI for the sky. `assets/tex/<name>-{col,nrm,orm}.webp` are 1024 px tiling sets (colour, OpenGL normal, AO/roughness/height).
 
 | Asset | Original | Author | Used for |
 | --- | --- | --- | --- |

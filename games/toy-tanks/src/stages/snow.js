@@ -278,6 +278,7 @@ export async function build({ app, quality, terrain, layout, softUniforms }) {
       nearTrees.dispose();
       farTrees.dispose();
       snowfall.dispose();
+      flag.dispose();
     },
   };
 }

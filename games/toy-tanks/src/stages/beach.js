@@ -406,6 +406,7 @@ export async function build({ app, quality, terrain, layout }) {
       grass.dispose();
       flowers.dispose();
       motes.dispose();
+      flag.dispose();
       for (const d of disposers) d();
     },
   };

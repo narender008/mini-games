@@ -127,6 +127,8 @@ class App {
       targetLevel: clamp(Number(QUERY.get('target') ?? load('targetLevel', 0)) || 0, 0, 2),
     };
     this.stages = {};
+    // counts stage loads: a load that a newer one overtakes stops and throws away what it built
+    this.stageRun = 0;
     this.tankShapes = [];
     this._v = new THREE.Vector3();
   }
@@ -201,6 +203,7 @@ class App {
       const { Fx } = await import('./fx/index.js');
       this.fx = new Fx({ renderer, scene, camera, quality: q, world: this.world, softUniforms: this.post.softUniforms });
       this.fx.onSplat = (x, y, z, r, color, kind) => this.onSplat(x, y, z, r, color, kind);
+      this.fx.setViewport(this.view.h * this.dpr);
     } catch (err) {
       console.warn('effects unavailable', err);
       this.fx = NO_FX;
@@ -365,9 +368,10 @@ class App {
   }
 
   async setStage(id, first = false, layoutIndex = null) {
+    const run = ++this.stageRun;
     this.stageId = id;
     const mod = (this.stages[id] ??= await this.loadStage(id));
-    if (this.stageId !== id) return;
+    if (run !== this.stageRun) return;
     const S = (this.stage = mod.STAGE);
     const L = S.layouts;
     const li = layoutIndex ?? (QUERY.has('layout') ? clamp(Number(QUERY.get('layout')) || 0, 0, L.length - 1) : Math.floor(Math.random() * L.length));
@@ -375,7 +379,7 @@ class App {
     this.world.ground = GROUND[S.id] ?? S.ground.kind;
     // lighting and the sky
     const env = await this.loadEnv(S.id);
-    if (this.stageId !== id) return;
+    if (run !== this.stageRun) return env.dispose?.();
     this.env?.dispose?.();
     if (this.env?.backdrop) this.scene.remove(this.env.backdrop);
     this.env = env;
@@ -405,27 +409,35 @@ class App {
     this.post.setLens(S.lens);
     this.post.setGrade(S.grade);
     // the ground
+    const textures = await this.loadGround(S.ground);
+    if (run !== this.stageRun) return;
     if (this.terrain) {
       this.scene.remove(this.terrain.mesh);
       this.terrain.dispose();
     }
-    const ground = { ...S.ground, textures: await this.loadGround(S.ground) };
+    const ground = { ...S.ground, textures };
     this.terrain = new Terrain({ quality: this.quality, stage: { height: S.heightFor(this.layout), ground, far: S.far, wide: S.wide, cover: S.cover, patch: S.patchFor?.(this.layout) } });
     this.scene.add(this.terrain.mesh);
     await tick();
+    if (run !== this.stageRun) return;
     // the scenery
     if (this.stageView) {
       this.scene.remove(this.stageView.group);
       this.stageView.dispose?.();
       this.stageView = null;
     }
+    let view = null;
     if (mod.build) {
       try {
-        this.stageView = await mod.build({ app: this, quality: this.quality, renderer: this.renderer, terrain: this.terrain, layout: this.layout, softUniforms: this.post.softUniforms, world: this.world });
-        this.scene.add(this.stageView.group);
+        view = await mod.build({ app: this, quality: this.quality, renderer: this.renderer, terrain: this.terrain, layout: this.layout, softUniforms: this.post.softUniforms, world: this.world });
       } catch (err) {
         console.warn('scenery failed', err);
       }
+    }
+    if (run !== this.stageRun) return view?.dispose?.();
+    if (view) {
+      this.stageView = view;
+      this.scene.add(view.group);
     }
     this.flight.shapes = [...this.tankShapes, ...(this.stageView?.shapes ?? [])];
     try {
@@ -433,8 +445,9 @@ class App {
     } catch (err) {
       console.warn('physics stage failed', err);
     }
+    if (run !== this.stageRun) return;
     if (!first) await this.prepareScene();
-    if (this.stageId !== id) return;
+    if (run !== this.stageRun) return;
     this.audio.setStage?.(id);
     document.body.dataset.stage = id;
     this.placeIdleTanks();
@@ -553,6 +566,7 @@ class App {
   }
 
   async startGame(opts = {}) {
+    if (this.state === 'starting') return;
     const sel = this.sel;
     Object.assign(sel, opts);
     this.audio.unlock();
@@ -562,6 +576,7 @@ class App {
     save('level', sel.level);
     save('tank', sel.tank);
     this.state = 'starting';
+    this.game.stop();
     this.ui.show('loading-stage');
     if (this.stageId !== sel.stage || opts.fresh !== false) await this.setStage(sel.stage, false);
     // the right tanks for this game

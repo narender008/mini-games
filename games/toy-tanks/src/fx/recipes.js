@@ -624,7 +624,6 @@ function snow(fx, B, wave2) {
 
 // jelly: dessert gel of one colour, bursting into glossy blobs of every size
 // that wobble, land, and slump; a gel smear that stays
-let gelIdx = 0;
 function gelBlob(fx, B, wave2, n, rA, rB, spA, spB, elA, elB, tA, tB, neck, pinA, pinB, decay, radMax, life, pinCap, tone) {
   const blobs = fx.blobs;
   const c = cnt(n, B.cm);
@@ -638,7 +637,7 @@ function gelBlob(fx, B, wave2, n, rA, rB, spA, spB, elA, elB, tA, tB, neck, pinA
     const cx = Math.cos(a);
     const cz = Math.sin(a);
     const t = tone * rr(0.9, 1.1);
-    const j = blobs.spawn(K_JELLY, B.x + cx * rad, (B.hi ? B.y : B.wy > -100 && B.water ? B.wy : B.gy) + 0.006, B.z + cz * rad, cx * ce * sp + B.bx, Math.sin(el) * sp, cz * ce * sp, R, GEL[gelIdx * 3] * t, GEL[gelIdx * 3 + 1] * t, GEL[gelIdx * 3 + 2] * t, rr(life * 0.8, life));
+    const j = blobs.spawn(K_JELLY, B.x + cx * rad, (B.hi ? B.y : B.wy > -100 && B.water ? B.wy : B.gy) + 0.006, B.z + cz * rad, cx * ce * sp + B.bx, Math.sin(el) * sp, cz * ce * sp, R, GEL[0] * t, GEL[1] * t, GEL[2] * t, rr(life * 0.8, life));
     blobs.tail(j, rr(tA, tB), decay, wave2 || B.hi ? 0 : rr(pinA, pinB), pinCap);
     blobs.look(j, 0.13, 0.6, 0, 0, neck);
     if (B.water) blobs.floor(j, B.wy);
@@ -648,10 +647,9 @@ function gelBlob(fx, B, wave2, n, rA, rB, spA, spB, elA, elB, tA, tB, neck, pinA
 function jelly(fx, B, wave2) {
   const G = fx.grains;
   // the ball is raspberry jelly: its gel, and the stain it leaves, are raspberry
-  gelIdx = 0;
-  const gr = GEL[gelIdx * 3];
-  const gg = GEL[gelIdx * 3 + 1];
-  const gb = GEL[gelIdx * 3 + 2];
+  const gr = GEL[0];
+  const gg = GEL[1];
+  const gb = GEL[2];
   const lo = B.hi ? -0.25 : 0;
   // the ball's own volume: one big lump, a few middling, many small drops
   if (!wave2) gelBlob(fx, B, wave2, 1, 0.011, 0.014, 0.25, 0.5, 0.9 + lo, 1.3, 0.2, 0.5, 0.6, 0.12, 0.18, 3, 0.02, 12, 2.4, 1);

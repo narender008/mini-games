@@ -137,8 +137,7 @@ class TrailHandle {
       puff(fx.soft, jx, jy, jz, rr(-0.03, 0.03), rr(0, 0.05), rr(-0.03, 0.03), rr(0.4, 0.65), 0.003, rr(0.008, 0.016), 1.05, 1.05, 1.08, 0.16, 3, -0.03, 1.4, NO_FLOOR, 1, 0, 0.5);
       G.spawn(jx, jy, jz, rr(-0.05, 0.05), rr(-0.02, 0.06), rr(-0.05, 0.05), rr(0.0006, 0.0011), 1, 1, 1, 0.95, rr(0.6, 1.1), G_BEAD, 2.4, 0.4, 1.5, 0, 0, 0, NO_FLOOR);
     } else if (k === 3 && (n & 1) === 0) {
-      const gi = fx.gelIdx;
-      const j = fx.blobs.spawn(K_JELLY, jx, jy - 0.006, jz, rr(-0.05, 0.05), rr(-0.05, 0.03), rr(-0.05, 0.05), rr(0.0018, 0.0028), GEL[gi * 3], GEL[gi * 3 + 1], GEL[gi * 3 + 2], rr(2, 3));
+      const j = fx.blobs.spawn(K_JELLY, jx, jy - 0.006, jz, rr(-0.05, 0.05), rr(-0.05, 0.03), rr(-0.05, 0.05), rr(0.0018, 0.0028), GEL[0], GEL[1], GEL[2], rr(2, 3));
       fx.blobs.look(j, 0.13, 0.6, 0, 0, 0.5);
     } else if (k === 4) {
       const ci = randomColorIndex(MUD);
@@ -165,8 +164,6 @@ export class Fx {
     this.sun = null;
     this.lightOverride = false;
     this.n = new THREE.Vector3(0, 1, 0);
-    this.gelIdx = 0;
-    this.waterMesh = null;
 
     const noise = makeNoiseTexture(256);
     sharedUniforms.uNoise.value = noise;
@@ -194,8 +191,8 @@ export class Fx {
     this.soft = new SoftParticles(this.root, softUniforms, noise, 3072);
     this.shock = new Shock(this.root, softUniforms, noise, 6);
     this.grains = new Grains(this.root, softUniforms, this.ctx, Math.round(2000 * Math.max(0.5, this.q)));
-    this.decals = new Decals(240, this.ctx);
-    this.flat = new FlatPool(1400, this.ctx);
+    this.decals = new Decals(Math.round(1200 * Math.max(0.5, this.q)), this.ctx);
+    this.flat = new FlatPool(Math.round(3200 * Math.max(0.5, this.q)), this.ctx);
     this.blobs = new BlobPool(620, this.ctx);
     this.root.add(this.decals.mesh, this.flat.mesh, this.blobs.mesh);
 
@@ -412,14 +409,10 @@ export class Fx {
 
   // where the water of a puddle lies (the stage's puddle sheet), for a splash
   waterLevel(gy) {
-    let m = this.waterMesh;
-    if (!m || !m.parent) {
-      m = null;
-      this.scene.traverse((o) => {
-        if (!m && o.name === 'puddles' && o.geometry && o.geometry.attributes.position) m = o;
-      });
-      this.waterMesh = m;
-    }
+    let m = null;
+    this.scene.traverse((o) => {
+      if (!m && o.name === 'puddles' && o.geometry && o.geometry.attributes.position) m = o;
+    });
     if (m) return m.geometry.attributes.position.getY(0) + m.position.y;
     return gy + 0.012;
   }
@@ -645,8 +638,7 @@ export class Fx {
       } else if (k === 2) {
         this.grains.spawn(ox, oy, z, vx, vy, vz, rr(0.0007, 0.0013), 1, 1, 1, 0.95, rr(0.8, 1.6), G_BEAD, 2.6, 0.4, 1.5, 0, 0, 0, NO_FLOOR);
       } else if (k === 3) {
-        const gi = this.gelIdx;
-        const j = this.blobs.spawn(K_JELLY, ox, oy, z, vx * 0.6, vy * 0.6, vz * 0.6, rr(0.0016, 0.0026), GEL[gi * 3], GEL[gi * 3 + 1], GEL[gi * 3 + 2], rr(2, 3));
+        const j = this.blobs.spawn(K_JELLY, ox, oy, z, vx * 0.6, vy * 0.6, vz * 0.6, rr(0.0016, 0.0026), GEL[0], GEL[1], GEL[2], rr(2, 3));
         this.blobs.look(j, 0.13, 0.6, 0, 0, 0.5);
       } else if (k === 4) {
         const ci = randomColorIndex(MUD);
@@ -670,7 +662,6 @@ export class Fx {
       }
       if (h.born < oldest.born) oldest = h;
     }
-    if (ball === 'jelly') this.gelIdx = randomColorIndex(GEL);
     return (t || oldest).begin(ball);
   }
 

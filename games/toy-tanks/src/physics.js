@@ -242,7 +242,8 @@ export class Physics {
     this.instMeshes = [];
     this.opts = { ccd: true };
     this.propInfo = {};
-    this.hulls = new Map(); // prop id | geometry -> extreme points
+    this.hulls = new Map(); // prop id -> extreme points
+    this.instHulls = new WeakMap(); // geometry -> extreme points (goes with the stage that made the geometry)
     this.sways = []; // balloons and stars on the move
     this.towers = []; // block towers and stands with bodies
     this.claimed = []; // meshes taken from targets.js
@@ -414,10 +415,10 @@ export class Physics {
     const tag = mesh.userData.loose;
     const kind = STONES[tag.material] ?? STONES.stone;
     const dens = tag.density ?? kind.dens;
-    let hull = this.hulls.get(mesh.geometry);
+    let hull = this.instHulls.get(mesh.geometry);
     if (!hull) {
       hull = extremes([{ geo: mesh.geometry, matrix: null }], 8);
-      this.hulls.set(mesh.geometry, hull);
+      this.instHulls.set(mesh.geometry, hull);
     }
     if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
     const gr = mesh.geometry.boundingSphere.radius;
@@ -873,6 +874,9 @@ export class Physics {
           break;
         case T_BLOCK:
         case T_STAND: {
+          r.x = RV.x;
+          r.y = r.type === T_STAND ? RV.y + 0.09 : RV.y;
+          r.z = RV.z;
           const o = r.obj;
           o.position.set(RV.x, RV.y, RV.z);
           o.quaternion.set(RQ.x, RQ.y, RQ.z, RQ.w);
@@ -1331,11 +1335,12 @@ export class Physics {
     if (!this.towers.includes(ph)) this.towers.push(ph);
   }
 
-  // towers and stands settle as a whole; one that has been knocked down is done as a target
+  // towers and stands settle as a whole; one is judged every step, so a knocked-down one scores and stops being a target at once
   stepTowers(dt) {
     for (let i = this.towers.length - 1; i >= 0; i--) {
       const ph = this.towers[i];
       ph.t += dt;
+      this.judge(ph);
       let calm = true;
       for (const r of ph.recs) if (r.calm < CALM_TIME || r.awake < 0.3) calm = false;
       if (!calm && ph.t < MAX_AWAKE) continue;
@@ -1346,9 +1351,6 @@ export class Physics {
         r.body.rotation(RQ);
         r.obj.position.set(RV.x, RV.y, RV.z);
         r.obj.quaternion.set(RQ.x, RQ.y, RQ.z, RQ.w);
-        r.x = RV.x;
-        r.y = RV.y;
-        r.z = RV.z;
         this.dropBody(r);
         const k = this.act.indexOf(r);
         if (k >= 0) {
@@ -1359,7 +1361,6 @@ export class Physics {
       ph.active = false;
       this.towers[i] = this.towers[this.towers.length - 1];
       this.towers.pop();
-      this.judge(ph);
     }
   }
 

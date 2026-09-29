@@ -111,7 +111,7 @@ export const STAGE = {
 // The scenery around the lane.
 export async function build({ app, quality, terrain, layout }) {
   const THREE = await import('three');
-  const [{ Grass }, { WindFlag }, { Flowers }, rocksMod, { Trees, scatterTrees }, { Plants }, { Stream }, { loadProp, fitRopeBridge }, { Canopy }, { Motes }, { tuneSun }] = await Promise.all([
+  const [{ Grass }, { WindFlag }, { Flowers }, rocksMod, { Trees, scatterTrees }, { Plants }, { Stream }, { fitRopeBridge }, { tryProp }, { Canopy }, { Motes }, { tuneSun }] = await Promise.all([
     import('../world/grass.js'),
     import('../world/flag.js'),
     import('../world/flowers.js'),
@@ -120,6 +120,7 @@ export async function build({ app, quality, terrain, layout }) {
     import('../world/plants.js'),
     import('../world/stream.js'),
     import('../props.js'),
+    import('../world/tryprop.js'),
     import('../world/canopy.js'),
     import('../world/motes.js'),
     import('../world/light.js'),
@@ -260,27 +261,32 @@ export async function build({ app, quality, terrain, layout }) {
   const span = 1.04;
   const bx0 = cxb - span / 2;
   const bx1 = cxb + span / 2;
-  const bridge = await loadProp('rope-bridge');
-  fitRopeBridge(bridge, span);
-  bridge.position.set(cxb, Math.min(H(bx0, ZB), H(bx1, ZB)) - 0.012, ZB);
-  bridge.rotation.y = 0.03 * Math.sin(g.phase);
-  group.add(bridge);
-  const swing = swingBridge(THREE, bridge, cxb, ZB, span);
-  reactors.add(swing);
-  disposers.push(() => reactors.delete(swing));
+  const bridge = await tryProp('rope-bridge');
+  if (bridge) {
+    fitRopeBridge(bridge, span);
+    bridge.position.set(cxb, Math.min(H(bx0, ZB), H(bx1, ZB)) - 0.012, ZB);
+    bridge.rotation.y = 0.03 * Math.sin(g.phase);
+    group.add(bridge);
+    const swing = swingBridge(THREE, bridge, cxb, ZB, span);
+    reactors.add(swing);
+    disposers.push(() => reactors.delete(swing));
+  }
 
   // a fallen log on the near bank and toadstools on the shoulders of the mounds
-  const log = await loadProp('log');
-  const lx = cxb - 0.95;
-  const lz = -1.15;
-  log.position.set(lx, H(lx, lz) - 0.01, lz);
-  log.rotation.y = 0.3;
-  log.scale.setScalar(1.5);
-  group.add(log);
+  const log = await tryProp('log');
+  if (log) {
+    const lx = cxb - 0.95;
+    const lz = -1.15;
+    log.position.set(lx, H(lx, lz) - 0.01, lz);
+    log.rotation.y = 0.3;
+    log.scale.setScalar(1.5);
+    group.add(log);
+  }
   const [tb0, tb1] = layout.tanks;
   const shrooms = [[tb0 - 0.27, 0.1, 0.4, 1.4], [tb0 - 0.31, 0.02, 2.1, 1.0], [tb1 + 0.28, 0.14, 1.0, 1.3], [cxb + 0.5, -0.36, 3.5, 1.1]];
   for (const [mx, mz, ry, k] of shrooms) {
-    const m = await loadProp('mushroom');
+    const m = await tryProp('mushroom');
+    if (!m) break;
     m.position.set(mx, H(mx, mz) - 0.004, mz);
     m.rotation.y = ry;
     m.scale.setScalar(k);
@@ -377,6 +383,7 @@ export async function build({ app, quality, terrain, layout }) {
       far.dispose();
       canopy.dispose();
       motes.dispose();
+      flag.dispose();
       for (const d of disposers) d();
     },
   };
