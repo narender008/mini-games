@@ -4,6 +4,7 @@
 // pines stand about the tanks, ferns and small purple flowers at their feet,
 // and real pines, tall and blurred, layer away into the haze.
 import { fbm, rng, smoothstep } from '../config.js';
+import { reactors } from '../world/react.js';
 
 // Layouts: where the two tanks start (x), the knolls under them (x, height,
 // width), a dip between them, and the gorge (its x at the lane, and where
@@ -264,6 +265,9 @@ export async function build({ app, quality, terrain, layout }) {
   bridge.position.set(cxb, Math.min(H(bx0, ZB), H(bx1, ZB)) - 0.012, ZB);
   bridge.rotation.y = 0.03 * Math.sin(g.phase);
   group.add(bridge);
+  const swing = swingBridge(THREE, bridge, cxb, ZB, span);
+  reactors.add(swing);
+  disposers.push(() => reactors.delete(swing));
 
   // a fallen log on the near bank and toadstools on the shoulders of the mounds
   const log = await loadProp('log');
@@ -355,6 +359,7 @@ export async function build({ app, quality, terrain, layout }) {
       mid.update(dt, time, a.world);
       far.update(dt, time, a.world);
       stream.update(dt, time);
+      swing.update(dt, a.world.wind ?? 0);
       canopy.update(dt, time, a.world);
       motes.update(dt, time, a.world);
       flag.update(dt, time, a.world.wind);
@@ -373,6 +378,65 @@ export async function build({ app, quality, terrain, layout }) {
       canopy.dispose();
       motes.dispose();
       for (const d of disposers) d();
+    },
+  };
+}
+
+// The planks and hand ropes hang from the post tops, so a burst close by
+// sets them swinging to and fro (most in the middle, not at all at the
+// posts) and they settle again; a breeze keeps them just moving. The deck is
+// bent in its vertex shader so the ends stay tied to the posts.
+function swingBridge(THREE, bridge, cx, cz, span) {
+  bridge.updateMatrixWorld(true);
+  const top = bridge.position.y + 0.22;
+  const sway = { value: new THREE.Vector4(cx, span / 2, top, 0) };
+  bridge.getObjectByName('deck')?.traverse((m) => {
+    if (!m.isMesh) return;
+    m.material = m.material.clone();
+    m.material.onBeforeCompile = (shader) => {
+      shader.uniforms.uSway = sway;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform vec4 uSway;')
+        .replace(
+          '#include <project_vertex>',
+          `vec4 swWp = modelMatrix * vec4(transformed, 1.0);
+{
+  float u = clamp((swWp.x - uSway.x) / uSway.y, -1.0, 1.0);
+  float along = cos(u * 1.5708);
+  float hang = clamp((uSway.z - swWp.y) / 0.2, 0.0, 1.0);
+  swWp.z += uSway.w * along * hang;
+  // swinging out, it rises a little like a pendulum
+  swWp.y += uSway.w * uSway.w * along * hang * 3.3;
+}
+vec4 mvPosition = viewMatrix * swWp;
+gl_Position = projectionMatrix * mvPosition;`,
+        );
+    };
+    m.material.customProgramCacheKey = () => 'bridge-swing';
+  });
+  let z = 0;
+  let v = 0;
+  const w = 2 * Math.PI * 1.15;
+  return {
+    blast(e) {
+      // how near the burst is to the deck (a segment along x at depth cz)
+      const dx = Math.max(0, Math.abs(e.x - cx) - span / 2);
+      const d = Math.hypot(dx, e.z - cz);
+      const reach = e.radius * 2.4;
+      if (d >= reach) return;
+      const k = 1 - d / reach;
+      const mid = Math.cos(Math.min(1, Math.abs(e.x - cx) / (span / 2)) * Math.PI / 2);
+      v += Math.sign(cz - e.z || -1) * k * k * (0.35 + 0.65 * mid) * (e.great ? 0.16 : 0.1) * e.scale;
+    },
+    update(dt, wind) {
+      if (dt <= 0) return;
+      const h = Math.min(dt, 1 / 30);
+      // a damped pendulum, nudged by the wind
+      const a = -w * w * (z - wind * 0.0015) - 2 * 0.1 * w * v;
+      v += a * h;
+      z += v * h;
+      z = Math.max(-0.025, Math.min(0.025, z));
+      sway.value.w = z;
     },
   };
 }

@@ -26,8 +26,8 @@ const LAYOUTS = [
     pits: [[0.02, -0.17, 0.15, 0.05], [0.62, -0.6, 0.07, 0.02]],
     dune: [-0.68, -0.9, 0.6, 0.22],
     castle: [-0.68, -0.9, 0.1, 0.95],
-    bucket: [-0.08, -0.66, 0.4, 0.12],
-    spades: [[0.04, -0.58, 0.5, 0.42, 1.0], [0.44, -0.85, -0.5, 0.22, 1.1]],
+    bucket: [-0.2, -0.3, 0.4, 0.12],
+    spades: [[0.3, -0.3, 0.5, 0.42, 1.0], [0.44, -0.85, -0.5, 0.22, 1.1]],
     heaps: [[0.72, -0.5, 0.05], [0.9, -0.45, 0.04]],
     flag: [0.17, -0.3],
   },
@@ -38,8 +38,8 @@ const LAYOUTS = [
     pits: [[-0.03, -0.2, 0.14, 0.045], [0.9, -0.55, 0.08, 0.02]],
     dune: [-0.64, -0.9, 0.6, 0.22],
     castle: [-0.64, -0.9, -0.1, 0.95],
-    bucket: [0.2, -0.7, -0.3, 0.1],
-    spades: [[0.3, -0.55, -0.4, 0.5, 1.0], [0.6, -0.95, 0.3, 0.2, 1.3]],
+    bucket: [0.22, -0.3, -0.3, 0.1],
+    spades: [[-0.22, -0.32, -0.4, 0.5, 1.0], [0.6, -0.95, 0.3, 0.2, 1.3]],
     heaps: [[0.15, -0.6, 0.05], [0.9, -0.4, 0.05]],
     flag: [-0.1, -0.3],
   },
@@ -50,8 +50,8 @@ const LAYOUTS = [
     pits: [[0.04, -0.2, 0.15, 0.045], [0.75, -0.75, 0.09, 0.02]],
     dune: [-0.76, -0.9, 0.6, 0.22],
     castle: [-0.76, -0.9, 0.05, 0.95],
-    bucket: [0.1, -0.7, 0.6, 0.14],
-    spades: [[0.36, -0.6, 0.2, 0.4, 1.0], [-0.2, -0.8, 0.6, 0.25, 1.3]],
+    bucket: [0.2, -0.3, 0.6, 0.14],
+    spades: [[-0.2, -0.34, 0.2, 0.4, 1.0], [-0.2, -0.8, 0.6, 0.25, 1.3]],
     heaps: [[-0.4, -0.55, 0.05], [0.25, -0.5, 0.04]],
     flag: [-0.32, -0.3],
   },
@@ -273,7 +273,7 @@ export async function build({ app, quality, terrain, layout }) {
       const z = 0.05 + Math.cos(a) * rr * 1.25;
       if (Math.abs(z) < 0.11 && Math.abs(x - kx) < 0.14) continue;
       const s = 0.006 + Math.pow(K(), 2) * 0.016;
-      rockList.push({ x, y: H(x, z) + s * 0.1, z, size: [s * 1.2, s * 0.65, s], yaw: K() * 6.28, tilt: (K() - 0.5) * 0.3, seed: 700 + i * 20 + k, detail: 3, cuts: 3 });
+      rockList.push({ x, y: H(x, z) + s * 0.1, z, size: [s * 1.2, s * 0.65, s], yaw: K() * 6.28, tilt: (K() - 0.5) * 0.3, seed: 700 + i * 20 + k, detail: 3, cuts: 3, loose: 'stone' });
     }
     for (let k = 0; k < 7; k++) {
       const a = (K() * 2 - 1) * Math.PI * 0.75;
@@ -299,7 +299,7 @@ export async function build({ app, quality, terrain, layout }) {
     const z = -0.7 + R() * 1.6;
     if (underTank(x, z)) continue;
     const s = 0.004 + Math.pow(R(), 2.4) * 0.014;
-    clodList.push({ x, y: H(x, z) + s * 0.1, z, size: [s * 1.3, s * 0.7, s], yaw: R() * 6.28, tilt: (R() - 0.5) * 0.3, seed: 300 + i, detail: 3, cuts: 4, lumpy: 0.5 });
+    clodList.push({ x, y: H(x, z) + s * 0.1, z, size: [s * 1.3, s * 0.7, s], yaw: R() * 6.28, tilt: (R() - 0.5) * 0.3, seed: 300 + i, detail: 3, cuts: 4, lumpy: 0.5, loose: 'sand' });
   }
   const clods = await rocksMod.buildRocks({ rocks: clodList, look: { rock: 'sand', cap: null, rockTint: 0xffdca4, rockTile: 2, capAmount: 0 } });
   group.add(clods.mesh);
@@ -400,7 +400,9 @@ export async function build({ app, quality, terrain, layout }) {
       motes.update(dt, time, app.world);
       flag.update(dt, time, app.world.wind);
     },
-    shockwave() {},
+    shockwave(x, z, s) {
+      grass.shockwave(x, z, s, app.time);
+    },
     dispose() {
       far.dispose();
       sea.dispose();

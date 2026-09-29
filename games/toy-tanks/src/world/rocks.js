@@ -4,6 +4,11 @@
 // (triplanar, no stretched UVs) with bare rock on the sides and a cap of moss
 // (or snow, or sand) wherever it faces up. All of a stage's rocks are merged
 // into one mesh: one draw call.
+//
+// Loose rocks: an entry with `loose: 'stone' | 'sand'` (pebbles, clods) is not
+// merged. Loose entries are drawn as a few InstancedMesh variants (children of
+// the returned mesh, tagged userData.loose) so physics.js can wake single
+// instances when a blast reaches them and write their matrices while they move.
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three-gltf/utils/BufferGeometryUtils.js';
 import { fbm3, rng } from '../config.js';
@@ -118,7 +123,12 @@ export async function buildRocks({ rocks, look = {} }) {
   const L = { rock: 'rock', cap: 'moss', capAmount: 0.5, capSoft: 0.25, rockTint: 0xffffff, capTint: 0xffffff, rockTile: 1.1, capTile: 3, capRough: 1, haze: null, ...look };
   const [rock, cap] = await Promise.all([loadPBR(L.rock), L.cap ? loadPBR(L.cap) : null]);
   const parts = [];
+  const looseRocks = [];
   for (const r of rocks) {
+    if (r.loose) {
+      looseRocks.push(r);
+      continue;
+    }
     const g = rockGeometry(r.seed ?? 1, r.detail ?? 10, r);
     _e.set((r.tilt ?? 0) * 0.7, r.yaw ?? 0, (r.tilt ?? 0) * 0.4);
     _q.setFromEuler(_e);
@@ -126,8 +136,14 @@ export async function buildRocks({ rocks, look = {} }) {
     g.applyMatrix4(_m);
     parts.push(g);
   }
-  const geo = mergeGeometries(parts, false);
+  let geo = parts.length ? mergeGeometries(parts, false) : null;
   parts.forEach((g) => g.dispose());
+  if (!geo) {
+    // only loose rocks: the merged mesh is one empty triangle
+    geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(9), 3));
+  }
   geo.computeVertexNormals();
   geo.computeBoundingSphere();
   const U = {
@@ -153,8 +169,14 @@ export async function buildRocks({ rocks, look = {} }) {
       .replace(
         '#include <worldpos_vertex>',
         `#include <worldpos_vertex>
+#ifdef USE_INSTANCING
+vRockPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+mat3 rkIm = mat3(instanceMatrix);
+vRockNormal = normalize(mat3(modelMatrix) * (rkIm * (objectNormal / vec3(dot(rkIm[0], rkIm[0]), dot(rkIm[1], rkIm[1]), dot(rkIm[2], rkIm[2])))));
+#else
 vRockPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
-vRockNormal = normalize(mat3(modelMatrix) * objectNormal);`,
+vRockNormal = normalize(mat3(modelMatrix) * objectNormal);
+#endif`,
       );
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>${ROCK_GLSL_F}`)
@@ -192,11 +214,39 @@ reflectedLight.indirectSpecular *= rkAO;`,
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.name = 'rocks';
+  // loose rocks: a few shape variants, each an InstancedMesh (see the header)
+  const looseGeos = [];
+  if (looseRocks.length) {
+    const V = Math.min(4, looseRocks.length);
+    const lists = Array.from({ length: V }, () => []);
+    looseRocks.forEach((r, i) => lists[i % V].push(r));
+    for (const list of lists) {
+      const r0 = list[0];
+      const g = rockGeometry(r0.seed ?? 1, r0.detail ?? 10, r0);
+      g.computeVertexNormals();
+      looseGeos.push(g);
+      const im = new THREE.InstancedMesh(g, mat, list.length);
+      list.forEach((r, i) => {
+        _e.set((r.tilt ?? 0) * 0.7, r.yaw ?? 0, (r.tilt ?? 0) * 0.4);
+        _q.setFromEuler(_e);
+        _m.compose(_v.set(r.x, r.y, r.z), _q, _n.set(r.size[0], r.size[1], r.size[2]));
+        im.setMatrixAt(i, _m);
+      });
+      im.instanceMatrix.needsUpdate = true;
+      im.castShadow = true;
+      im.receiveShadow = true;
+      im.frustumCulled = false; // instances move when a blast throws them
+      im.name = 'rocks-loose';
+      im.userData.loose = { material: r0.loose === 'sand' ? 'sand' : 'stone' };
+      mesh.add(im);
+    }
+  }
   return {
     mesh,
     uniforms: U,
     dispose() {
       geo.dispose();
+      looseGeos.forEach((g) => g.dispose());
       mat.dispose();
     },
   };
@@ -242,7 +292,7 @@ export function pebbles({ area, count, seed, heightAt, size = [0.008, 0.03], kee
     const z = area[2] + R() * (area[3] - area[2]);
     if (keepOut && keepOut(x, z)) continue;
     const s = size[0] + Math.pow(R(), 2.2) * (size[1] - size[0]);
-    out.push({ x, y: heightAt(x, z) + s * 0.15, z, size: [s, s * (0.5 + R() * 0.3), s * (0.7 + R() * 0.4)], yaw: R() * 6.28, tilt: (R() - 0.5) * 0.4, seed: Math.floor(R() * 1e6), detail: 3, cuts: 3 });
+    out.push({ x, y: heightAt(x, z) + s * 0.15, z, size: [s, s * (0.5 + R() * 0.3), s * (0.7 + R() * 0.4)], yaw: R() * 6.28, tilt: (R() - 0.5) * 0.4, seed: Math.floor(R() * 1e6), detail: 3, cuts: 3, loose: 'stone' });
   }
   return out;
 }

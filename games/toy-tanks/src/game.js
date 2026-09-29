@@ -24,6 +24,9 @@ export class Game {
     this.turn = 0;
     this.timer = 0;
     this.pts = new Float32Array(400);
+    // one blast event, reused for every burst (see world/react.js)
+    this.craterInfo = { x: 0, z: 0, r: 0, depth: 0 };
+    this.blastEvent = { x: 0, y: 0, z: 0, power: 0, great: false, kind: '', ground: '', water: false, scale: 1, radius: 0, vx: 0, vy: 0, time: 0, crater: null, tank: null };
     this.land = { x: 0, y: 0, t: 0, shape: null };
     this._v = { x: 0, y: 0 };
     this._m = new THREE.Vector3();
@@ -67,6 +70,7 @@ export class Game {
       brain: opts.humans[i] ? null : new Brain(this.level),
       settle: 0,
       settleVel: 0,
+      slideV: 0,
     }));
     for (const s of this.sides) {
       this.placeSide(s, 0, true);
@@ -169,9 +173,11 @@ export class Game {
   frameLane(x0, x1, y0, y1, opts = {}) {
     const tall = this.app.director.aspect < 1;
     const short = innerHeight < 520;
+    // a natural, comfortable distance: the whole battlefield with room
+    // around it, the toys at their real size in the scene
     this.app.director.frame(x0, x1, y0 - (short ? 0.16 : 0), y1, {
-      margin: tall ? 1.1 : 1.02,
-      maxDist: tall ? 6 : undefined,
+      margin: tall ? 1.15 : 2,
+      maxDist: tall ? 7 : 5,
       pitch: tall ? 0.1 : this.app.stage?.pitch ?? 0.02,
       ...opts,
       yaw: (opts.yaw ?? 0) * (tall ? 0.4 : 1),
@@ -323,15 +329,40 @@ export class Game {
     const scale = small ? 0.62 : 1;
     let x = p.x;
     let z = p.z;
+    const E = this.blastEvent;
+    E.crater = null;
     if (!tankHit && !shape) {
       const r = 0.095 * spec.crater * scale * (great ? 1.12 : 1) * (0.85 + Math.min(1, speed / 2.5) * 0.3);
       const c = app.terrain.crater(x, z, r, r * 0.36, this.ground);
       app.fx.clearDecalsNear?.(c.x, c.z, r * 1.6);
       if (b.kind === 'mud' || b.kind === 'jelly' || this.ground === 'mud') app.terrain.wetten(x, z, r * 2.2, 0.85);
+      E.crater = this.craterInfo;
+      E.crater.x = c.x;
+      E.crater.z = c.z;
+      E.crater.r = r;
+      E.crater.depth = r * 0.36;
     }
-    app.fx.burst(b.kind, x, p.y, z, { power: Math.min(1, speed / 3), great, ground: this.ground, vx: b.vel.x, vy: b.vel.y, scale });
-    app.audio.burst(b.kind, this.ground, Math.min(1, speed / 3), app.pan(x), great);
+    const power = Math.min(1, speed / 3);
+    const water = !tankHit && !shape && !!app.stageView?.waterAt?.(x, z);
+    app.fx.burst(b.kind, x, p.y, z, { power, great, ground: this.ground, water, vx: b.vel.x, vy: b.vel.y, scale });
+    app.audio.burst(b.kind, this.ground, power, app.pan(x), great, scale);
     app.world.shockwave?.(x, z, great ? 1 : 0.6);
+    // the whole world feels it (see world/react.js)
+    E.x = x;
+    E.y = p.y;
+    E.z = z;
+    E.power = power;
+    E.great = great;
+    E.kind = b.kind;
+    E.ground = this.ground;
+    E.water = water;
+    E.scale = scale;
+    E.radius = 0.32 * scale * (great ? 1.3 : 1) * (0.7 + 0.3 * power);
+    E.vx = b.vel.x;
+    E.vy = b.vel.y;
+    E.time = app.time;
+    E.tank = tankHit ? tankHit.view : null;
+    app.blast(E);
     // tanks near the splash get splatted and giggle
     for (const t of this.sides) {
       const d = Math.abs(t.x - x);
@@ -339,7 +370,9 @@ export class Game {
       if (tankHit === t || d < reach) {
         const k = tankHit === t ? 1 : 1 - d / reach;
         t.view.hit(0.4 + 0.6 * k, Math.sign(t.x - x) || 1);
-        t.view.splat(b.pos, 0.02 + 0.03 * k * scale, spec.color, b.kind);
+        // a close one shoves the tank a couple of centimetres along the ground
+        if (k > 0.3) t.slideV += (Math.sign(t.x - x) || 1) * (0.05 + 0.13 * k) * scale * (great ? 1.2 : 1);
+        t.view.splat(b.pos, 0.02 + 0.03 * k * scale, spec.stain ?? spec.color, b.kind);
         if (k > 0.25) app.audio.hitTank(app.pan(t.x));
       }
     }
@@ -417,6 +450,7 @@ export class Game {
       s.shownAngle += da * Math.min(1, dt * 12);
       s.view.setAim(s.shownAngle);
       if (s === this.side) app.audio.turret(Math.min(1, Math.abs(da) * 4));
+      if (s.slideV) this.slideStep(s, dt);
       this.placeSide(s, dt);
       s.view.update(dt, app.time);
     }
@@ -445,20 +479,31 @@ export class Game {
         break;
       }
       case 'flight': {
-        // follow the ball, framing it and where it will land, so the picture
-        // pushes in towards the splash as the ball comes down
+        // keep the whole battlefield in view and just drift with the ball,
+        // making room above if it flies high or lands wide
         const b = app.flight.balls.find((x) => x.live);
         const L = this.expected;
         if (b && L) {
-          const x0 = Math.min(b.pos.x, L.x) - 0.22;
-          const x1 = Math.max(b.pos.x, L.x) + 0.22;
-          app.director.frame(x0, x1, Math.min(b.pos.y, L.y) - 0.04, Math.max(b.pos.y, L.y) + 0.08, { pace: 0.55, pitch: 0.06, minDist: 0.6 });
+          const a = this.sides[0];
+          const o = this.mode === 'targets' ? { x: this.targetsFar(), y: Math.min(a.y, app.targets.low) } : this.sides[1];
+          const x0 = Math.min(a.x, o.x, b.pos.x, L.x) - 0.15;
+          const x1 = Math.max(a.x, o.x, b.pos.x, L.x) + 0.15;
+          const y0 = Math.min(a.y, o.y, L.y) - 0.06;
+          const y1 = Math.max(Math.max(a.y, o.y) + 0.45, b.pos.y + 0.1);
+          this.frameLane(x0, x1, y0, y1, { pace: 1.3, yaw: 0.04 * -this.side.facing });
         }
         if (!app.flight.active) {
           this.phase = 'impact';
           this.timer = 0;
+          // a gentle lean in towards the splash, the whole field still in view
           const last = this.impacts[this.impacts.length - 1] ?? this.expected;
-          app.director.frame(last.x - 0.3, last.x + 0.3, last.y - 0.05, last.y + 0.22, { pace: 0.7, pitch: 0.1 });
+          const a = this.sides[0];
+          const o = this.mode === 'targets' ? { x: this.targetsFar(), y: Math.min(a.y, app.targets.low) } : this.sides[1];
+          const x0 = Math.min(a.x, o.x, last.x) - 0.15;
+          const x1 = Math.max(a.x, o.x, last.x) + 0.15;
+          const lean = (last.x - (x0 + x1) / 2) * 0.3;
+          const tall = app.director.aspect < 1;
+          this.frameLane(x0 + lean, x1 + lean, Math.min(a.y, o.y, last.y) - 0.06, Math.max(a.y, o.y) + 0.45, { pace: 1.2, margin: tall ? 1.05 : 1.75 });
         }
         break;
       }
@@ -483,6 +528,17 @@ export class Game {
     if (this.mode === 'little') return 1;
     if (this.mode === 'cpu') return this.level === 'easy' ? 1 : this.level === 'medium' ? 0.62 : 0.4;
     return 0.62;
+  }
+
+  // shoved by a burst: slide, dragging to a stop within a few centimetres,
+  // never off the strip or into the other tank
+  slideStep(s, dt) {
+    const o = s === this.sides[0] ? this.sides[1] : this.sides[0];
+    let nx = clamp(s.x + s.slideV * dt, -2.2, 2.2);
+    if (o && o.view.object.visible && Math.abs(nx - o.x) < 0.4) nx = s.x;
+    s.x = nx;
+    s.slideV *= Math.exp(-dt * 9);
+    if (Math.abs(s.slideV) < 0.002) s.slideV = 0;
   }
 
   driveStep(s, dt) {

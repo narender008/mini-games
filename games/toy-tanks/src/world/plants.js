@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three-gltf/utils/BufferGeometryUtils.js';
 import { CRATER_GLSL } from '../terrain.js';
+import { BLAST_GLSL, blastUniforms } from './react.js';
 import { rng } from '../config.js';
 
 const _m = new THREE.Matrix4();
@@ -215,6 +216,7 @@ function plantMaterial(uniforms, { veins, rough }) {
         '#include <common>',
         `#include <common>
 ${CRATER_GLSL}
+${BLAST_GLSL}
 uniform float uTime;
 uniform float uWind;
 attribute vec2 aLeaf;
@@ -235,6 +237,10 @@ vLeaf = aLeaf;
   mvPosition.x += sway;
   mvPosition.z += sin(uTime * 1.2 + root.x * 13.0) * k * k * sc * 0.03;
   mvPosition.y += sin(uTime * 2.6 + mvPosition.x * 31.0 + mvPosition.z * 17.0) * sc * 0.006 * k;
+  // thrown back by a burst nearby, then swinging upright again
+  vec2 kick = blastSway(root.xz, uTime, 1.8, 1.7) * min(k, 1.3) * min(k, 1.3) * min(sc, 0.3) * 0.3;
+  mvPosition.xz += kick;
+  mvPosition.y -= dot(kick, kick) / max(sc, 0.02) * 1.5;
   mvPosition.xyz = root + (mvPosition.xyz - root) * (1.0 - gone);
   mvPosition.y += deformHeight(root.xz);
 }
@@ -307,7 +313,7 @@ export class Plants {
   // look: { rough, glow, trans } (glow: flat light through the blade, trans: extra glow on blades that face down)
   constructor({ terrain, quality, groups, look = {}, seed = 21 }) {
     const R = rng(seed);
-    this.uniforms = { ...terrain.uniforms, uTime: { value: 0 }, uWind: { value: 0 }, uGlow: { value: look.glow ?? 0.07 }, uTrans: { value: look.trans ?? 0 } };
+    this.uniforms = { ...terrain.uniforms, ...blastUniforms, uTime: { value: 0 }, uWind: { value: 0 }, uGlow: { value: look.glow ?? 0.07 }, uTrans: { value: look.trans ?? 0 } };
     const mats = {
       leaf: plantMaterial(this.uniforms, { veins: true, rough: look.rough ?? 0.45 }),
       fern: plantMaterial(this.uniforms, { veins: false, rough: look.rough ?? 0.5 }),

@@ -286,6 +286,21 @@ export function mix(a, b, k = 1, at = 0) {
   return a;
 }
 
+// mix a copy of `comp` scaled to peak `amp` into `out` at sample `at`
+export function put(out, comp, amp, at = 0) {
+  let m = 0;
+  for (let i = 0; i < comp.length; i++) m = Math.max(m, Math.abs(comp[i]));
+  if (m > 0) mix(out, comp, amp / m, at);
+}
+
+// a burst of noise (a grain) filtered to a band or below a cut-off, mixed in at peak `amp`
+export function puffInto(out, sr, at, dur, type, fc, q, amp, r, rise = 0.003) {
+  const a = new Float32Array(Math.min(secs(sr, dur), out.length - at));
+  grain(a, 0, a.length, secs(sr, rise), 1, r);
+  filt(a, sr, type, fc, q);
+  put(out, a, amp, at);
+}
+
 // Scale channels together so the loudest sample is `peak`.
 export function normalise(chans, peak = 1) {
   let m = 0;

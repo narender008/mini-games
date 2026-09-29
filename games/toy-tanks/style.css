@@ -14,7 +14,7 @@
   --candy: #ff7a3d;
   --teal: #1fb3b0;
   --focus: #ff7a3d;
-  --tap: clamp(48px, 6.6vmin, 60px);
+  --tap: clamp(40px, 5.2vmin, 50px);
   --edge: 12px;
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-r: env(safe-area-inset-right, 0px);
@@ -121,8 +121,8 @@ body.cover #party {
 }
 
 .loader-logo {
-  width: 112px;
-  height: 112px;
+  width: 88px;
+  height: 88px;
   animation: bob 1.8s ease-in-out infinite;
 }
 
@@ -263,11 +263,11 @@ body.can-fs .fs[hidden] {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  min-width: 180px;
-  min-height: 64px;
-  padding: 0 30px 0 22px;
+  min-width: 150px;
+  min-height: 52px;
+  padding: 0 24px 0 18px;
   border-radius: 99px;
-  font-size: clamp(22px, 3.6vmin, 30px);
+  font-size: clamp(18px, 2.8vmin, 24px);
   color: #fff;
   background: linear-gradient(180deg, #ffa25e, #ff6a2b);
   box-shadow: 0 5px 0 #c9491a, 0 12px 24px rgba(0, 0, 0, 0.3);
@@ -276,8 +276,8 @@ body.can-fs .fs[hidden] {
 }
 
 .play svg {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2.6;
@@ -382,7 +382,7 @@ body.can-fs .fs[hidden] {
 
 .logo {
   margin: 0;
-  font-size: clamp(40px, 9vmin, 86px);
+  font-size: clamp(34px, 7vmin, 66px);
   line-height: 1;
   color: #ffffff;
   letter-spacing: 0.01em;
@@ -409,15 +409,15 @@ body.can-fs .fs[hidden] {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 52px;
-  padding: 6px 18px 6px 10px;
+  min-height: 46px;
+  padding: 5px 16px 5px 9px;
   border-radius: 99px;
-  font-size: clamp(15px, 2.2vmin, 19px);
+  font-size: clamp(14px, 1.9vmin, 17px);
   color: var(--ink-soft);
 }
 
 .level {
-  min-height: 44px;
+  min-height: 40px;
   padding: 4px 18px;
 }
 
@@ -519,8 +519,8 @@ body.can-fs .fs[hidden] {
 .tank-pick {
   position: relative;
   flex: none;
-  width: clamp(54px, 8.5vmin, 76px);
-  height: clamp(46px, 7vmin, 62px);
+  width: clamp(48px, 7vmin, 64px);
+  height: clamp(40px, 5.8vmin, 52px);
   border-radius: 16px;
   display: grid;
   place-items: center;
@@ -561,9 +561,9 @@ body.can-fs .fs[hidden] {
   display: grid;
   place-items: center;
   gap: 2px;
-  width: 66px;
-  height: 66px;
-  border-radius: 18px;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
   background: var(--panel);
   box-shadow: var(--panel-shadow);
   font-size: 22px;
@@ -636,11 +636,11 @@ body[data-mode='little'] .stage-card .name {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 44px;
-  padding: 0 12px;
+  height: 38px;
+  padding: 0 10px;
   border-radius: 99px;
-  font-size: clamp(20px, 3.2vmin, 28px);
-  min-width: 92px;
+  font-size: clamp(17px, 2.5vmin, 22px);
+  min-width: 80px;
   justify-content: center;
   transition: background 0.3s ease;
 }
@@ -757,7 +757,7 @@ body[data-mode='little'] .stage-card .name {
   gap: 10px;
   padding: 8px 20px 8px 10px;
   border-radius: 99px;
-  font-size: clamp(18px, 2.8vmin, 24px);
+  font-size: clamp(15px, 2.2vmin, 20px);
   background: var(--panel);
   box-shadow: var(--panel-shadow);
   transform: translate(-50%, -10px) scale(0.9);
@@ -783,7 +783,7 @@ body[data-mode='little'] .stage-card .name {
   top: calc(var(--edge) + var(--safe-t));
   display: grid;
   gap: 8px;
-  width: clamp(190px, 26vmin, 260px);
+  width: clamp(168px, 21vmin, 220px);
   padding: 10px 14px;
   border-radius: 20px;
   background: var(--panel);
@@ -837,8 +837,8 @@ body[data-mode='little'] .stage-card .name {
 }
 
 .big-round {
-  width: calc(var(--tap) * 1.2);
-  height: calc(var(--tap) * 1.2);
+  width: calc(var(--tap) * 1.15);
+  height: calc(var(--tap) * 1.15);
 }
 
 .fuel {
@@ -884,8 +884,8 @@ body[data-mode='little'] .stage-card .name {
 
 .ball-pick {
   position: relative;
-  width: clamp(40px, 6vmin, 52px);
-  height: clamp(40px, 6vmin, 52px);
+  width: clamp(36px, 5vmin, 44px);
+  height: clamp(36px, 5vmin, 44px);
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -912,8 +912,8 @@ body[data-mode='little'] .stage-card .name {
   z-index: 7;
   right: calc(var(--edge) + var(--safe-r));
   bottom: calc(var(--edge) + var(--safe-b));
-  width: calc(var(--tap) * 1.7);
-  height: calc(var(--tap) * 1.7);
+  width: calc(var(--tap) * 1.55);
+  height: calc(var(--tap) * 1.55);
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -944,8 +944,8 @@ body[data-mode='little'] .stage-card .name {
   z-index: 6;
   left: 50%;
   top: 46%;
-  width: 72px;
-  height: 72px;
+  width: 60px;
+  height: 60px;
   transform: translate(-50%, -50%);
   opacity: 0;
   pointer-events: none;
@@ -991,7 +991,7 @@ body[data-mode='little'] .big-only {
   top: 0;
   padding: 4px 12px;
   border-radius: 99px;
-  font-size: clamp(22px, 3.4vmin, 32px);
+  font-size: clamp(18px, 2.7vmin, 26px);
   color: #fff;
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
   background: var(--c0);
@@ -1093,8 +1093,8 @@ body[data-mode='little'] .big-only {
 }
 
 .party-stars svg {
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   animation: star-in 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.5) backwards;
 }
 
@@ -1173,12 +1173,31 @@ body[data-mode='little'] .big-only {
   /* a short screen: the angle and power go up in the sky, top right, so the
      tanks along the bottom stay in view */
   #aim-panel {
-    width: 180px;
+    width: 156px;
     gap: 2px;
-    padding: 6px 12px;
+    padding: 5px 10px;
+    font-size: 13px;
   }
   .dial input {
-    height: 26px;
+    height: 24px;
+  }
+  /* in play the controls stay small enough to leave the field in view, and
+     still easy to hit */
+  #hud {
+    --tap: 38px;
+  }
+  .score {
+    height: 32px;
+    font-size: 16px;
+    min-width: 64px;
+  }
+  .ball-pick {
+    width: 34px;
+    height: 34px;
+  }
+  .fire {
+    width: calc(var(--tap) * 1.45);
+    height: calc(var(--tap) * 1.45);
   }
 }
 
@@ -1247,7 +1266,7 @@ body[data-mode='little'] .big-only {
     padding: 8px 10px;
   }
   #balls {
-    bottom: calc(var(--edge) + var(--safe-b) + var(--tap) * 1.7 + 12px);
+    bottom: calc(var(--edge) + var(--safe-b) + var(--tap) * 1.55 + 12px);
   }
   .score {
     min-width: 70px;

@@ -34,13 +34,14 @@ export const GROUND = { meadow: 'grass', beach: 'sand', garden: 'mud', snow: 'sn
 export const SIGNATURE = { meadow: 'confetti', beach: 'star', garden: 'mud', snow: 'snow', forest: 'jelly' };
 
 // Balls. wind: how much the wind moves it; crater: crater size; stars: stars
-// needed to unlock (the five stage balls are always there).
+// needed to unlock (the five stage balls are always there); stain: the mark
+// it leaves on a tank when that is not the ball's own colour (mud is brown).
 export const BALLS = {
   confetti: { color: 0xff7a1a, wind: 1, crater: 1, stars: 0 },
-  star: { color: 0x2a62e8, wind: 1, crater: 1, stars: 0 },
-  mud: { color: 0xff4fb0, wind: 0.6, crater: 1.2, stars: 0 },
+  star: { color: 0x2a62e8, stain: 0xc9a24e, wind: 1, crater: 1, stars: 0 },
+  mud: { color: 0xff4fb0, stain: 0x4e3521, wind: 0.6, crater: 1.2, stars: 0 },
   snow: { color: 0xf4f7ff, wind: 1.15, crater: 1, stars: 0 },
-  jelly: { color: 0xff5ad0, wind: 0.9, crater: 1.1, stars: 0 },
+  jelly: { color: 0xff5ad0, stain: 0xd8405e, wind: 0.9, crater: 1.1, stars: 0 },
   bouncy: { color: 0xff3d6e, wind: 1, crater: 0.8, stars: 5, bounces: 3 },
   triple: { color: 0x9b5cff, wind: 1, crater: 0.65, stars: 12, split: 3 },
 };

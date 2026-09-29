@@ -16,19 +16,22 @@ import { loadPBR } from './env.js';
 
 // size = [width x, height y, depth z] in metres, box = [minx, miny, minz, maxx, maxy, maxz] (the origin is the middle of the base, so
 // box tells where the prop sits around it). Measured from the models (the GLB's root node carries the same numbers in its extras).
+// loose = { mass (kg, the real toy's), material (for the sound of a knock) }: a blast can knock the prop about (physics.js: a convex hull of the
+// model with that mass). solid: the prop stays put but debris and toys bounce off it (a box round the model). Neither: scenery only.
+// Every copy carries userData.prop = its id, which is how physics.js finds them in a stage.
 export const PROP_INFO = {
-  sandcastle: { stage: 'beach', size: [0.3075, 0.2884, 0.2203], box: [-0.1589, -0.01, -0.1152, 0.1486, 0.2784, 0.1052], pbr: ['sand-wet'], note: 'a red pennant on the tall left tower; the gate is at the front' },
-  bucket: { stage: 'beach', size: [0.144, 0.184, 0.1313], box: [-0.072, 0, -0.0656, 0.072, 0.184, 0.0656], note: 'blue plastic, handle leaning back; 0.128 m of wall plus the rim' },
-  spade: { stage: 'beach', size: [0.0859, 0.2584, 0.0209], box: [-0.043, -0.0034, -0.0119, 0.043, 0.255, 0.009], note: 'stands upright on the blade tip; lean it into the sand yourself' },
-  'shell-scallop': { stage: 'beach', size: [0.0394, 0.0175, 0.0231], box: [-0.0197, -0.0006, -0.0115, 0.0197, 0.0169, 0.0115], note: 'stands on its hinge, leaning back' },
-  'shell-spiral': { stage: 'beach', size: [0.0353, 0.0243, 0.0246], box: [-0.0177, -0.0008, -0.0123, 0.0177, 0.0235, 0.0123], note: 'lies on its side, tip to the left' },
-  'shell-cockle': { stage: 'beach', size: [0.0362, 0.0165, 0.0327], box: [-0.0181, -0.0005, -0.0163, 0.0181, 0.016, 0.0163], note: 'a ribbed dome, lying open side down' },
-  starfish: { stage: 'beach', size: [0.0495, 0.0095, 0.047], box: [-0.0247, -0.0003, -0.0235, 0.0247, 0.0092, 0.0235], note: 'flat on the sand, one arm points to -z' },
-  'watering-can': { stage: 'garden', size: [0.3173, 0.199, 0.128], box: [-0.1981, 0, -0.064, 0.1192, 0.199, 0.064], pbr: [], note: 'galvanised zinc, spout to -x (scale.x = -1 to turn it round)' },
+  sandcastle: { stage: 'beach', size: [0.3075, 0.2884, 0.2203], box: [-0.1589, -0.01, -0.1152, 0.1486, 0.2784, 0.1052], pbr: ['sand-wet'], solid: true, note: 'a red pennant on the tall left tower; the gate is at the front' },
+  bucket: { stage: 'beach', size: [0.144, 0.184, 0.1313], box: [-0.072, 0, -0.0656, 0.072, 0.184, 0.0656], loose: { mass: 0.055, material: 'plastic' }, note: 'blue plastic, handle leaning back; 0.128 m of wall plus the rim' },
+  spade: { stage: 'beach', size: [0.0859, 0.2584, 0.0209], box: [-0.043, -0.0034, -0.0119, 0.043, 0.255, 0.009], loose: { mass: 0.05, material: 'plastic' }, note: 'stands upright on the blade tip; lean it into the sand yourself' },
+  'shell-scallop': { stage: 'beach', size: [0.0394, 0.0175, 0.0231], box: [-0.0197, -0.0006, -0.0115, 0.0197, 0.0169, 0.0115], loose: { mass: 0.003, material: 'shell' }, note: 'stands on its hinge, leaning back' },
+  'shell-spiral': { stage: 'beach', size: [0.0353, 0.0243, 0.0246], box: [-0.0177, -0.0008, -0.0123, 0.0177, 0.0235, 0.0123], loose: { mass: 0.004, material: 'shell' }, note: 'lies on its side, tip to the left' },
+  'shell-cockle': { stage: 'beach', size: [0.0362, 0.0165, 0.0327], box: [-0.0181, -0.0005, -0.0163, 0.0181, 0.016, 0.0163], loose: { mass: 0.004, material: 'shell' }, note: 'a ribbed dome, lying open side down' },
+  starfish: { stage: 'beach', size: [0.0495, 0.0095, 0.047], box: [-0.0247, -0.0003, -0.0235, 0.0247, 0.0092, 0.0235], loose: { mass: 0.003, material: 'shell' }, note: 'flat on the sand, one arm points to -z' },
+  'watering-can': { stage: 'garden', size: [0.3173, 0.199, 0.128], box: [-0.1981, 0, -0.064, 0.1192, 0.199, 0.064], pbr: [], loose: { mass: 0.16, material: 'metal' }, note: 'galvanised zinc, spout to -x (scale.x = -1 to turn it round)' },
   fence: { stage: 'garden', size: [1, 0.8946, 0.0485], box: [-0.5, -0.0066, -0.035, 0.5, 0.8881, 0.0135], pbr: ['wood'], tile: [1.0, 0, 0], note: 'one metre of weathered pickets; place copies 1.0 m apart along x and the ends meet' },
-  flowerpot: { stage: 'garden', size: [0.1602, 0.1509, 0.1599], box: [-0.0801, -0.0005, -0.0799, 0.0801, 0.1504, 0.0801], pbr: ['soil'], note: 'terracotta pot with a saucer and soil, 0.15 m tall' },
+  flowerpot: { stage: 'garden', size: [0.1602, 0.1509, 0.1599], box: [-0.0801, -0.0005, -0.0799, 0.0801, 0.1504, 0.0801], pbr: ['soil'], loose: { mass: 0.35, material: 'clay' }, note: 'terracotta pot with a saucer and soil, 0.15 m tall' },
   'rope-bridge': { stage: 'forest', size: [1.1704, 0.252, 0.196], box: [-0.5852, 0, -0.098, 0.5852, 0.252, 0.098], pbr: ['wood', 'rope'], span: 1.0, note: 'along x; posts at x = -0.5 and +0.5 (deck sags 3.6 cm); fitRopeBridge(obj, span) moves the posts and stretches the deck' },
-  log: { stage: 'forest', size: [0.4087, 0.1323, 0.1592], box: [-0.2051, -0.0153, -0.0651, 0.2036, 0.1169, 0.0941], pbr: ['bark', 'moss'], note: 'along x, sawn ends, a branch stub towards the camera' },
+  log: { stage: 'forest', size: [0.4087, 0.1323, 0.1592], box: [-0.2051, -0.0153, -0.0651, 0.2036, 0.1169, 0.0941], pbr: ['bark', 'moss'], loose: { mass: 1.5, material: 'wood' }, note: 'along x, sawn ends, a branch stub towards the camera' },
   mushroom: { stage: 'forest', size: [0.075, 0.0402, 0.0439], box: [-0.0334, -0.0013, -0.0217, 0.0417, 0.0389, 0.0221], note: 'a red toadstool with two little ones beside it' },
 };
 
@@ -62,6 +65,7 @@ function template(id) {
 async function prepare(id, gltf) {
   const root = gltf.scene.getObjectByName(id) || gltf.scene.children[0];
   root.removeFromParent();
+  root.userData.prop = id; // (copied to every clone)
   const mats = new Set();
   root.traverse((o) => {
     if (!o.isMesh) return;

@@ -1,10 +1,10 @@
 // Lit materials for the instanced pieces. They are three's own physical
 // materials (so they get the scene's environment lighting, sun and shadows) with
 // per-instance behaviour patched in through onBeforeCompile:
-//   flat  : paper confetti, ribbons, grass blades, needles (cut out by a
-//           signed-distance shape, curled by a bend, foil glints)
-//   star  : the chunky candy stars
-//   blob  : jelly, mud, water, paint, clods, candy beads (a head sphere with an
+//   flat  : tissue-paper confetti, streamers, grass blades, needles (cut out by
+//           a signed-distance shape, curled by a bend, crinkled, light shows
+//           through it, foil flecks)
+//   blob  : gel, mud, water, clods, rubber beads (a head sphere with an
 //           optional drop-on-a-neck tail, wobble, lumps, grain, fake subsurface)
 //   decal : ground stains (a splat atlas, wet-looking bump)
 import * as THREE from 'three';
@@ -37,10 +37,8 @@ const rep = (src, what, by) => {
 export function flatMaterial() {
   const m = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
-    roughness: 0.55,
+    roughness: 0.78,
     metalness: 1.0,
-    clearcoat: 0.5,
-    clearcoatRoughness: 0.3,
     side: THREE.DoubleSide,
     alphaTest: 0.5,
     alphaToCoverage: true,
@@ -75,21 +73,25 @@ vQ = position.xy * 2.0;`,
       shader.fragmentShader,
       '#include <common>',
       `#include <common>
+uniform sampler2D uNoise;
 varying vec4 vP;
 varying vec2 vQ;
+float ttCrinkle = 0.0;
+${PERTURB_GLSL}
 float ttRBox(vec2 p, vec2 b, float rho) {
   vec2 q = abs(p) - (b - rho);
   return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - rho;
 }
 // signed distance (negative inside) of the paper shape, in units of the smaller half-size
+// shapes: 0 rounded square or strip, 1 punched circle, 2 torn flake, 3 blade, 4 diamond
 float ttShape(vec2 uv, float shape, float asp, float seed) {
   vec2 b = vec2(max(1.0, 1.0 / asp), max(1.0, asp));
   vec2 p = uv * b;
-  if (shape < 0.5) return ttRBox(p, b, 0.32);
+  if (shape < 0.5) return ttRBox(p, b, 0.22);
   if (shape < 1.5) return (length(uv) - 1.0) * min(b.x, b.y);
   if (shape < 2.5) {
-    vec2 w = p + 0.2 * vec2(sin(p.y * 2.7 + seed * 5.0), sin(p.x * 2.3 + seed * 3.0));
-    return ttRBox(w, b * 0.92, 0.55);
+    vec2 w = p + 0.14 * vec2(sin(p.y * 2.7 + seed * 5.0), sin(p.x * 2.3 + seed * 3.0));
+    return ttRBox(w, b * 0.94, 0.4);
   }
   if (shape < 3.5) return abs(p.y) - b.y * pow(max(0.0, 1.0 - abs(p.x) / b.x), 0.75);
   return (abs(p.x) / b.x + abs(p.y) / b.y - 1.0) * 0.6;
@@ -103,45 +105,39 @@ float ttShape(vec2 uv, float shape, float asp, float seed) {
   float d = ttShape(vQ, vP.x, vP.y, vP.z);
   float fw = max(fwidth(d), 1e-4);
   diffuseColor.a = clamp(0.5 - d / fw, 0.0, 1.0);
+  // the crinkles of tissue paper
+  ttCrinkle = texture2D(uNoise, vQ * 0.45 + vP.z).r * 0.7 + texture2D(uNoise, vQ * 1.3 + vP.z * 1.7).r * 0.3;
 }`,
     );
     shader.fragmentShader = rep(
       shader.fragmentShader,
       '#include <color_fragment>',
       `#include <color_fragment>
-if (!gl_FrontFacing) diffuseColor.rgb *= 0.9;`,
+if (!gl_FrontFacing) diffuseColor.rgb *= 0.93;
+diffuseColor.rgb *= 0.9 + 0.2 * ttCrinkle;`,
     );
-    shader.fragmentShader = rep(shader.fragmentShader, '#include <roughnessmap_fragment>', 'float roughnessFactor = mix(0.6, 0.26, vP.w);');
+    shader.fragmentShader = rep(shader.fragmentShader, '#include <roughnessmap_fragment>', 'float roughnessFactor = mix(0.8, 0.28, vP.w);');
     shader.fragmentShader = rep(shader.fragmentShader, '#include <metalnessmap_fragment>', 'float metalnessFactor = vP.w * 0.95;');
     shader.fragmentShader = rep(
       shader.fragmentShader,
-      '#include <emissivemap_fragment>',
-      `#include <emissivemap_fragment>
-totalEmissiveRadiance += diffuseColor.rgb * 0.16;`,
+      '#include <normal_fragment_maps>',
+      `#include <normal_fragment_maps>
+normal = ttPerturb(-vViewPosition, normal, vec2(dFdx(ttCrinkle), dFdy(ttCrinkle)) * 2.2, faceDirection);`,
     );
-  });
-  return m;
-}
-
-// ---------------------------------------------------------------------------
-// candy stars
-export function starMaterial() {
-  const m = new THREE.MeshPhysicalMaterial({
-    color: 0xffffff,
-    roughness: 0.2,
-    metalness: 0.0,
-    clearcoat: 1,
-    clearcoatRoughness: 0.06,
-    envMapIntensity: 1.2,
-  });
-  patch(m, 'tt-star', (shader) => {
     shader.fragmentShader = rep(
       shader.fragmentShader,
       '#include <emissivemap_fragment>',
       `#include <emissivemap_fragment>
 {
-  float fres = 1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
-  totalEmissiveRadiance += diffuseColor.rgb * (0.16 + 0.3 * fres * fres);
+  // tissue lets light through: lit from behind it glows a little, and it is never quite black in shade
+  vec3 ttL = vec3(0.0, 1.0, 0.0);
+  vec3 ttLc = vec3(0.0);
+  #if NUM_DIR_LIGHTS > 0
+  ttL = directionalLights[0].direction;
+  ttLc = directionalLights[0].color;
+  #endif
+  float ttBack = clamp(-dot(normal, ttL), 0.0, 1.0);
+  totalEmissiveRadiance += diffuseColor.rgb * (0.05 + ttLc * ttBack * 0.13) * (1.0 - vP.w);
 }`,
     );
   });
@@ -340,7 +336,7 @@ varying vec2 vDUv;`,
   transformed.xy *= aDecal.z;
   float cell = aDecal.x;
   vec2 origin = vec2(mod(cell, 4.0), floor(cell / 4.0));
-  vDUv = (origin + clamp(uvq, 0.004, 0.996)) / vec2(4.0, 2.0);
+  vDUv = (origin + clamp(uvq, 0.004, 0.996)) / vec2(4.0, 3.0);
   vD = aDecal;
 }`,
     );

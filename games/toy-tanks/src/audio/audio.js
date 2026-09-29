@@ -1,27 +1,41 @@
 // Toy Tanks' sound. Everything is synthesised with Web Audio at run time: no
 // audio files and no voices, and nothing loud. Shots are toy pops and airy
-// whooshes; explosions are splats, fizzes, confetti crackles, snow puffs and
-// cheerful chimes; a hit tank giggles with squeaky-toy squeaks, a slide-whistle
-// wobble and tiny chirps. Each stage has a quiet ambience bed (ambience.js) and
-// a toy-box tune (music.js).
+// whooshes; a burst is heard as it would be if it were real, at the size of a
+// toy: a soft low whump, the ground's own impact (sand thud and hiss, wet mud
+// slap and squelch, snow crunch and poof, soil thump), what the ball is made
+// of (paper flutter, glitter, mud splatter, a gel wobble) and the debris
+// pattering back for a second or two; props being knocked about have small
+// knocks of their own; a hit tank giggles with squeaky-toy squeaks, a
+// slide-whistle wobble and tiny chirps. Each stage has a quiet ambience bed
+// (ambience.js) and a toy-box tune (music.js).
 //
 // How it is built:
-//  - one-shots are rendered once into small buffers (sounds.js, from
-//    physical-ish parts) and played through a short chain (source, gain, pan,
-//    a send to a little room), so a burst costs a handful of nodes; each has
-//    a few variants and a random pitch, level and timing, so repeats differ;
+//  - one-shots are rendered once into small buffers (sounds.js and impacts.js,
+//    from physical-ish parts) and played through a short chain (source, gain,
+//    pan, a send to a little room), so a burst costs a handful of nodes; each
+//    has a few variants and a random pitch, level and timing, so repeats differ;
 //  - tuned notes (chimes, sparkles, music) come from instruments.js and are
 //    cached; sounds in the stage's key play in that key;
 //  - continuous voices (aim, turret, drive, flight, wind) are small live graphs
 //    built the first time they are used, whose gains and pitches glide to the
 //    numbers the game gives them every frame; if the game stops calling, they
 //    fade by themselves, and they are taken down after a while;
+//  - the burst, the knocks and the debris share an impact bus with a limiter,
+//    voice budgets and rate limits, so a big blast with a hundred things
+//    tumbling never becomes noise;
 //  - everything meets in one bus with a gentle compressor and a soft ceiling
 //    (about -4 dBFS), so nothing can be loud, whatever piles up.
+// The game's calls: burst(ball, ground, power, pan, great, scale) at every
+// impact, knock(material, strength, pan) for a prop or block hit or tumbling
+// ('plastic' | 'wood' | 'shell' | 'stone' | 'metal' | 'clod') and
+// patter(count, speed, pan, ground) for debris landing (both cheap and safe to
+// call every frame). The audio is also a blast reactor (world/react.js): a
+// burst in a puddle (e.water) gets a soft splash instead of the ground's slap.
 // Everything is safe to call before unlock() and while muted. The same code
 // runs on an OfflineAudioContext (attach), which the dev page uses to render
 // and measure every sound without playing anything aloud.
 import { SHOTS, LOOPS as BASE_LOOPS, KEYED, FIXED } from './sounds.js';
+import { IMPACTS } from './impacts.js';
 import { LOOPS as AMB_LOOPS, EVENTS, Ambience } from './ambience.js';
 import { renderNote, NOTE_RATE } from './instruments.js';
 import { Music, KEYS, STAGES, styleNotes, penta } from './music.js';
@@ -30,28 +44,55 @@ import { clamp, rand, pick, seeded, toBuffer } from './dsp.js';
 const STORE = 'toy-tanks.muted';
 const MASTER = 0.9;
 // The compressor adds its own make-up gain; this takes it back off, so ordinary
-// levels pass at unity and only peaks are squeezed (measured with dev/audio.html).
+// levels pass at unity and only peaks are squeezed.
 const GLUE_TRIM = 0.405;
+// the impact bus's limiter (threshold in dB), and the make-up trim that returns
+// ordinary levels to unity like GLUE_TRIM does
+const IMPACT_LIMIT = { threshold: -3, knee: 6, ratio: 8, attack: 0.002, release: 0.16, trim: 0.93 };
 const MAX_LIVE = 56;
 const NOTE_CACHE = 260;
-const GROUND = { grass: 'grass', sand: 'sand', mud: 'mudGround', snow: 'snowGround', moss: 'moss' };
+// how many voices of a kind may sound at once (the rest are dropped, quietly)
+const KIND_MAX = { amb: 6, burst: 30, knock: 8, patter: 4 };
+
+// What each ground makes of a burst: the buffers of its layers (impacts.js), how
+// its whump plays (pitch, level, low-pass) and how loud its own hit and its
+// debris are (their renders differ in loudness; these even them out).
+const GROUNDS = {
+  grass: { hit: 'hitSoil', fall: 'fall_soil', stream: 'stream_soil', whump: [1.0, 0.9, 230], hitK: 0.93, fallK: 1.0 },
+  sand: { hit: 'hitSand', fall: 'fall_sand', stream: 'stream_sand', whump: [0.95, 0.75, 160], hitK: 1.05, fallK: 1.3 },
+  mud: { hit: 'hitMud', fall: 'fall_mud', stream: 'stream_mud', whump: [0.88, 0.9, 180], hitK: 0.85, fallK: 0.75 },
+  snow: { hit: 'hitSnow', fall: 'fall_snow', stream: 'stream_snow', whump: [1.08, 0.55, 120], hitK: 1.1, fallK: 1.2 },
+  moss: { hit: 'hitMoss', fall: 'fall_moss', stream: 'stream_moss', whump: [1.02, 0.7, 150], hitK: 1.0, fallK: 1.1 },
+  air: { hit: 'hitAir', fall: null, stream: 'stream_soil', whump: [1.2, 0.4, 230], hitK: 0.85, fallK: 1.0 },
+  water: { hit: null, fall: 'fall_water', stream: 'stream_water', whump: [1.0, 0.35, 140], hitK: 1.0, fallK: 1.0 },
+};
+// the ball's own layer: its buffer, its level and, if it has one, a quiet sparkle
+const PAYLOADS = {
+  confetti: { buf: 'payConfetti', lv: 0.5 },
+  star: { buf: 'payGlitter', lv: 0.66, twinkle: 0.06 },
+  mud: { buf: 'payMud', lv: 0.8 },
+  snow: { buf: 'paySnow', lv: 0.8 },
+  jelly: { buf: 'payGel', lv: 0.64 },
+  bouncy: { buf: 'payRubber', lv: 0.72 },
+  triple: { buf: 'paySmall', lv: 0.68 },
+};
+const KNOCKS = { plastic: 'knock_plastic', wood: 'knock_wood', shell: 'knock_shell', stone: 'knock_stone', metal: 'knock_metal', clod: 'knock_clod' };
 
 // Every one-shot renders to peak 1; these set how loud each plays before the
-// bus (measured with dev/audio.html). Music, ambience and effects each have a
+// bus. Music, ambience and effects each have a
 // bus of their own.
 const LV = {
   tap: 0.42, select: 0.25, turn: 0.34,
   pop: 0.78, whoosh: 0.38, colour: 0.11, boing: 0.55, plop: 0.36,
   bounce: 0.66, split: 0.66,
-  confetti: 0.95, star: 0.85, mud: 1.1, snow: 1.15, jelly: 0.9, bouncy: 0.9, triple: 0.9,
-  ground: 0.7, great: 0.95, chime: 0.17,
+  whump: 0.4, hit: 0.68, fall: 0.6, splash: 0.7, knock: 0.24, patter: 0.22, great: 0.26,
   tank: 0.75, balloon: 0.72, blocks: 0.66, ding: 0.75, bonus: 0.3, pip: 0.36,
   fanfare: 1.45, popper: 0.9, roll: 0.45, twinkle: 0.8, starEarn: 1.0, unlock: 1.0,
   // continuous voices at full strength
   aim: 0.22, turret: 0.2, drive: 0.2, flightAir: 0.35, flightWhistle: 0.04, wind: 0.22,
 };
 
-const LIB = { ...SHOTS, ...EVENTS, ...FIXED };
+const LIB = { ...SHOTS, ...IMPACTS, ...EVENTS, ...FIXED };
 const LOOPS = { ...BASE_LOOPS, ...AMB_LOOPS };
 const unit = (v) => clamp(Number.isFinite(Number(v)) ? Number(v) : 0, 0, 1);
 const jitter = (a, b) => rand(a, b);
@@ -132,6 +173,24 @@ export class Audio {
     this.kinds = {};
     this.jobs = [];
     this.warmed = false;
+    // the impact layers' own housekeeping: how busy the last moments were, the
+    // rate-limit buckets of knocks and debris, and the layers of the last burst
+    this.busy = 0;
+    this.busyAt = 0;
+    this.knockTokens = 3;
+    this.knockAt = 0;
+    this.knockLast = { plastic: [-9, 0], wood: [-9, 0], shell: [-9, 0], stone: [-9, 0], metal: [-9, 0], clod: [-9, 0] };
+    this.patterCount = 0;
+    this.patterSpeed = 0;
+    this.patterPan = 0;
+    this.patterGround = 'grass';
+    this.patterAt = -9;
+    this.burstAt = -9;
+    this.burstPan = 0;
+    this.burstLayers = [];
+    this.knockOpt = { gain: 1, rate: 1, cutoff: 0, pan: 0, wet: 0.05, dest: null, kind: 'knock' };
+    // the world tells every reactor about every blast (world/react.js); loaded on the side, so a missing module never stops the sound
+    import('../world/react.js').then((m) => m.reactors.add(this)).catch(() => {});
   }
 
   get muted() {
@@ -216,6 +275,13 @@ export class Audio {
     this.verbIn.connect(conv).connect(verbOut).connect(this.mix);
     this.musicSend = this.gainNode(this.dry ? 0 : 0.16);
     this.musicBus.connect(this.musicSend).connect(this.verbIn);
+    // the burst, knocks and debris meet here first: a fast limiter keeps a big
+    // blast with a shower of debris from ever piling up louder than one burst
+    this.impact = this.gainNode(1);
+    this.impactLimit = compressor(ctx, IMPACT_LIMIT.threshold, IMPACT_LIMIT.knee, IMPACT_LIMIT.ratio, IMPACT_LIMIT.attack, IMPACT_LIMIT.release);
+    this.impactTrim = this.gainNode(IMPACT_LIMIT.trim);
+    this.impact.connect(this.impactLimit).connect(this.impactTrim).connect(this.sfx);
+    this.knockOpt.dest = this.impact;
 
     this.buf('pink');
     this.music = new Music(this);
@@ -302,9 +368,9 @@ export class Audio {
       for (let v = 0; v < this.variantsOf(name); v++) b(name, v, key);
     };
     for (const name of ['pop', 'whooshUp', 'whooshDown', 'tap', 'boing', 'pink', 'patter', 'gust']) all(name);
-    for (const name of ['confetti', 'mud', 'jelly', 'snow', 'candy', 'triple', 'grass', 'sand', 'mudGround', 'snowGround', 'moss', 'tankHit']) all(name);
+    for (const name of ['confetti', 'tankHit', ...Object.keys(IMPACTS)]) all(name);
     const order = [this.stage, ...STAGES.filter((s) => s !== this.stage)];
-    for (const name of ['twinkleBurst', 'flourish', 'split', 'twinkle']) all(name, KEYS[order[0]]);
+    for (const name of ['flourish', 'split', 'twinkle']) all(name, KEYS[order[0]]);
     for (const name of ['balloon', 'blocks', 'drip', 'star', 'unlockRun', 'unlockBloom', 'roll']) all(name);
     jobs.push(...this.sfxNoteJobs(order[0]), ...[91, 93, 95, 103, 105, 107].map((m) => () => this.noteBuf('glock', m)));
     for (const st of order) jobs.push(...this.stageJobs(st));
@@ -325,7 +391,7 @@ export class Audio {
   stageJobs(id) {
     const jobs = [];
     const key = KEYS[id];
-    for (const name of ['twinkleBurst', 'flourish', 'split', 'twinkle', 'fanfare']) for (let v = 0; v < this.variantsOf(name); v++) jobs.push(() => this.buf(name, v, key));
+    for (const name of ['flourish', 'split', 'twinkle', 'fanfare']) for (let v = 0; v < this.variantsOf(name); v++) jobs.push(() => this.buf(name, v, key));
     jobs.push(...this.amb.jobs(id));
     for (const mode of ['lull', 'tune']) for (const [inst, m] of styleNotes(id, mode)) jobs.push(() => this.noteBuf(inst, m));
     return jobs;
@@ -440,6 +506,7 @@ export class Audio {
     if (!ctx || (!this.offline && ctx.state !== 'running')) return;
     const now = this.now();
     const until = horizon ?? now + 0.3;
+    if (this.patterCount && now - this.patterAt >= 0.06) this.flushPatter(now);
     this.music.pump(until);
     this.amb.pump(now, until, this._muted);
     for (const k of Object.keys(this.vox)) {
@@ -472,7 +539,7 @@ export class Audio {
     const ctx = this.ctx;
     const now = this.now();
     t = Math.max(t ?? now, now);
-    if (this.live >= MAX_LIVE || (kind && (this.kinds[kind] || 0) >= (kind === 'amb' ? 6 : 24))) return null;
+    if (this.live >= MAX_LIVE || (kind && (this.kinds[kind] || 0) >= (KIND_MAX[kind] || 24))) return null;
     const s = ctx.createBufferSource();
     s.buffer = buf;
     if (rate !== 1) s.playbackRate.value = rate;
@@ -504,6 +571,7 @@ export class Audio {
     s.start(t);
     this.live++;
     if (kind) this.kinds[kind] = (this.kinds[kind] || 0) + 1;
+    s.gainNode = g;
     s.onended = () => {
       this.live--;
       if (kind) this.kinds[kind]--;
@@ -691,50 +759,191 @@ export class Audio {
     this.play(this.bank('split'), { gain: LV.split * jitter(0.92, 1.05), rate: jitter(0.97, 1.04), pan, wet: 0.14 });
   }
 
-  // The explosion, in layers: the ball's payload, the ground it landed on and,
-  // for a great hit, a rising chime flourish. Soft and round, never a boom.
-  // `power01` scales level and depth; the whole is panned to where it landed.
-  burst(ball = 'confetti', ground = 'grass', power01 = 0.7, pan = 0, great = false) {
+  // The explosion, in layers, as it would sound if it were real at the size of a
+  // toy: a soft low whump (felt more than heard), the ground's own impact, what
+  // the ball is made of and the debris pattering back over a second or two. A
+  // great hit is fuller (a second whump and shower, a wider payload, a small
+  // chime) but not louder as a whole. `power01` scales level and depth, `scale`
+  // is 1 for a ball and about 0.6 for a split ball's child, and the whole is
+  // panned to where it landed. Soft and round, never a boom.
+  burst(ball = 'confetti', ground = 'grass', power01 = 0.7, pan = 0, great = false, scale = 1) {
     if (!this.ready()) return;
     const p = unit(power01);
-    const t = this.now() + 0.004;
-    const lvl = 0.6 + 0.4 * p;
-    const rate = (1.1 - 0.16 * p) * jitter(0.95, 1.05);
-    const wet = 0.16;
-    const pl = (name, gain, extra = {}) => this.play(this.bank(name), { t, gain: gain * lvl * jitter(0.93, 1.05), rate, pan, wet, ...extra });
-    switch (ball) {
-      case 'star': {
-        // a twinkling cascade in the stage's key over a soft puff
-        this.play(this.bank('twinkleBurst'), { t, gain: LV.star * lvl * jitter(0.93, 1.05), rate: jitter(0.98, 1.03), pan, wet: 0.22 });
-        break;
-      }
-      case 'mud':
-        pl('mud', LV.mud);
-        break;
-      case 'snow':
-        pl('snow', LV.snow);
-        break;
-      case 'jelly':
-        pl('jelly', LV.jelly);
-        break;
-      case 'bouncy':
-        pl('candy', LV.bouncy);
-        break;
-      case 'triple':
-        pl('triple', LV.triple);
-        break;
-      default:
-        pl('confetti', LV.confetti);
-        // the chime: a few notes of the stage's chord, quick
-        for (let i = 0; i < 3; i++) this.keyNote('glock', 24 + [0, 4, 7][i], t + 0.02 + i * 0.055, LV.chime * lvl, pan, 0.3);
+    const sc = clamp(Number(scale) || 1, 0.3, 1.5);
+    const G = GROUNDS[ground] || GROUNDS.grass;
+    const P = PAYLOADS[ball] || PAYLOADS.confetti;
+    const now = this.now();
+    const t = now + 0.004;
+    pan = clamp(Number(pan) || 0, -0.9, 0.9);
+    const lvl = (0.55 + 0.45 * p) * (0.7 + 0.3 * sc) * this.crowd(now, 1, 0.18);
+    const small = 1 + 0.3 * (1 - sc);
+    const part = great ? 0.82 : 1;
+    const layers = this.burstLayers;
+    layers.length = 0;
+    this.burstAt = now;
+    this.burstPan = pan;
+    const dest = this.impact;
+    const kind = 'burst';
+    // 1. the whump, deeper for a harder hit
+    const [wRate, wGain, wCut] = G.whump;
+    const whump = LV.whump * wGain * lvl * part;
+    const wr = wRate * (1.12 - 0.3 * p) * small * jitter(0.96, 1.04);
+    layers.push(this.play(this.bank('whump'), { t, gain: whump, rate: wr, cutoff: wCut, pan: pan * 0.5, wet: 0, dest, kind }));
+    if (great) layers.push(this.play(this.bank('whump'), { t: t + 0.012, gain: whump * 0.6, rate: wr * 0.72, cutoff: wCut * 0.8, pan: pan * 0.5, wet: 0, dest, kind }));
+    // 2. the ground's own impact
+    if (G.hit) layers.push(this.play(this.bank(G.hit), { t, gain: LV.hit * G.hitK * lvl * part, rate: jitter(0.95, 1.05) * Math.sqrt(small), pan, wet: 0.08, dest, kind }));
+    // 3. the ball: paper flutter, glitter, mud, powder, gel, rubber
+    const pay = P.lv * lvl * part;
+    const pr = (1.06 - 0.1 * p) * small * jitter(0.96, 1.04);
+    this.play(this.bank(P.buf), { t: t + 0.012, gain: pay, rate: pr, pan, wet: 0.12, dest, kind });
+    if (great) this.play(this.bank(P.buf), { t: t + 0.026, gain: pay * 0.5, rate: pr * jitter(0.94, 0.98), pan: clamp(pan + (Math.random() < 0.5 ? -0.3 : 0.3), -0.9, 0.9), wet: 0.16, dest, kind });
+    if (P.twinkle) this.play(this.bank('twinkle'), { t: t + 0.02, gain: P.twinkle * lvl * (great ? 1.5 : 1), rate: jitter(0.98, 1.03), pan, wet: 0.25, dest, kind });
+    // 4. the debris coming back down
+    if (G.fall) {
+      const fall = LV.fall * G.fallK * lvl * (0.6 + 0.4 * p);
+      layers.push(this.play(this.bank(G.fall), { t: t + 0.07 + rand(0, 0.03), gain: fall * part, rate: jitter(0.96, 1.04), pan: clamp(pan + rand(-0.15, 0.15), -0.9, 0.9), wet: 0.06, dest, kind }));
+      if (great) layers.push(this.play(this.bank(G.fall), { t: t + 0.17, gain: fall * 0.6, rate: jitter(0.88, 0.94), pan: clamp(pan + rand(-0.25, 0.25), -0.9, 0.9), wet: 0.06, dest, kind }));
     }
-    // the ground: a soft thud and its own texture
-    this.play(this.bank(GROUND[ground] || 'grass'), { t, gain: LV.ground * (0.55 + 0.45 * p) * jitter(0.93, 1.05), rate: jitter(0.94, 1.06), pan, wet: 0.08 });
     if (great) {
-      // a cheerful rising chime flourish
-      this.play(this.bank('flourish'), { t: t + 0.06, gain: LV.great * jitter(0.95, 1.05), rate: jitter(0.99, 1.02), pan: pan * 0.5, wet: 0.25 });
+      // a small rising chime: the reward for a good shot, in the stage's key
+      this.play(this.bank('flourish'), { t: t + 0.06, gain: LV.great * jitter(0.95, 1.05), rate: jitter(0.99, 1.02), pan: pan * 0.5, wet: 0.25, dest, kind });
       this.music.duck(0.75, 0.8);
     }
+  }
+
+  // The world's answer to a blast (world/react.js). The burst has just played
+  // its ground layers as the game's ground; a burst in a puddle (e.water) hushes
+  // those and adds a soft splash and the patter of droplets instead.
+  blast(e) {
+    if (!e.water || !this.ready()) return;
+    const now = this.now();
+    if (now - this.burstAt < 0.1) {
+      for (const s of this.burstLayers) if (s) s.gainNode.gain.setValueAtTime(s.gainNode.gain.value * 0.25, now);
+    }
+    const pan = now - this.burstAt < 0.25 ? this.burstPan : 0;
+    const p = unit(e.power);
+    const sc = clamp(Number(e.scale) || 1, 0.3, 1.5);
+    const lvl = (0.55 + 0.45 * p) * (0.7 + 0.3 * sc) * (e.great ? 0.85 : 1);
+    const t = now + 0.006;
+    const dest = this.impact;
+    const kind = 'burst';
+    this.play(this.bank('splash'), { t, gain: LV.splash * lvl, rate: (1.06 - 0.1 * p) * (1 + 0.3 * (1 - sc)) * jitter(0.96, 1.04), pan, wet: 0.14, dest, kind });
+    this.play(this.bank('fall_water'), { t: t + 0.1, gain: LV.fall * 0.9 * lvl, rate: jitter(0.96, 1.04), pan: clamp(pan + rand(-0.15, 0.15), -0.9, 0.9), wet: 0.08, dest, kind });
+    if (e.great) this.play(this.bank('fall_water'), { t: t + 0.24, gain: LV.fall * 0.5 * lvl, rate: jitter(0.9, 0.95), pan: clamp(pan + rand(-0.25, 0.25), -0.9, 0.9), wet: 0.08, dest, kind });
+  }
+
+  // How busy the last moments were (bursts, knocks and debris, fading over about
+  // a third of a second), as the level the next impact sound plays at: the busier
+  // it is, the quieter each new one, so a pile of them never adds up. Counts this
+  // one in.
+  crowd(now, weight, k) {
+    this.busy *= Math.exp(-Math.max(0, now - this.busyAt) / 0.35);
+    this.busyAt = now;
+    const f = 1 / (1 + k * this.busy);
+    this.busy += weight;
+    return f;
+  }
+
+  // ------------------------------------------------------------ knocks and debris
+
+  // The blast has the floor: right after a burst the knocks and debris are almost
+  // silent, coming back to full over about 0.4 s, so they never pile onto the
+  // burst's own peak.
+  shadow(now) {
+    const k = clamp((now - this.burstAt) / 0.4, 0, 1);
+    return 0.12 + 0.88 * k * k * (3 - 2 * k);
+  }
+
+  // A prop or block hit or tumbling: 'plastic' (bucket, spade, watering can,
+  // blocks) | 'wood' (log, stands) | 'shell' | 'stone' (pebbles) | 'metal' (zinc
+  // can) | 'clod' (a chunk of earth); `strength` 0..1 is how hard. Cheap to call
+  // as often as things collide: knocks are rate-limited (softer ones first),
+  // voice-limited and play quieter the busier it is. Subtle by design.
+  knock(material = 'plastic', strength = 0.5, pan = 0) {
+    if (!this.ready()) return;
+    const name = KNOCKS[material];
+    const s = unit(strength);
+    if (!name || s < 0.05) return;
+    const now = this.now();
+    // a bucket of three, refilled at 9 a second; a soft knock costs more than a hard one
+    this.knockTokens = Math.min(3, this.knockTokens + Math.max(0, now - this.knockAt) * 9);
+    this.knockAt = now;
+    const cost = 1.2 - 0.8 * s;
+    if (this.knockTokens < cost) return;
+    // the same material is not heard twice within 45 ms unless the second is clearly harder
+    const last = this.knockLast[material];
+    if (now - last[0] < 0.045 && s < last[1] + 0.3) return;
+    this.knockTokens -= cost;
+    last[0] = now;
+    last[1] = s;
+    const o = this.knockOpt;
+    o.gain = LV.knock * (0.12 + 0.88 * s ** 1.5) * this.crowd(now, 0.3, 0.25) * this.shadow(now) * jitter(0.9, 1.08);
+    o.rate = (1.05 - 0.1 * s) * jitter(0.96, 1.04);
+    o.cutoff = 2500 + 4500 * s;
+    o.pan = pan;
+    this.play(this.bank(name), o);
+  }
+
+  // Debris landing: `count` things this frame at `speed` 0..1, on `ground`
+  // ('grass' | 'sand' | 'mud' | 'snow' | 'moss' | 'water'). Call it every frame
+  // with whatever landed; the counts are gathered and heard as one little
+  // shower every 60 ms at most, a piece of a steady stream of grains, crumbs or
+  // droplets, quiet and never more than four at once.
+  patter(count = 1, speed = 0.5, pan = 0, ground = 'grass') {
+    if (!this.ready()) return;
+    const n = Math.floor(Number(count));
+    if (!(n > 0)) return;
+    this.patterCount = Math.min(80, this.patterCount + n);
+    this.patterSpeed = Math.max(this.patterSpeed, unit(speed));
+    this.patterPan = Number(pan) || 0;
+    this.patterGround = ground;
+    const now = this.now();
+    if (now - this.patterAt >= 0.06) this.flushPatter(now);
+  }
+
+  // let the gathered debris be heard (patter() does it as it goes; pump() catches the last stragglers)
+  flushPatter(now) {
+    const n = this.patterCount;
+    const speed = this.patterSpeed;
+    this.patterCount = 0;
+    this.patterSpeed = 0;
+    this.patterAt = now;
+    if (!n) return;
+    const G = GROUNDS[this.patterGround] || GROUNDS.grass;
+    const dur = clamp(0.045 + 0.022 * Math.sqrt(n), 0.06, 0.26);
+    const buf = this.bank(G.stream);
+    const gain = LV.patter * G.fallK * (0.25 + 0.75 * speed ** 1.2) * Math.min(1, 0.4 + 0.6 * Math.sqrt(n / 10)) * this.crowd(now, 0.25, 0.2) * this.shadow(now);
+    this.excerpt(buf, now + 0.002, Math.random() * Math.max(0, buf.duration - dur * 1.3 - 0.02), dur, gain, 0.88 + 0.3 * speed, this.patterPan, 'patter');
+  }
+
+  // A short piece of a buffer, faded in and out so a cut through the middle of
+  // it never clicks: source -> gain (envelope) -> pan -> impact bus.
+  excerpt(buf, t, offset, dur, gain, rate, pan, kind) {
+    if (this.live >= MAX_LIVE || (this.kinds[kind] || 0) >= (KIND_MAX[kind] || 24)) return;
+    const ctx = this.ctx;
+    t = Math.max(t, this.now());
+    const s = ctx.createBufferSource();
+    s.buffer = buf;
+    s.playbackRate.value = rate;
+    const g = ctx.createGain();
+    const rise = Math.min(0.006, dur * 0.25);
+    const fall = Math.min(0.02, dur * 0.4);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(gain, t + rise);
+    g.gain.setValueAtTime(gain, t + dur - fall);
+    g.gain.linearRampToValueAtTime(0, t + dur);
+    const p = ctx.createStereoPanner();
+    p.pan.value = clamp(Number(pan) || 0, -0.9, 0.9);
+    s.connect(g).connect(p).connect(this.impact);
+    s.start(t, offset, dur * rate);
+    this.live++;
+    this.kinds[kind] = (this.kinds[kind] || 0) + 1;
+    s.onended = () => {
+      this.live--;
+      this.kinds[kind]--;
+      g.disconnect();
+      p.disconnect();
+    };
   }
 
   // ------------------------------------------------------------ tanks and targets

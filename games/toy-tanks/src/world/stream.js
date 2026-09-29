@@ -6,6 +6,7 @@
 // ripples that run along the flow and white water where it is fast or
 // brushes the banks.
 import * as THREE from 'three';
+import { BLAST_GLSL, blastUniforms } from './react.js';
 
 export class Stream {
   // terrain: for baseAt; centre(z) -> x of the stream's middle; half(z) -> half width; level(z) -> water height;
@@ -56,7 +57,7 @@ export class Stream {
     geo.setIndex(idx);
     geo.computeVertexNormals();
     geo.computeBoundingSphere();
-    this.uniforms = { uTime: { value: 0 }, uFlow: { value: flow }, uFoam: { value: foam }, uShallow: { value: new THREE.Color(color) }, uDeep: { value: new THREE.Color(deep) } };
+    this.uniforms = { ...blastUniforms, uTime: { value: 0 }, uFlow: { value: flow }, uFoam: { value: foam }, uShallow: { value: new THREE.Color(color) }, uDeep: { value: new THREE.Color(deep) } };
     const mat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.05, metalness: 0, ior: 1.33, specularIntensity: 1, transparent: true });
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, this.uniforms);
@@ -70,6 +71,7 @@ export class Stream {
 varying float vDepth;
 varying vec2 vFlow;
 varying vec3 vWp;
+${BLAST_GLSL}
 uniform float uTime;
 uniform float uFlow;
 uniform float uFoam;
@@ -114,7 +116,9 @@ float stFoam = 0.0;
   float h0 = stHeight(p, uTime);
   vec2 g = vec2(stHeight(p + vec2(e, 0.0), uTime) - h0, stHeight(p + vec2(0.0, e), uTime) - h0) / e;
   // choppier where it is quick
-  vec3 wn = normalize(vec3(-g.x * 0.012 * fade, 1.0, -g.y * 0.012 * fade));
+  // and rings from a burst on the bank
+  vec2 rg = blastRipple(p, uTime) * 1.1;
+  vec3 wn = normalize(vec3(-(g.x * 0.012 + rg.x) * fade, 1.0, -(g.y * 0.012 + rg.y) * fade));
   normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);
 }`,
         )

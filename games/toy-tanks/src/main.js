@@ -22,6 +22,7 @@ import { Aim } from './aim.js';
 import { Targets, TARGET_LEVELS } from './targets.js';
 import { UI } from './ui.js';
 import { canFullscreen, enterFullscreen, toggleFullscreen, isFullscreen, onFullscreenChange } from './fullscreen.js';
+import { blastAll, clearBlasts } from './world/react.js';
 
 // Aerial perspective: the air near by is clear and the haze builds up with
 // distance, gently at first and then more (between three's squared law,
@@ -213,6 +214,15 @@ class App {
       this.tanksModule = null;
     }
     this.targets = new Targets({ scene, terrain: this.world, fx: this.fx, audio: this.audio });
+    // the physics world that blasts push on (Rapier; the game plays on without it)
+    progress(0.7, 'Winding up the springs');
+    try {
+      const { Physics } = await import('./physics.js');
+      this.physics = await within(Physics.create(this), 8000);
+    } catch (err) {
+      console.warn('physics unavailable', err);
+      this.physics = null;
+    }
     this.tanks = [await this.makeTank(this.sel.tank, 0), await this.makeTank(this.pickOpponentTank(), 1)];
     for (const t of this.tanks) scene.add(t.object);
 
@@ -272,6 +282,12 @@ class App {
     await this.prepareScene();
     this.render();
     undoBalls();
+  }
+
+  // A ball burst: everything registered in world/react.js answers it (the
+  // physics world, bending plants, rippling water, the bridge, the sounds).
+  blast(e) {
+    blastAll(e);
   }
 
   // Compile every program and upload every texture in the scene now, even
@@ -412,6 +428,11 @@ class App {
       }
     }
     this.flight.shapes = [...this.tankShapes, ...(this.stageView?.shapes ?? [])];
+    try {
+      await this.physics?.setStage({ stage: S, terrain: this.terrain, view: this.stageView, layout: this.layout });
+    } catch (err) {
+      console.warn('physics stage failed', err);
+    }
     if (!first) await this.prepareScene();
     if (this.stageId !== id) return;
     this.audio.setStage?.(id);
@@ -547,6 +568,8 @@ class App {
     const want = [sel.tank, this.pickOpponentTank()];
     for (let i = 0; i < 2; i++) if (this.tanks[i].spec?.id !== want[i]) await this.setTank(i, want[i]);
     this.terrain.reset();
+    this.physics?.reset();
+    clearBlasts();
     this.fx.clear?.();
     this.director.menu = false;
     const humans = sel.mode === 'duo' ? [true, true] : sel.mode === 'cpu' ? [true, false] : [true, false];
@@ -701,6 +724,7 @@ class App {
     this.targets.update(dt);
     this.terrain.update(dt);
     this.stageView?.update?.(dt, this.time, this);
+    this.physics?.step(dt);
     this.fx.update(dt);
     this.arc.update(realDt);
     this.director.update(realDt);
@@ -755,10 +779,15 @@ class App {
       stage(id, layout) {
         return app.setStage(id, false, layout);
       },
+      // a big burst at x (opts.z moves it off the lane), felt by the whole world
       burst(kind, x = 0, opts = {}) {
-        const y = app.terrain.heightAt(x, 0);
-        app.fx.burst(kind, x, y, 0, { power: 0.8, great: true, ground: app.world.ground, vx: 1, vy: -2, scale: 1, ...opts });
-        app.terrain.crater(x, 0, 0.08, 0.028, app.world.ground);
+        const z = opts.z ?? 0;
+        const y = app.terrain.heightAt(x, z);
+        const water = !!app.stageView?.waterAt?.(x, z);
+        app.fx.burst(kind, x, y, z, { power: 0.8, great: true, ground: app.world.ground, water, vx: 1, vy: -2, scale: 1, ...opts });
+        const c = app.terrain.crater(x, z, 0.08, 0.028, app.world.ground);
+        app.world.shockwave?.(x, z, 1);
+        app.blast({ x, y, z, power: 0.8, great: true, kind, ground: app.world.ground, water, scale: 1, radius: 0.42, vx: 1, vy: -2, time: app.time, crater: { x: c.x, z: c.z, r: 0.08, depth: 0.028 }, tank: null, ...opts });
       },
       crater(x = 0, r = 0.08) {
         app.terrain.crater(x, 0, r, r * 0.36, app.world.ground);

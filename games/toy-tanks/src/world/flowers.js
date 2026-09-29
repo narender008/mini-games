@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three-gltf/utils/BufferGeometryUtils.js';
 import { CRATER_GLSL } from '../terrain.js';
+import { BLAST_GLSL, blastUniforms } from './react.js';
 import { rng } from '../config.js';
 
 // a flower head, radius 1, facing up (+y), centred on the origin.
@@ -174,7 +175,7 @@ export class Flowers {
         n++;
       }
     }
-    this.uniforms = { ...terrain.uniforms, uTime: { value: 0 }, uWind: { value: 0 } };
+    this.uniforms = { ...terrain.uniforms, ...blastUniforms, uTime: { value: 0 }, uWind: { value: 0 } };
     this.meshes = [];
     const stemMat = this.material({ color: 0x5c8a2e, roughness: 0.6 }, 'flower-stem', false);
     const stem = new THREE.InstancedMesh(stemGeometry(), stemMat, n);
@@ -184,6 +185,8 @@ export class Flowers {
       const mesh = new THREE.InstancedMesh(kind.globe ? globeGeometry(kind) : headGeometry(kind), this.material({ roughness: kind.rough, side: THREE.DoubleSide, vertexColors: true }, 'flower-head', true), Math.max(1, spots[k].length));
       mesh.name = `flowers-${m.kind}`;
       mesh.count = spots[k].length;
+      // how high the head sits on its stem, so it swings with the stem
+      mesh.geometry.setAttribute('aLift', new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, spots[k].length)), 1));
       return mesh;
     });
     const m4 = new THREE.Matrix4();
@@ -213,6 +216,7 @@ export class Flowers {
         q.setFromEuler(e);
         m4.compose(tip, q, sc.set(rad, rad, rad));
         heads[k].setMatrixAt(i, m4);
+        heads[k].geometry.attributes.aLift.array[i] = tip.y - (y - 0.004);
         heads[k].setColorAt(i, c.set(f.color).multiplyScalar(0.92 + f.r * 0.16));
       });
     });
@@ -239,9 +243,10 @@ export class Flowers {
           '#include <common>',
           `#include <common>
 ${CRATER_GLSL}
+${BLAST_GLSL}
 uniform float uTime;
 uniform float uWind;
-${head ? 'attribute float aTint;' : ''}`,
+${head ? 'attribute float aTint;\nattribute float aLift;' : ''}`,
         )
         .replace(
           '#include <color_vertex>',
@@ -263,10 +268,15 @@ vColor.rgb *= mix(vec3(1.0), instanceColor.rgb, aTint);
   vec4 dm = texture2D(tDeform, deformUv(root.xz));
   float gone = smoothstep(0.35, 0.7, dm.g);
   // nod in the wind: the higher up, the more it moves
-  float up = max(mvPosition.y - root.y, 0.0) / 0.08;
+  float lift = max(mvPosition.y - root.y, 0.0)${head ? ' + aLift' : ''};
+  float up = lift / 0.08;
   float sway = (uWind * 0.6 + sin(uTime * 2.3 + root.x * 17.0 + root.z * 11.0) * 0.12) * up * up * 0.012;
   mvPosition.x += sway;
   mvPosition.z += sin(uTime * 1.9 + root.x * 23.0) * up * up * 0.0015;
+  // knocked flat by a burst nearby and swinging back upright
+  vec2 kick = blastSway(root.xz, uTime, 2.4, 1.7) * lift * min(up, 1.4) * 0.4;
+  mvPosition.xz += kick;
+  mvPosition.y -= dot(kick, kick) * 6.0;
   mvPosition.xyz = root + (mvPosition.xyz - root) * (1.0 - gone);
   mvPosition.y += deformHeight(root.xz);
 }

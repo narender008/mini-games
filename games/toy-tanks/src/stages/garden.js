@@ -241,10 +241,11 @@ export async function build({ app, quality, terrain, layout, softUniforms }) {
     fenceTiles.push(tile);
   }
 
-  // the watering can stands in the bed behind the right tank, clear of its outline
+  // the watering can stands just behind the lane between the tanks, near
+  // enough for a burst to knock it about
   const can = await loadProp('watering-can');
-  const cx = t1 + 0.18;
-  const cz = -1.0;
+  const cx = (t0 + t1) / 2 + 0.22;
+  const cz = -0.34;
   can.position.set(cx, H(cx, cz) - 0.004, cz);
   can.rotation.y = 0.5;
   group.add(can);
@@ -288,6 +289,8 @@ export async function build({ app, quality, terrain, layout, softUniforms }) {
       rain.update(dt, time, a);
       flag.update(dt, time, a.world.wind);
     },
+    // is there puddle water here (a burst there splashes)
+    waterAt: (x, z) => H(x, z) < PUDDLE - 0.001,
     shockwave(x, z, s) {
       grass.shockwave(x, z, s, app.time);
     },

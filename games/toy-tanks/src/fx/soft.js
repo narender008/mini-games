@@ -1,15 +1,24 @@
-// The see-through effects: powder clouds, dust, flashes, glints, fine powder
-// streaks and grains. All of it lives in ONE instanced draw on LAYER_SOFT and is
-// moved analytically on the GPU: every particle carries its start position,
-// velocity, drag, gravity and wind, and the vertex shader solves
+// The see-through effects: dust and powder clouds, spray mist, the bright core
+// of an impact and fine streaks. All of it lives in ONE instanced draw on
+// LAYER_SOFT and is moved analytically on the GPU: every particle carries its
+// start position, velocity, drag, gravity and wind, and the vertex shader
+// solves
 //   x(t) = x0 + (v0 - a/k) (1 - e^-kt)/k + (a/k) t
 // so there is nothing to simulate on the CPU and a burst costs a few hundred
 // floats written into a ring buffer (no allocations, no per-frame uploads
 // except the freshly written range).
 //
-// Kinds (aS.z): 0 puff (billowing, noise-shaded, lit), 1 glint (four-point
-// star, additive), 2 streak (stretched along its velocity), 3 flash (soft glow,
-// additive), 4 dot (a tiny lit bead: grains, flakes, droplets of mist).
+// Kinds (aS.z): 0 puff (a billowing cloud, noise-shaded and lit like a real
+// dust cloud), 1 streak (stretched along its velocity), 2 flash (a soft bright
+// core, additive), 3 dot (a tiny lit bead of mist), 4 ring (a thin ring of dust
+// running out from a point on a solid surface, seen face on).
+//
+// A puff is lit as a volume, cheaply: its normal comes from the noise, the sun
+// wraps round it, and where it sits in the cloud matters (a puff that moved
+// towards the sun is on the sunny side of the cloud, one that moved away is in
+// its shade, the dense middle keeps the sun out a little, thin edges glow when
+// the sun is behind). The sun and sky come from the scene (Fx.syncLight), and
+// the flash of a fresh impact lights nearby puffs, as it lights the ground.
 //
 // The layer is drawn after the lens pass with premultiplied alpha, and every
 // fragment fades against the scene depth (SOFT_DEPTH_GLSL) so nothing cuts a
@@ -18,10 +27,10 @@ import * as THREE from 'three';
 import { LAYER_SOFT, SOFT_DEPTH_GLSL } from '../post.js';
 
 export const PUFF = 0;
-export const GLINT = 1;
-export const STREAK = 2;
-export const FLASH = 3;
-export const DOT = 4;
+export const STREAK = 1;
+export const FLASH = 2;
+export const DOT = 3;
+export const RING = 4;
 
 const VERT = /* glsl */ `
 attribute vec4 aP0;
@@ -36,17 +45,21 @@ uniform float uWind;
 uniform float uViewH;
 uniform float uMinPx;
 uniform vec3 uSunDir;
+uniform vec4 uFlash;
 varying vec2 vUv;
+varying vec2 vUv2;
 varying vec4 vColor;
 varying vec4 vInfo;
 varying vec4 vInfo2;
 varying vec3 vLight;
+varying vec3 vCloud;
+varying vec2 vRot;
 void main() {
   float age = uTime - aP0.w;
   float life = aV0.w;
   if (age < 0.0 || age >= life) {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-    vUv = vec2(0.0); vColor = vec4(0.0); vInfo = vec4(0.0); vInfo2 = vec4(0.0); vLight = vec3(0.0);
+    vUv = vec2(0.0); vUv2 = vec2(0.0); vColor = vec4(0.0); vInfo = vec4(0.0); vInfo2 = vec4(0.0); vLight = vec3(0.0); vCloud = vec3(0.0); vRot = vec2(1.0, 0.0);
     return;
   }
   float u = age / life;
@@ -65,6 +78,7 @@ void main() {
     pos = aP0.xyz + aV0.xyz * age + 0.5 * acc * age * age;
     vel = aV0.xyz + acc * age;
   }
+  vec3 cloud = vec3(0.0);
   if (kind < 0.5) {
     // a little billow drift so a cloud never moves like a rigid ball
     float d = min(1.0, age * 2.5) * 0.008;
@@ -72,6 +86,19 @@ void main() {
   }
   float pen = aD.w - pos.y;
   if (pen > 0.0) pos.y = aD.w;
+  if (kind < 0.5) {
+    // where in the cloud this puff sits: it went out from the burst, so its
+    // direction of travel says which side of the cloud it is on
+    vec3 od = pos - aP0.xyz;
+    float ol = length(od);
+    float conf = smoothstep(0.006, 0.05, ol);
+    od = ol > 1e-4 ? od / ol : vec3(0.0, 1.0, 0.0);
+    cloud.x = dot(od, uSunDir) * conf;
+    cloud.y = od.y * conf;
+  }
+  // the flash of the impact lights what is near it
+  vec3 fd = pos - uFlash.xyz;
+  cloud.z = uFlash.w / max(dot(fd, fd), 0.012);
 
   float grow = 1.0 - pow(1.0 - u, 3.0);
   float size = mix(aS.x, aS.y, grow);
@@ -79,38 +106,35 @@ void main() {
   // alpha over life
   float fin = aE.x > 0.0 ? smoothstep(0.0, aE.x, age) : 1.0;
   float fout;
-  float pulse = 1.0;
-  if (kind < 0.5) fout = 1.0 - smoothstep(0.18, 0.98, u);
-  else if (kind < 1.5) {
-    fout = pow(1.0 - u, 0.7);
-    pulse = 0.55 + 0.45 * sin(age * aE.w + seed * 60.0);
-    pulse *= pulse * 1.6;
-  } else if (kind < 2.5) fout = 1.0 - smoothstep(0.45, 1.0, u);
-  else if (kind < 3.5) fout = pow(1.0 - u, 2.0);
-  else fout = 1.0 - smoothstep(0.65, 1.0, u);
+  if (kind < 0.5) fout = 1.0 - smoothstep(0.16, 0.98, u);
+  else if (kind < 1.5) fout = 1.0 - smoothstep(0.45, 1.0, u);
+  else if (kind < 2.5) fout = pow(1.0 - u, 2.0);
+  else if (kind < 3.5) fout = 1.0 - smoothstep(0.65, 1.0, u);
+  else fout = pow(1.0 - u, 1.4);
   float ground = kind < 0.5 ? 1.0 : 1.0 - smoothstep(0.0, 0.012, pen);
-  float alpha = aC.a * fin * fout * ground * pulse;
+  float alpha = aC.a * fin * fout * ground;
 
   vec4 mv = viewMatrix * vec4(pos, 1.0);
   float depth = -mv.z;
   float pxPerM = uViewH * projectionMatrix[1][1] * 0.5 / max(depth, 0.02);
   float sz = size;
-  if (kind > 0.5 && kind < 2.5 || kind > 3.5) {
+  if (kind > 0.5 && kind < 1.5 || kind > 2.5) {
     float minS = uMinPx / pxPerM;
     if (sz < minS) { alpha *= sz / minS; sz = minS; }
   }
   vec2 q = position.xy;
   vec2 corner;
-  if (kind > 1.5 && kind < 2.5) {
+  float ang = 0.0;
+  if (kind > 0.5 && kind < 1.5) {
     vec3 vv = mat3(viewMatrix) * vel;
     float sp = length(vv.xy);
     vec2 dir = sp > 1e-4 ? vv.xy / sp : vec2(1.0, 0.0);
     float half_ = sz + 0.5 * sp * aE.w;
     corner = dir * q.x * half_ + vec2(-dir.y, dir.x) * q.y * sz;
-  } else if (kind > 3.5 || kind > 2.5 && kind < 3.5) {
+  } else if (kind > 1.5) {
     corner = q * sz;
   } else {
-    float ang = aE.z * age + seed * 6.2831853;
+    ang = aE.z * age + seed * 6.2831853;
     float c = cos(ang);
     float s = sin(ang);
     corner = vec2(c * q.x - s * q.y, s * q.x + c * q.y) * sz;
@@ -118,11 +142,15 @@ void main() {
   mv.xy += corner;
   gl_Position = projectionMatrix * mv;
 
-  vUv = q;
+  // screen-aligned uv (for shape and normal) and the particle's own uv (for its noise, which turns with it)
+  vUv = kind < 0.5 ? vec2(cos(ang) * q.x - sin(ang) * q.y, sin(ang) * q.x + cos(ang) * q.y) : q;
+  vUv2 = q;
+  vRot = vec2(cos(ang), sin(ang));
   vColor = vec4(aC.rgb, alpha);
   vInfo = vec4(kind, u, seed, aE.y);
-  vInfo2 = vec4(max(0.003, sz * (kind < 0.5 ? 0.6 : 1.0)), depth - (kind < 0.5 ? size * 0.35 : 0.0), aE.w, age);
+  vInfo2 = vec4(kind > 3.5 ? 0.015 : max(0.003, sz * (kind < 0.5 ? 0.6 : 1.0)), depth - (kind < 0.5 ? size * 0.35 : 0.0), aE.w, age);
   vLight = normalize(mat3(viewMatrix) * uSunDir);
+  vCloud = cloud;
 }`;
 
 const FRAG = /* glsl */ `
@@ -131,11 +159,15 @@ ${SOFT_DEPTH_GLSL}
 uniform sampler2D uNoise;
 uniform vec3 uSunColor;
 uniform vec3 uAmbient;
+uniform vec3 uFlashColor;
 varying vec2 vUv;
+varying vec2 vUv2;
 varying vec4 vColor;
 varying vec4 vInfo;
 varying vec4 vInfo2;
 varying vec3 vLight;
+varying vec3 vCloud;
+varying vec2 vRot;
 void main() {
   if (vColor.a <= 0.0) discard;
   float kind = vInfo.x;
@@ -150,54 +182,61 @@ void main() {
   if (kind < 0.5) {
     if (r2 > 1.0) discard;
     float r = sqrt(r2);
-    vec4 n = texture2D(uNoise, uv * 0.27 + vec2(seed * 7.13, seed * 3.71));
-    vec4 n2 = texture2D(uNoise, uv * 0.62 + vec2(seed * 2.3, seed * 5.1) + (n.gb - 0.5) * 0.1);
-    float h = n.r * 0.6 + n2.r * 0.4;
-    float erode = 0.55 + 0.45 * smoothstep(0.0, 1.0, u) + vInfo2.z;
-    float dens = (1.0 - r * r) * 1.15 + (h - 0.5) * erode;
-    a = smoothstep(0.0, 0.62, dens);
-    vec3 nrm = normalize(vec3(uv * 0.9 + (n.gb - 0.5) * 1.0 + (n2.gb - 0.5) * 0.3, sqrt(max(0.1, 1.0 - r2))));
-    float wrap = clamp(dot(nrm, vLight) * 0.5 + 0.6, 0.0, 1.0);
-    vec3 sunTerm = uSunColor * smoothstep(0.12, 0.95, wrap);
-    vec3 amb = uAmbient * (0.72 + 0.28 * (nrm.y * 0.5 + 0.5));
-    vec3 shade = (sunTerm + amb) * (0.88 + 0.22 * h);
+    vec2 so = vec2(seed * 7.13, seed * 3.71);
+    vec4 n = texture2D(uNoise, vUv2 * 0.42 + so);
+    vec4 n2 = texture2D(uNoise, vUv2 * 0.97 + vec2(seed * 2.3, seed * 5.1) + (n.gb - 0.5) * 0.12);
+    float h = n.r * 0.55 + n2.r * 0.45;
+    float erode = 0.55 + 0.6 * smoothstep(0.0, 1.0, u) + vInfo2.z;
+    float dens = (1.0 - r2) * 1.05 + (h - 0.5) * erode * 1.7;
+    // wisps: a second, unrelated noise streaks the density
+    a = smoothstep(0.02, 0.85, dens) * (0.62 + 0.75 * n2.a) * 0.9;
+    a = clamp(a, 0.0, 0.95);
+    // the noise gradient turns with the particle; bring it back to the screen
+    vec2 g1 = vec2(vRot.x * (n.g - 0.5) - vRot.y * (n.b - 0.5), vRot.y * (n.g - 0.5) + vRot.x * (n.b - 0.5));
+    vec2 g2 = vec2(vRot.x * (n2.g - 0.5) - vRot.y * (n2.b - 0.5), vRot.y * (n2.g - 0.5) + vRot.x * (n2.b - 0.5));
+    // a bulging body, so the lit and shaded sides part
+    vec3 nrm = normalize(vec3(uv * 1.25 + g1 * 1.3 + g2 * 0.5, sqrt(max(0.1, 1.0 - r2 * 0.8))));
+    float ndl = dot(nrm, vLight);
+    float wrap = clamp((ndl + 0.3) / 1.3 + vCloud.x * 0.4, 0.0, 1.0);
+    float core = smoothstep(0.35, 1.0, dens);
+    vec3 sunTerm = uSunColor * smoothstep(0.08, 0.9, wrap) * (1.0 - 0.45 * core);
+    vec3 amb = uAmbient * 0.8 * (0.62 + 0.38 * (nrm.y * 0.5 + 0.5) + 0.16 * vCloud.y);
+    // thin edges glow when the sun is behind the cloud
+    float back = clamp(-vLight.z, 0.0, 1.0);
+    vec3 scatter = uSunColor * back * (1.0 - a) * 0.3 * (0.5 + 0.5 * h);
+    vec3 shade = (sunTerm + amb + scatter + uFlashColor * vCloud.z) * (0.86 + 0.24 * h);
     col = mix(vec3(1.0), shade, lit) * vColor.rgb;
     a = a * vColor.a;
   } else if (kind < 1.5) {
-    float ax = abs(uv.x);
-    float ay = abs(uv.y);
-    float s = exp(-ay * 30.0) * max(0.0, 1.0 - ax) + exp(-ax * 30.0) * max(0.0, 1.0 - ay);
-    vec2 d = vec2(uv.x + uv.y, uv.x - uv.y) * 0.7071;
-    s += 0.3 * (exp(-abs(d.y) * 40.0) * max(0.0, 1.0 - abs(d.x)) + exp(-abs(d.x) * 40.0) * max(0.0, 1.0 - abs(d.y)));
-    float core = exp(-r2 * 14.0);
-    float inten = s * 0.9 + core * 1.5;
-    col = mix(vColor.rgb, vec3(1.0), clamp(core * 0.85, 0.0, 1.0)) * inten * 1.9;
-    a = 0.0;
-    additive = 1.0;
-  } else if (kind < 2.5) {
     float body = smoothstep(1.0, 0.35, abs(uv.y)) * smoothstep(1.0, 0.55, abs(uv.x));
     float head = smoothstep(-1.0, 1.0, uv.x);
-    float glint = 1.0 + 4.0 * pow(max(0.0, sin(vInfo2.w * 46.0 + seed * 100.0)), 14.0);
     a = body * (0.3 + 0.7 * head);
-    vec3 shade = mix(vec3(1.0), uSunColor * 0.5 + uAmbient, lit);
-    col = vColor.rgb * shade * glint;
+    vec3 shade = mix(vec3(1.0), uSunColor * 0.5 + uAmbient + uFlashColor * vCloud.z, lit);
+    col = vColor.rgb * shade;
     a *= vColor.a;
-  } else if (kind < 3.5) {
+  } else if (kind < 2.5) {
     float r = sqrt(r2);
-    float g = pow(max(0.0, 1.0 - r), 2.2);
+    float g = pow(max(0.0, 1.0 - r), 2.4);
     col = vColor.rgb * g * 2.4;
     a = 0.0;
     additive = 1.0;
+  } else if (kind > 3.5) {
+    // a ring of lifted dust: a thin band at the running edge, broken up by noise
+    if (r2 > 1.0) discard;
+    float r = sqrt(r2);
+    float edge = exp(-pow((r - 0.8) / (0.13 + 0.1 * u), 2.0));
+    vec4 n = texture2D(uNoise, vUv2 * 0.9 + vec2(seed * 7.13, seed * 3.71));
+    a = edge * smoothstep(0.2, 0.7, n.r * 0.7 + n.a * 0.5);
+    col = vColor.rgb * (uSunColor * 0.5 + uAmbient * 0.9 + uFlashColor * vCloud.z);
+    a *= vColor.a;
   } else {
     if (r2 > 1.0) discard;
     float r = sqrt(r2);
     float m = smoothstep(1.0, 0.7, r);
     vec3 nrm = vec3(uv, sqrt(max(0.0, 1.0 - r2)));
-    float shade = 0.55 + 0.45 * clamp(dot(nrm, vLight) * 0.5 + 0.5, 0.0, 1.0);
-    float hl = pow(max(0.0, dot(reflect(-vLight, nrm), vec3(0.0, 0.0, 1.0))), 24.0);
-    float glitter = pow(max(0.0, sin(vInfo2.w * 38.0 + seed * 100.0)), 18.0) * vInfo2.z;
-    vec3 sunTerm = uSunColor * (0.35 + 0.65 * clamp(dot(nrm, vLight) * 0.5 + 0.5, 0.0, 1.0)) + uAmbient * 0.8;
-    col = vColor.rgb * mix(vec3(shade), sunTerm, lit) + vec3(hl * 0.6 + glitter * 3.0);
+    float ndl = clamp(dot(nrm, vLight) * 0.5 + 0.5, 0.0, 1.0);
+    vec3 sunTerm = uSunColor * (0.35 + 0.65 * ndl) + uAmbient * 0.8 + uFlashColor * vCloud.z;
+    col = vColor.rgb * mix(vec3(0.55 + 0.45 * ndl), sunTerm, lit);
     a = m * vColor.a;
   }
   float vis = softFade(vInfo2.y, vInfo2.x);
@@ -252,6 +291,9 @@ export class SoftParticles {
       uSunDir: { value: new THREE.Vector3(0.4, 0.8, 0.3).normalize() },
       uSunColor: { value: new THREE.Vector3(1.0, 0.95, 0.85) },
       uAmbient: { value: new THREE.Vector3(0.35, 0.42, 0.55) },
+      // the impact flash: position and intensity (candela, as the point light), and its colour
+      uFlash: { value: new THREE.Vector4(0, -100, 0, 0) },
+      uFlashColor: { value: new THREE.Vector3(0.11, 0.09, 0.06) },
       uNoise: { value: noiseTexture },
     };
     this.material = new THREE.ShaderMaterial({
@@ -278,9 +320,10 @@ export class SoftParticles {
 
   // One particle. delay may be negative to backdate (events fired late).
   // Arguments in the order they are stored: position, velocity, life, size
-  // start/end, kind, colour + alpha, drag (1/s), gravity scale, wind scale, the
-  // floor the centre may not sink below (-1e3 for none), fade-in time, lit (or
-  // glitter for streaks), spin (rad/s), extra (see the kinds above).
+  // start/end, kind, colour + alpha, drag (1/s), gravity scale (negative
+  // rises), wind scale, the floor the centre may not sink below (-1e3 for
+  // none), fade-in time, lit (0..1), spin (rad/s), extra (a puff's erosion, a
+  // streak's stretch), delay (s).
   spawn(x, y, z, vx, vy, vz, life, size0, size1, kind, r, g, b, a, drag, grav, wind, floorY, fadeIn, lit, spin, extra, delay = 0) {
     const i = this.head;
     this.head = (i + 1) % this.capacity;
@@ -310,6 +353,11 @@ export class SoftParticles {
     u.uSunDir.value.set(dx, dy, dz).normalize();
     u.uSunColor.value.set(sr, sg, sb);
     u.uAmbient.value.set(ar, ag, ab);
+  }
+
+  // the impact flash that lights nearby puffs (the same light the scene has)
+  setFlash(x, y, z, intensity) {
+    this.uniforms.uFlash.value.set(x, y, z, intensity);
   }
 
   // called once per frame after the game code has spawned what it wants

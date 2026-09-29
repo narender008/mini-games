@@ -6,6 +6,7 @@
 // environment) more and more at a low angle. Rain lands on it in rings: a
 // grid of drops, each a ring growing and fading, bends the reflection.
 import * as THREE from 'three';
+import { BLAST_GLSL, blastUniforms } from './react.js';
 
 export class Puddles {
   // terrain: for baseAt; level: water height (m); area: [x0, x1, z0, z1] to look for hollows in
@@ -50,7 +51,7 @@ export class Puddles {
       geo.computeVertexNormals();
       geo.computeBoundingSphere();
     }
-    this.uniforms = { uTime: { value: 0 }, uRipple: { value: ripple }, uRings: { value: rings }, uTilt: { value: tilt }, uShallow: { value: new THREE.Color(color) }, uDeep: { value: new THREE.Color(deep) } };
+    this.uniforms = { ...blastUniforms, uTime: { value: 0 }, uRipple: { value: ripple }, uRings: { value: rings }, uTilt: { value: tilt }, uShallow: { value: new THREE.Color(color) }, uDeep: { value: new THREE.Color(deep) } };
     const mat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: rough, metalness: 0, ior, specularIntensity: 1, transparent: true });
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, this.uniforms);
@@ -63,6 +64,7 @@ export class Puddles {
           `#include <common>
 varying float vDepth;
 varying vec3 vWp;
+${BLAST_GLSL}
 uniform float uTime;
 uniform float uRipple;
 uniform float uRings;
@@ -111,6 +113,8 @@ vec2 pdRings(vec2 p, float t) {
   // a slow swell that stirs the mirror, and the rings of the raindrops
   vec2 sw = vec2(sin(vWp.x * 23.0 + uTime * 1.3) + sin(vWp.z * 31.0 - uTime * 1.1), cos(vWp.x * 17.0 - uTime * 0.9) + sin(vWp.z * 27.0 + vWp.x * 9.0 + uTime)) * 0.006;
   vec2 g = (sw + pdRings(vWp.xz, uTime) * uRings) * fade;
+  // rings running out from a burst in or beside the water
+  g += blastRipple(vWp.xz, uTime) * 1.3 / (1.0 + dist * 0.25);
   // a slight lean towards the camera: the mirror then shows the brighter sky above the trees, not just the dark tree line
   vec3 wn = normalize(vec3(-g.x, 1.0, -g.y + uTilt));
   normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);

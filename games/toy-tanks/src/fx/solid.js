@@ -1,5 +1,5 @@
-// The solid pieces: paper confetti (FlatPool), candy stars (StarPool) and the
-// blobs (BlobPool: jelly, mud, water, paint, clods, candy beads). Each pool is
+// The solid pieces: paper confetti (FlatPool) and the blobs (BlobPool: gel,
+// mud, water, crumbs of earth and snow, rubber beads). Each pool is
 // one InstancedMesh with a fixed capacity, simulated on the CPU with structure-
 // of-arrays typed arrays. Nothing allocates after construction: slots are
 // recycled through a ring, matrices are composed straight into the instance
@@ -10,8 +10,8 @@
 // acceleration, restitution and friction against world.heightAt / normalAt,
 // then settling and a gentle shrink-and-sink at the end of life (never a pop).
 import * as THREE from 'three';
-import { flatGeometry, starGeometry, blobGeometry } from './geometry.js';
-import { flatMaterial, starMaterial, blobMaterial, blobDepthMaterial } from './materials.js';
+import { flatGeometry, blobGeometry } from './geometry.js';
+import { flatMaterial, blobMaterial, blobDepthMaterial } from './materials.js';
 
 const _col = new THREE.Color();
 const smooth = (a, b, x) => {
@@ -298,12 +298,14 @@ export class FlatPool extends InstancedPool {
     this.KT = new Float32Array(cap);
     this.GS = new Float32Array(cap);
     this.WK = new Float32Array(cap);
+    this.LIFT = new Float32Array(cap);
+    this.FLOOR = new Float32Array(cap).fill(-1000);
     this.mesh.receiveShadow = true;
     this.mesh.renderOrder = 2;
   }
 
   // sx: length, sy: width (metres, full size); shape 0 rounded, 1 round, 2 flake, 3 blade, 4 diamond
-  spawn(x, y, z, vx, vy, vz, sx, sy, shape, bend, foil, cr, cg, cb, life, kn, kt, gs, wk, spin) {
+  spawn(x, y, z, vx, vy, vz, sx, sy, shape, bend, foil, cr, cg, cb, life, kn, kt, gs, wk, spin, lift = 0.0007, floor = -1000) {
     const i = this.alloc();
     const p = i * 3;
     this.P[p] = x;
@@ -323,6 +325,8 @@ export class FlatPool extends InstancedPool {
     this.KT[i] = kt;
     this.GS[i] = gs;
     this.WK[i] = wk;
+    this.LIFT[i] = lift;
+    this.FLOOR[i] = floor;
     const a = this.param.array;
     a[i * 4] = shape;
     a[i * 4 + 1] = bend;
@@ -368,7 +372,6 @@ export class FlatPool extends InstancedPool {
       let x = P[p];
       let y = P[p + 1];
       let z = P[p + 2];
-      const gy = world.heightAt(x, z);
       let fade = 1;
       if (age > life - 1.3) fade = 1 - smooth(life - 1.3, life, age);
       if (st === 1) {
@@ -413,7 +416,7 @@ export class FlatPool extends InstancedPool {
           wy *= damp;
           wz *= damp;
           integrateQ(Q, q, wx, wy, wz, h);
-          if (y < gy + 0.0007) {
+          if (y < Math.max(world.heightAt(x, z), this.FLOOR[i]) + this.LIFT[i]) {
             landed = true;
             break;
           }
@@ -445,7 +448,7 @@ export class FlatPool extends InstancedPool {
         z += V[p + 2] * dt;
         P[p] = x;
         P[p + 2] = z;
-        P[p + 1] = world.heightAt(x, z) + 0.0007;
+        P[p + 1] = Math.max(world.heightAt(x, z), this.FLOOR[i]) + this.LIFT[i];
         nlerpTo(Q, this.T, q, 1 - Math.exp(-20 * dt));
         if (r > 0.45) this.state[i] = 3;
       } else if (fade >= 1) {
@@ -454,7 +457,7 @@ export class FlatPool extends InstancedPool {
       let sc = 1;
       if (fade < 1) {
         sc = fade;
-        if (this.state[i] === 3) P[p + 1] = gy + 0.0007 - 0.0015 * (1 - fade);
+        if (this.state[i] === 3) P[p + 1] = Math.max(world.heightAt(x, z), this.FLOOR[i]) + this.LIFT[i] - 0.0015 * (1 - fade);
       }
       this.write(i, sc);
     }
@@ -464,208 +467,20 @@ export class FlatPool extends InstancedPool {
   clear() {
     super.clear();
   }
-}
 
-// ---------------------------------------------------------------------------
-// Candy stars: rigid bodies that spin outwards, bounce on the ground and settle
-// lying flat.
-export class StarPool extends InstancedPool {
-  constructor(cap, ctx) {
-    super(starGeometry(), starMaterial(), cap);
-    this.ctx = ctx;
-    this.P = new Float32Array(cap * 3);
-    this.V = new Float32Array(cap * 3);
-    this.Q = new Float32Array(cap * 4);
-    this.T = new Float32Array(cap * 4);
-    this.W = new Float32Array(cap * 3);
-    this.R = new Float32Array(cap);
-    this.age = new Float32Array(cap);
-    this.life = new Float32Array(cap);
-    this.rest = new Float32Array(cap);
-    this.bounces = new Uint8Array(cap);
-    this.mesh.castShadow = true;
-    this.mesh.receiveShadow = true;
-  }
-
-  spawn(x, y, z, vx, vy, vz, R, cr, cg, cb, life, spin) {
-    const i = this.alloc();
-    const p = i * 3;
-    this.P[p] = x;
-    this.P[p + 1] = y;
-    this.P[p + 2] = z;
-    this.V[p] = vx;
-    this.V[p + 1] = vy;
-    this.V[p + 2] = vz;
-    // launched roughly face-on to the camera (+z), spinning about its own face like a coin
-    // with a little wobble, so it reads as a star and not an edge-on stick
-    const roll = Math.random() * 6.2831853;
-    const tx = (Math.random() - 0.5) * 0.9;
-    const ty = (Math.random() - 0.5) * 0.9;
-    const cz = Math.cos(roll * 0.5);
-    const sz = Math.sin(roll * 0.5);
-    const cx = Math.cos(tx * 0.5);
-    const sx = Math.sin(tx * 0.5);
-    const cy = Math.cos(ty * 0.5);
-    const sy = Math.sin(ty * 0.5);
-    const Q = this.Q;
-    const q0 = i * 4;
-    // qa = (sx,0,0,cx) * (0,sy,0,cy)
-    const qax = sx * cy;
-    const qay = cx * sy;
-    const qaz = sx * sy;
-    const qaw = cx * cy;
-    // roll about z: (0,0,sz,cz) * qa
-    Q[q0] = cz * qax - sz * qay;
-    Q[q0 + 1] = cz * qay + sz * qax;
-    Q[q0 + 2] = cz * qaz + sz * qaw;
-    Q[q0 + 3] = cz * qaw - sz * qaz;
-    const W = this.W;
-    const dir = Math.random() < 0.5 ? -1 : 1;
-    W[p] = (Math.random() - 0.5) * 3;
-    W[p + 1] = (Math.random() - 0.5) * 3;
-    W[p + 2] = dir * spin;
-    this.R[i] = R;
-    this.age[i] = 0;
-    this.life[i] = life;
-    this.rest[i] = 0;
-    this.bounces[i] = 0;
-    this.color(i, cr, cg, cb);
-    this.state[i] = 1;
-    this.write(i, 1);
-    return i;
-  }
-
-  write(i, sc) {
-    const p = i * 3;
-    const q = i * 4;
-    const s = this.R[i] * sc;
-    composeQ(this.M, i * 16, this.P[p], this.P[p + 1], this.P[p + 2], this.Q[q], this.Q[q + 1], this.Q[q + 2], this.Q[q + 3], s, s, s);
-  }
-
-  update(dt) {
-    const ctx = this.ctx;
-    const world = ctx.world;
-    const G = world.gravity * 1.25;
-    const wind = world.wind * 0.35;
-    const n = dt > 0.0182 ? (dt > 0.0364 ? 4 : 2) : 1;
-    const h = dt / n;
-    const drag = Math.exp(-0.7 * h);
-    const P = this.P;
-    const V = this.V;
-    const Q = this.Q;
-    const W = this.W;
-    let hi = 0;
+  // the ground under settled paper changed (a crater): lay the pieces near it back on the ground
+  reseat(x, z, r) {
+    const world = this.ctx.world;
+    const r2 = r * r;
     for (let i = 0; i < this.high; i++) {
-      const st = this.state[i];
-      if (st === 0) continue;
-      const age = (this.age[i] += dt);
-      const life = this.life[i];
-      if (age >= life) {
-        this.kill(i);
-        continue;
-      }
-      hi = i + 1;
+      if (this.state[i] !== 3) continue;
       const p = i * 3;
-      const q = i * 4;
-      const R = this.R[i];
-      let x = P[p];
-      let y = P[p + 1];
-      let z = P[p + 2];
-      const gy0 = world.heightAt(x, z);
-      let fade = 1;
-      if (age > life - 1.4) fade = 1 - smooth(life - 1.4, life, age);
-      if (st === 1) {
-        let vx = V[p];
-        let vy = V[p + 1];
-        let vz = V[p + 2];
-        let wx = W[p];
-        let wy = W[p + 1];
-        let wz = W[p + 2];
-        let gy = gy0;
-        for (let s = 0; s < n; s++) {
-          vx = vx * drag + wind * h;
-          vy = vy * drag - G * h;
-          vz *= drag;
-          x += vx * h;
-          y += vy * h;
-          z += vz * h;
-          integrateQ(Q, q, wx, wy, wz, h);
-          if (y < gy + R * 1.1) {
-            gy = world.heightAt(x, z);
-            const N = ctx.normalAt(x, z);
-            const qx = Q[q];
-            const qy = Q[q + 1];
-            const qz = Q[q + 2];
-            const qw = Q[q + 3];
-            const nx = 2 * (qx * qz + qw * qy);
-            const ny = 2 * (qy * qz - qw * qx);
-            const nz = 1 - 2 * (qx * qx + qy * qy);
-            const c = Math.abs(nx * N.x + ny * N.y + nz * N.z);
-            const hc = R * (0.23 * c + 0.68 * Math.sqrt(1 - c * c));
-            if (y < gy + hc) {
-              y = gy + hc;
-              const vn = vx * N.x + vy * N.y + vz * N.z;
-              if (vn < 0) {
-                const e = 0.5;
-                vx -= (1 + e) * vn * N.x;
-                vy -= (1 + e) * vn * N.y;
-                vz -= (1 + e) * vn * N.z;
-                const f = 0.72;
-                // friction on the sliding part
-                const tx = vx - (vx * N.x + vy * N.y + vz * N.z) * N.x;
-                const ty = vy - (vx * N.x + vy * N.y + vz * N.z) * N.y;
-                const tz = vz - (vx * N.x + vy * N.y + vz * N.z) * N.z;
-                vx -= tx * (1 - f);
-                vy -= ty * (1 - f);
-                vz -= tz * (1 - f);
-                // a kick of new spin, like a real bounce off an edge
-                wx = wx * 0.55 + (Math.random() - 0.5) * 7;
-                wy = wy * 0.55 + (Math.random() - 0.5) * 7;
-                wz = wz * 0.55 + (Math.random() - 0.5) * 7;
-                this.bounces[i]++;
-                if (this.bounces[i] >= 3 || -vn < 0.28) {
-                  flatTarget(Q, this.T, q, N.x, N.y, N.z);
-                  this.state[i] = 2;
-                  this.rest[i] = 0;
-                  break;
-                }
-              }
-            }
-          }
-        }
-        P[p] = x;
-        P[p + 1] = y;
-        P[p + 2] = z;
-        V[p] = vx;
-        V[p + 1] = vy;
-        V[p + 2] = vz;
-        W[p] = wx;
-        W[p + 1] = wy;
-        W[p + 2] = wz;
-      } else if (st === 2) {
-        const r = (this.rest[i] += dt);
-        const k = Math.exp(-9 * dt);
-        V[p] *= k;
-        V[p + 2] *= k;
-        V[p + 1] = 0;
-        x += V[p] * dt;
-        z += V[p + 2] * dt;
-        P[p] = x;
-        P[p + 2] = z;
-        P[p + 1] = world.heightAt(x, z) + R * 0.235;
-        nlerpTo(Q, this.T, q, 1 - Math.exp(-14 * dt));
-        if (r > 0.5) this.state[i] = 3;
-      } else if (fade >= 1) {
-        continue;
-      }
-      let sc = 1;
-      if (fade < 1) {
-        sc = fade;
-        if (this.state[i] === 3) P[p + 1] = gy0 + R * 0.235 * fade - 0.002 * (1 - fade);
-      }
-      this.write(i, sc);
+      const dx = this.P[p] - x;
+      const dz = this.P[p + 2] - z;
+      if (dx * dx + dz * dz > r2) continue;
+      this.P[p + 1] = Math.max(world.heightAt(this.P[p], this.P[p + 2]), this.FLOOR[i]) + this.LIFT[i];
+      this.write(i, 1);
     }
-    this.finish(hi);
   }
 }
 
@@ -722,6 +537,7 @@ export class BlobPool extends InstancedPool {
     this.breakT = new Float32Array(cap);
     this.decalAmt = new Float32Array(cap);
     this.hidden = new Float32Array(cap);
+    this.floorY = new Float32Array(cap).fill(-1000);
   }
 
   spawn(kind, x, y, z, vx, vy, vz, R, cr, cg, cb, life) {
@@ -761,6 +577,7 @@ export class BlobPool extends InstancedPool {
     this.breakT[i] = 0;
     this.decalAmt[i] = K.decal;
     this.hidden[i] = 0;
+    this.floorY[i] = -1000;
     const a = this.aA.array;
     a[i * 4] = 0;
     a[i * 4 + 1] = K.neck;
@@ -784,6 +601,11 @@ export class BlobPool extends InstancedPool {
     b[i * 4 + 2] = lump;
     b[i * 4 + 3] = grain;
     if (neck >= 0) this.aA.array[i * 4 + 1] = neck;
+  }
+
+  // a level the piece may not fall below (a water surface over the ground)
+  floor(i, y) {
+    this.floorY[i] = y;
   }
 
   // a tail (in head radii) that fades with rate decay; pinT > 0 anchors the tail
@@ -831,7 +653,8 @@ export class BlobPool extends InstancedPool {
       let vy = V[p + 1];
       let vz = V[p + 2];
       const hcR = K.hc * R;
-      let gy = world.heightAt(x, z);
+      const fl = this.floorY[i];
+      let gy = Math.max(world.heightAt(x, z), fl);
       let nX = 0;
       let nY = 1;
       let nZ = 0;
@@ -858,7 +681,7 @@ export class BlobPool extends InstancedPool {
           y += vy * h;
           z += vz * h;
           if (K.rigid) integrateQ(Q, q, wx, wy, wz, h);
-          if (y < gy + hcR + 0.004) gy = world.heightAt(x, z);
+          if (y < gy + hcR + 0.004) gy = Math.max(world.heightAt(x, z), fl);
           if (y < gy + hcR) {
             const N = ctx.normalAt(x, z);
             nX = N.x;

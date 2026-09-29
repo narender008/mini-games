@@ -2,7 +2,8 @@
 // little spiral whelks and the odd starfish, all real geometry (no cut-out
 // textures) so they catch the sun and cast their own tiny shadows. Each kind
 // is one InstancedMesh (three draw calls for the lot), sized in metres:
-// a scallop is 3 to 5 cm across, as big as a tank's wheel.
+// a scallop is 3 to 5 cm across, as big as a tank's wheel. Every instance can be
+// knocked about by a blast (physics.js reads userData.loose and the instance matrices).
 import * as THREE from 'three';
 import { mergeVertices } from 'three-gltf/utils/BufferGeometryUtils.js';
 import { fbm3, rng, smoothstep } from '../config.js';
@@ -205,6 +206,9 @@ export function buildShells({ items, heightAt }) {
     mesh.receiveShadow = true;
     mesh.name = `shells-${kind}`;
     mesh.computeBoundingSphere();
+    // physics.js wakes single instances when a blast reaches them (density in kg/m3, of the whole shell shape)
+    mesh.userData.loose = { material: K.glass ? 'glass' : kind === 'star' ? 'starfish' : 'shell', density: K.glass ? 2500 : kind === 'star' ? 500 : 800 };
+    mesh.frustumCulled = false; // instances move when thrown
     group.add(mesh);
     meshes.push(mesh);
   }

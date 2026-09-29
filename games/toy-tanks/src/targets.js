@@ -134,9 +134,12 @@ export class Targets {
     this.pieces = [];
     this.time = 0;
     this.onPoints = null;
+    this.onClear = null;
   }
 
   clear() {
+    this.onClear?.(); // physics.js lets go of the blocks and stands it has been tumbling
+    for (const pc of this.pieces) this.group.remove(pc.mesh); // blocks that tumbled in the last game
     for (const it of this.items) this.group.remove(it.object);
     this.items.length = 0;
     this.shapes.length = 0;
@@ -251,13 +254,17 @@ export class Targets {
     it.alive = false;
     const p = it.object.position;
     if (it.kind === 'balloon') {
-      const y = p.y + it.height;
-      this.fx.burst('confetti', p.x, y, 0, { power: 0.5, great: false, ground: 'air', scale: 0.5 });
-      this.fx.sparkle?.(p.x, y, 0, 24, it.color);
+      // where the balloon is (a blast may have swung it on its string: see physics.js)
+      const bp = it.balloon.position;
+      const bx = p.x + bp.x;
+      const y = p.y + bp.y;
+      const bz = bp.z;
+      this.fx.burst('confetti', bx, y, bz, { power: 0.5, great: false, ground: 'air', scale: 0.5 });
+      this.fx.sparkle?.(bx, y, bz, 24, it.color);
       this.audio.target('balloon', 0);
       it.balloon.visible = false;
       it.falling = 0;
-      return this.award(it, 30, p.x, y);
+      return this.award(it, 30, bx, y);
     }
     this.fx.sparkle?.(p.x, p.y + it.star.position.y, 0, 40, 0xffd23d);
     this.audio.target('bonus', 0);

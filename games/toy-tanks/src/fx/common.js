@@ -27,12 +27,20 @@ export function palette(hexes) {
 }
 export const paletteSize = (p) => (p.length / 3) | 0;
 
-// Candy colours: juicy but not neon, they have to sit in a sunlit scene.
-export const CANDY = palette(['#ff3f8e', '#ff8a1c', '#ffd42a', '#37d67a', '#1fc8ff', '#3d7bff', '#a35bff', '#ff4d4d', '#ff7fd0', '#7be34a']);
-export const STAR_COLORS = palette(['#ffd21f', '#2f7dff', '#ff5fa8', '#26d9ff', '#ffb01f', '#a36bff', '#ffe45c', '#5cf0c8']);
-export const JELLY_COLORS = palette(['#ff9a1f', '#ffd82e', '#ff4fb8', '#3f8cff', '#7fe043', '#a763ff', '#ff5a6e', '#28d8c0', '#ff7a2f', '#48b6ff']);
-export const RAINBOW = palette(['#ff3b3b', '#ff9a1f', '#ffd82e', '#4bdc5a', '#2fc4ff', '#5a6bff', '#b25bff', '#ff5fc0']);
-export const WATER_BLUES = palette(['#39b8ff', '#5cc9ff', '#2a9bff', '#7fd6ff']);
+// Natural colours. Nothing here is a candy or neon colour: paper is soft and a
+// little chalky, glitter is metal, gel is dessert jelly, mud is wet earth.
+export const PAPER = palette(['#e4605f', '#f1b447', '#f3d76e', '#63b884', '#5aa9cc', '#8c88cb', '#e58fae', '#f3ead8', '#ee8b50', '#a8cf77']);
+// craft glitter: mostly gold and silver, a few tinted metals
+export const GLITTER = palette(['#f0c766', '#f0c766', '#e9b957', '#f3dc9a', '#eef1f4', '#d9a25a', '#9fc0d8', '#c9b0e0']);
+// dessert-jelly hues, one is chosen per burst
+export const GEL = palette(['#e23f5b', '#f4992a', '#59c168', '#3f9fe0', '#a55fcb', '#f3c62b']);
+export const MUD = palette(['#5b4029', '#6a4a2f', '#7a5a3a', '#4f3826']);
+// muddy puddle water, light where it is thin
+export const WATER_TONES = palette(['#a3957c', '#8f836f', '#b3a68d']);
+// rubber granules
+export const BEADS = palette(['#e86f7f', '#f0b04a', '#58b7c4', '#8fc46a', '#7f8fd6']);
+// the coloured powder a ball is filled with, as natural pigment
+export const PIGMENT = { confetti: palette(['#d3a679']), star: palette(['#d8c9a2']), triple: palette(['#a394c4']), bouncy: palette(['#d68d99']), jelly: palette(['#d9aab4']) };
 export const WHITE = palette(['#ffffff']);
 
 export function setRgb(out, o, pal, i) {
@@ -44,15 +52,16 @@ export function randomColorIndex(pal) {
   return (Math.random() * (pal.length / 3)) | 0;
 }
 
-// What the ground throws up, per ground kind. soil/clump colours as linear
-// r,g,b, wet: how glossy the clumps are (0 dry .. 1 wet).
+// What the ground throws up, per ground kind. dust: the colour of the cloud;
+// soil: grains and crumbs; bit: leaves and blades; wet: how glossy the clumps
+// are (0 dry .. 1 wet); dustAmt: how dense the dust is.
 const g = (hex) => palette([hex]);
 export const GROUND_KIT = {
-  grass: { dust: g('#b1a678'), soil: palette(['#6b4a2c', '#7d5733', '#5a3d22', '#8a6238']), bit: palette(['#3f9a2a', '#5cbb35', '#2f7d22', '#7ed04a']), wet: 0.05, dustAmt: 0.3, splatTint: g('#5a3a20') },
-  sand: { dust: g('#e8cf9c'), soil: palette(['#d9b678', '#c9a15e', '#e6c88f', '#bd9450']), bit: palette(['#e8cf9c']), wet: 0.0, dustAmt: 0.5, splatTint: g('#c9a15e') },
-  mud: { dust: g('#7a5a3c'), soil: palette(['#8a5426', '#7a4a22', '#9a6030', '#6d4120']), bit: palette(['#8a5426']), wet: 0.85, dustAmt: 0.2, splatTint: g('#3a2214') },
-  snow: { dust: g('#ffffff'), soil: palette(['#ffffff', '#f6f9ff', '#ffffff']), bit: palette(['#ffffff']), wet: 0.0, dustAmt: 0.8, splatTint: g('#e8f0ff') },
-  moss: { dust: g('#9a8a62'), soil: palette(['#5a3d22', '#6b4a2a', '#4a331c', '#5c4a26']), bit: palette(['#3e8a2a', '#2a6a1e', '#5a8a2c', '#7a5a2a']), wet: 0.1, dustAmt: 0.3, splatTint: g('#4a3018') },
+  grass: { dust: g('#9c9580'), soil: palette(['#6a4c31', '#7a5a3a', '#5a4029', '#846540']), bit: palette(['#4d8a2c', '#6aa040', '#3b7526', '#86b04c']), wet: 0.05, dustAmt: 0.34, splatTint: g('#5a3a20') },
+  sand: { dust: g('#d9cfb2'), soil: palette(['#dcc28c', '#cdb078', '#e8d4a2', '#c2a468']), bit: palette(['#e6d3a6']), wet: 0.0, dustAmt: 0.5, splatTint: g('#c9a15e') },
+  mud: { dust: g('#85735c'), soil: MUD, bit: palette(['#6a4a2f']), wet: 0.85, dustAmt: 0.24, splatTint: g('#3a2214') },
+  snow: { dust: g('#ffffff'), soil: palette(['#ffffff', '#f4f8ff', '#eaf1ff']), bit: palette(['#ffffff']), wet: 0.0, dustAmt: 0.8, splatTint: g('#e8f0ff') },
+  moss: { dust: g('#857f62'), soil: palette(['#5a4429', '#6b4f2c', '#4a3a22', '#5c4a28']), bit: palette(['#4a7d30', '#35642a', '#5f8a34', '#7c6a30']), wet: 0.1, dustAmt: 0.3, splatTint: g('#4a3018') },
 };
 
 // ---------------------------------------------------------------------------
@@ -146,15 +155,15 @@ export function makeNoiseTexture(size = 256) {
 }
 
 // ---------------------------------------------------------------------------
-// Splat atlas for the ground stains: 4 x 2 cells of 256 px. Each cell is an
+// Splat atlas for the ground stains: 4 x 3 cells of 256 px. Each cell is an
 // organic splat (a wobbly body, thin tendrils that end in round droplets,
 // satellite drops). R = thickness (a blurred version of the shape, used as a
 // bump so the paint looks wet and raised), A = coverage.
-export const SPLAT_CELLS = 8;
+export const SPLAT_CELLS = 12;
 export function makeSplatAtlas() {
   const cell = 256;
   const cols = 4;
-  const rows = 2;
+  const rows = 3;
   const W = cell * cols;
   const H = cell * rows;
   const cv = document.createElement('canvas');
@@ -230,6 +239,37 @@ export function makeSplatAtlas() {
         const d = R * (1.7 + rand() * 1.05);
         dot(cx + Math.cos(a) * d, cy + Math.sin(a) * d, R * (0.03 + rand() * 0.07));
       }
+    } else if (c >= 8) {
+      // soft stains and dustings, no hard edge: overlapping radial gradients
+      const soft = (x, y, r, a) => {
+        const gr = ctx.createRadialGradient(x, y, 0, x, y, r);
+        gr.addColorStop(0, 'rgba(255,255,255,' + a + ')');
+        gr.addColorStop(0.55, 'rgba(255,255,255,' + a * 0.55 + ')');
+        gr.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = gr;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, TAU);
+        ctx.fill();
+      };
+      if (c < 11) {
+        const lobes = 9 + (c - 8) * 3;
+        for (let s = 0; s < lobes; s++) {
+          const a = rand() * TAU;
+          const d = R * (0.1 + rand() * 1.15);
+          soft(cx + Math.cos(a) * d, cy + Math.sin(a) * d * (0.75 + 0.3 * rand()), R * (0.5 + rand() * 0.6), 0.5 + rand() * 0.3);
+        }
+        soft(cx, cy, R * 1.3, 0.7);
+      } else {
+        // fine powder thrown over the ground: many tiny grains, thinning outwards
+        for (let s = 0; s < 900; s++) {
+          const a = rand() * TAU;
+          const d = R * 2.8 * Math.pow(rand(), 0.75);
+          const fall = 1 - d / (R * 2.9);
+          ctx.fillStyle = 'rgba(255,255,255,' + (0.25 + 0.6 * rand()) * Math.min(1, fall * 1.6) + ')';
+          dot(cx + Math.cos(a) * d, cy + Math.sin(a) * d, 0.8 + rand() * 2.2);
+        }
+        soft(cx, cy, R * 1.5, 0.45);
+      }
     } else {
       // elongated splats thrown in one direction, with a spray of drops
       const dir = (c - 4) * 0.4 + 0.2;
@@ -287,7 +327,9 @@ export function makeSplatAtlas() {
       // flip vertically so uv (0,0) is the bottom-left of the atlas as drawn
       const src = (H - 1 - y) * W + x;
       const k = (y * W + x) * 4;
-      data[k] = clamp(height[src] * 1.3, 0, 1) * 255;
+      // the soft stains (cells 8+) are flat: no bump
+      const sc = Math.floor((H - 1 - y) / cell) * cols + Math.floor(x / cell);
+      data[k] = (sc >= 8 ? 0.42 : clamp(height[src] * 1.3, 0, 1)) * 255;
       data[k + 1] = 0;
       data[k + 2] = 0;
       data[k + 3] = cover[src] * 255;

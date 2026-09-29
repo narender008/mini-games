@@ -25,6 +25,7 @@ import * as THREE from 'three';
 import { fbm3, rng, smoothstep } from '../config.js';
 import { loadPBR } from '../env.js';
 import { detectQuality } from '../quality.js';
+import { BLAST_GLSL, blastUniforms } from './react.js';
 
 // ------------------------------------------------------------------ the leaf atlas
 // eight 256 px tiles, 4 x 2. Colours are neutral, dark to bright (the tree's own colour multiplies them in).
@@ -656,6 +657,11 @@ function pineWood(meanH, far) {
 const SWAY = `
 uniform float uTime;
 uniform float uWind;
+${BLAST_GLSL}
+// a small tree close to a burst leans away and swings back (a big one hardly notices)
+vec2 treeKick(float hgt, vec3 root, float sy) {
+  return blastSway(root.xz, uTime, 1.3, 2.4) * hgt * hgt * min(sy, 0.45) * 0.1;
+}
 // the whole tree bends in the wind, most at the top (hgt is in tree heights, sy the tree's height in metres)
 float treeSway(float hgt, vec3 root, float sy) {
   float ph = root.x * 0.37 + root.z * 0.23;
@@ -675,6 +681,7 @@ float ft = uTime * (1.3 + fh * 1.2) + fh * 40.0;
 cT += vec3(sin(ft), sin(ft * 1.3 + 1.0) * 0.6, cos(ft * 0.9)) * (0.003 + 0.005 * abs(uWind)) * (0.3 + cT.y);
 vec4 wp = instanceMatrix * vec4(cT, 1.0);
 wp.x += treeSway(max(cT.y, 0.0), instanceMatrix[3].xyz, sy);
+wp.xz += treeKick(max(cT.y, 0.0), instanceMatrix[3].xyz, sy);
 vec3 mvC = (modelViewMatrix * wp).xyz;
 float sz = 0.5 * (sxz + sy);
 ${spray ? `
@@ -729,7 +736,7 @@ export class Trees {
     }
     const detail = L.detail ?? (tier === 'low' ? 0.55 : tier === 'medium' ? 0.8 : 1);
     const fine = Math.max(0, Math.min(1, (L.leafScale - 1) / 5));
-    this.uniforms = { uTime: { value: 0 }, uWind: { value: 0 }, uSnow: { value: L.snow } };
+    this.uniforms = { ...blastUniforms, uTime: { value: 0 }, uWind: { value: 0 }, uSnow: { value: L.snow } };
     this.atlas = acquireAtlas(this.kind);
     let meanH = 0;
     for (const t of list) meanH += t.h;
@@ -891,6 +898,7 @@ float leafLum = dot( leafTex.rgb, vec3( 0.333 ) );`)
         .replace('#include <common>', `#include <common>${SWAY}`)
         .replace('#include <project_vertex>', `vec4 wp = instanceMatrix * vec4( transformed, 1.0 );
 wp.x += treeSway( max( transformed.y, 0.0 ), instanceMatrix[3].xyz, length( instanceMatrix[1].xyz ) );
+wp.xz += treeKick( max( transformed.y, 0.0 ), instanceMatrix[3].xyz, length( instanceMatrix[1].xyz ) );
 vec4 mvPosition = modelViewMatrix * wp;
 gl_Position = projectionMatrix * mvPosition;`);
     };
