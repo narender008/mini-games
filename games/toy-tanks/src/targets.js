@@ -248,10 +248,14 @@ export class Targets {
     return y;
   }
 
-  // the nearest target standing on the ground (bonus stars float overhead)
+  // the nearest target still standing on the ground (bonus stars float
+  // overhead; a bullseye stands after a hit until it is knocked down)
   get front() {
     let x = Infinity;
-    for (const it of this.items) if (it.kind !== 'bonus') x = Math.min(x, it.x);
+    for (const it of this.items) {
+      const down = it.kind === 'bullseye' ? it.shape.y < -1 : !it.alive;
+      if (it.kind !== 'bonus' && !down) x = Math.min(x, it.x);
+    }
     return x;
   }
 
