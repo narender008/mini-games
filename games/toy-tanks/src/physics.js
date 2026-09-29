@@ -1335,12 +1335,11 @@ export class Physics {
     if (!this.towers.includes(ph)) this.towers.push(ph);
   }
 
-  // towers and stands settle as a whole; one is judged every step, so a knocked-down one scores and stops being a target at once
+  // towers and stands settle as a whole; one that has been knocked down is done as a target
   stepTowers(dt) {
     for (let i = this.towers.length - 1; i >= 0; i--) {
       const ph = this.towers[i];
       ph.t += dt;
-      this.judge(ph);
       let calm = true;
       for (const r of ph.recs) if (r.calm < CALM_TIME || r.awake < 0.3) calm = false;
       if (!calm && ph.t < MAX_AWAKE) continue;
@@ -1361,6 +1360,7 @@ export class Physics {
       ph.active = false;
       this.towers[i] = this.towers[this.towers.length - 1];
       this.towers.pop();
+      this.judge(ph);
     }
   }
 
