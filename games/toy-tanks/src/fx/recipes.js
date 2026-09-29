@@ -72,9 +72,10 @@ function dot(S, x, y, z, vx, vy, vz, life, size, r, g, b, a, drag, grav, wind, f
 // less than a bright glitter ball).
 function contact(fx, B, k) {
   const S = fx.soft;
-  const s = B.size * (B.great ? 1.15 : 0.85);
+  // the flash grows more slowly than the burst: a bigger pop, never a glare
+  const s = Math.pow(B.size, 0.6) * (B.great ? 1.15 : 0.85);
   const kk = k * (B.water ? 0.6 : 1);
-  fx.flashLight(B.x, B.y + (B.hi ? 0.01 : 0.04), B.z, kk * (B.great ? 1 : 0.72) * B.size);
+  fx.flashLight(B.x, B.y + (B.hi ? 0.01 : 0.04), B.z, kk * (B.great ? 1 : 0.72) * Math.sqrt(B.size));
   const y = B.y + (B.hi ? 0.008 : 0.03);
   flash(S, B.x, y, B.z, 0.075, 0.02 * s, 1.0, 0.93, 0.8, 0.62 * kk);
   flash(S, B.x, y, B.z, 0.04, 0.008 * s, 1.0, 1.0, 0.96, 0.75 * kk);
@@ -86,7 +87,8 @@ function ring(fx, B) {
   if (B.hi) {
     // on a tank: dust jumping off the surface all round the point of impact, seen as a thin ring
     const t = B.ball === 'snow' ? 1.02 : B.ball === 'mud' ? 0.42 : 0.86;
-    fx.soft.spawn(B.x, B.y, B.z + 0.03, 0, 0, 0, 0.2, 0.012 * B.size, 0.1 * B.reach, RING, t, t * 0.97, t * 0.9, 0.5, 0, 0, 0, NO_FLOOR, 0, 1, 0, 0, 0.012);
+    // (small and faint: any bigger and it reads as a soap bubble round the burst)
+    fx.soft.spawn(B.x, B.y, B.z + 0.03, 0, 0, 0, 0.16, 0.01 * B.size, 0.06 * Math.sqrt(B.reach), RING, t, t * 0.97, t * 0.9, 0.28, 0, 0, 0, NO_FLOOR, 0, 1, 0, 0, 0.012);
     return;
   }
   const kit = B.kit;
@@ -516,7 +518,7 @@ function mud(fx, B, wave2) {
   }
   const y0 = B.hi ? B.y : gy + 0.004;
   const cm = B.cm;
-  const nT = cnt(wave2 ? 7 : 18, cm);
+  const nT = cnt(wave2 ? 10 : 28, cm);
   for (let k = 0; k < nT; k++) {
     const a = ((k + rnd() * 0.8) / nT) * TAU;
     const el = B.hi ? rr(-0.2, 1.3) : rr(0.9, 1.36);
@@ -533,7 +535,7 @@ function mud(fx, B, wave2) {
   }
   if (!wave2) {
     // a skirt of fat, low blobs round the foot of the crown
-    const nS = cnt(8, cm);
+    const nS = cnt(12, cm);
     for (let k = 0; k < nS; k++) {
       const a = ((k + rnd() * 0.8) / nS) * TAU;
       const el = B.hi ? rr(-0.1, 0.9) : rr(0.4, 0.75);
@@ -548,7 +550,7 @@ function mud(fx, B, wave2) {
     }
   }
   // heavier lumps
-  const nL = cnt(wave2 ? 2 : 6, cm);
+  const nL = cnt(wave2 ? 3 : 9, cm);
   for (let k = 0; k < nL; k++) {
     dir(B.hi ? -0.2 : 0.55, 0.96, 1);
     const sp = rr(0.6, 1.2) * B.sm;
@@ -559,7 +561,7 @@ function mud(fx, B, wave2) {
     blobs.look(j, 0.16, 0, 0.16, 0.3, 0.5);
   }
   // water in the spray: muddy, not clear
-  const nW = cnt(wave2 ? 6 : 16, cm);
+  const nW = cnt(wave2 ? 10 : 28, cm);
   for (let k = 0; k < nW; k++) {
     const a = rnd() * TAU;
     const el = B.hi ? rr(-0.2, 1.3) : rr(0.7, 1.45);
@@ -568,12 +570,14 @@ function mud(fx, B, wave2) {
     const ce = Math.cos(el);
     const R = rr(0.0016, 0.003) * B.size;
     const ci = randomColorIndex(WATER_TONES);
-    const j = blobs.spawn(K_WATER, x + Math.cos(a) * rad, y0 + 0.006, z + Math.sin(a) * rad, Math.cos(a) * ce * sp + B.bx, Math.sin(el) * sp, Math.sin(a) * ce * sp, R, WATER_TONES[ci * 3] * 0.8, WATER_TONES[ci * 3 + 1] * 0.8, WATER_TONES[ci * 3 + 2] * 0.8, rr(2, 3));
+    const j = blobs.spawn(K_WATER, x + Math.cos(a) * rad, y0 + 0.006, z + Math.sin(a) * rad, Math.cos(a) * ce * sp + B.bx, Math.sin(el) * sp, Math.sin(a) * ce * sp, R, WATER_TONES[ci * 3], WATER_TONES[ci * 3 + 1], WATER_TONES[ci * 3 + 2], rr(2, 3));
     blobs.tail(j, rr(1.6, 3.2), 4.5, 0.05, 4);
   }
   // fine brown mist of droplets
   sprinkle(fx, B, MUD, cnt(wave2 ? 24 : 70, cm), 0.0005, 0.0011, 0.8, 2.3, B.hi ? -0.3 : 0.25, 1, 0.8, 1.2, 1.1, 0.5, 0.9, 1.5, G_DROP, 0, 0.04, 0.95, 1.3, 0);
-  puffCloud(fx, B, wave2, MUD, 0.25, 0.9);
+  puffCloud(fx, B, wave2, MUD, 0.25, 1.1);
+  // and a pale mist of muddy water over it, which is what shows against dark leaves
+  puffCloud(fx, B, wave2, WATER_TONES, 0.75, 0.9);
   if (!wave2 && !B.hi) {
     // the stain that stays: a thick wet splat where it landed
     const R = 0.02 * B.reach;

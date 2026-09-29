@@ -1,6 +1,10 @@
 // Ball impacts and the little effects around them, made to look like real
-// physical events at toy scale (a 5 cm ball beside 19 cm tanks): local, layered,
-// never filling the screen.
+// physical events at toy scale (a 5 cm ball beside 19 cm tanks): layered, big
+// enough to read clearly from the gameplay camera, never filling the screen.
+// PRESENCE sets how big a burst is: 1 is a strictly lifesize pop (a great
+// hit about 0.25 m across), which reads as almost nothing from where the
+// camera plays; at 2.6 a great hit spreads about 0.65 m, a tank length and
+// a half either side, as the bursts did before the camera pulled back.
 //
 //   const fx = new Fx({ renderer, scene, camera, quality, world, softUniforms });
 //   await fx.warmup();                 // once, after scene.environment and the lights exist
@@ -37,6 +41,9 @@ const _c = new THREE.Color();
 const BALL_LIST = ['confetti', 'star', 'mud', 'snow', 'jelly', 'bouncy', 'triple'];
 const GROUND_LIST = ['grass', 'sand', 'mud', 'snow', 'moss', 'air'];
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const PRESENCE = 2.6;
+// thrown things fly as far as the burst is big (same gravity: speed goes as its root)
+const PRESENCE_SPEED = Math.sqrt(PRESENCE);
 
 // what the sky adds to shaded powder, by ground, and the strength of the sun
 // (sun.intensity / PI) it was tuned against: the sky term follows the sun's
@@ -445,12 +452,13 @@ export class Fx {
     const size = scale * ballScale;
     const q = this.q;
     const sz1 = Math.min(1, size);
-    B.size = size;
-    B.reach = size * (great ? 1 : 0.7) * (0.8 + 0.2 * power);
+    B.size = size * PRESENCE;
+    B.reach = B.size * (great ? 1 : 0.7) * (0.8 + 0.2 * power);
     B.ext = 0.25 * B.reach;
-    B.cm = q * (0.6 + 0.4 * power) * (great ? 1 : 0.7) * (0.4 + 0.6 * sz1) * (B.hi ? 0.85 : 1);
-    B.cmSoft = (0.6 + 0.4 * q) * (0.75 + 0.25 * power) * (great ? 1 : 0.75) * (0.5 + 0.5 * sz1);
-    B.sm = (0.72 + 0.28 * power) * (0.55 + 0.45 * Math.min(1.2, size)) * (great ? 1.08 : 0.92);
+    // more pieces for the bigger spread, so it stays as dense
+    B.cm = q * (0.6 + 0.4 * power) * (great ? 1 : 0.7) * (0.4 + 0.6 * sz1) * (B.hi ? 0.85 : 1) * PRESENCE * 0.8;
+    B.cmSoft = (0.6 + 0.4 * q) * (0.75 + 0.25 * power) * (great ? 1 : 0.75) * (0.5 + 0.5 * sz1) * 1.3;
+    B.sm = (0.72 + 0.28 * power) * (0.55 + 0.45 * Math.min(1.2, size)) * (great ? 1.08 : 0.92) * PRESENCE_SPEED;
     B.bx = clamp((opts.vx || 0) * 0.08, -0.3, 0.3);
     contact(this, B, FLASH_K[ball] || 1);
     ring(this, B);

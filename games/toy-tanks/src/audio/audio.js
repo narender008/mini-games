@@ -46,6 +46,8 @@ const MASTER = 0.9;
 // The compressor adds its own make-up gain; this takes it back off, so ordinary
 // levels pass at unity and only peaks are squeezed.
 const GLUE_TRIM = 0.405;
+// how much louder than its layers' own levels a burst plays (a great hit more)
+const BURST_LIFT = { hit: 1.2, great: 1.65 };
 // the impact bus's limiter (threshold in dB), and the make-up trim that returns
 // ordinary levels to unity like GLUE_TRIM does
 const IMPACT_LIMIT = { threshold: -3, knee: 6, ratio: 8, attack: 0.002, release: 0.16, trim: 0.93 };
@@ -85,7 +87,7 @@ const LV = {
   tap: 0.42, select: 0.25, turn: 0.34,
   pop: 0.78, whoosh: 0.38, colour: 0.11, boing: 0.55, plop: 0.36,
   bounce: 0.66, split: 0.66,
-  whump: 0.4, hit: 0.68, fall: 0.6, splash: 0.7, knock: 0.24, patter: 0.22, great: 0.26,
+  whump: 0.4, hit: 0.68, fall: 0.6, splash: 0.7, knock: 0.24, patter: 0.22, great: 0.55,
   tank: 0.75, balloon: 0.72, blocks: 0.66, ding: 0.75, bonus: 0.3, pip: 0.36,
   fanfare: 1.45, popper: 0.9, roll: 0.45, twinkle: 0.8, starEarn: 1.0, unlock: 1.0,
   // continuous voices at full strength
@@ -775,9 +777,12 @@ export class Audio {
     const now = this.now();
     const t = now + 0.004;
     pan = clamp(Number(pan) || 0, -0.9, 0.9);
-    const lvl = (0.55 + 0.45 * p) * (0.7 + 0.3 * sc) * this.crowd(now, 1, 0.18);
+    // presence: soft but clearly heard, a great hit fuller still (never a boom:
+    // the impact limiter holds the peaks)
+    const lift = great ? BURST_LIFT.great : BURST_LIFT.hit;
+    const lvl = (0.55 + 0.45 * p) * (0.7 + 0.3 * sc) * this.crowd(now, 1, 0.18) * lift;
     const small = 1 + 0.3 * (1 - sc);
-    const part = great ? 0.82 : 1;
+    const part = 1;
     const layers = this.burstLayers;
     layers.length = 0;
     this.burstAt = now;
@@ -796,13 +801,17 @@ export class Audio {
     const pay = P.lv * lvl * part;
     const pr = (1.06 - 0.1 * p) * small * jitter(0.96, 1.04);
     this.play(this.bank(P.buf), { t: t + 0.012, gain: pay, rate: pr, pan, wet: 0.12, dest, kind });
-    if (great) this.play(this.bank(P.buf), { t: t + 0.026, gain: pay * 0.5, rate: pr * jitter(0.94, 0.98), pan: clamp(pan + (Math.random() < 0.5 ? -0.3 : 0.3), -0.9, 0.9), wet: 0.16, dest, kind });
+    if (great) this.play(this.bank(P.buf), { t: t + 0.026, gain: pay * 0.8, rate: pr * jitter(0.94, 0.98), pan: clamp(pan + (Math.random() < 0.5 ? -0.3 : 0.3), -0.9, 0.9), wet: 0.16, dest, kind });
     if (P.twinkle) this.play(this.bank('twinkle'), { t: t + 0.02, gain: P.twinkle * lvl * (great ? 1.5 : 1), rate: jitter(0.98, 1.03), pan, wet: 0.25, dest, kind });
     // 4. the debris coming back down
     if (G.fall) {
       const fall = LV.fall * G.fallK * lvl * (0.6 + 0.4 * p);
       layers.push(this.play(this.bank(G.fall), { t: t + 0.07 + rand(0, 0.03), gain: fall * part, rate: jitter(0.96, 1.04), pan: clamp(pan + rand(-0.15, 0.15), -0.9, 0.9), wet: 0.06, dest, kind }));
-      if (great) layers.push(this.play(this.bank(G.fall), { t: t + 0.17, gain: fall * 0.6, rate: jitter(0.88, 0.94), pan: clamp(pan + rand(-0.25, 0.25), -0.9, 0.9), wet: 0.06, dest, kind }));
+      if (great) {
+        // a great hit throws more, higher: it keeps coming down a while longer
+        layers.push(this.play(this.bank(G.fall), { t: t + 0.17, gain: fall * 0.9, rate: jitter(0.88, 0.94), pan: clamp(pan + rand(-0.25, 0.25), -0.9, 0.9), wet: 0.06, dest, kind }));
+        layers.push(this.play(this.bank(G.fall), { t: t + 0.42, gain: fall * 0.6, rate: jitter(0.82, 0.88), pan: clamp(pan + rand(-0.3, 0.3), -0.9, 0.9), wet: 0.08, dest, kind }));
+      }
     }
     if (great) {
       // a small rising chime: the reward for a good shot, in the stage's key
