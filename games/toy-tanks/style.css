@@ -439,6 +439,16 @@ body.can-fs .fs[hidden] {
   justify-items: center;
   gap: clamp(8px, 1.6vmin, 14px);
   width: 100%;
+  min-width: 0;
+}
+
+/* grid and flex children default to their content's width: without these
+   the long row of tank picks would push the whole menu wider than a phone */
+.menu-main > *,
+.setup > *,
+.picks > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .row {
@@ -1135,9 +1145,20 @@ body[data-mode='little'] .big-only {
   .logo {
     font-size: clamp(30px, 7vmin, 60px);
   }
+  .stages {
+    width: min(640px, 100%);
+  }
+  /* a short screen: the angle and power go up in the sky, top right, so the
+     tanks along the bottom stay in view */
   #aim-panel {
-    bottom: calc(var(--edge) + var(--safe-b));
-    right: calc(var(--edge) * 2 + var(--tap) * 1.7 + var(--safe-r));
+    top: calc(var(--edge) + var(--safe-t));
+    bottom: auto;
+    width: 180px;
+    gap: 2px;
+    padding: 6px 12px;
+  }
+  .dial input {
+    height: 26px;
   }
 }
 
@@ -1145,9 +1166,31 @@ body[data-mode='little'] .big-only {
   .stages {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+  .modes {
+    border-radius: 24px;
+  }
+  .mode {
+    min-height: 46px;
+    padding: 4px 12px 4px 8px;
+  }
+  .mode svg {
+    width: 26px;
+    height: 26px;
+  }
+  /* a narrow, tall screen: the score goes under the corner buttons, the
+     angle and power up in the sky, and the balls above the drive and fire
+     buttons */
+  #scoreboard {
+    top: calc(var(--edge) + var(--safe-t) + var(--tap) + 12px);
+  }
   #aim-panel {
+    top: calc(var(--edge) + var(--safe-t) + var(--tap) * 2 + 30px);
+    bottom: auto;
     width: 170px;
     padding: 8px 10px;
+  }
+  #balls {
+    bottom: calc(var(--edge) + var(--safe-b) + var(--tap) * 1.7 + 12px);
   }
   .score {
     min-width: 70px;

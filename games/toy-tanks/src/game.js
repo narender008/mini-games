@@ -92,7 +92,7 @@ export class Game {
     this.phase = 'intro';
     this.timer = 0;
     app.ui.setScores(this.sides, this.mode);
-    const far = solo ? this.sides[0].x + 1.9 : this.sides[1].x;
+    const far = solo ? this.sides[0].x + 1.4 : this.sides[1].x;
     app.director.frame(this.sides[0].x - 0.3, far + 0.3, 0, 0.45, { pace: 1.4, yaw: 0.16, pitch: 0.05 });
     this.newWind();
   }
@@ -140,19 +140,23 @@ export class Game {
 
   frameAim() {
     const a = this.sides[0];
-    const b = this.mode === 'targets' ? { x: a.x + 1.9, y: a.y } : this.sides[1];
+    const b = this.mode === 'targets' ? { x: a.x + 1.4, y: a.y + 0.15 } : this.sides[1];
     const s = this.side;
     const lo = Math.min(a.x, b.x) - 0.3;
     const hi = Math.max(a.x, b.x) + 0.3;
     // low and close, like a photo taken lying in the grass: the tanks in the
     // lower third, room above them for the arc, leaning a little towards
-    // whoever is aiming
-    this.app.director.frame(lo, hi, Math.min(a.y, b.y) - 0.08, Math.max(a.y, b.y) + 0.5, {
+    // whoever is aiming. A tall phone shows the lane whole and centred; a
+    // short one lifts the tanks clear of the buttons along the bottom.
+    const tall = this.app.director.aspect < 1;
+    const short = innerHeight < 520;
+    this.app.director.frame(lo, hi, Math.min(a.y, b.y) - (short ? 0.24 : 0.08), Math.max(a.y, b.y) + 0.5, {
       pace: 1.1,
-      margin: 1.02,
-      yaw: 0.1 * -s.facing,
-      pitch: 0.02,
-      shiftX: s.facing * -0.04,
+      margin: tall ? 1.1 : 1.02,
+      maxDist: tall ? 6 : undefined,
+      yaw: (tall ? 0.04 : 0.1) * -s.facing,
+      pitch: tall ? 0.1 : 0.02,
+      shiftX: tall ? 0 : s.facing * -0.04,
     });
   }
 
@@ -500,7 +504,7 @@ export class Game {
     this.timer = 0;
     app.arc.show(false);
     const a = this.sides[0];
-    const b = this.mode === 'targets' ? { x: a.x + 1.2, y: a.y } : this.sides[1];
+    const b = this.mode === 'targets' ? { x: a.x + 1.1, y: a.y } : this.sides[1];
     for (const s of this.sides) s.view.celebrate(true);
     app.director.frame(Math.min(a.x, b.x) - 0.25, Math.max(a.x, b.x) + 0.25, Math.min(a.y, b.y), Math.max(a.y, b.y) + 0.3, { pace: 1.6, yaw: 0, pitch: 0.1 });
     app.onCelebrate(this.sides, this.mode);

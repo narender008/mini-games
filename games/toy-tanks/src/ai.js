@@ -3,7 +3,7 @@
 // misses by a human amount that depends on the level, a bit more on its first
 // shot and a bit less as it "gets its eye in". Easy often lands short or
 // long; hard usually splats you. It never shows off.
-import { BALLS, clamp, rand } from './config.js';
+import { clamp, rand } from './config.js';
 import { launchVelocity } from './sim.js';
 
 const SPREAD = { easy: 0.3, medium: 0.15, hard: 0.06 };
@@ -64,8 +64,4 @@ export class Brain {
     if (this.shots === 0) return 0;
     return Math.random() < 0.3 ? (Math.random() < 0.5 ? -1 : 1) * rand(0.3, 0.8) : 0;
   }
-}
-
-export function ballFor(stageBall, level) {
-  return BALLS[stageBall] ? stageBall : 'confetti';
 }

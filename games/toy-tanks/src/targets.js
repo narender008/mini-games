@@ -11,6 +11,11 @@ import { rng, clamp, GRAVITY } from './config.js';
 
 // Levels per stage: x along the lane (the player's tank is on the left),
 // y above the ground for things in the air. `wind` scales the stage's wind.
+// Items are [kind, distance from the tank, height or block count]. The
+// distances are written for a long lane and squeezed by TARGET_REACH so
+// the whole range fits the close, low camera.
+export const TARGET_REACH = 0.72;
+
 export const TARGET_LEVELS = {
   meadow: [
     { balls: 5, wind: 0.3, stars: [60, 140, 220], items: [['balloon', 0.35, 0.28], ['bullseye', 0.75], ['balloon', 1.05, 0.4], ['bonus', 0.25, 0.45]] },
@@ -145,7 +150,7 @@ export class Targets {
     const R = rng(seed);
     let bi = 0;
     for (const [kind, dx, arg] of level.items) {
-      const x = x0 + dx;
+      const x = x0 + dx * TARGET_REACH;
       const g = this.terrain.heightAt(x, 0);
       const it = { kind, x, alive: true, object: new THREE.Group(), phase: R() * 10 };
       it.object.position.set(x, g, 0);
