@@ -16,7 +16,7 @@ const _q = new THREE.Quaternion();
 const _e = new THREE.Euler();
 
 // one rock, unit size, around the origin
-export function rockGeometry(seed, detail = 10, { cuts = 5, lumpy = 0.38 } = {}) {
+export function rockGeometry(seed, detail = 10, { cuts = 5, lumpy = 0.38, reach = 0.55, flat = 0.9, blocky = 0 } = {}) {
   const R = rng(seed * 7919 + 13);
   let g = new THREE.IcosahedronGeometry(1, detail);
   g.deleteAttribute('normal');
@@ -25,7 +25,17 @@ export function rockGeometry(seed, detail = 10, { cuts = 5, lumpy = 0.38 } = {})
   const planes = [];
   for (let i = 0; i < cuts; i++) {
     const n = new THREE.Vector3(R() * 2 - 1, R() * 1.6 - 0.5, R() * 2 - 1).normalize();
-    planes.push({ n, c: 0.55 + R() * 0.3 });
+    planes.push({ n, c: reach + R() * 0.3 });
+  }
+  // blocky: the rock is first trimmed to a rough slab (four upright faces turned at random, a top and a bottom), then broken by the other cuts
+  if (blocky > 0) {
+    const a0 = R() * 6.283;
+    for (let k = 0; k < 4; k++) {
+      const a = a0 + (k * Math.PI) / 2 + (R() - 0.5) * 0.35;
+      planes.push({ n: new THREE.Vector3(Math.cos(a), (R() - 0.5) * 0.3, Math.sin(a)).normalize(), c: blocky * (0.6 + R() * 0.14) });
+    }
+    planes.push({ n: new THREE.Vector3((R() - 0.5) * 0.2, 1, (R() - 0.5) * 0.2).normalize(), c: blocky * (0.62 + R() * 0.1) });
+    planes.push({ n: new THREE.Vector3(0, -1, 0), c: blocky * 0.75 });
   }
   const o = [R() * 50, R() * 50, R() * 50];
   const p = g.attributes.position;
@@ -39,7 +49,7 @@ export function rockGeometry(seed, detail = 10, { cuts = 5, lumpy = 0.38 } = {})
     // broken faces: push anything beyond a plane back almost onto it
     for (const pl of planes) {
       const d = _v.dot(pl.n) - pl.c;
-      if (d > 0) _v.addScaledVector(pl.n, -d * 0.9);
+      if (d > 0) _v.addScaledVector(pl.n, -d * flat);
     }
     const fine = fbm3(_v.x * 11 + o[2], _v.y * 11, _v.z * 11 + o[0], 2, seed + 9);
     _v.multiplyScalar(1 + fine * 0.022);
@@ -68,6 +78,8 @@ uniform vec3 uRockTint;
 uniform vec3 uCapTint;
 uniform vec2 uCap;         // x: how much of the top the cap covers, y: its softness
 uniform float uCapRough;
+uniform vec4 uHaze;        // x: haze starts (m), y: full (m), z: how far it goes towards the colour
+uniform vec3 uHazeCol;
 varying vec3 vRockPos;
 varying vec3 vRockNormal;
 vec3 rkW;
@@ -100,9 +112,10 @@ vec3 rkTri(sampler2D col, sampler2D nrm, sampler2D orm, float scale, vec3 N, out
 }`;
 
 // rocks: [{ x, y, z, size: [sx, sy, sz], yaw, tilt, seed, detail }]
-// look: { rock, cap, capAmount, capSoft, rockTint, capTint, rockTile, capTile }
+// look: { rock, cap, capAmount, capSoft, rockTint, capTint, rockTile, capTile, haze: { color, near, far, amount } (distant rocks melt into the haze) }
+// a rock may also carry cuts (planes that break it), lumpy, reach (how deep the planes bite, 0.5 = angular), flat (0..1, how fully a cut is flattened) and blocky (0..1: trimmed to a rough slab first)
 export async function buildRocks({ rocks, look = {} }) {
-  const L = { rock: 'rock', cap: 'moss', capAmount: 0.5, capSoft: 0.25, rockTint: 0xffffff, capTint: 0xffffff, rockTile: 1.1, capTile: 3, capRough: 1, ...look };
+  const L = { rock: 'rock', cap: 'moss', capAmount: 0.5, capSoft: 0.25, rockTint: 0xffffff, capTint: 0xffffff, rockTile: 1.1, capTile: 3, capRough: 1, haze: null, ...look };
   const [rock, cap] = await Promise.all([loadPBR(L.rock), L.cap ? loadPBR(L.cap) : null]);
   const parts = [];
   for (const r of rocks) {
@@ -129,6 +142,8 @@ export async function buildRocks({ rocks, look = {} }) {
     uCapTint: { value: new THREE.Color(L.capTint) },
     uCap: { value: new THREE.Vector2(cap ? L.capAmount : 0, L.capSoft) },
     uCapRough: { value: L.capRough },
+    uHaze: { value: new THREE.Vector4(L.haze?.near ?? 0, L.haze?.far ?? 1, L.haze?.amount ?? 0, 0) },
+    uHazeCol: { value: new THREE.Color(L.haze?.color ?? 0xffffff) },
   };
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
   mat.onBeforeCompile = (shader) => {
@@ -157,6 +172,7 @@ vRockNormal = normalize(mat3(modelMatrix) * objectNormal);`,
   float up = N.y + (n - 0.5) * 0.7 + (oR.b - 0.5) * 0.4;
   rkCap = smoothstep(1.0 - uCap.x - uCap.y, 1.0 - uCap.x + uCap.y, up) * step(0.001, uCap.x);
   diffuseColor.rgb *= mix(cR, cC, rkCap);
+  diffuseColor.rgb = mix(diffuseColor.rgb, uHazeCol, uHaze.z * smoothstep(uHaze.x, uHaze.y, length(vViewPosition)));
   rkNormal = normalize(mix(nR, nC, rkCap));
   rkRough = mix(oR.g, oC.g * uCapRough, rkCap);
   rkAO = mix(oR.r, oC.r, rkCap);
