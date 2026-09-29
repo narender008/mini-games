@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>Toy Tanks · Mini Games</title>
+    <meta name="description" content="Glossy toy tanks lob balls across a photoreal meadow, beach, rainy garden, snowy peaks and pine forest. Drag back to aim, and every ball bursts into confetti, stars, mud, snow or rainbow jelly and digs a crater. Nobody ever loses." />
+    <meta name="theme-color" content="#2f6b3a" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <!-- "Add to Home Screen" opens the game full screen, with no browser bars -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Toy Tanks" />
+    <link rel="stylesheet" href="style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../../vendor/three/build/three.module.js",
+          "three/addons/": "../../vendor/three/examples/jsm/",
+          "three-gltf/": "../../vendor/three-gltf/"
+        }
+      }
+    </script>
+  </head>
+  <body data-state="loading" data-mode="cpu" data-stage="meadow">
+    <canvas id="scene" aria-label="Toy Tanks: little toy tanks in a miniature landscape"></canvas>
+
+    <div id="loader" role="progressbar" aria-label="Loading Toy Tanks" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <svg class="loader-logo" viewBox="0 0 64 64" aria-hidden="true"><use href="#i-logo" /></svg>
+      <p class="loader-title">Toy Tanks</p>
+      <div class="bar"><span id="loader-fill"></span></div>
+      <p id="loader-text">Loading…</p>
+    </div>
+
+    <!-- start screen -->
+    <section id="menu" hidden aria-labelledby="title">
+      <a class="chip home-link" href="../../index.html" aria-label="Back to all games">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Games</span>
+      </a>
+      <div class="menu-main">
+        <h1 id="title" class="logo"><span class="sr">Toy Tanks</span><span aria-hidden="true">Toy&nbsp;Tanks</span></h1>
+        <div class="menu-gap"></div>
+        <div class="modes" role="radiogroup" aria-label="How to play"></div>
+        <div class="setup">
+          <div class="row levels" role="radiogroup" aria-label="How good is the computer"></div>
+          <div class="row stages" role="radiogroup" aria-label="Pick a place"></div>
+          <div class="row picks">
+            <div class="tanks" role="radiogroup" aria-label="Pick your tank"></div>
+            <div class="tanks tanks2" role="radiogroup" aria-label="Player two's tank"></div>
+          </div>
+          <div class="row target-levels" role="list" aria-label="Pick a target level"></div>
+        </div>
+        <button type="button" class="play" id="play-btn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" class="fillc" /></svg><span>Play</span>
+        </button>
+      </div>
+      <div class="star-count" aria-label="Stars collected"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-star" /></svg><span id="star-total">0</span></div>
+    </section>
+    <button type="button" class="round fs menu-fs" aria-pressed="false" aria-label="Full screen" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path class="enter" d="M4 9.5V4h5.5M14.5 4H20v5.5M20 14.5V20h-5.5M9.5 20H4v-5.5" /><path class="exit" d="M9.5 4v5.5H4M20 9.5h-5.5V4M14.5 20v-5.5H20M4 14.5h5.5V20" /></svg>
+    </button>
+    <button type="button" class="round mute menu-mute" aria-pressed="false" aria-label="Sound off" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg>
+    </button>
+
+    <!-- in-game HUD -->
+    <div id="hud" hidden>
+      <div class="hud-buttons">
+        <button type="button" class="round" id="to-menu" aria-label="Back to the start screen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5V20h-5.5v-5h-5v5H4z" class="fillc" /></svg>
+        </button>
+        <button type="button" class="round mute" aria-pressed="false" aria-label="Sound off">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg>
+        </button>
+        <button type="button" class="round fs" aria-pressed="false" aria-label="Full screen" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="enter" d="M4 9.5V4h5.5M14.5 4H20v5.5M20 14.5V20h-5.5M9.5 20H4v-5.5" /><path class="exit" d="M9.5 4v5.5H4M20 9.5h-5.5V4M14.5 20v-5.5H20M4 14.5h5.5V20" /></svg>
+        </button>
+      </div>
+
+      <div id="scoreboard" aria-live="polite">
+        <div class="score side0"><span class="dot"></span><span class="pts">0</span><span class="shots"></span></div>
+        <div id="wind" aria-label="Wind">
+          <svg class="flag" viewBox="0 0 48 32" aria-hidden="true"><path class="pole" d="M6 30V3" /><path class="cloth" d="M7 4c7 0 9 3 16 3s9-3 16-3v12c-7 0-9 3-16 3s-9-3-16-3z" /></svg>
+          <span class="wind-bars"><i></i><i></i><i></i></span>
+        </div>
+        <div class="score side1"><span class="shots"></span><span class="pts">0</span><span class="dot"></span></div>
+      </div>
+
+      <div id="turn-banner" aria-live="polite"><span class="dot"></span><span class="who"></span></div>
+
+      <!-- aiming by numbers, for big kids -->
+      <div id="aim-panel" class="big-only">
+        <label class="dial"><span class="dial-label"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-angle" /></svg><span>Angle</span><b id="angle-val">45°</b></span>
+          <input type="range" id="angle" min="7" max="80" step="1" value="45" aria-label="Angle" /></label>
+        <label class="dial"><span class="dial-label"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-power" /></svg><span>Power</span><b id="power-val">55</b></span>
+          <input type="range" id="power" min="0" max="100" step="1" value="55" aria-label="Power" /></label>
+      </div>
+
+      <div id="drive" class="big-only" aria-label="Drive">
+        <button type="button" class="round big-round" id="drive-left" aria-label="Drive left"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg></button>
+        <span class="fuel"><i id="fuel-fill"></i></span>
+        <button type="button" class="round big-round" id="drive-right" aria-label="Drive right"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg></button>
+      </div>
+
+      <div id="balls" role="radiogroup" aria-label="Pick a ball"></div>
+
+      <button type="button" class="fire big-only" id="fire-btn" aria-label="Fire">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pop" /></svg>
+      </button>
+
+      <div id="little-hint" class="little-only" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#i-tap" /></svg></div>
+    </div>
+
+    <div id="points" aria-hidden="true"></div>
+    <svg id="band" aria-hidden="true"><line class="band-line" /><circle class="band-knob" r="16" /></svg>
+
+    <!-- the party at the end -->
+    <section id="party" hidden aria-live="polite">
+      <div class="party-card">
+        <div class="party-stars" aria-label="Stars"></div>
+        <div class="party-scores"></div>
+        <div class="party-buttons">
+          <button type="button" class="play" id="next-btn" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" /></svg><span>Next</span></button>
+          <button type="button" class="play" id="again-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12a7 7 0 1 1 2.1 5" /><path d="M4 18v-5h5" /></svg><span>Again</span></button>
+          <button type="button" class="round" id="party-menu" aria-label="Back to the start screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5V20h-5.5v-5h-5v5H4z" class="fillc" /></svg></button>
+        </div>
+      </div>
+    </section>
+
+    <noscript><p class="noscript">Toy Tanks needs JavaScript to run.</p></noscript>
+
+    <!-- icons -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <linearGradient id="g-tank" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4fd8d2" /><stop offset="1" stop-color="#17908c" /></linearGradient>
+        <linearGradient id="g-tank2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd966" /><stop offset="1" stop-color="#e6a310" /></linearGradient>
+        <radialGradient id="g-ball" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#ffc58a" /><stop offset="1" stop-color="#f06a10" /></radialGradient>
+        <symbol id="i-tank" viewBox="0 0 32 24"><rect x="3" y="15" width="26" height="7" rx="3.5" fill="#1d1f22" /><circle cx="8" cy="18.5" r="2" fill="#555" /><circle cx="13" cy="18.5" r="2" fill="#555" /><circle cx="18" cy="18.5" r="2" fill="#555" /><circle cx="23" cy="18.5" r="2" fill="#555" /><path d="M4 15.5 6.5 11h19l2.5 4.5z" fill="currentColor" /><path d="M10 11c0-4 2.5-6 6-6s6 2 6 6z" fill="currentColor" /><path d="M20 7.5l9-2.5 .7 2.4-9 2.5z" fill="currentColor" /><path d="M16 6.8l.8 1.7 1.9.2-1.4 1.3.4 1.9-1.7-1-1.7 1 .4-1.9-1.4-1.3 1.9-.2z" fill="#fff" /></symbol>
+        <symbol id="i-logo" viewBox="0 0 64 64"><path d="M8 40c10-18 38-18 48 0" fill="none" stroke="#fff" stroke-width="3" stroke-dasharray="4 4" stroke-linecap="round" /><circle cx="52" cy="30" r="6" fill="url(#g-ball)" /><g transform="translate(4 36) scale(1.1)"><use href="#i-tank" color="#29b8b2" width="32" height="24" /></g></symbol>
+        <symbol id="i-robot" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="4" fill="currentColor" /><circle cx="9" cy="13" r="2" fill="#fff" /><circle cx="15" cy="13" r="2" fill="#fff" /><path d="M12 7V3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" /><circle cx="12" cy="3" r="1.6" fill="currentColor" /></symbol>
+        <symbol id="i-two" viewBox="0 0 24 24"><circle cx="8" cy="8" r="3.4" fill="currentColor" /><circle cx="16.5" cy="8" r="3.4" fill="currentColor" opacity="0.75" /><path d="M2 20c0-4 2.7-6.5 6-6.5s6 2.5 6 6.5z" fill="currentColor" /><path d="M11 20c0-4 2.3-6.5 5.5-6.5S22 16 22 20z" fill="currentColor" opacity="0.75" /></symbol>
+        <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#ff5a5a" /><circle cx="12" cy="12" r="6.2" fill="#fff" /><circle cx="12" cy="12" r="3.4" fill="#ff5a5a" /><circle cx="12" cy="12" r="1.2" fill="#fff" /></symbol>
+        <symbol id="i-duck" viewBox="0 0 24 24"><path d="M4 14c0 3.5 3 5.5 8 5.5s8.5-2 8.5-6c-2 1-4 1.2-6 .8.9-.9 1.4-2 1.4-3.4a4 4 0 0 0-8 0c0 1.2.4 2.2 1 3-2.2.2-3.6.2-4.9.1z" fill="#ffd23d" stroke="#c88a0c" stroke-width="0.8" /><path d="M15.2 9.2l2.9.7-2.8 1.2z" fill="#f07a24" /><circle cx="12.8" cy="9.2" r="0.9" fill="#2b2118" /></symbol>
+        <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.8l2.8 5.8 6.4.9-4.6 4.5 1.1 6.3L12 17.3l-5.7 3 1.1-6.3-4.6-4.5 6.4-.9z" fill="#ffc933" stroke="#e59a00" stroke-width="1.1" stroke-linejoin="round" /></symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5" fill="currentColor" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" stroke-width="2.2" /></symbol>
+        <symbol id="i-angle" viewBox="0 0 24 24"><path d="M4 19h16M4 19 17 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" /><path d="M10 19a6 6 0 0 0-1.8-4.3" fill="none" stroke="currentColor" stroke-width="1.8" /></symbol>
+        <symbol id="i-power" viewBox="0 0 24 24"><path d="M13 2 5 13.5h6L10 22l9-12h-6.2z" fill="currentColor" /></symbol>
+        <symbol id="i-pop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5.5" fill="currentColor" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></symbol>
+        <symbol id="i-tap" viewBox="0 0 24 24"><path d="M9.5 21c-2-1.8-4-4.6-4.6-6.2-.4-1 .6-1.8 1.4-1.2l1.9 1.6V5.5a1.4 1.4 0 0 1 2.8 0v6l.3-2a1.4 1.4 0 0 1 2.7.3l.2 1.8.4-1.3a1.3 1.3 0 0 1 2.5.4l.1 1.5.5-.9a1.2 1.2 0 0 1 2.2.7c-.2 3.9-1.3 7-3 9z" fill="#fff" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round" /><circle cx="9.6" cy="4.2" r="3.4" fill="none" stroke="#fff" stroke-width="1.2" opacity="0.7" /></symbol>
+      </defs>
+    </svg>
+
+    <script type="module" src="src/boot.js"></script>
+  </body>
+</html>
