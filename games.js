@@ -74,4 +74,13 @@ window.MINI_GAMES = [
     imageAlt: 'A baby dragon in a child\'s rainbow paint climbing out of a canvas on an easel in a garden art studio at golden hour',
     tags: ['3D', 'Ages 2+', 'Touch friendly'],
   },
+  {
+    slug: 'toy-tanks',
+    name: 'Toy Tanks',
+    description: 'Drag back to lob balls from a glossy toy tank across a meadow, a beach, a rainy garden, snowy peaks and a pine forest, and watch them burst into confetti, glitter, mud, powder snow and jelly that knock the little world about.',
+    path: 'games/toy-tanks/',
+    image: 'games/toy-tanks/cover.jpg',
+    imageAlt: 'Two glossy toy tanks on mossy knolls above a lake in a sunny valley, an orange ball flying from one to the other',
+    tags: ['3D', 'Ages 2+', 'Touch friendly'],
+  },
 ];
