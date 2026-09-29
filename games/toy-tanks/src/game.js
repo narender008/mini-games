@@ -92,7 +92,7 @@ export class Game {
     this.phase = 'intro';
     this.timer = 0;
     app.ui.setScores(this.sides, this.mode);
-    const far = solo ? this.sides[0].x + 1.4 : this.sides[1].x;
+    const far = solo ? this.targetsFar() : this.sides[1].x;
     this.frameLane(this.sides[0].x - 0.3, far + 0.3, 0, 0.45, { pace: 1.4, yaw: 0.16 });
     this.newWind();
   }
@@ -126,6 +126,14 @@ export class Game {
     this.frameAim();
     if (s.human) {
       this.phase = 'aim';
+      // the first shot starts from a sensible aim that falls a little short,
+      // so the whole arc is on screen and the child only has to nudge it
+      if (s.shots === 0 && this.mode !== 'little') {
+        const target = this.mode === 'targets' ? s.x + s.facing * 0.7 : s.x + (this.other.x - s.x) * 0.62;
+        s.angle = 0.86;
+        s.power = this.powerToReach(s, s.angle, target);
+        this.app.ui.setAim(s.angle, s.power);
+      }
       this.app.arc.show(true);
     } else {
       this.phase = 'think';
@@ -138,14 +146,20 @@ export class Game {
     }
   }
 
+  // in target practice the lane reaches just past the farthest target
+  targetsFar() {
+    const a = this.sides[0];
+    return Math.max(a.x + 0.8, this.app.targets.reach + 0.12);
+  }
+
   frameAim() {
     const a = this.sides[0];
-    const b = this.mode === 'targets' ? { x: a.x + 1.4, y: a.y + 0.15 } : this.sides[1];
+    const b = this.mode === 'targets' ? { x: this.targetsFar(), y: Math.min(a.y, this.app.targets.low) } : this.sides[1];
     const s = this.side;
-    const lo = Math.min(a.x, b.x) - 0.3;
-    const hi = Math.max(a.x, b.x) + 0.3;
+    const lo = Math.min(a.x, b.x) - 0.15;
+    const hi = Math.max(a.x, b.x) + 0.15;
     // lean the picture a little towards whoever is aiming
-    this.frameLane(lo, hi, Math.min(a.y, b.y) - 0.08, Math.max(a.y, b.y) + 0.5, { pace: 1.1, yaw: 0.1 * -s.facing, shiftX: s.facing * -0.04 });
+    this.frameLane(lo, hi, Math.min(a.y, b.y) - 0.06, Math.max(a.y, b.y) + 0.45, { pace: 1.1, yaw: 0.08 * -s.facing, shiftX: s.facing * -0.03 });
   }
 
   // Frame part of the lane low and close, like a photo taken lying in the
@@ -158,7 +172,7 @@ export class Game {
     this.app.director.frame(x0, x1, y0 - (short ? 0.16 : 0), y1, {
       margin: tall ? 1.1 : 1.02,
       maxDist: tall ? 6 : undefined,
-      pitch: tall ? 0.1 : 0.02,
+      pitch: tall ? 0.1 : this.app.stage?.pitch ?? 0.02,
       ...opts,
       yaw: (opts.yaw ?? 0) * (tall ? 0.4 : 1),
       shiftX: tall ? 0 : opts.shiftX ?? 0,
@@ -233,13 +247,9 @@ export class Game {
     app.arc.show(false);
   }
 
-  // Little ones: throw a ball to wherever the child tapped (a lane point)
-  lobTo(x) {
-    const s = this.side;
-    if (this.phase !== 'aim' || this.mode !== 'little') return;
-    const ahead = (x - s.x) * s.facing;
-    x = s.x + s.facing * clamp(ahead, 0.25, 2.3);
-    const angle = rand(0.85, 1.0);
+  // the power that lands a shot at elevation `angle` on lane point x (the
+  // real flight, wind and all, by bisection)
+  powerToReach(s, angle, x) {
     let lo = 0;
     let hi = 1;
     let best = 0.5;
@@ -257,6 +267,17 @@ export class Game {
       if (err * s.facing > 0) hi = p;
       else lo = p;
     }
+    return best;
+  }
+
+  // Little ones: throw a ball to wherever the child tapped (a lane point)
+  lobTo(x) {
+    const s = this.side;
+    if (this.phase !== 'aim' || this.mode !== 'little') return;
+    const ahead = (x - s.x) * s.facing;
+    x = s.x + s.facing * clamp(ahead, 0.25, 2.3);
+    const angle = rand(0.85, 1.0);
+    const best = this.powerToReach(s, angle, x);
     s.angle = angle;
     s.power = best;
     // turn the barrel up quickly, then fire
@@ -509,7 +530,7 @@ export class Game {
     this.timer = 0;
     app.arc.show(false);
     const a = this.sides[0];
-    const b = this.mode === 'targets' ? { x: a.x + 1.1, y: a.y } : this.sides[1];
+    const b = this.mode === 'targets' ? { x: this.targetsFar(), y: Math.min(a.y, this.app.targets.low) } : this.sides[1];
     for (const s of this.sides) s.view.celebrate(true);
     this.frameLane(Math.min(a.x, b.x) - 0.25, Math.max(a.x, b.x) + 0.25, Math.min(a.y, b.y) - 0.05, Math.max(a.y, b.y) + 0.4, { pace: 1.6, yaw: 0 });
     app.onCelebrate(this.sides, this.mode);

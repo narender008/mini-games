@@ -23,12 +23,14 @@ import { Targets, TARGET_LEVELS } from './targets.js';
 import { UI } from './ui.js';
 import { canFullscreen, enterFullscreen, toggleFullscreen, isFullscreen, onFullscreenChange } from './fullscreen.js';
 
-// Aerial perspective: haze builds up evenly with distance (plain
-// exponential, not three's squared one, which hides the far hills and
-// mountains all at once). A stage's fog density is haze per metre.
+// Aerial perspective: the air near by is clear and the haze builds up with
+// distance, gently at first and then more (between three's squared law,
+// which hides the far hills and mountains all at once, and a plain
+// exponential, which greys the middle distance). A stage's fog density is
+// one over the distance at which about 60% of the colour is haze.
 THREE.ShaderChunk.fog_fragment = THREE.ShaderChunk.fog_fragment.replace(
   '1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth )',
-  '1.0 - exp( - fogDensity * vFogDepth )',
+  '1.0 - exp( - pow( fogDensity * vFogDepth, 1.6 ) )',
 );
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -46,6 +48,20 @@ const STAGE_MODULES = {
 const SILENT = new Proxy({}, { get: (t, k) => (k === 'muted' ? false : () => {}) });
 // used until (or if) the effects module is missing
 const NO_FX = new Proxy({}, { get: () => () => ({ update() {}, end() {} }) });
+
+// Target practice has the lane to itself: the tank's knoll moves out to the
+// left, with the tank, and the other tank's knoll goes, so nothing stands
+// between the tank and the targets.
+function soloLayout(L) {
+  const [t0, t1] = L.tanks;
+  const dx = Math.min(0, -0.9 - t0);
+  const knolls = [];
+  for (const k of L.knolls) {
+    if (Math.abs(k[0] - t1) < 0.2) continue;
+    knolls.push(Math.abs(k[0] - t0) < 0.2 ? [k[0] + dx, ...k.slice(1)] : k);
+  }
+  return { ...L, tanks: [t0 + dx, t1], knolls, solo: true };
+}
 
 // A plain stand-in tank, used only if the real models fail to load.
 class StandInTank {
@@ -149,6 +165,8 @@ class App {
     sun.shadow.radius = 2.5;
     scene.add(sun, sun.target);
     this.hemi = new THREE.HemisphereLight(0xffffff, 0x777766, 0.3);
+    // lights also shine in the lake's mirror picture (layer 3, see world/water.js)
+    for (const l of [sun, this.hemi]) l.layers.enable(3);
     scene.add(this.hemi);
 
     this.world = {
@@ -249,9 +267,36 @@ class App {
     } catch (err) {
       console.warn('effects warm-up failed', err);
     }
-    if (renderer.compileAsync) await within(renderer.compileAsync(scene, camera), 6000);
+    // compile for the linear HDR picture the scene is drawn into, not for the
+    // screen (the output colour space is part of every program)
+    await this.prepareScene();
     this.render();
     undoBalls();
+  }
+
+  // Compile every program and upload every texture in the scene now, even
+  // for things out of view, so nothing stalls a frame the first time the
+  // camera swings round to it. Programs are compiled for the linear HDR
+  // picture the scene is drawn into, not for the screen (the output colour
+  // space is part of every program).
+  async prepareScene() {
+    const { renderer, scene, camera } = this;
+    const seen = new Set();
+    scene.traverse((o) => {
+      const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+      for (const m of mats) {
+        for (const v of Object.values(m)) if (v?.isTexture && !seen.has(v)) seen.add(v);
+        for (const u of Object.values(m.uniforms ?? {})) if (u?.value?.isTexture && !seen.has(u.value)) seen.add(u.value);
+      }
+    });
+    for (const t of seen) if (!t.isRenderTargetTexture && t.image) renderer.initTexture(t);
+    if (renderer.compileAsync) {
+      const target = renderer.getRenderTarget();
+      renderer.setRenderTarget(this.post.composer.renderTarget1);
+      const compiling = renderer.compileAsync(scene, camera);
+      renderer.setRenderTarget(target);
+      await within(compiling, 6000);
+    }
   }
 
   pickOpponentTank() {
@@ -310,7 +355,7 @@ class App {
     const S = (this.stage = mod.STAGE);
     const L = S.layouts;
     const li = layoutIndex ?? (QUERY.has('layout') ? clamp(Number(QUERY.get('layout')) || 0, 0, L.length - 1) : Math.floor(Math.random() * L.length));
-    this.layout = L[li];
+    this.layout = this.sel.mode === 'targets' ? soloLayout(L[li]) : L[li];
     this.world.ground = GROUND[S.id] ?? S.ground.kind;
     // lighting and the sky
     const env = await this.loadEnv(S.id);
@@ -328,11 +373,13 @@ class App {
     this.scene.environmentIntensity = S.envIntensity ?? 1;
     this.scene.background = env.envMap ? null : new THREE.Color(0x9ec4e8);
     const sunSpec = env.sun ?? { dir: new THREE.Vector3().fromArray(S.sun.dir).normalize(), color: new THREE.Color(S.sun.color), intensity: S.sun.intensity };
-    this.sun.color.copy(sunSpec.color);
-    this.sun.intensity = S.sunIntensity ?? sunSpec.intensity;
+    this.sun.color.copy(sunSpec.color).multiply(new THREE.Color(S.sunTint ?? 0xffffff));
+    this.sun.intensity = (S.sunIntensity ?? sunSpec.intensity) * (S.sunBoost ?? 1);
     this.sunDir = sunSpec.dir.clone();
     this.sun.position.copy(this.sunDir).multiplyScalar(8);
     this.sun.target.position.set(0, 0, 0);
+    // the thin bright rim round the glossy tanks, like a photo into the light (see tanks.js)
+    this.tanksModule?.TANK_RIM.value.set(S.rimColor ?? 0xdce8ff).multiplyScalar(this.sun.intensity * (S.rim ?? 0.3) * 0.12);
     this.hemi.color.set(S.hemi.sky);
     this.hemi.groundColor.set(S.hemi.ground);
     this.hemi.intensity = env.envMap ? S.hemi.intensity * 0.3 : S.hemi.intensity;
@@ -347,7 +394,7 @@ class App {
       this.terrain.dispose();
     }
     const ground = { ...S.ground, textures: await this.loadGround(S.ground) };
-    this.terrain = new Terrain({ quality: this.quality, stage: { height: S.heightFor(this.layout), ground, far: S.far, wide: S.wide, cover: S.cover } });
+    this.terrain = new Terrain({ quality: this.quality, stage: { height: S.heightFor(this.layout), ground, far: S.far, wide: S.wide, cover: S.cover, patch: S.patchFor?.(this.layout) } });
     this.scene.add(this.terrain.mesh);
     await tick();
     // the scenery
@@ -365,6 +412,8 @@ class App {
       }
     }
     this.flight.shapes = [...this.tankShapes, ...(this.stageView?.shapes ?? [])];
+    if (!first) await this.prepareScene();
+    if (this.stageId !== id) return;
     this.audio.setStage?.(id);
     document.body.dataset.stage = id;
     this.placeIdleTanks();
@@ -380,6 +429,7 @@ class App {
       // the bottom few degrees fade into the scene's fog colour, so the
       // hazy far hills of the 3D scenery meet the photo without a seam
       uHorizon: { value: g.horizon },
+      uHorizonTop: { value: g.horizonTop ?? 0.1 },
       uFogColor: { value: new THREE.Color() },
       uHaze: { value: g.haze },
       uHazeColor: { value: new THREE.Color(g.hazeColor ?? 0xb8c8d8).convertSRGBToLinear() },
@@ -393,7 +443,7 @@ class App {
         .replace('#include <common>', '#include <common>\nvarying float vElev;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvElev = normalize(position).y;');
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying float vElev;\nuniform float uHorizon;\nuniform vec3 uFogColor;\nuniform float uHaze;\nuniform vec3 uHazeColor;\nuniform float uSat;\nuniform float uContrast;\nuniform float uGain;')
+        .replace('#include <common>', '#include <common>\nvarying float vElev;\nuniform float uHorizon;\nuniform float uHorizonTop;\nuniform vec3 uFogColor;\nuniform float uHaze;\nuniform vec3 uHazeColor;\nuniform float uSat;\nuniform float uContrast;\nuniform float uGain;')
         .replace(
           '#include <map_fragment>',
           `#include <map_fragment>
@@ -406,7 +456,7 @@ class App {
   vec3 p = sqrt(max(c, 0.0));
   p = mix(p, p * p * (3.0 - 2.0 * p), uContrast);
   diffuseColor.rgb = p * p * uGain;
-  diffuseColor.rgb = mix(diffuseColor.rgb, uFogColor, uHorizon * (1.0 - smoothstep(0.02, 0.1, vElev)));
+  diffuseColor.rgb = mix(diffuseColor.rgb, uFogColor, uHorizon * (1.0 - smoothstep(0.02, uHorizonTop, vElev)));
 }`,
         );
     };
@@ -445,8 +495,8 @@ class App {
   async loadGround(g) {
     try {
       const E = (this.envModule ??= await import('./env.js'));
-      const [base, dug, far] = await Promise.all([E.loadPBR(g.base), E.loadPBR(g.dug), g.far ? E.loadPBR(g.far) : null]);
-      return { base, dug, far };
+      const [base, dug, far, patch] = await Promise.all([E.loadPBR(g.base), E.loadPBR(g.dug), g.far ? E.loadPBR(g.far) : null, g.patch ? E.loadPBR(g.patch) : null]);
+      return { base, dug, far, patch };
     } catch (err) {
       console.warn('ground textures unavailable', err);
       return null;
@@ -504,7 +554,7 @@ class App {
     save('targetLevel', sel.targetLevel);
     const targetLevel = TARGET_LEVELS[sel.stage]?.[sel.targetLevel] ?? TARGET_LEVELS.meadow[0];
     // target practice starts further left, so the targets have room
-    const xs = sel.mode === 'targets' ? [Math.min(this.layout.tanks[0], -0.9), this.layout.tanks[1]] : this.layout.tanks;
+    const xs = this.layout.tanks;
     this.game.start({ mode: sel.mode, stage: sel.stage, level: sel.level, tanks: this.tanks, xs, humans, balls: [ball, SIGNATURE[sel.stage]], targetLevel });
     this.state = 'playing';
     this.ui.show('playing');

@@ -231,6 +231,20 @@ export class Targets {
   }
 
   // the ball touched a pass-through target (balloon or bonus star)
+  // the farthest target from the tank and the lowest ground under any of
+  // them, for framing the lane around them
+  get reach() {
+    let x = -Infinity;
+    for (const it of this.items) x = Math.max(x, it.x);
+    return x;
+  }
+
+  get low() {
+    let y = Infinity;
+    for (const it of this.items) y = Math.min(y, it.object.position.y);
+    return y;
+  }
+
   collect(shape) {
     const it = shape.target;
     if (!it || !it.alive) return 0;

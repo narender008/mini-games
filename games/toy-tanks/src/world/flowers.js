@@ -4,39 +4,46 @@
 // mesh for all the stems and one per kind of flower head. They nod in the
 // wind, and a crater digs them away like the grass.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three-gltf/utils/BufferGeometryUtils.js';
 import { CRATER_GLSL } from '../terrain.js';
 import { rng } from '../config.js';
 
 // a flower head, radius 1, facing up (+y), centred on the origin.
 // Petals are real geometry (no cut-out textures), so they stay crisp.
-function headGeometry({ petals = 5, len = 1, width = 0.5, cup = 0.3, droop = 0, centre = 0.25, centreColor = 0xf2c230 }) {
+function headGeometry({ petals = 5, len = 1, width = 0.5, cup = 0.3, droop = 0, centre = 0.25, centreColor = 0xf2c230, layers = 1 }) {
   const pos = [];
   const col = [];
   const tint = []; // 1 on petals (take the flower's own colour), 0 elsewhere
   const idx = [];
   const cc = new THREE.Color(centreColor);
   const SEG = 4;
-  for (let p = 0; p < petals; p++) {
-    const a = (p / petals) * Math.PI * 2 + (p % 2) * 0.08;
-    const ca = Math.cos(a);
-    const sa = Math.sin(a);
-    const base = pos.length / 3;
-    for (let i = 0; i <= SEG; i++) {
-      const t = i / SEG;
-      const r = centre * 0.6 + t * len * (1 - centre * 0.6);
-      // cupped up near the centre, drooping at the tip
-      const y = Math.sin(t * Math.PI * 0.5) * cup - t * t * droop;
-      const w = (i === SEG ? 0.15 : Math.sin(Math.min(1, t * 1.2 + 0.15) * Math.PI) * 0.5 + 0.05) * width * (Math.PI * 2 * r / petals) * 0.9;
-      for (const s of [-1, 1]) {
-        pos.push(ca * r - sa * w * s, y + (s > 0 ? 0.002 : 0), sa * r + ca * w * s);
-        // petals are paler at the base, like real ones
-        const k = 0.82 + 0.18 * t;
-        col.push(k, k, k);
-        tint.push(1);
-      }
-      if (i < SEG) {
-        const v = base + i * 2;
-        idx.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
+  // layers: rings of petals, the inner ones shorter, more cupped and stood higher (zinnias, dahlias)
+  for (let layer = 0; layer < layers; layer++) {
+    const lk = 1 - 0.5 * (layer / layers);
+    const lift = layer * 0.14 * (cup + 0.2);
+    const cupL = cup * (1 + layer * 0.5);
+    for (let p = 0; p < petals; p++) {
+      const a = (p / petals) * Math.PI * 2 + (p % 2) * 0.08 + layer * (Math.PI / petals);
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      const base = pos.length / 3;
+      for (let i = 0; i <= SEG; i++) {
+        const t = i / SEG;
+        const r = centre * 0.6 + t * len * lk * (1 - centre * 0.6);
+        // cupped up near the centre, drooping at the tip
+        const y = Math.sin(t * Math.PI * 0.5) * cupL - t * t * droop * (1 - 0.5 * (layer / layers)) + lift;
+        const w = (i === SEG ? 0.15 : Math.sin(Math.min(1, t * 1.2 + 0.15) * Math.PI) * 0.5 + 0.05) * width * (Math.PI * 2 * r / petals) * 0.9;
+        for (const s of [-1, 1]) {
+          pos.push(ca * r - sa * w * s, y + (s > 0 ? 0.002 : 0), sa * r + ca * w * s);
+          // petals are paler at the base, like real ones (and darker deeper in the bloom)
+          const k = (0.82 + 0.18 * t) * (1 - 0.1 * layer / layers);
+          col.push(k, k, k);
+          tint.push(1);
+        }
+        if (i < SEG) {
+          const v = base + i * 2;
+          idx.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
+        }
       }
     }
   }
@@ -45,7 +52,7 @@ function headGeometry({ petals = 5, len = 1, width = 0.5, cup = 0.3, droop = 0, 
   const dp = dome.attributes.position;
   const base = pos.length / 3;
   for (let i = 0; i < dp.count; i++) {
-    pos.push(dp.getX(i), dp.getY(i) * 0.6 + cup * 0.25, dp.getZ(i));
+    pos.push(dp.getX(i), dp.getY(i) * 0.6 + cup * 0.25 + (layers - 1) * 0.1, dp.getZ(i));
     col.push(cc.r, cc.g, cc.b);
     tint.push(0);
   }
@@ -89,15 +96,49 @@ function stemGeometry() {
   return g;
 }
 
+// a globe of little florets (allium, hydrangea, agapanthus): a ball of small
+// open flowers, each facing outwards; radius 1, centred on the origin
+function globeGeometry({ florets = 30, floret = 0.26, spread = 0.9 }) {
+  const R = rng(97);
+  const parts = [];
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const up = new THREE.Vector3(0, 1, 0);
+  const n = new THREE.Vector3();
+  for (let i = 0; i < florets; i++) {
+    // Fibonacci spiral over the sphere, the underside left out
+    const f = (i + 0.5) / florets;
+    const y = 1 - f * (1 + spread);
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const a = i * 2.39996;
+    n.set(Math.cos(a) * r, y, Math.sin(a) * r).normalize();
+    q.setFromUnitVectors(up, n);
+    const g = headGeometry({ petals: 5, len: 1, width: 0.85, cup: 0.35, droop: 0.05, centre: 0.2, centreColor: 0xf7e9a0 });
+    const s = floret * (0.85 + R() * 0.3);
+    m.compose(n.clone().multiplyScalar(0.8), q, new THREE.Vector3(s, s, s));
+    g.applyMatrix4(m);
+    parts.push(g);
+  }
+  const g = mergeGeometries(parts, false);
+  parts.forEach((p) => p.dispose());
+  return g;
+}
+
 export const FLOWER_KINDS = {
   daisy: { petals: 14, len: 1, width: 0.55, cup: 0.12, droop: 0.08, centre: 0.3, centreColor: 0xf5b82a, rough: 0.55 },
   buttercup: { petals: 5, len: 1, width: 1.05, cup: 0.42, droop: 0, centre: 0.24, centreColor: 0xd9a820, rough: 0.22 },
   cup: { petals: 6, len: 1, width: 0.9, cup: 0.55, droop: -0.05, centre: 0.18, centreColor: 0xfff1b0, rough: 0.5 },
   star: { petals: 5, len: 1, width: 0.7, cup: 0.1, droop: 0.1, centre: 0.2, centreColor: 0xffe066, rough: 0.5 },
+  // a three-leaved clover head, low in the grass
+  clover: { petals: 3, len: 1, width: 1.7, cup: 0.12, droop: 0.12, centre: 0.06, centreColor: 0x3d7424, rough: 0.6 },
+  // big garden blooms: a layered zinnia or dahlia, a lily, and a globe of florets
+  zinnia: { petals: 11, len: 1, width: 1.05, cup: 0.25, droop: 0.16, centre: 0.2, centreColor: 0xd9a020, rough: 0.4, layers: 3 },
+  lily: { petals: 6, len: 1, width: 0.75, cup: 0.85, droop: 0.25, centre: 0.1, centreColor: 0xffe08a, rough: 0.4 },
+  globe: { globe: true, florets: 30, rough: 0.45 },
 };
 
 // spec: { count, area: [x0, x1, z0, z1], mix: [{ kind, colors: [hex...], weight, size: [r0, r1], height: [h0, h1] }],
-//         near(x, z) -> 0..1 extra density (e.g. around the knolls), keepOut(x, z) }
+//         near(x, z) -> 0..1 extra density (e.g. around the knolls), density(x, z) -> 0..1 (replaces the default), keepOut(x, z) }
 export class Flowers {
   constructor({ terrain, quality, spec, seed = 11 }) {
     const R = rng(seed);
@@ -113,7 +154,7 @@ export class Flowers {
       const cx = x0 + R() * (x1 - x0);
       const cz = z0 + R() * (z1 - z0);
       const front = cz > 0.1 ? 1 : cz > -0.6 ? 0.35 : 0.2;
-      const d = Math.min(1, front + (spec.near ? spec.near(cx, cz) : 0));
+      const d = spec.density ? spec.density(cx, cz) : Math.min(1, front + (spec.near ? spec.near(cx, cz) : 0));
       if (R() > d) continue;
       if (spec.keepOut && spec.keepOut(cx, cz)) continue;
       let w = R() * wsum;
@@ -140,7 +181,7 @@ export class Flowers {
     stem.name = 'flower-stems';
     const heads = mix.map((m, k) => {
       const kind = FLOWER_KINDS[m.kind];
-      const mesh = new THREE.InstancedMesh(headGeometry(kind), this.material({ roughness: kind.rough, side: THREE.DoubleSide, vertexColors: true }, 'flower-head', true), Math.max(1, spots[k].length));
+      const mesh = new THREE.InstancedMesh(kind.globe ? globeGeometry(kind) : headGeometry(kind), this.material({ roughness: kind.rough, side: THREE.DoubleSide, vertexColors: true }, 'flower-head', true), Math.max(1, spots[k].length));
       mesh.name = `flowers-${m.kind}`;
       mesh.count = spots[k].length;
       return mesh;
@@ -168,7 +209,7 @@ export class Flowers {
         stem.setMatrixAt(si++, m4);
         const tip = p.set(0, 1, 0).applyQuaternion(q).multiplyScalar(h).add(sc.set(f.x, y - 0.004, f.z));
         // heads face up and a little towards the camera and the sun
-        e.set(-0.25 - f.r * 0.35, yaw * 0.2, (f.s - 0.5) * 0.5);
+        e.set(-0.25 - f.r * 0.35 - (f.m.tilt ?? 0), yaw * 0.2, (f.s - 0.5) * 0.5);
         q.setFromEuler(e);
         m4.compose(tip, q, sc.set(rad, rad, rad));
         heads[k].setMatrixAt(i, m4);

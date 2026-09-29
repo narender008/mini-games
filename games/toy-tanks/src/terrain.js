@@ -29,7 +29,7 @@ const MAX_CRATERS = 4;
 // cells grow away from the strip, up to maxCell, and beyond 60 m keep
 // growing with distance (far hills need few vertices)
 function axis(lo, hi, stripLo, stripHi, cell, growth, maxCell) {
-  const cap = (v) => maxCell * (1 + Math.max(0, Math.abs(v) - 60) / 60);
+  const cap = (v) => maxCell * (1 + Math.max(0, Math.abs(v) - 60) / 120);
   const out = [];
   for (let v = stripLo; v <= stripHi + 1e-9; v += cell) out.push(+v.toFixed(5));
   let step = cell;
@@ -190,7 +190,9 @@ export class Terrain {
     const nrm = new Float32Array(nx * nz * 3);
     // how wooded the ground is (seen from afar as a forest canopy)
     const coverFn = this.stage.cover;
-    const cov = new Float32Array(nx * nz);
+    // and where a second ground (moss on the knolls, say) covers the first
+    const patchFn = this.stage.patch;
+    const cov = new Float32Array(nx * nz * 2);
     const n = new THREE.Vector3();
     for (let j = 0; j < nz; j++) {
       const z = zs[j];
@@ -202,7 +204,8 @@ export class Terrain {
         pos[k] = x;
         pos[k + 1] = y;
         pos[k + 2] = z;
-        if (coverFn && (Math.abs(x) > BASE_X || Math.abs(z) > BASE_Z)) cov[j * nx + i] = coverFn(x, z, y);
+        if (coverFn && (Math.abs(x) > BASE_X || Math.abs(z) > BASE_Z)) cov[(j * nx + i) * 2] = coverFn(x, z, y);
+        if (patchFn && Math.abs(x) <= BASE_X && Math.abs(z) <= BASE_Z) cov[(j * nx + i) * 2 + 1] = patchFn(x, z);
         const ex = Math.max(0.005, 0.5 * (xs[Math.min(nx - 1, i + 1)] - xs[Math.max(0, i - 1)]));
         n.set(-(h(x + ex, z) - h(x - ex, z)) / (2 * ex), 1, -(h(x, z + ez) - h(x, z - ez)) / (2 * ez)).normalize();
         nrm[k] = n.x;
@@ -231,7 +234,7 @@ export class Terrain {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
-    geo.setAttribute('aCover', new THREE.BufferAttribute(cov, 1));
+    geo.setAttribute('aCover', new THREE.BufferAttribute(cov, 2));
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.computeBoundingSphere();
     geo.boundingSphere.radius += 1;
@@ -274,10 +277,19 @@ export class Terrain {
       // water line, width of the shore band above it; its colour
       uShore: { value: new THREE.Vector2(g.shore?.y ?? -1e4, g.shore?.width ?? 0.5) },
       uShoreColor: { value: new THREE.Color(g.shore?.color ?? 0x8f8468) },
+      uRockColor: { value: new THREE.Color(g.farRock ?? 0x7d7a72) },
+      uCarve: { value: g.carve ?? 0.08 },
+      tPatchCol: { value: T.patch?.map ?? null },
+      tPatchNrm: { value: T.patch?.normalMap ?? null },
+      tPatchOrm: { value: T.patch?.ormMap ?? null },
+      uPatchScale: { value: 1 / (g.patchTile ?? 0.4) },
+      uPatchTint: { value: new THREE.Color(g.patchTint ?? 0xffffff) },
     };
-    mat.defines = { USE_GROUND_TEX: has ? '' : undefined };
-    if (!has) delete mat.defines.USE_GROUND_TEX;
-    mat.customProgramCacheKey = () => `terrain-${has}`;
+    const patch = has && !!T.patch;
+    mat.defines = {};
+    if (has) mat.defines.USE_GROUND_TEX = '';
+    if (patch) mat.defines.USE_PATCH = '';
+    mat.customProgramCacheKey = () => `terrain-${has}-${patch}`;
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, U, mat.userData.uniforms);
       shader.vertexShader = shader.vertexShader
@@ -285,10 +297,12 @@ export class Terrain {
           '#include <common>',
           `#include <common>
 ${CRATER_GLSL}
-attribute float aCover;
+attribute vec2 aCover;
 varying vec3 vGround; // world x, z and height change
 varying vec4 vDeform;
-varying vec2 vLand;   // woodland cover, height`,
+varying vec2 vLand;   // woodland cover, height
+varying float vPatch;
+varying vec3 vWN;     // world normal (the terrain is not transformed)`,
         )
         .replace(
           '#include <beginnormal_vertex>',
@@ -305,7 +319,9 @@ varying vec2 vLand;   // woodland cover, height`,
         .replace(
           '#include <begin_vertex>',
           `vec3 transformed = position;
-vLand = vec2(aCover, position.y);
+vLand = vec2(aCover.x, position.y);
+vPatch = aCover.y;
+vWN = objectNormal;
 float dH = deformHeight(position.xz);
 transformed.y += dH;
 vDeform = texture2D(tDeform, deformUv(position.xz));
@@ -319,6 +335,17 @@ vGround = vec3(position.x, position.z, dH);`,
 varying vec3 vGround;
 varying vec4 vDeform;
 varying vec2 vLand;
+varying float vPatch;
+varying vec3 vWN;
+uniform vec3 uRockColor;
+uniform float uCarve;
+float gFar;      // 0 near, 1 for the far hills and mountains
+vec2 gCarve;     // slope of the carved ridges and gullies (world x, -z)
+uniform sampler2D tPatchCol;
+uniform sampler2D tPatchNrm;
+uniform sampler2D tPatchOrm;
+uniform float uPatchScale;
+uniform vec3 uPatchTint;
 uniform vec3 uCoverColor;
 uniform vec2 uShore;
 uniform vec3 uShoreColor;
@@ -342,6 +369,11 @@ float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453)
 float gNoise(vec2 p) {
   vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
   return mix(mix(gHash(i), gHash(i + vec2(1, 0)), u.x), mix(gHash(i + vec2(0, 1)), gHash(i + vec2(1, 1)), u.x), u.y);
+}
+float gRidge(vec2 p) {
+  float a = 1.0 - abs(gNoise(p) * 2.0 - 1.0);
+  float b = 1.0 - abs(gNoise(p * 2.3 + 5.1) * 2.0 - 1.0);
+  return a * a * 0.65 + b * b * 0.35;
 }
 float gMix;      // 0 = the stage's ground, 1 = dug-up ground
 float gWet;
@@ -368,6 +400,22 @@ float gAO;`,
   // from afar, woods read as a lumpy dark canopy (the trees stand on it)
   float lumps = gNoise(wuv * 0.09) * 0.55 + gNoise(wuv * 0.37 + 7.0) * 0.3 + gNoise(wuv * 1.3) * 0.15;
   cb = mix(cb, uCoverColor * (0.55 + 0.8 * lumps), clamp(vLand.x, 0.0, 1.0) * smoothstep(6.0, 30.0, dist));
+  // far hills and mountains: bare rock on the steep faces, and ridges and
+  // gullies carved into the shading so they read as real land, not a smooth
+  // blanket (the geometry out there is coarse)
+  gFar = smoothstep(35.0, 140.0, dist);
+  gCarve = vec2(0.0);
+  if (gFar > 0.0) {
+    vec2 p = wuv / 38.0;
+    float e = 0.03;
+    float h0 = gRidge(p);
+    gCarve = vec2(gRidge(p + vec2(e, 0.0)) - h0, gRidge(p + vec2(0.0, e)) - h0) / e * uCarve * gFar;
+    vec3 wn = normalize(vWN);
+    float steep = 1.0 - smoothstep(0.6, 0.86, wn.y - dot(gCarve, gCarve) * 0.02);
+    vec3 rock = uRockColor * (0.65 + 0.7 * gNoise(wuv * 0.05)) * (0.8 + 0.4 * h0);
+    cb = mix(cb, rock, steep * gFar * (1.0 - 0.6 * clamp(vLand.x, 0.0, 1.0)));
+    cb *= 0.82 + 0.36 * h0 * gFar + (1.0 - gFar) * 0.18;
+  }
   // a pebbly shore just above the water
   float sh = 1.0 - smoothstep(uShore.x, uShore.x + uShore.y * (0.6 + 0.8 * lumps), vLand.y);
   cb = mix(cb, uShoreColor * (0.8 + 0.4 * n), sh);
@@ -378,6 +426,17 @@ float gAO;`,
   gNormal = normalize(mix(nb, nd, gMix));
   gRough = mix(bo.g * uRough.x, dO.g * uRough.y, gMix);
   gAO = mix(bo.r, dO.r, gMix);
+#ifdef USE_PATCH
+  {
+    // the second ground grows raggedly over the first, and craters dig it away
+    vec4 po = texture2D(tPatchOrm, wuv * uPatchScale);
+    float pm = smoothstep(0.35, 0.65, vPatch + (po.b - 0.5) * 0.6 + (n - 0.5) * 0.3) * (1.0 - gMix);
+    col = mix(col, texture2D(tPatchCol, wuv * uPatchScale).rgb * uPatchTint, pm);
+    gNormal = normalize(mix(gNormal, texture2D(tPatchNrm, wuv * uPatchScale).xyz * 2.0 - 1.0, pm));
+    gRough = mix(gRough, po.g, pm);
+    gAO = mix(gAO, po.r, pm);
+  }
+#endif
 #else
   gMix = smoothstep(0.35, 0.65, vDeform.g * 1.25 + (n - 0.5) * 0.5);
   vec3 col = mix(uBaseColor * (0.8 + 0.4 * n), uDugColor * (0.85 + 0.3 * n), gMix);
@@ -405,6 +464,9 @@ float gAO;`,
   vec3 nm = gNormal;
   nm.xy *= uNormalScale * mix(1.0, 0.4, gWet);
   normal = normalize(t * nm.x + b * nm.y + normal * nm.z);
+#ifdef USE_GROUND_TEX
+  if (gFar > 0.0) normal = normalize(normal - (viewMatrix * vec4(gCarve.x, 0.0, -gCarve.y, 0.0)).xyz);
+#endif
 }`,
         )
         .replace('#include <aomap_fragment>', `#include <aomap_fragment>\nreflectedLight.indirectDiffuse *= gAO;\nreflectedLight.indirectSpecular *= mix(gAO, 1.0, 0.5);`);

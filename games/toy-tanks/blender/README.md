@@ -41,3 +41,19 @@ Node names: `tank` > `hull` > (`turret` > `barrel` > `muzzle`, `wheel_L0..`, `wh
 Materials: `paint` (the body colour; the game tints it), `rubber`, `hub`, `star`, `metal`.
 
 Node extras (kept by gltfpack): `tank` has `dims` (length, width, height in metres), `muzzleHeight`, `muzzleX` and `contacts` (front and rear road-wheel x); each wheel has `radius` and `kind`; each track has `path` (its centre line, x and y pairs) and `length`, which the game uses to scroll the tread round the loop.
+
+## The stage props
+
+Thirteen toy-scale props (`sandcastle`, `bucket`, `spade`, `shell-scallop`, `shell-spiral`, `shell-cockle`, `starfish`, `watering-can`, `fence`, `flowerpot`, `rope-bridge`, `log`, `mushroom`) are built the same way, into `../assets/models/prop-<id>.glb`:
+
+```sh
+./build_props.sh                    # all of them
+./build_props.sh sandcastle,log     # some of them
+Blender -b --factory-startup --python props.py -- --only bucket --preview /tmp/prop-previews --views ref,front --samples 48 --res 900x640
+```
+
+- `props.py`: the exporter and the preview renderer (`--only`, `--raw`, `--preview`, `--views ref|front|top|side|back|low`, `--plain 1` for flat colours instead of the photographed sets).
+- `props_beach.py`, `props_garden.py`, `props_forest.py`: the designs, one function per prop. Millimetres, origin at the middle of the base, front is -Y (glTF +Z, towards the camera).
+- `plib.py`: what the props share (materials, vertex colours, UV unwrapping, welded grids, swept tubes, shell surfaces, booleans, noise). Builds on `lib.py`.
+
+Materials named `sand-wet`, `wood`, `rope`, `bark`, `moss` and `soil` are replaced by the game with the photographed sets in `../assets/tex/` (`src/props.js`); their UVs are in texture tiles, each part unwrapped at the scale that suits it. A 1x1 stand-in texture keeps a UV transform through gltfpack (without a texture it would quantise the UVs and lose their range). The other materials are plain PBR whose colour is folded into the vertex colours, which also carry the weathering, wetness and painted detail. `props.py --preview` renders with the same photographed sets, so what you see is close to the game.

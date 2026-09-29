@@ -14,8 +14,8 @@ import { MeshoptDecoder } from 'three-gltf/libs/meshopt_decoder.module.js';
 // chooser order: id, model, default colour (sRGB hex), stars needed to unlock
 export const TANKS = [
   { id: 'buddy', model: 'classic', color: 0x1fb3b0, stars: 0 }, // teal
-  { id: 'sunny', model: 'chunky', color: 0xffc21f, stars: 0 }, // yellow
-  { id: 'rosie', model: 'classic', color: 0xe8392f, stars: 0 }, // red
+  { id: 'sunny', model: 'classic', color: 0xffc21f, stars: 0 }, // yellow
+  { id: 'rosie', model: 'chunky', color: 0xe8392f, stars: 0 }, // red
   { id: 'pip', model: 'mini', color: 0x7ccf2e, stars: 3 }, // lime
   { id: 'blue', model: 'dome', color: 0x2f7fe0, stars: 6 }, // blue
   { id: 'plum', model: 'twin', color: 0x8a4fd6, stars: 10 }, // purple
@@ -24,6 +24,9 @@ export const TANKS = [
 ];
 
 const MODEL_URL = (model) => new URL(`../assets/models/tank-${model}.glb`, import.meta.url).href;
+// the rim of sky light round a glossy toy seen into the light: a Fresnel glow
+// on the tanks alone (a real back light would also wash over the hills)
+export const TANK_RIM = { value: new THREE.Color(0, 0, 0) };
 const MAX_SPLATS = 8;
 const SPLAT_LIFE = 12; // seconds until a splat has faded away
 const SPLAT_KINDS = { confetti: 0, star: 1, mud: 2, snow: 3, jelly: 4, paint: 5 };
@@ -378,7 +381,7 @@ function patchMaterial(material, view, opts) {
   const { peel = false, splats = true, track = false } = opts;
   const u = view.uniforms;
   material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, { uHullInv: u.uHullInv, uSplatA: u.uSplatA, uSplatB: u.uSplatB, uSplatC: u.uSplatC });
+    Object.assign(shader.uniforms, { uHullInv: u.uHullInv, uSplatA: u.uSplatA, uSplatB: u.uSplatB, uSplatC: u.uSplatC, uRim: TANK_RIM });
     if (track) Object.assign(shader.uniforms, { uTrackTab: view.template.trackTable ? { value: view.template.trackTable.tex } : { value: null }, uTrackShift: u.uTrackShift, uTrackN: { value: TRACK_TABLE } });
     let vs = shader.vertexShader;
     let fs = shader.fragmentShader;
@@ -423,6 +426,7 @@ function patchMaterial(material, view, opts) {
     vs = vs.replace('#include <project_vertex>', `#include <project_vertex>
       vHullPos = (uHullInv * modelMatrix * vec4(transformed, 1.0)).xyz;`);
     fs = fs.replace('#include <common>', `#include <common>
+      uniform vec3 uRim;
       ${SPLAT_PARS}
       ${peel ? '#define TK_PEEL' : ''}`);
     fs = fs.replace('#include <color_fragment>', `#include <color_fragment>
@@ -438,7 +442,12 @@ function patchMaterial(material, view, opts) {
         clearcoatNormal = tkBump(-vViewPosition, clearcoatNormal, peelH * 1.6 + sBumpH * sMask, faceDirection);
       #endif`);
     fs = fs.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-      totalEmissiveRadiance += sCol * sGlow * sMask;`);
+      totalEmissiveRadiance += sCol * sGlow * sMask;
+      {
+        // brightest on the upper edges, where the sky is behind them
+        float rimF = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 4.0);
+        totalEmissiveRadiance += uRim * rimF * clamp(0.35 + 0.65 * normal.y, 0.0, 1.0) * (1.0 - sMask);
+      }`);
     fs = fs.replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
       #ifdef USE_CLEARCOAT
         material.clearcoat = mix(material.clearcoat, sCoat, sMask);
@@ -456,8 +465,8 @@ function makeMaterials(view, color, quality) {
   const low = quality && quality.tier === 'low';
   const c = new THREE.Color(color);
   const paint = new THREE.MeshPhysicalMaterial({
-    name: 'paint', color: c, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: low ? 0.12 : 0.09,
-    sheen: low ? 0 : 0.18, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xffffff).lerp(c, 0.7), ior: 1.5,
+    name: 'paint', color: c, roughness: 0.2, metalness: 0, clearcoat: 1, clearcoatRoughness: low ? 0.07 : 0.035, envMapIntensity: 1.3,
+    sheen: 0, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xffffff).lerp(c, 0.7), ior: 1.5,
   });
   const rubber = new THREE.MeshPhysicalMaterial({
     name: 'rubber', color: 0x0d0d0f, roughness: 0.76, metalness: 0, clearcoat: 0.001, sheen: low ? 0 : 0.4, sheenRoughness: 0.6, sheenColor: new THREE.Color(0x4a4a50),
