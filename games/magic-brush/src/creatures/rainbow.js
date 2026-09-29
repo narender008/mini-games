@@ -45,7 +45,7 @@ export class Rainbow extends Friend {
     this.shared.uSplat.value = 0.25;
     this.walkSpeed = 0;
     this.turnRate = 0.8;
-    this.worldScale = 3.5;
+    this.worldScale = 4.6;
     this.hopScale = 0.6;
     this.sparkleColors = SPARKS;
     this.puffs = [new Spring(0, 2.4, 0.25), new Spring(0, 2.4, 0.25)];

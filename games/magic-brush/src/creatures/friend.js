@@ -150,8 +150,8 @@ export class Friend {
 
   // A pair of eyes (and lids) on the head bone. c: centre of the left eye
   // (+x); dir: where it looks. The right one is mirrored.
-  addEyes(s, { c, r, dir, bone = 'head', iris, iris2, irisSize, pupil, lid = {} }) {
-    const mat = eyeMaterial(this.shared, { iris, iris2, irisSize, pupil });
+  addEyes(s, { c, r, dir, bone = 'head', iris, iris2, irisSize, pupil, glint, lid = {} }) {
+    const mat = eyeMaterial(this.shared, { iris, iris2, irisSize, pupil, glint });
     for (const side of [1, -1]) {
       const cc = [c[0] * side, c[1], c[2]];
       const dd = [dir[0] * side, dir[1], dir[2]];

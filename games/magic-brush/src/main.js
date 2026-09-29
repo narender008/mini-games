@@ -19,7 +19,7 @@ import { QUERY, DEBUG, REDUCED_MOTION, MODES, load, save, pickValid, clamp, damp
 import { detectQuality, FrameGovernor } from './quality.js';
 import { Post } from './post.js';
 import { Sky } from './world/sky.js';
-import { World, walkable, groundAt, STAGE } from './world/world.js';
+import { World, walkable, groundAt, STAGE, obstacleAt } from './world/world.js';
 import { Motes, PaintDrops } from './world/air.js';
 import { GardenLife } from './world/life.js';
 import { Easel } from './paint/canvas.js';
@@ -166,6 +166,7 @@ class App {
     this.rig = new CameraRig(camera);
     this.alive = new ComeAlive({ easel: this.easel, fx: this.fx, audio: this.audio, groundAt, rig: this.rig });
     this.gcam = new GardenCam({ camera, friends: this.friends });
+    this.rig.avoid = this.gcam.push;
     this.friends.onJourney = (e, phase) => this.onJourney(e, phase);
     // the toys: petting, bubbles, a ball, treats, the call, puddles and the welcome (play/toys.js)
     this.toys = new Toys({
@@ -1104,9 +1105,23 @@ class App {
     const c = f.worldCenter(new THREE.Vector3());
     const r = (f.portraitRadius ?? f.restRadius) * f.object.scale.x;
     const fov = 30;
-    const dist = (r * 1.0) / Math.tan((fov * Math.PI) / 360);
-    // from the front, a little to the side and above
-    const yaw = f.object.rotation.y + 0.45;
+    const dist = (r * 0.92) / Math.tan((fov * Math.PI) / 360);
+    // from the front, a little to the side and above; if a plant, a trunk or the
+    // easel would be in the way, from the nearest side that is clear
+    let yaw = f.object.rotation.y + 0.45;
+    const clear = (a) => {
+      const x = c.x + Math.sin(a) * dist * 0.94;
+      const z = c.z + Math.cos(a) * dist * 0.94;
+      if (obstacleAt(x, z) > -0.15) return false;
+      for (let i = 1; i <= 5; i++) if (obstacleAt(x + (c.x - x) * i * 0.16, z + (c.z - z) * i * 0.16) > -0.02) return false;
+      return true;
+    };
+    for (const off of [0.45, -0.45, 0.1, 0.9, -0.9, 1.4, -1.4]) {
+      if (clear(f.object.rotation.y + off)) {
+        yaw = f.object.rotation.y + off;
+        break;
+      }
+    }
     cam.position.set(c.x + Math.sin(yaw) * dist * 0.94, c.y + dist * 0.28, c.z + Math.cos(yaw) * dist * 0.94);
     cam.fov = squareFov(fov, cam.aspect);
     cam.updateProjectionMatrix();

@@ -40,7 +40,7 @@ export class Sun extends Friend {
     this.shared.uSplat.value = 0.25;
     this.walkSpeed = 0;
     this.turnRate = 0.8;
-    this.worldScale = 3;
+    this.worldScale = 4.4;
     this.hopScale = 0.6;
     this.sparkleColors = [[2.4, 1.9, 0.7], [2.3, 1.4, 0.5], [2.4, 2.2, 1.4]];
     this.glowU = { uSunGlow: { value: 0.42 } };

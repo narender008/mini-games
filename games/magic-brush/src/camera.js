@@ -4,7 +4,8 @@
 //  - follow(fn): every frame fn(dt) says where the camera wants to be
 //    ({ pos, look, fov }) and the rig eases there with critically damped
 //    springs, so it can track a leaping or running friend the way a
-//    cinematographer would: never snapping, never overshooting.
+//    cinematographer would: never snapping, never overshooting (an optional
+//    avoid(pos) then keeps it out of trees and props on the way).
 // Whichever is used, a still camera breathes very slightly, like a handheld
 // one, and kick() gives a soft thump (a landing).
 import * as THREE from 'three';
@@ -50,6 +51,7 @@ export class CameraRig {
     this.offsetTarget = new THREE.Vector2();
     // follow mode
     this.fn = null;
+    this.avoid = null; // (pos) => nudges the smoothed follow position out of props
     this.smooth = 0.5;
     this.lookSmooth = 0.35;
     this.vPos = new THREE.Vector3();
@@ -127,6 +129,7 @@ export class CameraRig {
       const s = this.fn(dt);
       if (s) {
         smoothDampV(this.pos, s.pos, this.vPos, this.smooth, dt);
+        this.avoid?.(this.pos);
         smoothDampV(this.look, s.look, this.vLook, this.lookSmooth, dt);
         this.fov = smoothDamp(this.fov, s.fov, this.vFov, this.smooth, dt);
       }

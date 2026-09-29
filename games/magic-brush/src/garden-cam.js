@@ -23,7 +23,7 @@ export class GardenCam {
     this.camera = camera;
     this.friends = friends;
     this.center = new THREE.Vector3(STAGE.x, 0.2, STAGE.z);
-    this.radius = 1.4;
+    this.radius = 0.9;
     this.time = 0;
     this.focus = null; // { e, kind, until }
     this.out = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: 42 };
@@ -33,8 +33,30 @@ export class GardenCam {
     this.azOff = 0; // radians the group shot has gone round to clear a prop
     this.azTarget = 0;
     this.clearT = 0;
+    this.active = false;
     this.calm = 0; // seconds of plain group shot since the camera last went anywhere
   }
+
+  // rig.avoid: after the camera has glided to where it wants to be, push it out of
+  // any tree, post or prop it is cutting a corner through (only for the garden
+  // shot, not the leap shots near the easel)
+  push = (pos) => {
+    if (!this.active) return;
+    this.active = false;
+    for (let i = 0; i < 3; i++) {
+      const d = obstacleAt(pos.x, pos.z);
+      if (d < -0.32) return;
+      const e = 0.04;
+      let gx = obstacleAt(pos.x + e, pos.z) - obstacleAt(pos.x - e, pos.z);
+      let gz = obstacleAt(pos.x, pos.z + e) - obstacleAt(pos.x, pos.z - e);
+      const l = Math.hypot(gx, gz) || 1;
+      gx /= l;
+      gz /= l;
+      const m = Math.min(0.25, d + 0.36);
+      pos.x -= gx * m;
+      pos.z -= gz * m;
+    }
+  };
 
   // put a friend in focus: 'chase' (running to the garden), 'close' (a tap or a treat).
   // seconds: how long, or 0 to hold until release()
@@ -54,6 +76,7 @@ export class GardenCam {
   shot(dt) {
     this.time += dt;
     this.lastDt = dt;
+    this.active = true;
     const tall = this.camera.aspect < 0.8;
     const fov = tall ? 56 : 42;
     const f = this.focus;
@@ -96,7 +119,7 @@ export class GardenCam {
     const tx = cx / wSum;
     const ty = cy / wSum;
     const tz = cz / wSum;
-    const k = 1 - Math.exp(-dt * 1.5);
+    const k = 1 - Math.exp(-dt * 2.6);
     this.center.x += (tx - this.center.x) * k;
     this.center.y += (Math.max(0.2, ty) - this.center.y) * k;
     this.center.z += (tz - this.center.z) * k;
@@ -195,9 +218,9 @@ export class GardenCam {
       // The camera keeps to one side of the friend (so it never swings across
       // its path as the friend turns) and only changes side when a prop would
       // be in the way: clear of every prop and with nothing between it and the friend
-      const spot = (sd, k, out) => {
+      const spot = (sd, k, out, room) => {
         out.copy(_c).addScaledVector(_f, -d0 * k * 0.25).addScaledVector(_r, sd * d0 * k * 0.95);
-        if (obstacleAt(out.x, out.z) > -0.35) return false;
+        if (obstacleAt(out.x, out.z) > -room) return false;
         for (let i = 1; i <= 5; i++) {
           const u = i * 0.16;
           if (obstacleAt(out.x + (_c.x - out.x) * u, out.z + (_c.z - out.z) * u) > -0.06) return false;
@@ -207,9 +230,11 @@ export class GardenCam {
       let ok = false;
       this.sideHold -= this.lastDt;
       const order = this.sideHold > 0 ? [this.side] : [this.side, -this.side];
-      for (const k of [1, 0.8, 0.62]) {
-        for (const sd of order) {
-          if (spot(sd, k, _v)) {
+      // (roomy spots first, so a trunk is not filling the frame; tighter ones if need
+      // be; the side it is already on always before the other one)
+      for (const sd of order) {
+        for (const [k, room] of [[1, 0.9], [0.8, 0.9], [1, 0.35], [0.8, 0.35], [0.62, 0.35]]) {
+          if (spot(sd, k, _v, room)) {
             if (sd !== this.side) {
               this.side = sd;
               this.sideHold = 1.5;
@@ -230,8 +255,35 @@ export class GardenCam {
       return o;
     }
     // close: in front of the friend and above, the studio side of it
+    // (round to the side that has no easel, trunk or post in the way, and stays there)
     const d = clamp((rad * (tall ? 2.4 : 1.7)) / t, 0.9, 2.0);
-    const az = 0.7;
+    const cam = this.camera.position;
+    const clear = (a, travel) => {
+      const x = _c.x + Math.sin(a) * d * 0.8;
+      const z = _c.z + Math.cos(a) * d * 0.9;
+      if (obstacleAt(x, z) > -0.3) return false;
+      for (let i = 1; i <= 5; i++) {
+        const u = i * 0.16;
+        if (obstacleAt(x + (_c.x - x) * u, z + (_c.z - z) * u) > -0.05) return false;
+      }
+      // (and the camera's own way there: it glides in a straight line)
+      if (travel) {
+        for (let i = 1; i <= 8; i++) {
+          const u = i / 9;
+          if (obstacleAt(cam.x + (x - cam.x) * u, cam.z + (z - cam.z) * u) > -0.12) return false;
+        }
+      }
+      return true;
+    };
+    if (f.az === undefined) {
+      f.az = 0.7;
+      // (first the side the camera is already on, so it comes in without swinging across the friend)
+      const b = Math.atan2(cam.x - _c.x, cam.z - _c.z);
+      const order = [b, b + 0.4, b - 0.4, b + 0.8, b - 0.8, 0.7, 1.2, 0.2, 1.7, -0.3, 2.2, -0.8, 2.8, Math.PI, -1.4];
+      const pick = order.find((a) => clear(a, true)) ?? order.find((a) => clear(a, false));
+      if (pick !== undefined) f.az = pick;
+    } else if (!clear(f.az, false)) f.az = undefined;
+    const az = f.az ?? 0.7;
     o.pos.set(_c.x + Math.sin(az) * d * 0.8, _c.y + d * 0.3, _c.z + Math.cos(az) * d * 0.9);
     o.look.copy(_c);
     o.look.y += rad * 0.08;
