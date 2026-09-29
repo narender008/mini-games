@@ -89,5 +89,3 @@ def barrel(length, r, base_len=13.0, base_r=None, muzzle_len=5.0, muzzle_r=None,
         dark = lib.cylinder((length - 7.8 * kk, oy, 0), (length - 7.6 * kk, oy, 0), bore - 0.05, segs=segs, mat=RUBBER)
         lib.merge(bm, dark)
     return bm, length
-
-
