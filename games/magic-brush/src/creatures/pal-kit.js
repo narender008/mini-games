@@ -6,9 +6,7 @@
 // strands in it.
 import * as THREE from 'three';
 import { twoBone, clamp, smooth, Bend } from './anim.js';
-
-// 0..1 with no speed or acceleration at either end
-const smoother = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * x * (x * (x * 6 - 15) + 10));
+import { smoother } from '../smooth.js';
 
 const _m = new THREE.Matrix4();
 const _mi = new THREE.Matrix4();
@@ -234,7 +232,7 @@ export class Gait {
     // the ground would look as if it slid), leaving and landing with no
     // vertical speed or acceleration
     const need = Math.abs(target - z0);
-    const h = lift + (liftMax - lift) * clamp(need / (liftMax * 1.5 + 1e-4), 0, 1);
+    const h = Math.max(lift, liftMax * clamp(need / (liftMax * 1.5 + 1e-4), 0, 1));
     out[0] = z;
     out[1] = h * smoother(q / this.rise) * smoother((1 - q) / this.rise);
     return out;

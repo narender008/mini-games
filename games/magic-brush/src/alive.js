@@ -307,6 +307,7 @@ export class ComeAlive {
       a.landed = true;
       u.uAliveOn.value = 0;
       f.happy.kick(4);
+      f.touchDown?.(2);
       this.land(a);
       this.onLand?.(f);
     }

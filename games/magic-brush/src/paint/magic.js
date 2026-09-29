@@ -257,7 +257,11 @@ export class Magic {
     this.coverMat.uniforms.tMask.value = mask;
     this._pass(this.coverMat, this.cover);
     const d = new Uint8Array(128 * 96 * 4);
-    await this.renderer.readRenderTargetPixelsAsync(this.cover, 0, 0, 128, 96, d);
+    try {
+      await this.renderer.readRenderTargetPixelsAsync(this.cover, 0, 0, 128, 96, d);
+    } catch {
+      this.renderer.readRenderTargetPixels(this.cover, 0, 0, 128, 96, d);
+    }
     let a = 0;
     let b = 0;
     let c = 0;

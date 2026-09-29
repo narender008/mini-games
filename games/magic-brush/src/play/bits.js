@@ -132,6 +132,8 @@ export class Bits {
     this.points.renderOrder = 6;
     scene.add(this.points);
     this.next = 0;
+    this.live = 0;
+    this.dirty = false;
     g.setDrawRange(0, max);
   }
 
@@ -144,6 +146,8 @@ export class Bits {
   emit(x, y, z, vx, vy, vz, color, size, life, shape = SHAPE.dot, { gravity = 0, drag = 1, sway = 0, spin = 2 } = {}) {
     const i = this.next;
     this.next = (this.next + 1) % this.max;
+    if (this.life[i] <= 0) this.live++;
+    this.dirty = true;
     this.pos[i * 3] = x;
     this.pos[i * 3 + 1] = y;
     this.pos[i * 3 + 2] = z;
@@ -168,16 +172,17 @@ export class Bits {
 
   update(dt, t) {
     this.uniforms.uTime.value = t;
+    if (!this.live && !this.dirty) return;
+    this.dirty = false;
     for (let i = 0; i < this.max; i++) {
-      if (this.life[i] <= 0) {
-        this.col[i * 4 + 3] = 0;
-        continue;
-      }
+      if (this.life[i] <= 0) continue;
       const age = (this.age[i] += dt);
       const k = age / this.life[i];
       if (k >= 1) {
         this.life[i] = 0;
+        this.info[i * 4] = 0;
         this.col[i * 4 + 3] = 0;
+        this.live--;
         continue;
       }
       const d = Math.exp(-this.drag[i] * dt);

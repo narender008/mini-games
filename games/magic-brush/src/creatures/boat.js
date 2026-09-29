@@ -86,7 +86,6 @@ export class Boat extends Friend {
     this.ring = 9;
     this.flagPh = 0; // the pennant's flutter, counted up (its speed changes with the boat's, its phase never jumps)
     this.lastY = undefined; // for the leaps from stone to stone: how fast the world lifts it
-    this.vyRaw = 0;
     this.vy = new SoftSpring(0, 6, 1);
   }
 
@@ -440,6 +439,14 @@ export class Boat extends Friend {
 
   // ------------------------------------------------------------ motion
 
+  // it comes down from a leap (s: how hard, 0..3)
+  touchDown(s) {
+    this.heave.kick(-0.05 * s);
+    this.pitch.kick(0.3 * s);
+    this.cabX.kick(1.2 * s);
+    this.fun.kick(1.5 * s);
+  }
+
   animate(dt) {
     const B = this.bones;
     const t = this.t;
@@ -456,14 +463,6 @@ export class Boat extends Friend {
     const vyRaw = this.lastY === undefined || dt < 1e-4 ? 0 : (y - this.lastY) * idt;
     this.lastY = y;
     const vy = this.vy.update(clamp(vyRaw, -6, 6), dt);
-    if (this.vyRaw < -1 && vyRaw > -0.4 && air < 0.05) {
-      const thump = Math.min(3, -this.vyRaw);
-      this.heave.kick(-0.05 * thump);
-      this.pitch.kick(0.3 * thump);
-      this.cabX.kick(1.2 * thump);
-      this.fun.kick(1.5 * thump);
-    }
-    this.vyRaw = vyRaw;
     const leap = clamp(Math.atan(vy / 2.2) * 0.9, -0.55, 0.55) * (1 - air);
 
     // afloat on the pond, or on dry land?

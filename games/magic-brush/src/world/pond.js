@@ -164,8 +164,10 @@ void main() {
   float d = length(p);
   float a = vRip.x;
   float r = 0.1 + 0.88 * (1.0 - (1.0 - a) * (1.0 - a));
-  float ring = exp(-pow((d - r) / 0.05, 2.0));
-  float ring2 = exp(-pow((d - r * 0.68) / 0.04, 2.0)) * 0.55;
+  float q1 = (d - r) / 0.05;
+  float q2 = (d - r * 0.68) / 0.04;
+  float ring = exp(-q1 * q1);
+  float ring2 = exp(-q2 * q2) * 0.55;
   float fade = pow(1.0 - a, 1.2) * smoothstep(1.0, 0.82, d);
   float al = (ring + ring2) * fade * vRip.y;
   if (al < 0.01) discard;
@@ -244,7 +246,7 @@ export class PondLife {
     this.pads = new THREE.InstancedMesh(padGeometry(), mat, n);
     this.pads.frustumCulled = false;
     this.pads.receiveShadow = true;
-    this.padList = PADS.map(([dx, dz, r], i) => ({ x: POND.x + dx, z: POND.z + dz, r, yaw: Math.random() * TAU, ph: Math.random() * TAU, y: -0.012, tiltX: 0, tiltZ: 0 }));
+    this.padList = PADS.map(([dx, dz, r], i) => ({ x: POND.x + dx, z: POND.z + dz, hx: POND.x + dx, hz: POND.z + dz, ox: 0, oz: 0, r, yaw: Math.random() * TAU, ph: Math.random() * TAU, y: -0.012, tiltX: 0, tiltZ: 0 }));
     const c = new THREE.Color();
     for (let i = 0; i < n; i++) this.pads.setColorAt(i, c.setScalar(0.85 + Math.random() * 0.25));
     this.scene.add(this.pads);
@@ -271,6 +273,37 @@ export class PondLife {
     p.y = y;
     p.tiltX = tx;
     p.tiltZ = tz;
+  }
+
+  // pads drift aside for a boat on the pond, and back once it has gone
+  makeWay(friends, dt) {
+    const e = 1 - Math.exp(-3 * dt);
+    for (const p of this.padList) {
+      let tx = 0;
+      let tz = 0;
+      for (const f of friends) {
+        const dx = p.hx - f.pos.x;
+        const dz = p.hz - f.pos.z;
+        const d = Math.max(Math.hypot(dx, dz), 1e-3);
+        const over = f.radius + p.r + 0.04 - d;
+        if (over > 0) {
+          tx += (dx / d) * over;
+          tz += (dz / d) * over;
+        }
+      }
+      p.ox += (tx - p.ox) * e;
+      p.oz += (tz - p.oz) * e;
+      let x = p.hx + p.ox - POND.x;
+      let z = p.hz + p.oz - POND.z;
+      const lim = POND.r - p.r - 0.05;
+      const l = Math.hypot(x, z);
+      if (l > lim) {
+        x *= lim / l;
+        z *= lim / l;
+      }
+      p.x = POND.x + x;
+      p.z = POND.z + z;
+    }
   }
 
   updatePads(t) {
@@ -725,7 +758,8 @@ export class PondLife {
     } else if (f.state === 'jump') {
       const dur = 0.58;
       const u = clamp(f.t / dur, 0, 1);
-      const to = f.to;
+      const tp = this.padList[f.toPad];
+      const to = f.to.set(tp.x, 0, tp.z);
       const ty = this.padTop(f.toPad);
       f.x = f.from.x + (to.x - f.from.x) * u;
       f.z = f.from.z + (to.z - f.from.z) * u;
@@ -761,7 +795,7 @@ export class PondLife {
     const p = this.padList[f.pad];
     // while sitting or landing it rides its pad; in the air it has its own height
     if (f.state === 'sit' || f.state === 'croak' || f.state === 'turn' || f.state === 'crouch' || f.state === 'land') {
-      f.x = p.x + Math.sin(f.yaw + 0.5) * 0.0;
+      f.x = p.x;
       f.z = p.z;
       f.y = p.y + 0.006;
     }
@@ -813,8 +847,9 @@ export class PondLife {
 
   // ------------------------------------------------------------ every frame
 
-  update(dt, t) {
+  update(dt, t, friends) {
     this.time = t;
+    this.makeWay(friends, dt);
     this.updatePads(t);
     this.updateEffects(dt);
     this.updateKoi(dt, t);

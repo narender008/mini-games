@@ -423,6 +423,7 @@ export class Friend {
     const root = B.root;
     const t = em.t;
     const hs = this.hopScale ?? 1;
+    const lean = this.legs ? 0 : 1;
     const add = (b, x = 0, y = 0, z = 0) => {
       if (b) {
         b.rotation.x += x;
@@ -437,7 +438,7 @@ export class Friend {
       // eases in and out, so a hop has no jolt at take-off or landing)
       const up = Math.max(0, Math.sin(ph * Math.PI)) ** 2;
       root.position.y += up * h * hs;
-      const sq = Math.max(0, -Math.sin(ph * Math.PI + 0.35)) ** 2 * (1 - k * 0.6);
+      const sq = Math.max(0, -Math.sin(ph * Math.PI + 0.35)) ** 2 * (1 - k * 0.6) * lean;
       root.scale.multiply(_s.set(1 + sq * 0.09, 1 - sq * 0.11, 1 + sq * 0.09));
     };
     switch (em.name) {
@@ -446,16 +447,16 @@ export class Friend {
         break;
       case 'cheer':
         hop(3, 0.085);
-        add(B.chest, -0.12 * env);
+        add(B.chest, -0.12 * env * lean);
         add(B.neck, -0.18 * env);
         add(B.head, -0.1 * env, 0, Math.sin(t * 14) * 0.1 * env);
         add(B.jaw, 0.3 * env);
-        root.rotation.z += Math.sin(t * 12) * 0.07 * env;
+        root.rotation.z += Math.sin(t * 12) * 0.07 * env * lean;
         break;
       case 'giggle': {
         const w = Math.sin(t * 24) * env;
-        root.rotation.z += w * 0.09;
-        root.scale.multiply(_s.set(1 + w * 0.03, 1 - w * 0.035, 1 + w * 0.03));
+        root.rotation.z += w * 0.09 * lean;
+        root.scale.multiply(_s.set(1 + w * 0.03 * lean, 1 - w * 0.035 * lean, 1 + w * 0.03 * lean));
         add(B.head, 0, 0, w * 0.1);
         add(B.jaw, 0.16 * env);
         this.blinker.hold = env > 0.3 ? 0.8 : 0; // a happy squint
@@ -471,15 +472,15 @@ export class Friend {
         add(B.neck, 0.5 * dip);
         add(B.head, 0.35 * dip + Math.sin(t * 16) * 0.05 * dip);
         add(B.jaw, (0.12 + Math.sin(t * 22) * 0.1) * dip);
-        root.rotation.x += 0.05 * dip;
+        root.rotation.x += 0.05 * dip * lean;
         break;
       }
       case 'nuzzle':
         // leaning into a stroking hand, eyes shut with happiness
-        root.rotation.z += Math.sin(t * 5) * 0.05 * env;
+        root.rotation.z += Math.sin(t * 5) * 0.05 * env * lean;
         add(B.neck, 0.08 * env);
         add(B.head, 0.05 * env, Math.sin(t * 5) * 0.12 * env, -0.16 * env);
-        root.scale.multiply(_s.set(1 + 0.02 * env, 1 - 0.03 * env, 1 + 0.02 * env));
+        root.scale.multiply(_s.set(1 + 0.02 * env * lean, 1 - 0.03 * env * lean, 1 + 0.02 * env * lean));
         this.blinker.hold = env > 0.25 ? 0.9 : 0;
         break;
       case 'sniff':
@@ -488,9 +489,10 @@ export class Friend {
         break;
       case 'bow':
         // a play bow: front down, tail and hindquarters up
-        add(B.chest, 0.4 * env);
-        add(B.neck, 0.1 * env);
-        add(B.hips, -0.22 * env);
+        add(B.chest, 0.4 * env * lean);
+        add(B.neck, (0.1 + 0.3 * (1 - lean)) * env);
+        add(B.head, 0.15 * (1 - lean) * env);
+        add(B.hips, -0.22 * env * lean);
         break;
       default:
         break;

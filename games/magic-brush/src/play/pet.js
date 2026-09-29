@@ -118,7 +118,7 @@ export class Pet {
   }
 
   // the finger lifted: a stroke ends, or a quick press was a tap
-  up() {
+  up(cancel = false) {
     const p = this.p;
     if (!p) return;
     this.p = null;
@@ -128,7 +128,7 @@ export class Pet {
       if (e.toy === 'pet') T.done(e);
       T.friends.lookAt(e, null, 0);
       T.friends.release(e);
-    } else if (p.t < 0.5 && p.path <= SLOP && T.friends.list.includes(e)) T.onTapFriend(e);
+    } else if (!cancel && p.t < 0.5 && p.path <= SLOP && T.friends.list.includes(e)) T.onTapFriend(e);
   }
 
   // the pet button: the friend nearest the middle of the garden nuzzles the child

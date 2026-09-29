@@ -825,6 +825,7 @@ export class Friends {
     if (k >= 1) {
       e.pos.y = gy;
       e.squash = 0.14;
+      f.touchDown?.(Math.min(3, height * 4));
       this.fx.sparkles.burst(_v.set(e.pos.x, gy + 0.02, e.pos.z), home === 'pond' ? 22 : 8, { colors: [[1.6, 1.4, 1]], speed: 0.5, up: 0.4, size: 0.014 });
       if (home === 'pond' && h.reach && e.jI === path.length - 1) {
         // splash into the pond

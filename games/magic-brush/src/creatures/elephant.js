@@ -13,7 +13,7 @@ import { Friend } from './friend.js';
 import { tubeGeometry, withLook, bindTo, bindBy, frameFrom } from './parts.js';
 import { mergeGeometries } from './sculpt.js';
 import { pose, addPose, bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp } from './anim.js';
-import { Tracker, Leg, Gait, stepOffset, hairClump, hairMaterial } from './pal-kit.js';
+import { Tracker, Leg, Gait, hairClump, hairMaterial } from './pal-kit.js';
 import { glide, puff, flaps } from '../sound/calls.js';
 import { rand } from '../config.js';
 

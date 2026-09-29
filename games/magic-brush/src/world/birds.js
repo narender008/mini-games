@@ -383,9 +383,8 @@ export class Birds {
       const b = new THREE.Vector3(...B);
       for (const t of [0.34, 0.5, 0.66]) {
         const p = a.clone().lerp(b, t);
-        p.y -= Math.sin(t * Math.PI) * 0.5 * a.distanceTo(b) * 0.25;
         const along = Math.atan2(b.x - a.x, b.z - a.z);
-        spots.push({ kind: 'wire', x: p.x, y: p.y, z: p.z, yaw: along + Math.PI / 2, along, owner: null });
+        spots.push({ kind: 'wire', x: p.x, y: this.wireY(a, b, t), z: p.z, yaw: along + Math.PI / 2, along, a, b, owner: null });
       }
     }
     // the studio's front beam
@@ -401,8 +400,13 @@ export class Birds {
     return spots;
   }
 
+  // the height of a light string at t (0..1) along it, as it sags
+  wireY(a, b, t) {
+    return a.y + (b.y - a.y) * t - Math.sin(t * Math.PI) * this.world.stringSag * a.distanceTo(b) * 0.25;
+  }
+
   // a spot on the lawn, away from friends, the pond and the trees
-  lawnSpot(near = null) {
+  lawnSpot(near = null, self = null) {
     let any = null;
     for (let i = 0; i < 24; i++) {
       let x, z;
@@ -413,7 +417,7 @@ export class Birds {
         x = rand(-3.6, 3.4);
         z = rand(-6.2, -1.1);
       }
-      if (z > -1.1 || walkable(x, z) > -0.25 || !this.clear(x, z, 0.5)) continue;
+      if (z > -1.1 || walkable(x, z) > -0.25 || !this.clear(x, z, 0.5, self)) continue;
       const y = groundAt(x, z) + 0.012;
       const spot = { kind: 'lawn', x, y, z, yaw: rand(-Math.PI, Math.PI), owner: null, temp: true };
       // the garden camera looks at a small part of the lawn: land there when it can
@@ -424,9 +428,9 @@ export class Birds {
   }
 
   // nobody (friend, finger or another bird) close to a point on the ground
-  clear(x, z, r) {
+  clear(x, z, r, self = null) {
     for (const t of this.threats) if (Math.hypot(x - t.x, z - t.z) < r + t.r) return false;
-    for (const b of this.list) if (b.state !== 'away' && b.pos.y < 0.5 && Math.hypot(x - b.pos.x, z - b.pos.z) < 0.3) return false;
+    for (const b of this.list) if (b !== self && b.state !== 'away' && b.pos.y < 0.5 && Math.hypot(x - b.pos.x, z - b.pos.z) < 0.3) return false;
     return true;
   }
 
@@ -447,12 +451,12 @@ export class Birds {
     for (const s of this.spots) {
       if (s.owner && s.owner !== b) continue;
       if (b.spot === s) continue;
-      if (s.y < 0.6 && !this.clear(s.x, s.z, 0.45)) continue;
+      if (s.y < 0.6 && !this.clear(s.x, s.z, 0.45, b)) continue;
       if (from && Math.hypot(s.x - from.x, s.z - from.z) < 1.6) continue;
       add(s, { post: 1, wire: 1.6, beam: 0.8, bush: 1.1, rim: 0.9 }[s.kind] ?? 1);
     }
     // most small birds are on the ground
-    const lawn = this.lawnSpot(from ? null : b.pos);
+    const lawn = this.lawnSpot(from ? null : b.pos, b);
     if (lawn && (!from || Math.hypot(lawn.x - from.x, lawn.z - from.z) > 1.6)) add(lawn, 3.2);
     if (!cands.length) return null;
     let r = Math.random() * sum;
@@ -641,15 +645,19 @@ export class Birds {
       const d = rand(0.08, 0.2);
       const x = b.surf.x + Math.sin(ang) * d;
       const z = b.surf.z + Math.cos(ang) * d;
-      if (walkable(x, z) > -0.15 || Math.hypot(x - POND.x, z - POND.z) < POND.r + 0.15 || !this.clear(x, z, 0.3)) return null;
+      if (walkable(x, z) > -0.15 || Math.hypot(x - POND.x, z - POND.z) < POND.r + 0.15 || !this.clear(x, z, 0.3, b)) return null;
       return { x, z, y: groundAt(x, z) + 0.012, yaw: Math.atan2(x - b.surf.x, z - b.surf.z) };
     }
     if ((s.kind === 'wire' || s.kind === 'beam') && s.along !== undefined) {
       const d = rand(0.06, 0.14) * pick([-1, 1]);
       const x = b.surf.x + Math.sin(s.along) * d;
-      if (s.kind === 'beam' && Math.abs(x) > 2.4) return null;
-      // (a wire dips, so a shuffle keeps the height it has: the spans are short)
-      return { x, z: b.surf.z + Math.cos(s.along) * d, y: b.surf.y, yaw: b.yaw };
+      const z = b.surf.z + Math.cos(s.along) * d;
+      if (s.kind === 'beam') return Math.abs(x) > 2.4 ? null : { x, z, y: b.surf.y, yaw: b.yaw };
+      const dx = s.b.x - s.a.x;
+      const dz = s.b.z - s.a.z;
+      const t = ((x - s.a.x) * dx + (z - s.a.z) * dz) / (dx * dx + dz * dz);
+      if (t < 0.1 || t > 0.9) return null;
+      return { x, z, y: this.wireY(s.a, s.b, t), yaw: b.yaw };
     }
     return null;
   }
@@ -658,7 +666,6 @@ export class Birds {
     const s = b.spot;
     const lawn = s.kind === 'lawn' || s.kind === 'rim';
     // the wings rest folded, the legs out, the tail easy
-    b.pitch = 0;
     b.roll = damp(b.roll, 0, 8, dt);
     b.fold = damp(b.fold, 1, 12, dt);
     b.flap = damp(b.flap, 0.1, 12, dt);
@@ -676,7 +683,7 @@ export class Birds {
     let tilt = this.perchTilt(s);
     let tail = 0.05 * Math.sin(t * 1.3 + b.phase * 9);
     let hopY = 0;
-    let puff = 0.03 * Math.sin(t * 2.2 + b.phase * 5) + (b.song ? 0 : 0);
+    let puff = 0.03 * Math.sin(t * 2.2 + b.phase * 5);
     const k = clamp(b.actT / b.actD, 0, 1);
     // a bird out of the picture moves on sooner, to somewhere the child can see it
     b.viewT -= dt;

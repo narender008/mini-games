@@ -65,6 +65,19 @@ vec3 pushAt(vec2 p) {
   return vec3(s, k);
 }`;
 
+// windAt() on the CPU, for whatever sits on a swaying plant (out: a Vector2, x and z)
+export function windAt(x, z, out) {
+  const t = WIND.uWindTime.value;
+  const gd = WIND.uGustDir.value;
+  const g = Math.sin(x * 0.35 + t * 1.1) * 0.5 + Math.sin(z * 0.27 - t * 0.8 + 1.3) * 0.5;
+  const f = Math.sin(x * 2.1 + z * 1.7 + t * 3.1) * 0.25;
+  const w = (g * 0.7 + f + 0.35) * WIND.uWindStrength.value;
+  const across = -x * gd.y + z * gd.x;
+  const band = 0.5 + 0.5 * Math.sin(x * gd.x + z * gd.y - t * 2.6 + Math.sin(across * 0.7 + t * 0.5) * 0.9);
+  const gust = WIND.uGust.value * band * band * 1.5;
+  return out.set(0.8 * w + gd.x * gust, 0.35 * w + gd.y * gust);
+}
+
 // Drifting cloud shadows: a soft, cool patch pattern that slides over the
 // ground with the breeze. cloudTint() is multiplied into the colour of the
 // sun (the first directional light) only, so the fill light, lanterns and
@@ -428,7 +441,7 @@ export function flowerBeds({ beds, avoid, seed = 5, headSize = 0.045, stem = 0.2
       .replace(
         '#include <project_vertex>',
         windProject(
-          '0.03 * position.y * position.y',
+          '0.03 * position.y * position.y * length(instanceMatrix[1].xyz) / 0.25',
           `vec3 pu = pushAt(ipw.xz);
           float s2 = position.y * position.y;
           mvPosition.xz += pu.xy * 0.11 * s2;

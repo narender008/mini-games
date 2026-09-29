@@ -74,14 +74,20 @@ function* impulse(ctx, seconds = 1.6, decay = 2.6) {
 }
 
 // run fn when the browser has nothing better to do
-const idle = (fn) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 1000 }) : setTimeout(fn, 40));
+// (a browser without idle callbacks gets a few milliseconds a turn)
+const idle = (fn) =>
+  typeof requestIdleCallback === 'function'
+    ? requestIdleCallback(fn, { timeout: 1000 })
+    : setTimeout(() => {
+        const end = performance.now() + 8;
+        fn({ timeRemaining: () => end - performance.now() });
+      }, 40);
 
 export class Audio {
   constructor() {
     this.muted = load('muted', false);
     this.ctx = null;
-    this.ready = false;
-    this.opened = false; // the first tap has come: the sound may play
+    this.ready = false; // the first tap has come: the sound may play
     this.build = null; // the steps of the graph still to build
     this.paintState = { tool: 'brush', speed: 0, active: false };
   }
@@ -94,7 +100,7 @@ export class Audio {
     if (this.ctx || this.build || !(window.AudioContext || window.webkitAudioContext)) return;
     this.build = this.steps();
     const pump = (deadline) => {
-      while (this.build && (!deadline?.timeRemaining || deadline.timeRemaining() > 3)) if (this.build.next().done) this.build = null;
+      while (this.build && deadline.timeRemaining() > 3) if (this.build.next().done) this.build = null;
       if (this.build) idle(pump);
     };
     idle(pump);
@@ -111,8 +117,8 @@ export class Audio {
     this.finish();
     const ctx = this.ctx;
     if (!ctx) return;
-    if (!this.opened) {
-      this.opened = true;
+    if (!this.ready) {
+      this.ready = true;
       this.master.gain.setValueAtTime(this.muted ? 0 : MASTER, ctx.currentTime);
       this.setScene(this.scene);
       this.music.start();
@@ -163,13 +169,12 @@ export class Audio {
     yield;
     this.buildAmbience();
     this.music = new Music(ctx, this.master, this.verbIn);
-    this.ready = true;
   }
 
   setMuted(m) {
     this.muted = m;
     save('muted', m);
-    if (this.master && this.opened) this.master.gain.setTargetAtTime(m ? 0 : MASTER, this.ctx.currentTime, 0.05);
+    if (this.ready) this.master.gain.setTargetAtTime(m ? 0 : MASTER, this.ctx.currentTime, 0.05);
   }
 
   pageHidden(h) {
@@ -566,7 +571,7 @@ export class Audio {
 
   setScene(scene) {
     this.scene = scene;
-    if (!this.ready || !this.opened || !scene) return;
+    if (!this.ready || !scene) return;
     const t = this.ctx.currentTime;
     const amb = scene === 'menu' ? 0.5 : scene === 'play' ? 1 : 0.7;
     this.amb.gain.setTargetAtTime(amb, t, 0.8);

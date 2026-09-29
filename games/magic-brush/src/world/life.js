@@ -72,7 +72,7 @@ export class GardenLife {
     inp.state = state;
     this.birds.update(dt, t, inp);
     this.insects.update(dt, t, inp);
-    this.pond.update(dt, t);
+    this.pond.update(dt, t, friends);
     this.glints.update(dt, t, inp);
     this.lightStep(dt, t);
   }

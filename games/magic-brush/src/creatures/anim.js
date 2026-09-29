@@ -154,6 +154,15 @@ function toVec(q, a, o) {
   a[o + 1] = q.y * k;
   a[o + 2] = q.z * k;
 }
+const _sv = new Float64Array(3);
+function scaleStep(q, r) {
+  if (r === 1) return q;
+  toVec(q, _sv, 0);
+  _sv[0] *= r;
+  _sv[1] *= r;
+  _sv[2] *= r;
+  return fromVec(_sv, 0, q);
+}
 
 export class Inertia {
   constructor(bones, { skip = /^(eye|lid|shut|joy)/, rotW = 11, posW = 12, rotMin = 0.04, posMin = 0.006, ratio = 5 } = {}) {
@@ -179,6 +188,7 @@ export class Inertia {
     this.posMin = posMin;
     this.ratio = ratio;
     this.ready = false;
+    this.dtPrev = 1 / 60;
     this.caught = 0; // how many jumps were caught (for tests)
   }
 
@@ -191,6 +201,7 @@ export class Inertia {
     // a coarser frame rate makes fast motion less predictable: be looser
     const loose = clamp(dt * 60, 1, 4);
     const kAvg = Math.min(1, dt / 0.5);
+    const r = seed ? 1 : clamp(dt / this.dtPrev, 0.25, 4);
     for (let i = 0; i < list.length; i++) {
       const b = list[i];
       const q = b.quaternion;
@@ -208,7 +219,7 @@ export class Inertia {
       // ---- rotation: where the bone was heading, against where it is
       _qa.set(aq[o4], aq[o4 + 1], aq[o4 + 2], aq[o4 + 3]);
       _qb.set(aq2[o4], aq2[o4 + 1], aq2[o4 + 2], aq2[o4 + 3]);
-      _qc.copy(_qb).invert().premultiply(_qa); // the last step
+      scaleStep(_qc.copy(_qb).invert().premultiply(_qa), r); // the last step
       _qg.copy(_qc);
       _qd.copy(_qa).premultiply(_qc); // carried on once more
       _qe.copy(_qd).invert().premultiply(q); // what the animation did instead
@@ -217,7 +228,7 @@ export class Inertia {
         // the frame after a jump has two readings: the jump was a step and the
         // old pace goes on (guess above), or the jump began a new pace (this one)
         popR[i] = 0;
-        _qh.set(aqr[o4], aqr[o4 + 1], aqr[o4 + 2], aqr[o4 + 3]).invert().premultiply(_qa);
+        scaleStep(_qh.set(aqr[o4], aqr[o4 + 1], aqr[o4 + 2], aqr[o4 + 3]).invert().premultiply(_qa), r);
         _qi.copy(_qa).premultiply(_qh);
         _qe.copy(_qi).invert().premultiply(q);
         const errB = 2 * Math.atan2(Math.hypot(_qe.x, _qe.y, _qe.z), Math.abs(_qe.w));
@@ -227,7 +238,9 @@ export class Inertia {
           _qg.copy(_qh);
         }
       }
-      if (err > Math.max(this.rotMin * loose, rAvg[i] * this.ratio)) {
+      const rCaught = err > Math.max(this.rotMin * loose, rAvg[i] * this.ratio);
+      rAvg[i] += (err - rAvg[i]) * kAvg;
+      if (rCaught) {
         // carry on from the old pose: the new offset is (old offset) * pred * animated^-1
         fromVec(rr, o3, _qf);
         _qc.copy(q).invert().premultiply(_qd).premultiply(_qf);
@@ -238,7 +251,7 @@ export class Inertia {
         popR[i] = 1;
         _qb.copy(_qg).invert().multiply(q);
         aq[o4] = _qb.x; aq[o4 + 1] = _qb.y; aq[o4 + 2] = _qb.z; aq[o4 + 3] = _qb.w;
-      } else rAvg[i] += (err - rAvg[i]) * kAvg;
+      }
       aq2[o4] = aq[o4]; aq2[o4 + 1] = aq[o4 + 1]; aq2[o4 + 2] = aq[o4 + 2]; aq2[o4 + 3] = aq[o4 + 3];
       aq[o4] = q.x; aq[o4 + 1] = q.y; aq[o4 + 2] = q.z; aq[o4 + 3] = q.w;
       // (the offset dies away as a critically damped spring)
@@ -258,19 +271,21 @@ export class Inertia {
       }
       if (live) q.premultiply(fromVec(rr, o3, _qf));
       // ---- position
-      let vx = ap[o3] - ap2[o3], vy = ap[o3 + 1] - ap2[o3 + 1], vz = ap[o3 + 2] - ap2[o3 + 2];
+      let vx = (ap[o3] - ap2[o3]) * r, vy = (ap[o3 + 1] - ap2[o3 + 1]) * r, vz = (ap[o3 + 2] - ap2[o3 + 2]) * r;
       let ex = p.x - (ap[o3] + vx), ey = p.y - (ap[o3 + 1] + vy), ez = p.z - (ap[o3 + 2] + vz);
       let perr = Math.hypot(ex, ey, ez);
       if (popP[i]) {
         popP[i] = 0;
-        const bx = ap[o3] - apr[o3], by = ap[o3 + 1] - apr[o3 + 1], bz = ap[o3 + 2] - apr[o3 + 2];
+        const bx = (ap[o3] - apr[o3]) * r, by = (ap[o3 + 1] - apr[o3 + 1]) * r, bz = (ap[o3 + 2] - apr[o3 + 2]) * r;
         const fx = p.x - (ap[o3] + bx), fy = p.y - (ap[o3 + 1] + by), fz = p.z - (ap[o3 + 2] + bz);
         const errB = Math.hypot(fx, fy, fz);
         if (errB < perr) {
           perr = errB; ex = fx; ey = fy; ez = fz; vx = bx; vy = by; vz = bz;
         }
       }
-      if (perr > Math.max(this.posMin * loose, pAvg[i] * this.ratio)) {
+      const pCaught = perr > Math.max(this.posMin * loose, pAvg[i] * this.ratio);
+      pAvg[i] += (perr - pAvg[i]) * kAvg;
+      if (pCaught) {
         pp[o3] -= ex;
         pp[o3 + 1] -= ey;
         pp[o3 + 2] -= ez;
@@ -281,7 +296,7 @@ export class Inertia {
         ap[o3] = p.x - vx;
         ap[o3 + 1] = p.y - vy;
         ap[o3 + 2] = p.z - vz;
-      } else pAvg[i] += (perr - pAvg[i]) * kAvg;
+      }
       ap2[o3] = ap[o3]; ap2[o3 + 1] = ap[o3 + 1]; ap2[o3 + 2] = ap[o3 + 2];
       ap[o3] = p.x; ap[o3 + 1] = p.y; ap[o3 + 2] = p.z;
       {
@@ -299,6 +314,7 @@ export class Inertia {
       }
     }
     this.ready = true;
+    this.dtPrev = dt;
   }
 }
 

@@ -163,7 +163,7 @@ export class FrameGovernor {
       return;
     }
     this.cooldown -= realDt;
-    const target = this.pacer.step / 1000;
+    const target = (this.pacer.forced ? this.pacer.step : Math.min(this.pacer.step, 1000 / 60)) / 1000;
     this.samples.push(realDt);
     if (realDt < target * 1.12) this.calm += realDt;
     else this.calm = 0;

@@ -194,13 +194,6 @@ export class ToySounds {
     if (kind === 'welcome') [261.63, 329.63, 392].forEach((f, i) => this.a.pad(f, 0.022, t + 0.05 + i * 0.04, 1.6));
   }
 
-  // a little twinkle: a few high bells
-  sparkle(n = 3) {
-    if (!this.ok('sparkle', 0.1)) return;
-    const t = this.a.ctx.currentTime;
-    for (let i = 0; i < n; i++) this.a.bell(rand(2000, 4200), 0.022, t + i * 0.045 + Math.random() * 0.03, 0.4);
-  }
-
   // the welcome star reaches the shelf: a bright ding
   arrive() {
     if (!this.ok('arrive', 0.3)) return;

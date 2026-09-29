@@ -179,7 +179,6 @@ class Petals {
       this.mesh.setColorAt(i, c.set(pick(PETAL_COLORS)));
     }
     this.next = 0;
-    this.count = 0;
   }
 
   emit(x, y, z, vx, vy, vz, size = 0.014) {

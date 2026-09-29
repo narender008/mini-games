@@ -202,10 +202,10 @@ export class Ball {
   // ------------------------------------------------------------ the child's touch
 
   // a press at (x, y): true if it is on the ball. A tap bounces it; Big kids may drag to throw.
-  grab(x, y, id) {
+  grab(x, y) {
     if (!this.exists || this.carrier || this.nearPx(x, y) > 14) return false;
     if (this.big) {
-      this.aiming = { id, x0: x, y0: y, moved: 0, valid: false, gx: 0, gz: 0, tf: 1, vx: 0, vy: 0, vz: 0, y0w: 0 };
+      this.aiming = { x0: x, y0: y, moved: 0, valid: false, gx: 0, gz: 0, tf: 1, vx: 0, vy: 0, vz: 0, y0w: 0 };
       this.pos.y = Math.max(this.pos.y, R + 0.1);
       this.vel.set(0, 0, 0);
       this.T.snd.bounce(1);
@@ -576,12 +576,13 @@ export class Ball {
   kick(c) {
     const { T } = this;
     const e = c.e;
+    const tok = e.toyTok;
     c.ready = false;
     c.kicked = true;
     this.kickOk = T.clock + 0.7;
     T.friends.emote(e, 'hop', 0.62);
     T.later(0.17, () => {
-      if (!T.mine(e, 'ball') || this.carrier || this.aiming) return;
+      if (!T.mine(e, 'ball') || e.toyTok !== tok || this.carrier || this.aiming) return;
       const p = this.pos;
       if (Math.hypot(p.x - e.pos.x, p.z - e.pos.z) > this.foot(e) + R + 0.45) return;
       this.kickVec(c);
@@ -596,7 +597,7 @@ export class Ball {
       T.fx.sparkles.burst(_v.set(p.x, p.y, p.z), T.amount(8), { colors: DUST, speed: 0.35, up: 0.3, size: 0.014, life: 0.7 });
     });
     T.later(0.75, () => {
-      if (!T.mine(e, 'ball')) return;
+      if (!T.mine(e, 'ball') || e.toyTok !== tok) return;
       const i = this.chasers.indexOf(c);
       if (i >= 0) this.chasers.splice(i, 1);
       this.free(e);
@@ -626,6 +627,7 @@ export class Ball {
   startFetch() {
     const { T } = this;
     if (!this.big) return;
+    this.endFetch();
     // the friends that were chasing stand aside for the fetcher
     for (const c of this.chasers) if (T.mine(c.e, 'ball')) this.free(c.e);
     this.chasers.length = 0;
@@ -716,8 +718,9 @@ export class Ball {
     T.friends.emote(e, 'cheer');
     T.hearts(e, 2);
     T.snd.chirp();
+    const tok = e.toyTok;
     T.later(1.5, () => {
-      if (T.mine(e, 'ball')) this.free(e);
+      if (T.mine(e, 'ball') && e.toyTok === tok) this.free(e);
     });
   }
 

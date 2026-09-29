@@ -26,7 +26,7 @@
 // its eye on carries e.toy (the toy's name), and other toys leave it be.
 import * as THREE from 'three';
 import { REDUCED_MOTION, rand, clamp } from '../config.js';
-import { COLORS, BIG_COLORS } from '../paint/tools.js';
+import { COLORS } from '../paint/tools.js';
 import { Bits, SHAPE } from './bits.js';
 import { ToySounds } from '../sound/toys.js';
 import { Pet } from './pet.js';
@@ -185,7 +185,7 @@ export class Toys {
 
   // let go of any drag in progress
   abort() {
-    this.pet.up();
+    this.pet.up(true);
     this.ball.release(0, 0, true);
     this.down = null;
   }
@@ -200,10 +200,12 @@ export class Toys {
   // a finger or mouse went down at screen (x, y): true if a toy used it
   pointerDown(x, y, ev = null) {
     if (!this.on) return false;
-    this.down = { id: ev?.pointerId ?? 0, x, y, moved: 0 };
+    const id = ev?.pointerId ?? 0;
+    if (this.down && this.down.id !== id) return false;
+    this.down = { id, x, y, moved: 0 };
     const gp = this.ground(x, y);
     if (this.bubbles.hit(x, y, 1)) return true;
-    if (this.ball.grab(x, y, this.down.id)) return true;
+    if (this.ball.grab(x, y)) return true;
     const hit = this.friends.pick(x, y, this.camera, this.view());
     if (hit) {
       this.pet.down(hit, x, y);
@@ -216,8 +218,9 @@ export class Toys {
   pointerMove(x, y, ev = null) {
     if (!this.on) return;
     const d = this.down;
-    const pressed = d && (ev?.buttons || ev?.pointerType === 'touch' || ev?.pointerType === 'pen' || !ev);
-    if (!d || !pressed) return;
+    if (!d || (ev && ev.pointerId !== d.id)) return;
+    const pressed = ev?.buttons || ev?.pointerType === 'touch' || ev?.pointerType === 'pen' || !ev;
+    if (!pressed) return;
     d.moved += Math.hypot(x - d.x, y - d.y);
     d.x = x;
     d.y = y;
@@ -234,9 +237,11 @@ export class Toys {
     }
   }
 
-  pointerUp(x, y) {
+  pointerUp(x, y, ev = null) {
     if (!this.on && !this.down) return;
-    this.pet.up(x, y);
+    if (ev && this.down && ev.pointerId !== this.down.id) return;
+    if (ev?.type === 'pointercancel') return this.abort();
+    this.pet.up();
     this.ball.release(x, y);
     this.down = null;
   }
@@ -325,7 +330,6 @@ export class Toys {
 
   // hearts floating up from a friend
   hearts(e, n = 1) {
-    if (this.bits.max < 40) return;
     const f = e.friend;
     f.worldCenter(_c);
     const r = f.restRadius * e.scale;

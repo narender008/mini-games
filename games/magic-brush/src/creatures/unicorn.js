@@ -11,11 +11,11 @@
 // spot, tail flying). She walks with a high-stepping prance.
 import * as THREE from 'three';
 import { Friend } from './friend.js';
-import { tubeGeometry, withLook, bindTo, bindBy, frameFrom } from './parts.js';
+import { tubeGeometry, withLook, bindTo, bindBy, frameFrom, TINY, tiny, onSurface } from './parts.js';
 import { hideMaterial } from './materials.js';
 import { mergeGeometries } from './sculpt.js';
 import { pose, addPose, bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp } from './anim.js';
-import { Tracker, Leg, Gait, stepOffset, hairClump, hairMaterial } from './pal-kit.js';
+import { Tracker, Leg, Gait, hairClump, hairMaterial } from './pal-kit.js';
 import { glide, puff } from '../sound/calls.js';
 import { rand } from '../config.js';
 
@@ -88,15 +88,6 @@ function spiralHorn(base, tip, r0, { turns = 3.4, radial = 30, steps = 64, depth
   return g;
 }
 
-// Parts that only show now and then (the closed-eye lines) are modelled
-// shrunk to a speck round their bone and scaled up by 1 / TINY when shown,
-// so the rest pose (which lies flat on the canvas before she comes alive)
-// has none of them.
-const TINY = 0.01;
-function tiny(g, c) {
-  return g.translate(-c[0], -c[1], -c[2]).scale(TINY, TINY, TINY).translate(c[0], c[1], c[2]);
-}
-
 // a torus round the axis n, its centre `depth` out from c along n (a soft rim of fur round an eye)
 function ring(s, c, n, depth, R, r, o) {
   const y = new THREE.Vector3(...n).normalize();
@@ -105,26 +96,6 @@ function ring(s, c, n, depth, R, r, o) {
   const z = new THREE.Vector3().crossVectors(x, y);
   const e = new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z), 'XYZ');
   s.torus(new THREE.Vector3(...c).addScaledVector(y, depth).toArray(), R, r, { ...o, rot: [e.x, e.y, e.z] });
-}
-
-// the nearest point on a surface (projected onto the tangent plane of the
-// nearest vertex), lifted off it by eps, and its normal
-function onSurface(geo, p, eps = 0) {
-  const pos = geo.attributes.position.array;
-  const nor = geo.attributes.normal.array;
-  let best = 0;
-  let bd = Infinity;
-  for (let i = 0; i < pos.length; i += 3) {
-    const dx = pos[i] - p[0], dy = pos[i + 1] - p[1], dz = pos[i + 2] - p[2];
-    const d = dx * dx + dy * dy + dz * dz;
-    if (d < bd) {
-      bd = d;
-      best = i;
-    }
-  }
-  const n = [nor[best], nor[best + 1], nor[best + 2]];
-  const k = (p[0] - pos[best]) * n[0] + (p[1] - pos[best + 1]) * n[1] + (p[2] - pos[best + 2]) * n[2] - eps;
-  return { p: [p[0] - n[0] * k, p[1] - n[1] * k, p[2] - n[2] * k], n };
 }
 
 export class Unicorn extends Friend {

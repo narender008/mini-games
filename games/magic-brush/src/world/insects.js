@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import { rand, clamp, damp, angleDiff, TAU, REDUCED_MOTION } from '../config.js';
 import { POND, WATER_Y } from './world.js';
+import { windAt } from './foliage.js';
 
 const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
@@ -20,6 +21,7 @@ const _e = new THREE.Euler(0, 0, 0, 'YXZ');
 const _s = new THREE.Vector3();
 const _p = new THREE.Vector3();
 const _v = new THREE.Vector3();
+const _w = new THREE.Vector2();
 
 const smooth = (a, b, x) => {
   const t = clamp((x - a) / (b - a), 0, 1);
@@ -207,10 +209,9 @@ const BUTTERFLY_COLORS = [
 ];
 
 class Butterflies {
-  constructor(scene, n, spots, sound) {
+  constructor(scene, n, spots) {
     this.n = n;
     this.spots = spots;
-    this.sound = sound;
     const geo = butterflyGeometry();
     this.aFlap = new THREE.InstancedBufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute('aFlap', this.aFlap);
@@ -322,7 +323,6 @@ class Butterflies {
     b.target = s;
     b.state = 'flit';
     b.cool = 1.2;
-    b.pos.y = Math.max(b.pos.y, s[1] * 0.5 + 0.05);
   }
 
   flit(b, dt, t, slow) {
@@ -362,9 +362,7 @@ class Butterflies {
     b.state = 'perch';
     b.timer = rand(3, 8);
     b.restT = rand(0, 2);
-    b.pos.set(b.target[0], b.target[1] + 0.012, b.target[2]);
-    b.yaw = rand(-3, 3);
-    b.roll = 0;
+    b.perchYaw = rand(-3, 3);
   }
 
   perch(b, dt, t, camera, threats) {
@@ -377,7 +375,14 @@ class Butterflies {
     b.flap = damp(b.flap, target, 5, dt);
     b.pitch = damp(b.pitch, 1.0, 5, dt);
     b.roll = damp(b.roll, 0, 5, dt);
-    b.bob = 0;
+    b.yaw += angleDiff(b.yaw, b.perchYaw) * (1 - Math.exp(-3 * dt));
+    const s = b.target;
+    const sway = windAt(s[0], s[2], _w).multiplyScalar((0.03 * s[1]) / 0.25);
+    const e = 1 - Math.exp(-12 * dt);
+    b.pos.x += (s[0] + sway.x - b.pos.x) * e;
+    b.pos.y += (s[1] + 0.012 - b.pos.y) * e;
+    b.pos.z += (s[2] + sway.y - b.pos.z) * e;
+    b.bob = damp(b.bob, 0, 12, dt);
     if (b.timer <= 0) {
       const s = this.pickFlower(b.pos, camera, threats, b.target);
       if (s) this.go(b, s);
@@ -670,7 +675,7 @@ export class Insects {
     const low = quality.tier === 'low';
     const mid = quality.tier === 'medium';
     const spots = world.flowers?.userData.spots || [];
-    this.butterflies = new Butterflies(scene, low ? 3 : mid ? 5 : 7, spots, sound);
+    this.butterflies = new Butterflies(scene, low ? 3 : mid ? 5 : 7, spots);
     this.dragonflies = new Dragonflies(scene, low ? 1 : mid ? 2 : 3, pond, sound);
     this.threats = [];
   }

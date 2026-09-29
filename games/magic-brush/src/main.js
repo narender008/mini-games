@@ -505,13 +505,13 @@ class App {
 
   // a friend sets off for the garden (or arrives): the camera runs with it
   onJourney(e, phase) {
+    if (this.state === 'magic' && !this.magicRun) this.setState('play');
+    if (this.state !== 'play') return;
     if (phase === 'start') {
-      if (this.state !== 'play') this.setState('play');
       this.gcam.frame(e, 'chase', 0);
       this.directing = true;
       this.rig.follow((dt) => this.gcam.shot(dt), { smooth: 0.55, lookSmooth: 0.3 });
     } else {
-      if (this.state === 'magic') this.setState('play');
       // a close look at the arrival cheer, then back to the whole garden
       this.gcam.frame(e, 'close', 2.4);
       this.rig.follow((dt) => this.gcam.shot(dt), { smooth: 0.7, lookSmooth: 0.4 });
@@ -993,7 +993,10 @@ class App {
     } else if (this.state === 'play' || this.state === 'menu') {
       this.trackGround(e);
       // a toy may take the touch (petting, a bubble, the ball, a treat ...)
-      if (this.state === 'play' && this.toys.pointerDown(e.clientX, e.clientY, e)) return;
+      if (this.state === 'play' && this.toys.pointerDown(e.clientX, e.clientY, e)) {
+        capture(this.canvas, e.pointerId, true);
+        return;
+      }
       const hit = this.friends.pick(e.clientX, e.clientY, this.camera, this.view);
       if (hit) {
         this.friends.play(hit, this.camera);
@@ -1046,7 +1049,7 @@ class App {
   onUp(e) {
     const p = this.pointer;
     if (e.pointerType !== 'mouse') this.friends.pointer = null;
-    this.toys.pointerUp(e.clientX, e.clientY);
+    this.toys.pointerUp(e.clientX, e.clientY, e);
     if (e.pointerId !== p.id) return;
     this.endStroke();
     if (e.pointerType !== 'mouse') p.hover = null;

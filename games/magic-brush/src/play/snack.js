@@ -224,7 +224,10 @@ export class Snack {
   // a second friend is beside the first: a fresh little berry pops out for it
   shared(b, e) {
     const { T } = this;
-    if (b.sharer !== e) return;
+    if (b.sharer !== e) {
+      T.done(e);
+      return;
+    }
     b.sharer = null;
     const rr = e.friend.restRadius * e.scale;
     const x = e.pos.x + Math.sin(e.heading) * (rr * 0.5 + 0.08);
@@ -320,7 +323,7 @@ export class Snack {
           b.t = 0;
         }
         // a berry with no eater yet may find one when a friend frees up
-        if (!b.eater && (b.retry -= dt) <= 0) {
+        if ((!b.eater || !T.mine(b.eater, 'snack')) && (b.retry -= dt) <= 0) {
           b.retry = 1;
           const eater = this.pickEater(b, null);
           if (eater) {

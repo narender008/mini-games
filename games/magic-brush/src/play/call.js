@@ -114,7 +114,12 @@ export class Call {
       }
       if (all || run.t > 7) this.cheer(run);
     } else if (run.phase === 'cheer') {
-      for (const c of run.list) if (T.mine(c.e, 'call') && T.friends.list.includes(c.e)) T.face(c.e, T.camera.position.x, T.camera.position.z, dt, 5);
+      for (const c of run.list) {
+        if (!T.mine(c.e, 'call')) continue;
+        c.e.busy = Math.max(c.e.busy, 0.3);
+        c.e.timer = Math.max(c.e.timer, 1);
+        T.face(c.e, T.camera.position.x, T.camera.position.z, dt, 5);
+      }
       if (run.t > run.at + 2.6) this.disperse(run);
     }
   }

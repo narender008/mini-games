@@ -24,11 +24,15 @@ export class Nav {
     this.from = new Int32Array(this.w * this.h);
     this.mark = new Int32Array(this.w * this.h);
     this.stamp = 0;
-    this.heap = [];
+    // the open list: a binary heap of (f, cell) pairs
+    this.hf = new Float32Array(this.w * this.h);
+    this.hid = new Int32Array(this.w * this.h);
+    this.hn = 0;
   }
 
-  cellOf(x, z) {
-    return [clamp(Math.floor((x - this.x0) / this.cell), 0, this.w - 1), clamp(Math.floor((z - this.z0) / this.cell), 0, this.h - 1)];
+  // the grid cell under a point, as an index (j * w + i)
+  cellAt(x, z) {
+    return clamp(Math.floor((z - this.z0) / this.cell), 0, this.h - 1) * this.w + clamp(Math.floor((x - this.x0) / this.cell), 0, this.w - 1);
   }
 
   center(i, j) {
@@ -37,15 +41,17 @@ export class Nav {
 
   // is the point at least `clear` metres inside the walkable area?
   free(x, z, clear = 0) {
-    const [i, j] = this.cellOf(x, z);
-    return this.sdf[j * this.w + i] < -clear;
+    return this.sdf[this.cellAt(x, z)] < -clear;
   }
 
   // the nearest free cell centre to a point (a friend that was pushed out of the area)
   nearestFree(x, z, clear = 0) {
-    const [ci, cj] = this.cellOf(x, z);
-    if (this.sdf[cj * this.w + ci] < -clear) return { x, z };
-    let best = null;
+    const c = this.cellAt(x, z);
+    if (this.sdf[c] < -clear) return { x, z };
+    const ci = c % this.w;
+    const cj = (c / this.w) | 0;
+    let bi = -1;
+    let bj = -1;
     let bestD = Infinity;
     const R = Math.ceil(2.5 / this.cell);
     for (let dj = -R; dj <= R; dj++)
@@ -57,10 +63,11 @@ export class Nav {
         const d = di * di + dj * dj;
         if (d < bestD) {
           bestD = d;
-          best = this.center(i, j);
+          bi = i;
+          bj = j;
         }
       }
-    return best;
+    return bi < 0 ? null : this.center(bi, bj);
   }
 
   // a straight walk between two points that stays inside (sampled at half a cell)
@@ -81,54 +88,22 @@ export class Nav {
     const goal = this.nearestFree(bx, bz, clear);
     if (!start || !goal) return null;
     if (this.clearLine(start.x, start.z, goal.x, goal.z, clear)) return [{ x: goal.x, z: goal.z }];
-    const [si, sj] = this.cellOf(start.x, start.z);
-    const [gi, gj] = this.cellOf(goal.x, goal.z);
     const W = this.w;
+    const sid = this.cellAt(start.x, start.z);
+    const gid = this.cellAt(goal.x, goal.z);
+    const si = sid % W;
+    const sj = (sid / W) | 0;
+    const gi = gid % W;
+    const gj = (gid / W) | 0;
     const stamp = ++this.stamp;
-    const heap = this.heap;
-    heap.length = 0;
-    const push = (f, id) => {
-      heap.push([f, id]);
-      let k = heap.length - 1;
-      while (k > 0) {
-        const p = (k - 1) >> 1;
-        if (heap[p][0] <= heap[k][0]) break;
-        [heap[p], heap[k]] = [heap[k], heap[p]];
-        k = p;
-      }
-    };
-    const pop = () => {
-      const top = heap[0];
-      const last = heap.pop();
-      if (heap.length) {
-        heap[0] = last;
-        let k = 0;
-        for (;;) {
-          const l = k * 2 + 1;
-          const r = l + 1;
-          let m = k;
-          if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
-          if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
-          if (m === k) break;
-          [heap[m], heap[k]] = [heap[k], heap[m]];
-          k = m;
-        }
-      }
-      return top;
-    };
-    const octile = (i, j) => {
-      const dx = Math.abs(i - gi);
-      const dz = Math.abs(j - gj);
-      return dx + dz + (SQRT2 - 2) * Math.min(dx, dz);
-    };
-    const sid = sj * W + si;
+    this.hn = 0;
     this.g[sid] = 0;
     this.mark[sid] = stamp;
     this.from[sid] = -1;
-    push(octile(si, sj), sid);
+    this.push(octile(si, sj, gi, gj), sid);
     let found = false;
-    while (heap.length) {
-      const [, id] = pop();
+    while (this.hn) {
+      const id = this.pop();
       const i = id % W;
       const j = (id / W) | 0;
       if (i === gi && j === gj) {
@@ -154,7 +129,7 @@ export class Nav {
             this.mark[nid] = stamp;
             this.g[nid] = g;
             this.from[nid] = id;
-            push(g + octile(ni, nj), nid);
+            this.push(g + octile(ni, nj, gi, gj), nid);
           }
         }
     }
@@ -182,6 +157,59 @@ export class Nav {
     out[out.length - 1] = { x: goal.x, z: goal.z };
     return out;
   }
+
+  push(f, id) {
+    if (this.hn === this.hf.length) {
+      const hf = new Float32Array(this.hn * 2);
+      const hid = new Int32Array(this.hn * 2);
+      hf.set(this.hf);
+      hid.set(this.hid);
+      this.hf = hf;
+      this.hid = hid;
+    }
+    const { hf, hid } = this;
+    let k = this.hn++;
+    while (k > 0) {
+      const p = (k - 1) >> 1;
+      if (hf[p] <= f) break;
+      hf[k] = hf[p];
+      hid[k] = hid[p];
+      k = p;
+    }
+    hf[k] = f;
+    hid[k] = id;
+  }
+
+  // the cell with the lowest f, taken off the heap
+  pop() {
+    const { hf, hid } = this;
+    const top = hid[0];
+    const n = --this.hn;
+    if (n) {
+      const f = hf[n];
+      const id = hid[n];
+      let k = 0;
+      for (;;) {
+        const l = k * 2 + 1;
+        if (l >= n) break;
+        const m = l + 1 < n && hf[l + 1] < hf[l] ? l + 1 : l;
+        if (hf[m] >= f) break;
+        hf[k] = hf[m];
+        hid[k] = hid[m];
+        k = m;
+      }
+      hf[k] = f;
+      hid[k] = id;
+    }
+    return top;
+  }
+}
+
+// the octile distance between two cells (the A* estimate)
+function octile(i, j, gi, gj) {
+  const dx = Math.abs(i - gi);
+  const dz = Math.abs(j - gj);
+  return dx + dz + (SQRT2 - 2) * Math.min(dx, dz);
 }
 
 // Total length of a path that starts at (x, z).

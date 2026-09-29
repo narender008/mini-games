@@ -366,10 +366,10 @@ export class Puddles {
       _m.compose(_v.set(x, y, z), _q.setFromAxisAngle(UP, h + rand(-0.12, 0.12)), _s.set(w, 1, l));
       K.mesh.setMatrixAt(i, _m);
       K.mesh.setColorAt(i, s.color);
+      if (K.age[i] < 0) K.live++;
       K.age[i] = 0;
       K.a0[i] = clamp(0.35 + 0.65 * s.amt, 0.3, 1);
       K.fade.array[i] = K.a0[i];
-      K.live++;
       K.dirty = true;
     }
   }

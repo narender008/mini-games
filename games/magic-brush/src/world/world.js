@@ -580,7 +580,8 @@ export class World {
       [[TREES[0].x, 2.6, TREES[0].z - 0.1], [TREES[2].x + 0.1, 2.5, TREES[2].z]],
       [[-0.9, 1.02, -4.6], [0.95, 1.02, -2.2]],
     ];
-    const lights = stringLights(this.spans, { sag: 0.5 });
+    this.stringSag = 0.5;
+    const lights = stringLights(this.spans, { sag: this.stringSag });
     this.group.add(lights);
     this.stringMat = lights.userData.mat;
     this.stringBulbs = lights.children[0];
