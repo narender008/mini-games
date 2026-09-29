@@ -16,10 +16,10 @@
 //   marks                 splats and stains that stay; paper and glitter that
 //                         lie where they fall until the round ends
 //
-// Sizes are in metres and meant for a 5 cm ball beside 19 cm tanks: a great
-// hit reaches about 0.25 m from the impact (0.5 m across), an ordinary one
-// about 0.17 m. A hit high on a tank (B.hi) throws only what the ball is made
-// of. Nothing here allocates: numbers in, pool slots out.
+// Sizes are in metres for a 5 cm ball beside 19 cm tanks, scaled by the Fx's
+// PRESENCE (2.6, see index.js): a great hit reaches about 0.65 m from the
+// impact (1.3 m across), an ordinary one about 0.45 m. A hit high on a tank
+// (B.hi) throws only what the ball is made of. Nothing here allocates: numbers in, pool slots out.
 import { TAU, rnd, rr, PAPER, GLITTER, GEL, MUD, WATER_TONES, BEADS, PIGMENT, GROUND_KIT, randomColorIndex } from './common.js';
 import { PUFF, FLASH, DOT, RING } from './soft.js';
 import { G_BEAD, G_GLITTER, G_DROP } from './grains.js';

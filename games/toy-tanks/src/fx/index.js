@@ -2,9 +2,11 @@
 // physical events at toy scale (a 5 cm ball beside 19 cm tanks): layered, big
 // enough to read clearly from the gameplay camera, never filling the screen.
 // PRESENCE sets how big a burst is: 1 is a strictly lifesize pop (a great
-// hit about 0.25 m across), which reads as almost nothing from where the
-// camera plays; at 2.6 a great hit spreads about 0.65 m, a tank length and
-// a half either side, as the bursts did before the camera pulled back.
+// hit reaches about 0.25 m from the impact), which reads as almost nothing
+// from where the camera plays; at 2.6 a great hit reaches about 0.65 m (its
+// dust ring some 1.25 m across, most of the way to the other tank, which
+// starts about 0.9 m off) and the paper, blobs and grains it throws grow
+// with it.
 //
 //   const fx = new Fx({ renderer, scene, camera, quality, world, softUniforms });
 //   await fx.warmup();                 // once, after scene.environment and the lights exist

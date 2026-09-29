@@ -140,14 +140,25 @@ export class Game {
       }
       this.app.arc.show(true);
     } else {
-      this.phase = 'think';
-      this.timer = 0;
-      const other = this.other;
-      s.plan = s.brain.plan(this.app.flight, this.app.world, s, other, (a) => this.muzzleAt(s, a));
-      s.planFrom = s.angle;
-      s.planPowerFrom = s.power;
-      this.app.arc.show(true);
+      // the computer sometimes rolls a little first, on the same fuel as you
+      const d = s.brain.drive(s);
+      if (d) {
+        this.phase = 'drive';
+        s.driveDir = Math.sign(d) * s.facing;
+        s.driveTo = 1 - Math.abs(d);
+      } else this.think();
     }
+  }
+
+  // the computer works out its shot from where it stands, then turns to it
+  think() {
+    const s = this.side;
+    this.phase = 'think';
+    this.timer = 0;
+    s.plan = s.brain.plan(this.app.flight, this.app.world, s, this.other, (a) => this.muzzleAt(s, a));
+    s.planFrom = s.angle;
+    s.planPowerFrom = s.power;
+    this.app.arc.show(true);
   }
 
   // in target practice the lane reaches just past the farthest target
@@ -463,6 +474,15 @@ export class Game {
         this.driveStep(s, dt);
         this.showArc(s);
         break;
+      case 'drive':
+        this.driveStep(s, dt);
+        if (s.fuel <= s.driveTo || (dt > 0 && !s.driving)) {
+          s.driveDir = 0;
+          this.driveStep(s, 0);
+          this.frameAim();
+          this.think();
+        }
+        break;
       case 'think': {
         // the computer (or the Little ones helper) swings the barrel to its
         // plan, pauses as if checking, then fires
@@ -596,6 +616,7 @@ export class Game {
     this.phase = 'idle';
     for (const s of this.sides) {
       s.view.celebrate(false);
+      s.view.drive(0);
       s.view.object.visible = true;
     }
     this.app.targets?.clear();

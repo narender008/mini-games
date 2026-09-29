@@ -16,7 +16,7 @@ const SLOPE = 0.0337; // rise of the beach per metre back from the waterline (0 
 // width; negative is a hollow), the dip in the lane, the pits dug behind it
 // (x, z, radius, depth), the dune the castle stands on (x, z, radius, height)
 // and where the toys stand (castle: x, z, yaw, size;
-// bucket: x, z, yaw, lean; spades: x, z, yaw, lean, size; heaps: x, z, radius;
+// bucket: x, z, yaw, lean; spades: x, z, yaw, lean, size;
 // flag: where the wind flag stands, x, z).
 const LAYOUTS = [
   {
@@ -28,7 +28,6 @@ const LAYOUTS = [
     castle: [-0.68, -0.9, 0.1, 0.95],
     bucket: [-0.2, -0.3, 0.4, 0.12],
     spades: [[0.3, -0.3, 0.5, 0.42, 1.0], [0.44, -0.85, -0.5, 0.22, 1.1]],
-    heaps: [[0.72, -0.5, 0.05], [0.9, -0.45, 0.04]],
     flag: [0.17, -0.3],
   },
   {
@@ -40,7 +39,6 @@ const LAYOUTS = [
     castle: [-0.64, -0.9, -0.1, 0.95],
     bucket: [0.22, -0.3, -0.3, 0.1],
     spades: [[-0.22, -0.32, -0.4, 0.5, 1.0], [0.6, -0.95, 0.3, 0.2, 1.3]],
-    heaps: [[0.15, -0.6, 0.05], [0.9, -0.4, 0.05]],
     flag: [-0.1, -0.3],
   },
   {
@@ -52,7 +50,6 @@ const LAYOUTS = [
     castle: [-0.76, -0.9, 0.05, 0.95],
     bucket: [0.2, -0.3, 0.6, 0.14],
     spades: [[-0.2, -0.34, 0.2, 0.4, 1.0], [-0.2, -0.8, 0.6, 0.25, 1.3]],
-    heaps: [[-0.4, -0.55, 0.05], [0.25, -0.5, 0.04]],
     flag: [-0.32, -0.3],
   },
 ];
