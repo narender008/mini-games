@@ -24,6 +24,7 @@ const _f = new THREE.Vector3();
 const _r = new THREE.Vector3();
 const _v = new THREE.Vector3();
 const _rel = new THREE.Vector3();
+const _p = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 // seconds a new kind of shot takes to blend in
 const BLEND = 1.0;
@@ -67,6 +68,21 @@ export class GardenCam {
   push = (pos) => {
     if (!this.active) return;
     this.active = false;
+    // (and out of the friend it is following: the camera lags its goal, so a friend
+    // that turns or hops toward it would otherwise pass right by the lens)
+    const fe = this.focus?.e;
+    if (fe && !fe.leaving && fe.home !== 'sky') {
+      fe.friend.worldCenter(_p);
+      const room = clamp(fe.friend.restRadius * fe.scale * 1.5, 0.6, 1.2);
+      const dx = pos.x - _p.x;
+      const dz = pos.z - _p.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < room) {
+        const m = Math.min(0.5, room - dist);
+        pos.x += dist > 1e-3 ? (dx / dist) * m : m;
+        pos.z += dist > 1e-3 ? (dz / dist) * m : 0;
+      }
+    }
     for (let i = 0; i < 3; i++) {
       const d = obstacleAt(pos.x, pos.z);
       if (d < -0.34) return;
