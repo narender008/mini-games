@@ -20,6 +20,7 @@ import { mergeGeometries } from './sculpt.js';
 import { hideMaterial } from './materials.js';
 import { pose, bump, ramp, smooth, Spring, TAU, clamp, lerp } from './anim.js';
 import { glide, puff, flaps } from '../sound/calls.js';
+import { Tracker, Gait } from './pal-kit.js';
 
 const COAT = 0x2b2f3a;
 const BACK = 0x20232c;
@@ -110,6 +111,7 @@ function tiny(g, c) {
 }
 
 const _w = new THREE.Vector3();
+const _gs = [0, 0];
 const _q = new THREE.Quaternion();
 const _e = new THREE.Euler();
 
@@ -129,6 +131,7 @@ export class Penguin extends Friend {
     this.sparkleColors = SPARKS;
     this.phase = 0;
     this.stepAmt = 0;
+    this.track = new Tracker();
     this.headYaw = new Spring(0, 1.8, 0.75);
     this.headPitch = new Spring(0, 1.8, 0.75);
     this.tilt = new Spring(0, 1.3, 0.6);
@@ -338,25 +341,19 @@ export class Penguin extends Friend {
     const moveAmt = Math.max(pace, clamp(Math.abs(yawRate) / 1.2, 0, 0.6)) * (air > 0 ? 0 : 1) * (doing ? 0 : 1);
     this.stepAmt += ((moveAmt > 0.03 ? 1 : 0) - this.stepAmt) * (1 - Math.exp(-dt * 6));
     const hz = lerp(1.5, 2.2, clamp(pace, 0, 1));
-    this.phase += dt * hz * (this.stepAmt > 0.01 ? 1 : 0);
+    this.phase += dt * hz;
     const D = 0.6;
-    const S = (m.speed * D) / hz;
     const ph = this.phase % 1;
     const sway = Math.sin(TAU * (ph - 0.55)) * this.stepAmt;
+    // a foot on the ground stays where it landed (the ground carries it back)
+    const gait = (this.gait ??= new Gait(2, 0.06));
+    gait.begin(this.track.update(this.object, dt), air, dt);
+    const lift = 0.011 * clamp(pace * 1.5, 0.5, 1) * this.stepAmt;
     for (let i = 0; i < 2; i++) {
       const F = this.feet[i];
-      const p = (this.phase + (i === 0 ? 0.2 : 0.7)) % 1;
-      let dz;
-      let y = 0;
-      let q = 0;
-      if (p < D) dz = S / 2 - S * (p / D);
-      else {
-        q = (p - D) / (1 - D);
-        dz = -S / 2 + S * smooth(q);
-        y = 0.011 * Math.sin(Math.PI * q) * clamp(pace * 1.5, 0.5, 1);
-      }
-      F.target.set(F.home.x, F.home.y + y * this.stepAmt, F.home.z + dz * this.stepAmt);
-      F.pitch = -Math.sin(Math.PI * q) * 0.35 * this.stepAmt;
+      gait.step(i, this.phase + (i === 0 ? 0.2 : 0.7), D, hz, lift, 0.008, _gs);
+      F.target.set(F.home.x, F.home.y + _gs[1], F.home.z + _gs[0]);
+      F.pitch = -(_gs[1] / 0.011) * 0.35;
     }
 
     // ---- body

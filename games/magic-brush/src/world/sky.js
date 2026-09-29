@@ -40,7 +40,7 @@ vec3 skyHaze(vec3 d) {
 }
 vec4 skyClouds(vec3 d) {
   if (d.y < 0.015) return vec4(0.0);
-  vec2 uv = d.xz / (d.y + 0.09) * 0.55 + vec2(uSkyTime * 0.004, uSkyTime * 0.0015);
+  vec2 uv = d.xz / (d.y + 0.09) * 0.55 + vec2(uSkyTime * 0.011, uSkyTime * 0.004);
   float n = skF(uv * 1.3);
   float cover = uCloudCover;
   float dens = smoothstep(1.0 - cover, 1.0 - cover + 0.22, n);

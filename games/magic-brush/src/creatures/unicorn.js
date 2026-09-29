@@ -1,7 +1,8 @@
-// Lumi, a baby unicorn: a big round foal's head with huge lilac eyes and
-// long lashes, soft short fur that carries the child's colours, a silky
-// mane and tail that swing and stream as she moves, a pearly spiral horn
-// that shimmers with rainbow colours, and little glossy hooves under fluffy
+// Lumi, a baby unicorn: a big round foal's head with a short soft muzzle and
+// a little smile, big glossy lilac eyes set in fluffy rims with curling
+// lashes, soft short fur that carries the child's colours, a silky mane and
+// tail that swing and stream as she moves, a pearly spiral horn that
+// shimmers with rainbow colours, and little glossy hooves under fluffy
 // fetlocks.
 //
 // Tricks: 'rear' (crouches, rears up pawing the air and a burst of
@@ -10,20 +11,22 @@
 // spot, tail flying). She walks with a high-stepping prance.
 import * as THREE from 'three';
 import { Friend } from './friend.js';
-import { tubeGeometry, withLook, bindTo, bindBy, frameFrom } from './parts.js';
+import { tubeGeometry, withLook, bindTo, bindBy, frameFrom, TINY, tiny, onSurface } from './parts.js';
+import { hideMaterial } from './materials.js';
 import { mergeGeometries } from './sculpt.js';
 import { pose, addPose, bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp } from './anim.js';
-import { Tracker, Leg, stepOffset, hairClump, hairMaterial } from './pal-kit.js';
+import { Tracker, Leg, Gait, hairClump, hairMaterial } from './pal-kit.js';
 import { glide, puff } from '../sound/calls.js';
 import { rand } from '../config.js';
 
 const COAT = 0xf6f0fd;
-const MUZZLE = 0xf6dde8;
+const MUZZLE = 0xfae6ee;
 const INNER_EAR = 0xf2a9c6;
 const BLUSH = 0xf59ac0;
 const HOOF = 0xd9c7ee;
 const LASH = 0x2e1d3a;
-const NOSTRIL = 0x9c4a6a;
+const NOSTRIL = 0x5e2a44;
+const MOUTH = 0x84395a;
 const MANE = [0xf59ad0, 0xc49cf5, 0x9cc4f7, 0xa8ecd6, 0xf7d6a0];
 
 // per-frame constants and scratch (no allocations while animating)
@@ -40,7 +43,12 @@ const H = (x, y, z) => [HP[0] + x * HS, HP[1] + y * HS, HP[2] + z * HS];
 const hr = (r) => r * HS;
 const HORN_BASE = H(0, 0.068, 0.028);
 const HORN_TIP = H(0, 0.128, 0.064);
-const EYE = H(0.034, 0.025, 0.047);
+const EYE = H(0.034, 0.024, 0.04);
+const EYE_DIR = [0.46, 0.06, 0.885];
+const EYE_R = hr(0.0218);
+const EYE_PARTS = [['eyeL', 'lidL', 'shutL'], ['eyeR', 'lidR', 'shutR']];
+const SHUT = ['shutL', 'shutR'];
+const LID_K = 0.965; // how much closer to the eye than usual the lid lies
 const rel = (p) => [p[0] - HP[0], p[1] - HP[1], p[2] - HP[2]]; // offset from the head bone
 
 // a spiral horn: a cone along base -> tip with a twisted two-start groove
@@ -80,6 +88,16 @@ function spiralHorn(base, tip, r0, { turns = 3.4, radial = 30, steps = 64, depth
   return g;
 }
 
+// a torus round the axis n, its centre `depth` out from c along n (a soft rim of fur round an eye)
+function ring(s, c, n, depth, R, r, o) {
+  const y = new THREE.Vector3(...n).normalize();
+  const x = new THREE.Vector3(1, 0, 0);
+  x.addScaledVector(y, -x.dot(y)).normalize();
+  const z = new THREE.Vector3().crossVectors(x, y);
+  const e = new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z), 'XYZ');
+  s.torus(new THREE.Vector3(...c).addScaledVector(y, depth).toArray(), R, r, { ...o, rot: [e.x, e.y, e.z] });
+}
+
 export class Unicorn extends Friend {
   constructor(info, ctx) {
     super(info, ctx);
@@ -111,6 +129,10 @@ export class Unicorn extends Friend {
     this.pawT = -1;
     this.pawSide = 1;
     this.prevBob = 0;
+    // how shut the eyes are (0..1), so closed eyes can sink in a little
+    this.shut = 0;
+    const blink = this.blinker.update.bind(this.blinker);
+    this.blinker.update = (dt) => (this.shut = blink(dt));
   }
 
   get tricks() {
@@ -125,6 +147,8 @@ export class Unicorn extends Friend {
     s.bone('head', 'neck', HP);
     s.bone('jaw', 'head', H(0, -0.02, 0.038));
     this.eyeBones(s, EYE);
+    // the line a shut eye makes, shown only while the lids are down
+    s.bones2('shut', 'head', EYE);
     s.bones2('ear', 'head', H(0.03, 0.058, -0.014));
     s.bone('maneH', 'head', H(0, 0.07, -0.024));
     s.bone('maneN', 'neck', [0, 0.28, 0.036]);
@@ -156,17 +180,18 @@ export class Unicorn extends Friend {
     s.cone([0, 0.318, 0.046], [0, 0.262, 0.036], 0.0115, 0.011, { bone: 'neck', k: 0.012, ...crestLook });
     s.cone([0, 0.262, 0.036], [0, 0.212, 0.006], 0.011, 0.0095, { bone: 'chest', k: 0.012, ...crestLook });
     s.ellipsoid(H(0, 0.066, 0.004), [hr(0.017), hr(0.011), hr(0.016)], { bone: 'head', k: 0.014, ...crestLook, fur: 2.6 });
-    // head: a big round cranium, soft cheeks and a pale velvet muzzle
-    s.ellipsoid(H(0, 0.024, 0.004), [hr(0.057), hr(0.055), hr(0.056)], { bone: 'head', k: 0.03 });
-    s.sphere(H(0.03, -0.004, 0.025), hr(0.029), { bone: 'head', k: 0.03, sym: true });
-    s.ellipsoid(H(0, -0.016, 0.056), [hr(0.032), hr(0.029), hr(0.04)], { bone: 'head', k: 0.035, rot: [0.35, 0, 0], ...muzzle });
-    s.ellipsoid(H(0, -0.024, 0.08), [hr(0.028), hr(0.022), hr(0.018)], { bone: 'head', k: 0.02, ...muzzle });
+    // head: a big round cranium, soft cheeks and a short, rounded velvet muzzle
+    s.ellipsoid(H(0, 0.027, 0.004), [hr(0.06), hr(0.055), hr(0.055)], { bone: 'head', k: 0.03 });
+    s.sphere(H(0.027, -0.003, 0.022), hr(0.022), { bone: 'head', k: 0.03, sym: true });
+    s.ellipsoid(H(0, -0.013, 0.048), [hr(0.028), hr(0.022), hr(0.025)], { bone: 'head', k: 0.035, rot: [0.2, 0, 0], ...muzzle, paint: 0.6, fur: 0.7 });
+    s.ellipsoid(H(0, -0.016, 0.06), [hr(0.02), hr(0.016), hr(0.015)], { bone: 'head', k: 0.02, ...muzzle, paint: 0.6, fur: 0.7 });
     // a rosy blush under each eye
-    s.sphere(H(0.036, -0.007, 0.046), hr(0.012), { bone: 'head', k: 0.012, sym: true, tint: BLUSH, paint: 0.45, fur: 0.6 });
+    s.sphere(H(0.04, -0.009, 0.038), hr(0.012), { bone: 'head', k: 0.012, sym: true, tint: BLUSH, paint: 0.45, fur: 0.6 });
     // chin, on the jaw
-    s.ellipsoid(H(0, -0.035, 0.06), [hr(0.02), hr(0.011), hr(0.022)], { bone: 'jaw', k: 0.014, ...muzzle });
-    // eye sockets: smooth, short fur around the eyes
-    s.sphere(EYE, hr(0.021), { bone: 'head', k: 0.006, sym: true, fur: 0.15 });
+    s.ellipsoid(H(0, -0.028, 0.048), [hr(0.014), hr(0.009), hr(0.017)], { bone: 'jaw', k: 0.014, ...muzzle, paint: 0.6, fur: 0.7 });
+    // eye sockets: smooth, short fur inside a soft rim that holds each eye
+    s.sphere(EYE, EYE_R * 0.86, { bone: 'head', k: 0.006, sym: true, fur: 0.15 });
+    ring(s, EYE, EYE_DIR, EYE_R * 0.46, EYE_R * 0.95, 0.0024, { bone: 'head', k: 0.007, sym: true, fur: 0.35 });
     // ears: soft leaves with pink hollows
     s.ellipsoid(H(0.034, 0.08, -0.014), [hr(0.013), hr(0.027), hr(0.0095)], { bone: 'earL', k: 0.012, sym: true, rot: [0.1, 0, -0.32] });
     s.ellipsoid(H(0.036, 0.083, -0.006), [hr(0.008), hr(0.02), hr(0.0065)], { bone: 'earL', k: 0.006, sym: true, rot: [0.1, 0, -0.32], sub: true, tint: INNER_EAR, paint: 0.12, fur: 0.35 });
@@ -184,52 +209,100 @@ export class Unicorn extends Friend {
     s.ellipsoid([0.033, 0.03, -0.056], [0.0136, 0.0125, 0.014], { bone: 'footL', k: 0.008, sym: true, fur: 1.5 });
     // tail dock
     s.cone([0, 0.192, -0.084], [0, 0.19, -0.108], 0.015, 0.011, { bone: 'tail0', k: 0.02 });
-    // nostrils
-    s.ellipsoid(H(0.013, -0.018, 0.094), [hr(0.0032), hr(0.005), hr(0.0035)], { sub: true, k: 0.004, sym: true, bone: 'head', tint: NOSTRIL, paint: 0, fur: 0, rot: [0, 0.4, 0.5] });
   }
 
   parts(s) {
     const I = s.index;
+    const geo = this.body.geometry;
     this.addEyes(s, {
       c: EYE,
-      r: hr(0.0235),
-      dir: [0.55, 0.08, 0.83],
+      r: EYE_R,
+      dir: EYE_DIR,
       iris: 0x9a5ee0,
       iris2: 0x3aa0d8,
-      irisSize: 0.9,
-      pupil: 0.42,
-      lid: { tint: COAT, paint: 1, fur: 1, rough: 0.7, open: -0.3, closed: 1.5 },
+      irisSize: 0.95,
+      pupil: 0.46,
+      glint: 1.5,
+      lid: { tint: COAT, paint: 1, fur: 1, rough: 0.8, open: -0.6, closed: 1.5 },
     });
-
-    // long lashes on the upper lids, curling up and out, longest at the outer corner
-    const lashMat = this.mat('solid', { clearcoat: 0.3 });
-    for (const side of [1, -1]) {
-      const r = hr(0.0235) * 1.07;
-      const f = frameFrom([0.55 * side, 0.08, 0.83]);
-      const c = new THREE.Vector3(EYE[0] * side, EYE[1], EYE[2]);
-      const toWorld = (x, y, z) => {
-        // the lid is tipped back by 0.35 rad about the eye's x axis
-        const yy = y * Math.cos(-0.35) - z * Math.sin(-0.35);
-        const zz = y * Math.sin(-0.35) + z * Math.cos(-0.35);
-        return c.clone().addScaledVector(f.x, x).addScaledVector(f.y, yy).addScaledVector(f.z, zz).toArray();
-      };
-      const list = [];
-      const n = 8;
-      for (let i = 0; i < n; i++) {
-        const u = i / (n - 1);
-        const psi = lerp(-1.0, 1.2, u) * side; // around the rim; + is the outer corner on the left eye
-        const outer = clamp((psi * side + 0.4) / 1.6, 0, 1);
-        const len = 0.007 + 0.009 * outer;
-        const ox = Math.sin(psi), oz = Math.cos(psi);
-        const p0 = toWorld(ox * r * 0.97, 0.0, oz * r * 0.97);
-        const p1 = toWorld(ox * (r + len * 0.5), len * 0.3, oz * (r + len * 0.5));
-        const p2 = toWorld(ox * (r + len * 0.9), len * 0.85, oz * (r + len * 0.55));
-        const g = tubeGeometry([p0, p1, p2], [0.0012, 0.0008, 0.0002], { radial: 5, steps: 6 });
-        withLook(g, { tint: LASH, rough: 0.4 });
-        list.push(g);
+    // soft velvet lids: no gloss, just a little sheen
+    const lidMat = hideMaterial(this.shared, { furry: true, sheen: 0.35, clearcoat: 0 });
+    // (and hugging the eye a little closer than the default, so a shut eye is a neat soft lid)
+    let side0 = 1;
+    for (const m of this.meshes)
+      if (m !== this.body && m.material === this.hide) {
+        m.material = lidMat;
+        m.geometry.translate(-EYE[0] * side0, -EYE[1], -EYE[2]).scale(LID_K, LID_K, LID_K).translate(EYE[0] * side0, EYE[1], EYE[2]);
+        side0 = -side0;
       }
-      this.addMesh(bindTo(mergeGeometries(list), I['lid' + (side > 0 ? 'L' : 'R')]), lashMat, { shadow: false }).userData.noProject = true;
+
+    // a fine dark line along each upper lid's rim and a fan of long lashes
+    // curling up and out at the outer corner (they ride on the lid)
+    const lashes = [];
+    for (const side of [1, -1]) {
+      const cc = [EYE[0] * side, EYE[1], EYE[2]];
+      const fr = frameFrom([EYE_DIR[0] * side, EYE_DIR[1], EYE_DIR[2]]);
+      const toRest = ([x, y, z]) => [cc[0] + fr.x.x * x + fr.y.x * y + fr.z.x * z, cc[1] + fr.x.y * x + fr.y.y * y + fr.z.y * z, cc[2] + fr.x.z * x + fr.y.z * y + fr.z.z * z];
+      const R = EYE_R * 1.07 * LID_K * 1.012;
+      const tilt = -0.35; // as the lid is tipped back (see lidGeometry)
+      const outer = side > 0 ? 0 : Math.PI;
+      const dir = side > 0 ? 1 : -1;
+      const rim = (phi, out = 0, up = 0) => {
+        const x = (R + out) * Math.cos(phi), z = (R + out) * Math.sin(phi);
+        return toRest([x, up * Math.cos(tilt) - z * Math.sin(tilt), up * Math.sin(tilt) + z * Math.cos(tilt)]);
+      };
+      const lid = I['lid' + (side > 0 ? 'L' : 'R')];
+      const pts = [];
+      for (let i = 0; i <= 20; i++) pts.push(rim(outer + dir * lerp(0.05, Math.PI - 0.75, i / 20)));
+      lashes.push(bindTo(tubeGeometry(pts, [0.0005, 0.0011, 0.0013, 0.0011, 0.0008, 0.0004], { radial: 6, steps: 40 }), lid));
+      for (const [a, len] of [[0.1, 0.0125], [0.3, 0.0135], [0.52, 0.012], [0.76, 0.0095], [1.0, 0.0075]]) {
+        const phi = outer + dir * a;
+        const lp = [0, 0.33, 0.66, 1].map((k) => rim(phi, len * k * 0.85, len * (k * 0.3 + k * k * 0.7)));
+        lashes.push(bindTo(tubeGeometry(lp, [0.0007, 0.0005, 0.0003], { radial: 5, steps: 8 }), lid));
+      }
     }
+    this.addMesh(mergeGeometries(lashes.map((g) => withLook(g, { tint: LASH, rough: 0.4 }))), this.mat('solid', { clearcoat: 0.3 }), { shadow: false }).userData.noProject = true;
+
+    // the line a shut eye makes: a soft curve with a few short lashes, drawn on the shut lid
+    const shutLines = [];
+    for (const side of [1, -1]) {
+      const cc = [EYE[0] * side, EYE[1], EYE[2]];
+      const fr = frameFrom([EYE_DIR[0] * side, EYE_DIR[1], EYE_DIR[2]]);
+      const toRest = ([x, y, z]) => [cc[0] + fr.x.x * x + fr.y.x * y + fr.z.x * z, cc[1] + fr.x.y * x + fr.y.y * y + fr.z.y * z, cc[2] + fr.x.z * x + fr.y.z * y + fr.z.z * z];
+      const Rs = EYE_R * 1.07 * LID_K * 1.03;
+      const onLid = (u, dy = 0, out = 0) => {
+        const x = -u * 0.8 * Rs * side;
+        const y = (-0.1 - 0.22 * (1 - u * u) + dy) * Rs;
+        const r = Rs + out;
+        return toRest([x, y, Math.sqrt(Math.max(0, r * r - x * x - y * y))]);
+      };
+      const cp = [];
+      for (let i = 0; i <= 16; i++) cp.push(onLid(-1 + (2 * i) / 16));
+      const B = I['shut' + (side > 0 ? 'L' : 'R')];
+      shutLines.push(bindTo(tiny(tubeGeometry(cp, [0.0006, 0.0012, 0.0014, 0.0012, 0.0009, 0.0005], { radial: 6, steps: 32 }), cc), B));
+      for (const [u, len] of [[-0.95, 0.009], [-0.8, 0.0085], [-0.64, 0.0065]]) {
+        const lp = [0, 0.5, 1].map((k) => onLid(u - k * 0.22, -k * len * 9, k * len * 0.5));
+        shutLines.push(bindTo(tiny(tubeGeometry(lp, [0.0006, 0.0004, 0.0002], { radial: 5, steps: 6 }), cc), B));
+      }
+    }
+    this.addMesh(mergeGeometries(shutLines.map((g) => withLook(g, { tint: LASH, rough: 0.4 }))), this.mat('solid', { clearcoat: 0.3 }), { shadow: false }).userData.noProject = true;
+
+    // the smile: a small curve under the nose, on the muzzle
+    const on = (p) => onSurface(geo, H(...p), 0.0009).p;
+    const smile = [tubeGeometry([[0, -0.0195, 0.0715], [0, -0.0235, 0.0705], [0, -0.0275, 0.0685]].map(on), [0.0013, 0.0013, 0.0012], { radial: 6, steps: 8 })];
+    for (const sd of [1, -1])
+      smile.push(tubeGeometry([[0, -0.0275, 0.0685], [0.007 * sd, -0.0292, 0.0655], [0.0145 * sd, -0.0275, 0.0595], [0.0195 * sd, -0.0225, 0.0525]].map(on), [0.0012, 0.0012, 0.001, 0.0006], { radial: 6, steps: 14 }));
+    this.addMesh(bindTo(mergeGeometries(smile.map((g) => withLook(g, { tint: MOUTH, rough: 0.5 }))), I.head), this.mat('solid'), { shadow: false }).userData.noProject = true;
+    // two small soft nostrils, dark rosy ovals lying on the tip of the muzzle
+    const nostrils = [1, -1].map((sd) => {
+      const { p, n } = onSurface(geo, H(0.0085 * sd, -0.0125, 0.0735), 0.0);
+      const g = new THREE.SphereGeometry(1, 14, 10);
+      g.scale(hr(0.0027), hr(0.0038), hr(0.0011));
+      g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(...p), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(...n)), new THREE.Vector3(1, 1, 1)));
+      g.deleteAttribute('uv');
+      return withLook(g, { tint: NOSTRIL, rough: 0.5 });
+    });
+    this.addMesh(bindTo(mergeGeometries(nostrils), I.head), this.mat('solid', { clearcoat: 0.3 }), { shadow: false }).userData.noProject = true;
 
     // the horn: a pearly spiral that shimmers with rainbow colours, a touch of gold at its base
     const horn = spiralHorn(HORN_BASE, HORN_TIP, 0.0112);
@@ -309,18 +382,24 @@ export class Unicorn extends Friend {
     // shorter, fluffy layer to the left
     for (let i = 0; i < nL; i++) addLock(i / (nL - 1), -1, 1, i % 2);
     for (let i = 0; i < 14; i++) addLock(i / 13, 1, 0.55, 0);
-    // forelock: two locks swept from the topknot over her right brow
-    for (let j = 0; j < 2; j++) {
-      const o = j * 0.006;
-      const pts = [
-        H(-0.002, 0.066, -0.004 + o),
-        H(-0.014 - o, 0.084, 0.008 + o),
-        H(-0.03 - o, 0.078, 0.022),
-        H(-0.043 - o, 0.06, 0.026 - o),
-        H(-0.05 - o, 0.042 - o, 0.02 - o),
+    // forelock: a few slim, silky locks swept from the topknot down over her
+    // right brow, lying on the head and curling away at their tips
+    for (let j = 0; j < 5; j++) {
+      const o = j * 0.0055;
+      const guess = [
+        [-0.001 - o * 0.3, 0.085, 0.004 + o * 0.4],
+        [-0.008 - o, 0.082, 0.017 + o * 0.4],
+        [-0.02 - o * 1.3, 0.076, 0.031 + o * 0.3],
+        [-0.032 - o * 1.3, 0.067, 0.042],
+        [-0.038 - o * 1.1, 0.058 - o * 0.5, 0.046 + o * 0.4],
       ];
-      const g = hairClump(pts, 0.013, 0.0065, { side: [-0.3, 1, 0.4], seed: rnd(), steps: 16, swell: 0.3 });
-      withLook(g, lockLook(j));
+      const lift = [0.004, 0.0065, 0.007, 0.008, 0.013];
+      const pts = guess.map((q, i) => onSurface(geo, H(...q), lift[i]).p);
+      const mid = new THREE.Vector3(...pts[2]).sub(new THREE.Vector3(...H(0, 0.027, 0.004))).normalize();
+      const dirV = new THREE.Vector3(...pts[4]).sub(new THREE.Vector3(...pts[0]));
+      const sideV = new THREE.Vector3().crossVectors(dirV, mid).normalize();
+      const g = hairClump(pts, 0.0085, 0.0038, { side: sideV.toArray(), seed: rnd(), steps: 16, swell: 0.3, tip: 0.9 });
+      withLook(g, lockLook(j + 1));
       const sp = g.attributes.aSpan;
       bindBy(g, (x, y, z, k2) => {
         const k = smooth((sp.getX(k2) - 0.2) / 0.8) * 0.6;
@@ -368,6 +447,25 @@ export class Unicorn extends Friend {
 
   // ------------------------------------------------------------ motion
 
+  // after the eyes and lids are posed: closed eyes sink in and show the line
+  // a shut eye makes, so a blink is a neat soft lid and not a ball
+  poseEyes(dt, camera) {
+    super.poseEyes(dt, camera);
+    const k = smooth((this.shut - 0.75) / 0.2);
+    const sink = smooth(this.shut) * EYE_R * 0.2;
+    const d = (this._eyeDir ??= new THREE.Vector3(...EYE_DIR).normalize());
+    for (let i = 0; i < 2; i++) {
+      const sx = i === 0 ? 1 : -1;
+      for (const n of EYE_PARTS[i]) {
+        const q = this.bones[n].position;
+        q.x -= d.x * sx * sink;
+        q.y -= d.y * sink;
+        q.z -= d.z * sink;
+      }
+      this.bones[SHUT[i]].scale.setScalar(Math.max(1e-4, k) / TINY);
+    }
+  }
+
   makeLegs() {
     return [
       new Leg(this, 'shoulderL', 'elbowL', 'pawL', 1),
@@ -386,12 +484,13 @@ export class Unicorn extends Friend {
     const speed = m.speed;
     const air = m.air;
     const moving = clamp(speed / 0.16, 0, 1) * (1 - air);
-    const freq = lerp(1.4, 2.0, clamp(speed / 0.26, 0, 1));
+    const freq = lerp(1.4, 2.0, clamp(speed / 0.26, 0, 1)) * 0.8; // (a slower cadence with longer strides steps more smoothly)
     this.phase += dt * freq;
     const ph = this.phase;
     const duty = 0.52;
-    const stride = (speed * duty) / freq;
     const breathe = Math.sin(t * 1.9);
+    const gait = (this.gait ??= new Gait(4));
+    gait.begin(tr, air, dt);
 
     // a leg state the tricks can change: planted weight, free offsets and toes
     const L = (this.legState ??= [0, 1, 2, 3].map(() => ({ plant: 1, off: new THREE.Vector3(), toe: 0, lift: 0 })));
@@ -475,7 +574,7 @@ export class Unicorn extends Friend {
 
     // gait: a prancing trot, diagonal pairs together, knees lifted high
     for (let i = 0; i < 4; i++) {
-      stepOffset(ph + TROT[i], duty, stride, 0.03 * moving * (i < 2 ? 1.2 : 0.8), 0.45, _step);
+      gait.step(i, ph + TROT[i], duty, freq, 0.03 * moving * (i < 2 ? 1.2 : 0.8), 0.02, _step);
       L[i].dz = _step[0];
       L[i].lift = _step[1];
       L[i].toe += (i < 2 ? 1.1 : 0.6) * (_step[1] / 0.036);

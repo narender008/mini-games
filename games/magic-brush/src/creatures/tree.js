@@ -14,8 +14,10 @@ import * as THREE from 'three';
 import { Friend } from './friend.js';
 import { tubeGeometry, withLook, bindTo, bindBy, tintBy } from './parts.js';
 import { fieldOf, hit, grad, placeAlong, stripUv, mergeAll, mergeSkinned } from './shape-kit.js';
-import { bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp, easeOutBack } from './anim.js';
+import { bump, ramp, smooth, wobble, TAU, clamp } from './anim.js';
+import { SoftSpring } from './soft.js';
 import { glide, puff } from '../sound/calls.js';
+import { Tracker } from './pal-kit.js';
 
 const LEAF = 0x4caf50;
 const LIME = 0xa5d63a;
@@ -49,11 +51,15 @@ export class Tree extends Friend {
     this.worldScale = 2.6;
     this.hopScale = 0.6;
     this.sparkleColors = [[1.3, 2.0, 0.8], [1.9, 1.8, 0.8], [1.9, 1.1, 1.0]];
-    this.sway = new Spring(0, 1.1, 0.35);
-    this.rustle = ['puffC', 'puffL', 'puffR', 'puffT'].map(() => [new Spring(0, 2.8, 0.2), new Spring(0, 2.8, 0.2)]);
+    this.sway = new SoftSpring(0, 1.1, 0.35);
+    this.rustle = ['puffC', 'puffL', 'puffR', 'puffT'].map(() => [new SoftSpring(0, 2.8, 0.2), new SoftSpring(0, 2.8, 0.2)]);
     this.popped = [false, false, false, false];
-    this.headYaw = new Spring(0, 1.2, 0.7);
-    this.squash = new Spring(0, 2.4, 0.25);
+    this.headYaw = new SoftSpring(0, 1.2, 0.7);
+    this.squash = new SoftSpring(0, 2.4, 0.25);
+    this.rootY = new SoftSpring(1, 2.0, 0.3); // the whole tree's squash as its roots go in
+    this.track = new Tracker(); // how the world moves it (its hops), for follow-through
+    this.lean = new SoftSpring(0, 1.5, 0.4);
+    this.puffS = PUFF_NAMES.map(() => new SoftSpring(1, 3.2, 0.3)); // each canopy puff ducks in and pops back out
     this.grow = 9;
     this.gustIn = 1.5;
   }
@@ -225,10 +231,14 @@ export class Tree extends Friend {
     }
   }
 
-  // popped up in the garden: grow up out of the ground
+  // planted in the garden: the roots go in with a thump, the canopy puffs duck
+  // in and pop back out one after another, and it stretches up (everything
+  // eases from how it was hopping, so nothing pops)
   onArrive() {
     this.grow = 0;
     this.grewSound = false;
+    this.popped.fill(false);
+    this.rootY.kick(-4);
   }
 
   // ------------------------------------------------------------ motion
@@ -238,6 +248,17 @@ export class Tree extends Friend {
     const t = this.t;
     const air = this.motion.air;
     this.blinker.hold = 0;
+
+    // follow-through on the world's hops: the trunk squashes as it is lifted and
+    // stretches as it lands, the leaves lag behind, the crown leans back from a push
+    const tr = this.track.update(this.object, dt);
+    const ay = clamp(tr.acc.y, -20, 20);
+    this.squash.kick(-ay * dt * 0.4);
+    for (const [a, b] of this.rustle) {
+      a.kick(ay * dt * 0.5);
+      b.kick(-ay * dt * 0.3);
+    }
+    const lean = this.lean.update(clamp(-tr.acc.z * 0.01, -0.2, 0.2), dt);
 
     // the breeze, with a gust now and then that sets the leaves rustling
     this.gustIn -= dt;
@@ -263,7 +284,8 @@ export class Tree extends Friend {
     B.trunk.rotation.x = Math.sin(t * 0.7) * 0.01 - air * 0.1;
     B.trunk.scale.set(1 - sq * 0.4 + breathe * 0.004, 1 + sq + breathe * 0.006, 1 - sq * 0.4 + breathe * 0.004);
     B.crown.rotation.z = wind + sw * 0.08;
-    B.crown.rotation.x = Math.sin(t * 0.6 + 0.4) * 0.015 + air * 0.15;
+    B.crown.rotation.x = Math.sin(t * 0.6 + 0.4) * 0.015 + air * 0.15 + lean;
+    B.trunk.rotation.x += lean * 0.4;
     for (let i = 0; i < 4; i++) {
       const b = B[PUFF_NAMES[i]];
       const ra = this.rustle[i][0].update(0, dt);
@@ -273,11 +295,12 @@ export class Tree extends Friend {
       b.scale.setScalar(1 + breathe * 0.008 + ra * 0.01);
     }
 
-    // growing up out of the ground, just arrived: the puffs pop out in turn
+    // growing up out of the ground, just arrived: the trunk sinks and springs
+    // tall, the puffs duck in and pop back out in turn
+    const ry = this.rootY.update(1, dt);
+    B.root.scale.set(1 + (1 - ry) * 0.4, ry, 1 + (1 - ry) * 0.4);
     if (this.grow < 2.5) {
       this.grow += dt;
-      const g = clamp(this.grow / 1.6, 0, 1);
-      B.root.scale.set(lerp(0.7, 1, easeOutBack(g, 1.6)), lerp(0.35, 1, easeOutBack(g, 2.4)), lerp(0.7, 1, easeOutBack(g, 1.6)));
       // its song waits for the come-alive shimmer to pass
       if (this.grow > 0.6 && !this.grewSound) {
         this.grewSound = true;
@@ -285,9 +308,11 @@ export class Tree extends Friend {
       }
       for (let i = 0; i < 4; i++) {
         const name = PUFF_NAMES[i];
-        const k = clamp((this.grow - 0.3 - i * 0.18) / 0.5, 0, 1);
-        B[name].scale.multiplyScalar(Math.max(0.05, easeOutBack(k, 2.6)));
-        if (k > 0 && !this.popped[i]) {
+        const at = 0.15 + i * 0.16;
+        const out = this.grow > at + 0.4;
+        const want = out ? 1 : 1 - 0.5 * smooth((this.grow - at) / 0.25);
+        B[name].scale.multiplyScalar(Math.max(0.05, this.puffS[i].update(want, dt)));
+        if (out && !this.popped[i]) {
           this.popped[i] = true;
           this.emit('sparkle', { at: this.restPoint(name, PUFFS[i][0]), count: 12, colors: LEAFY, speed: 0.5, up: 0.6, size: 0.02 });
         }
@@ -348,7 +373,9 @@ export class Tree extends Friend {
       const crouch = ramp(t, 0, 0.35) * (1 - ramp(t, 0.35, 0.5));
       const up = ramp(t, 0.4, 0.75) * (1 - ramp(t, 1.5, 1.75));
       const k = crouch * -0.1 + up * 0.22;
-      B.root.scale.set(1 - k * 0.35, 1 + k, 1 - k * 0.35);
+      B.root.scale.x *= 1 - k * 0.35;
+      B.root.scale.y *= 1 + k;
+      B.root.scale.z *= 1 - k * 0.35;
       for (let i = 0; i < 4; i++) B[PUFF_NAMES[i]].scale.multiplyScalar(1 + up * 0.12);
       this.blinker.hold = crouch * 0.7 + up * -0.2;
       if (!tr.a && t > 0.4) {

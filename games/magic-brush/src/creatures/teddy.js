@@ -280,8 +280,11 @@ export class Teddy extends Friend {
     const sw = Math.sin(ph) * SWING * w;
     B.legL.rotation.x = sw;
     B.legR.rotation.x = -sw;
-    B.legL.position.y += Math.max(0, -Math.cos(ph)) * 0.009 * w;
-    B.legR.position.y += Math.max(0, Math.cos(ph)) * 0.009 * w;
+    // (a foot lifts with the swing, easing off the ground: no corner where it leaves)
+    const liftL = Math.max(0, -Math.cos(ph));
+    const liftR = Math.max(0, Math.cos(ph));
+    B.legL.position.y += liftL * liftL * 0.009 * w;
+    B.legR.position.y += liftR * liftR * 0.009 * w;
     // rock over the planted foot, bob twice a cycle, swing the arms
     const rock = -Math.cos(ph) * 0.12 * w;
     const bob = (1 - Math.abs(Math.sin(ph))) * 0.005 * w;

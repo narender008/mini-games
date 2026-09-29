@@ -18,7 +18,7 @@
 // and thumps its hind feet twice, sparkles bursting from the grass).
 import * as THREE from 'three';
 import { Friend } from './friend.js';
-import { tubeGeometry, withLook, bindTo, frameFrom } from './parts.js';
+import { tubeGeometry, withLook, bindTo, frameFrom, TINY, tiny, onSurface } from './parts.js';
 import { mergeGeometries } from './sculpt.js';
 import { hideMaterial } from './materials.js';
 import { pose, addPose, bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp } from './anim.js';
@@ -62,16 +62,39 @@ const F = 0.58;
 const K = 0.68;
 const stair = (p) => smooth((p - 0.1) / 0.62);
 
-// smooth keyframes [[p, v], ...]
+// smooth keyframes [[p, v], ...]: a monotone cubic through the keys, so a
+// joint keeps its speed as it passes a key (an ease in and out at every key
+// would stop and restart it, a hitch at each one) and never overshoots one
 function keys(p, k) {
+  const n = k.length;
   if (p <= k[0][0]) return k[0][1];
-  for (let i = 1; i < k.length; i++)
-    if (p <= k[i][0]) {
-      const a = k[i - 1];
-      const b = k[i];
-      return lerp(a[1], b[1], smooth((p - a[0]) / (b[0] - a[0])));
-    }
-  return k[k.length - 1][1];
+  if (p >= k[n - 1][0]) return k[n - 1][1];
+  let i = 1;
+  while (p > k[i][0]) i++;
+  const p0 = k[i - 1][0], p1 = k[i][0];
+  const v0 = k[i - 1][1], v1 = k[i][1];
+  const h = p1 - p0;
+  const s = (v1 - v0) / h;
+  const m0 = keyTangent(k, i - 1, s);
+  const m1 = keyTangent(k, i, s);
+  const t = (p - p0) / h;
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * v0 + (t3 - 2 * t2 + t) * h * m0 + (-2 * t3 + 3 * t2) * v1 + (t3 - t2) * h * m1;
+}
+
+// the slope at key i (Fritsch-Carlson: flat at the ends and at any peak or hold)
+function keyTangent(k, i, sNext) {
+  const n = k.length;
+  if (i === 0 || i === n - 1) return 0;
+  const sPrev = (k[i][1] - k[i - 1][1]) / (k[i][0] - k[i - 1][0]);
+  const sN = (k[i + 1][1] - k[i][1]) / (k[i + 1][0] - k[i][0]);
+  if (sPrev * sN <= 0) return 0;
+  const h0 = k[i][0] - k[i - 1][0];
+  const h1 = k[i + 1][0] - k[i][0];
+  const w1 = 2 * h1 + h0;
+  const w2 = h1 + 2 * h0;
+  return (w1 + w2) / (w1 / sPrev + w2 / sN);
 }
 
 const V = (a) => new THREE.Vector3(...a);
@@ -110,15 +133,6 @@ function clearEar(E) {
   return E;
 }
 
-// Parts that only show now and then (the closed-eye lines) are modelled
-// shrunk to a speck round their bone and scaled up by 1 / TINY when shown,
-// so the rest pose (which is what lies flat on the canvas before the friend
-// comes alive) has none of them.
-const TINY = 0.01;
-function tiny(g, c) {
-  return g.translate(-c[0], -c[1], -c[2]).scale(TINY, TINY, TINY).translate(c[0], c[1], c[2]);
-}
-
 // an ellipsoid spanning a..b (radii: [thin, half length, width]) with its
 // thin axis turned towards `out`
 function span(s, a, b, radii, out, o) {
@@ -139,26 +153,6 @@ function ring(s, c, n, depth, R, r, o) {
   const z = new THREE.Vector3().crossVectors(x, y);
   const e = new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z), 'XYZ');
   s.torus(V(c).addScaledVector(y, depth).toArray(), R, r, { ...o, rot: [e.x, e.y, e.z] });
-}
-
-// the nearest point on a surface (projected onto the tangent plane of the
-// nearest vertex), lifted off it by eps, and its normal
-function onSurface(geo, p, eps = 0) {
-  const pos = geo.attributes.position.array;
-  const nor = geo.attributes.normal.array;
-  let best = 0;
-  let bd = Infinity;
-  for (let i = 0; i < pos.length; i += 3) {
-    const dx = pos[i] - p[0], dy = pos[i + 1] - p[1], dz = pos[i + 2] - p[2];
-    const d = dx * dx + dy * dy + dz * dz;
-    if (d < bd) {
-      bd = d;
-      best = i;
-    }
-  }
-  const n = [nor[best], nor[best + 1], nor[best + 2]];
-  const k = (p[0] - pos[best]) * n[0] + (p[1] - pos[best + 1]) * n[1] + (p[2] - pos[best + 2]) * n[2] - eps;
-  return { p: [p[0] - n[0] * k, p[1] - n[1] * k, p[2] - n[2] * k], n };
 }
 
 export class Bunny extends Friend {

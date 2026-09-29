@@ -20,8 +20,9 @@ import { Friend } from './friend.js';
 import { tubeGeometry, withLook, bindTo, frameFrom } from './parts.js';
 import { mergeGeometries } from './sculpt.js';
 import { hideMaterial } from './materials.js';
-import { pose, bump, ramp, smooth, Spring, TAU, clamp, lerp, twoBone } from './anim.js';
+import { pose, bump, ramp, smooth, Spring, TAU, clamp, lerp, twoBone, Bend } from './anim.js';
 import { glide, puff } from '../sound/calls.js';
+import { Tracker, Gait } from './pal-kit.js';
 
 const SKIN = 0x8bc34a;
 const SHELL = 0x4caf50;
@@ -122,6 +123,7 @@ function tiny(g, c) {
 }
 
 const _w = new THREE.Vector3();
+const _gs = [0, 0];
 
 // A leg of an upper bone, a lower bone and a paw, bending in its own y-z
 // plane: the ankle is placed on a target given in the friend's object space
@@ -143,6 +145,7 @@ class Leg {
     this.target = new THREE.Vector3(...a);
     this.lift = 0; // 0..1 of a step (tips the paw)
     this._ik = [0, 0]; // (scratch for the solve)
+    this.ease = new Bend(); // (the knee eases where the paw lifts and lands)
   }
 
   // pose the leg so the ankle lands on this.target; pitch: how much the
@@ -160,7 +163,8 @@ class Leg {
     const dy = _w.y - up.position.y;
     const dz = _w.z - up.position.z;
     const base = Math.atan2(dz, -dy);
-    const ik = twoBone(this.l1, this.l2, Math.hypot(dy, dz), this._ik);
+    const ik = twoBone(this.l1, this.l2, Math.hypot(dy, dz), this._ik, 0.05);
+    this.ease.apply(this.l1, this.l2, ik, this.f.frameDt || 1 / 60);
     const a1 = ik[0];
     const knee = ik[1];
     const u = base + this.bend * a1;
@@ -307,6 +311,7 @@ export class Turtle extends Friend {
     this.sparkleColors = SPARKS;
     this.phase = 0;
     this.stepAmt = 0;
+    this.track = new Tracker();
     this.headYaw = new Spring(0, 1.2, 0.8);
     this.headPitch = new Spring(0, 1.2, 0.8);
     this.tilt = new Spring(0, 1.0, 0.7);
@@ -510,24 +515,19 @@ export class Turtle extends Friend {
     const pace = clamp(m.speed / this.walkSpeed, 0, 1.4);
     const moveAmt = Math.max(pace, clamp(Math.abs(yawRate) / 0.8, 0, 0.6)) * (air > 0 ? 0 : 1) * (doing ? 0 : 1);
     this.stepAmt += ((moveAmt > 0.03 ? 1 : 0) - this.stepAmt) * (1 - Math.exp(-dt * 5));
-    const hz = lerp(0.8, 1.15, clamp(pace, 0, 1));
-    this.phase += dt * hz * (this.stepAmt > 0.01 ? 1 : 0);
+    const hz = lerp(0.8, 1.15, clamp(pace, 0, 1)) * 0.85; // (a slower cadence with longer strides steps more smoothly)
+    this.phase += dt * hz;
     const D = 0.7;
-    const S = (m.speed * D) / hz;
     const lift = 0.013 * clamp(pace * 1.5, 0.5, 1) * this.stepAmt;
-    for (const k of LEG_KEYS) {
+    // a foot on the ground stays where it landed (the ground carries it back)
+    const gait = (this.gait ??= new Gait(4));
+    gait.begin(this.track.update(this.object, dt), air, dt);
+    for (let i = 0; i < 4; i++) {
+      const k = LEG_KEYS[i];
       const L = this.legs[k];
-      const ph = (this.phase + GAIT[k]) % 1;
-      let dz;
-      let y = 0;
-      if (ph < D) dz = S / 2 - S * (ph / D);
-      else {
-        const q = (ph - D) / (1 - D);
-        dz = -S / 2 + S * smooth(q);
-        y = lift * Math.sin(Math.PI * q);
-      }
-      L.target.set(L.rest[0], L.rest[1] + y, L.rest[2] + dz * this.stepAmt);
-      L.lift = y / 0.013;
+      gait.step(i, this.phase + GAIT[k], D, hz, lift, 0.009, _gs);
+      L.target.set(L.rest[0], L.rest[1] + _gs[1], L.rest[2] + _gs[0]);
+      L.lift = _gs[1] / 0.013;
     }
 
     // ---- body: the shell sways and bobs with each step, a slow breath
@@ -537,6 +537,8 @@ export class Turtle extends Friend {
     root.rotation.set(tp.pitch + 0.015 * Math.sin(TAU * 2 * this.phase) * this.stepAmt, tp.yaw + 0.04 * sway, tp.roll + 0.025 * sway);
     const sq = tp.sq;
     root.scale.set(1 + sq * 0.5, 1 - sq, 1 + sq * 0.5);
+    // the shell rises and falls a little with each slow breath (it never freezes)
+    B.shell.scale.set(1 + breathe * 0.007, 1 + breathe * 0.011, 1 + breathe * 0.007);
 
     // ---- legs: planted by IK; pulled in when it hides
     this.object.updateMatrixWorld();

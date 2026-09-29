@@ -17,6 +17,7 @@ import { Friend } from './friend.js';
 import { tubeGeometry, withLook, bindTo, bindBy, tintBy } from './parts.js';
 import { fieldOf, hit, grad, squircle, panelGeometry, placeAlong, stripUv, mergeAll, mergeSkinned, latheX } from './shape-kit.js';
 import { addPose, bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp, easeOutBack } from './anim.js';
+import { SoftSpring } from './soft.js';
 import { glide, puff } from '../sound/calls.js';
 
 const PAINT = 0xe53935;
@@ -58,20 +59,25 @@ export class Car extends Friend {
     this.lastYaw = null;
     this.accel = 0;
     this.yawRate = 0;
-    this.heave = new Spring(0, 2.6, 0.32);
-    this.pitch = new Spring(0, 1.9, 0.42);
-    this.roll = new Spring(0, 1.7, 0.45);
+    this.heave = new SoftSpring(0, 2.6, 0.32);
+    this.pitch = new SoftSpring(0, 1.9, 0.42);
+    this.roll = new SoftSpring(0, 1.7, 0.45);
     this.steer = new Spring(0, 2.5, 0.8);
     this.headYaw = new Spring(0, 1.4, 0.75);
     this.headTilt = new Spring(0, 1.2, 0.6);
-    this.mirror = new Spring(0, 3.2, 0.18);
-    this.antX = new Spring(0, 2.6, 0.12);
-    this.antZ = new Spring(0, 2.6, 0.12);
+    this.mirror = new SoftSpring(0, 3.2, 0.18);
+    this.antX = new SoftSpring(0, 2.6, 0.12);
+    this.antZ = new SoftSpring(0, 2.6, 0.12);
     this.lastPose = { pitch: 0, roll: 0, heave: 0 };
     this.bumpIn = 0.2;
     this.puffIn = 3;
     this.flash = 0;
     this.brake = 0;
+    this.tsW = 0; // how far a trick has taken over the steering
+    this.tsV = 0;
+    this.lastX = undefined; // where it was, to roll the wheels as far as it really goes
+    this.lastZ = 0;
+    this.pace = 0; // how fast it really goes over the ground (friend units/s), lightly filtered
   }
 
   get tricks() {
@@ -342,9 +348,23 @@ export class Car extends Friend {
     this.accel = lerp(this.accel, acc, 1 - Math.exp(-dt * 7));
     const moving = clamp(sp / 0.2, 0, 1) * (1 - air);
 
-    // wheels roll with the speed; in the air they keep spinning
-    this.spin += (sp / WR) * dt + air * 16 * dt;
-    let steer = this.steer.update(clamp(this.yawRate * 0.55, -0.48, 0.48), dt);
+    // Wheels roll exactly as far as the car really goes over the ground (from
+    // where the world put it), so they never slip, whatever its speed is doing;
+    // in the air they keep spinning. The front ones steer the way a car does:
+    // the angle that makes its turn at its true speed.
+    const o = this.object;
+    o.updateWorldMatrix(true, false);
+    const me = o.matrixWorld.elements;
+    let dist = 0;
+    if (this.lastX !== undefined && air < 0.05) {
+      const f2 = me[8] * me[8] + me[10] * me[10] || 1;
+      dist = clamp(((me[12] - this.lastX) * me[8] + (me[14] - this.lastZ) * me[10]) / f2, -0.06, 0.06);
+    }
+    this.lastX = me[12];
+    this.lastZ = me[14];
+    this.pace += (dist * idt - this.pace) * (1 - Math.exp(-dt * 12));
+    this.spin += dist / WR + air * 16 * dt;
+    let steer = this.steer.update(clamp(Math.atan((2 * WB * this.yawRate) / Math.max(0.3, Math.abs(this.pace))), -0.48, 0.48), dt);
 
     // road bumps while driving
     this.bumpIn -= dt * (0.4 + sp * 6);
@@ -395,7 +415,11 @@ export class Car extends Friend {
       for (const w of AXLES) B[w].position.y -= 0.009 * air;
     }
 
-    if (this.trick) steer = this.trickPose(this.trick, dt) ?? steer;
+    // a trick may take over the steering: the wheels ease over to it and back
+    const ts = this.trick ? this.trickPose(this.trick, dt) : undefined;
+    if (ts !== undefined) this.tsV = ts;
+    this.tsW += ((ts === undefined ? 0 : 1) - this.tsW) * (1 - Math.exp(-dt * 12));
+    steer = lerp(steer, this.tsV, this.tsW);
 
     // wheels
     B.steerL.rotation.y = steer;
@@ -448,9 +472,10 @@ export class Car extends Friend {
       for (const [at, dur, h, key] of HONKS) {
         const u = (t - at) / dur;
         if (u > 0 && u < 1) {
-          // up and down like a ball, nose raised as it honks
-          root.position.y += 4 * u * (1 - u) * h;
-          root.rotation.x -= Math.sin(u * Math.PI) * 0.09 * (h / 0.022);
+          // up and down (it leaves the ground and comes back to it at no speed, so no jolt), nose raised as it honks
+          const arc = Math.sin(u * Math.PI);
+          root.position.y += arc * arc * h;
+          root.rotation.x -= arc * arc * 0.09 * (h / 0.022);
           const st = Math.sin(Math.min(1, u * 1.6) * Math.PI);
           B.cabin.scale.y *= 1 + st * 0.12;
           B.cabin.scale.x *= 1 - st * 0.04;
@@ -550,7 +575,7 @@ export class Car extends Friend {
         this.exhaust(20, 0.6);
       }
       let a = 0;
-      if (t > 0.5 && t < 1.75) a = easeOutBack((t - 0.5) / 0.35, 2.4) * 0.5 + Math.sin((t - 0.85) * 7) * 0.05 * ramp(t, 0.85, 1.0);
+      if (t > 0.5 && t < 1.75) a = easeOutBack(smooth((t - 0.5) / 0.35), 2.4) * 0.5 + Math.sin((t - 0.85) * 7) * 0.05 * ramp(t, 0.85, 1.0);
       else if (t >= 1.75) {
         const k = clamp((t - 1.75) / 0.22, 0, 1);
         a = (0.5 + Math.sin((1.75 - 0.85) * 7) * 0.05) * (1 - k * k);

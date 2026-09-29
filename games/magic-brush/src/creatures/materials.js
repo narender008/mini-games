@@ -404,7 +404,7 @@ if (front > 0.5 && r < uIris) {
   col = mix(vec3(0.012, 0.01, 0.02), col, smoothstep(p - 0.03, p + 0.02, t));
   // painted catchlights, like a well-made toy's
   vec2 hl = e.xy - vec2(-0.2, 0.26) * uIris;
-  col += vec3(1.0) * (1.0 - smoothstep(0.07, 0.1, length(hl)));
+  col += vec3(1.0) * (1.0 - smoothstep(0.07 * uGlint, 0.1 * uGlint, length(hl)));
   vec2 hl2 = e.xy - vec2(0.17, -0.2) * uIris;
   col += vec3(0.8) * (1.0 - smoothstep(0.025, 0.045, length(hl2)));
 }
@@ -412,12 +412,14 @@ diffuseColor.rgb = col;
 float mbPaintState = 1.0 - vAlive;
 `;
 
-export function eyeMaterial(shared, { iris = 0x6a4cc8, iris2 = 0x2a8fbf, irisSize = 0.8, pupil = 0.45 } = {}) {
+// glint: the size of the big catchlight (1: as usual)
+export function eyeMaterial(shared, { iris = 0x6a4cc8, iris2 = 0x2a8fbf, irisSize = 0.8, pupil = 0.45, glint = 1 } = {}) {
   const own = {
     uIrisColor: { value: new THREE.Color(iris) },
     uIrisColor2: { value: new THREE.Color(iris2) },
     uIris: { value: irisSize },
     uPupil: { value: pupil },
+    uGlint: { value: glint },
   };
   const m = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.02, ior: 1.4 });
   m.userData.own = own;
@@ -429,7 +431,7 @@ export function eyeMaterial(shared, { iris = 0x6a4cc8, iris2 = 0x2a8fbf, irisSiz
     injectFragment(s, EYE_COLOR);
     s.fragmentShader = s.fragmentShader.replace(
       'uniform sampler2D tSkin;',
-      'uniform sampler2D tSkin;\nuniform vec3 uIrisColor;\nuniform vec3 uIrisColor2;\nuniform float uIris;\nuniform float uPupil;\nvarying vec3 vEye;',
+      'uniform sampler2D tSkin;\nuniform vec3 uIrisColor;\nuniform vec3 uIrisColor2;\nuniform float uIris;\nuniform float uPupil;\nuniform float uGlint;\nvarying vec3 vEye;',
     );
   });
 }

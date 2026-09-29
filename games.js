@@ -68,7 +68,7 @@ window.MINI_GAMES = [
   {
     slug: 'magic-brush',
     name: 'Magic Brush',
-    description: 'Paint a friend on a real canvas and watch it come alive in your colours, leap off the easel and play in a golden-hour garden.',
+    description: 'Paint a friend on a real canvas and watch it come alive in your colours, leap off the easel and run off to play in a golden-hour garden: cuddles, bubbles, a ball and more.',
     path: 'games/magic-brush/',
     image: 'games/magic-brush/cover.jpg',
     imageAlt: 'A baby dragon in a child\'s rainbow paint climbing out of a canvas on an easel in a garden art studio at golden hour',

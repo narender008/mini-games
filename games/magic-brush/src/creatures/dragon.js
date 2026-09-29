@@ -10,6 +10,7 @@ import { Friend } from './friend.js';
 import { tubeGeometry, fanGeometry, withLook, bindTo, bindBy } from './parts.js';
 import { mergeGeometries } from './sculpt.js';
 import { pose, addPose, bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp } from './anim.js';
+import { Tracker, Leg, Gait } from './pal-kit.js';
 
 const HORN = 0xead3a0;
 const CLAW = 0xf3ead8;
@@ -17,6 +18,9 @@ const MOUTH = 0x5a1320;
 const TONGUE = 0xe2687c;
 const CREST = 0x7b5ad0;
 const BONE = 0xe6d6b4;
+const TROT = [0, 0.5, 0.5, 0]; // front left, front right, hind left, hind right
+const _step = [0, 0];
+const _tg = new THREE.Vector3();
 
 // ------------------------------------------------------------ hide
 // Draco's hide, on top of the friend's hide material (its SCALES pattern is
@@ -258,6 +262,7 @@ export class Dragon extends Friend {
     this.shared.uScale.value = 0.0042;
     this.shared.uSplat.value = 0.25;
     this.phase = 0;
+    this.track = new Tracker();
     this.headYaw = new Spring(0, 1.6, 0.8);
     this.headPitch = new Spring(0, 1.6, 0.8);
     this.flap = 0;
@@ -502,20 +507,35 @@ export class Dragon extends Friend {
 
   // ------------------------------------------------------------ motion
 
+  // stubby straight legs on planted feet: bent by IK (front elbows back, hind knees forward)
+  makeLegs() {
+    return [new Leg(this, 'shoulderL', 'elbowL', 'pawL', -1), new Leg(this, 'shoulderR', 'elbowR', 'pawR', -1), new Leg(this, 'thighL', 'kneeL', 'footL', 1), new Leg(this, 'thighR', 'kneeR', 'footR', 1)];
+  }
+
   animate(dt) {
     const B = this.bones;
     const t = this.t;
     const m = this.motion;
+    this.legs ??= this.makeLegs();
+    const tr = this.track.update(this.object, dt);
     const speed = m.speed;
-    const moving = clamp(speed / 0.25, 0, 1) * (1 - m.air);
-    // gait: a waddling trot, feet in diagonal pairs
-    this.phase += dt * (speed / 0.13) * TAU * 0.5 + dt * 0.0;
+    const air = m.air;
+    const moving = clamp(speed / 0.25, 0, 1) * (1 - air);
+    // gait: a waddling trot, feet in diagonal pairs; the pace sets the
+    // cadence so a stride is never longer than a stubby leg can reach, and a
+    // run spends more of each step in the air
+    const duty = lerp(0.58, 0.4, m.run);
+    const freq = clamp((speed * duty) / 0.14, 1.4, 3.4);
+    this.phase += dt * freq * TAU;
     const ph = this.phase;
+    const cyc = ph / TAU;
+    const gait = (this.gait ??= new Gait(4, 0.075));
+    gait.begin(tr, air, dt);
     const breathe = Math.sin(t * 2.1);
 
     // body: breathing, a bob and a sway when walking
     B.chest.scale.set(1 + breathe * 0.012, 1 + breathe * 0.018, 1 + breathe * 0.012);
-    B.root.position.y += Math.abs(Math.sin(ph)) * 0.008 * moving - 0.002 * moving;
+    B.root.position.y += -(0.0025 + Math.abs(Math.sin(ph)) * 0.0025) * moving;
     B.root.rotation.z = Math.sin(ph) * 0.06 * moving;
     B.root.rotation.x = -0.04 * moving;
 
@@ -537,33 +557,26 @@ export class Dragon extends Friend {
     pose(B.earL, 0, 0, -0.1 * tw + Math.sin(t * 3) * 0.03);
     pose(B.earR, 0, 0, 0.1 * tw - Math.sin(t * 3) * 0.03);
 
-    // legs
-    const legs = [
-      ['shoulderL', 'elbowL', 'pawL', 0],
-      ['shoulderR', 'elbowR', 'pawR', Math.PI],
-      ['thighL', 'kneeL', 'footL', Math.PI],
-      ['thighR', 'kneeR', 'footR', 0],
-    ];
-    for (const [a, b, c, off] of legs) {
-      const p = ph + off;
-      const swing = Math.sin(p) * 0.45 * moving;
-      const lift = Math.max(0, Math.cos(p)) * moving;
-      const front = a.startsWith('shoulder');
-      pose(B[a], -swing, 0, 0);
-      pose(B[b], front ? -lift * 0.4 : lift * 0.6, 0, 0);
-      pose(B[c], swing * 0.5 + (front ? lift * 0.5 : -lift * 0.5), 0, 0);
+    // legs: each foot's step (planted feet stay put) and, in the air, front
+    // paws reaching forward and the hind legs trailing; solved by IK below,
+    // once the tricks have had their say
+    const L = (this.legState ??= [0, 1, 2, 3].map(() => ({ plant: 1, off: new THREE.Vector3(), toe: 0, lift: 0, dz: 0 })));
+    for (let i = 0; i < 4; i++) {
+      const l = L[i];
+      l.plant = 1 - air;
+      l.off.set(0, 0, 0);
+      l.toe = 0;
+      gait.step(i, cyc + TROT[i], duty, freq, 0.026 * moving, 0.018, _step);
+      l.dz = _step[0];
+      l.lift = _step[1];
+      l.toe += (i < 2 ? 0.6 : 0.5) * (_step[1] / 0.026);
+      if (air > 0) {
+        const front = i < 2;
+        l.off.set(0, (front ? 0.03 : 0.02) * air, (front ? 0.05 : -0.05) * air);
+        l.toe += (front ? 0.6 : 0.8) * air;
+      }
     }
-    // in the air: front paws reach forward, hind legs trail
-    if (m.air > 0) {
-      const a = m.air;
-      addPose(B.shoulderL, -0.9 * a, 0, 0.1 * a);
-      addPose(B.shoulderR, -0.9 * a, 0, -0.1 * a);
-      addPose(B.elbowL, 0.3 * a, 0, 0);
-      addPose(B.elbowR, 0.3 * a, 0, 0);
-      addPose(B.thighL, 0.7 * a, 0, 0);
-      addPose(B.thighR, 0.7 * a, 0, 0);
-      addPose(B.jaw, 0.25 * a, 0, 0);
-    }
+    if (air > 0) addPose(B.jaw, 0.25 * air, 0, 0);
 
     // tail: a lazy sway that lags along its length
     const sway = this.tailSway.update(-hy * 0.5 + Math.sin(t * 1.3) * 0.25 + Math.sin(ph) * 0.2 * moving, dt);
@@ -585,10 +598,19 @@ export class Dragon extends Friend {
     pose(B.wingTipR, 0, 0, -lerp(0.05, 0.35 + beat * 0.4, spread));
 
     m.fly = 0;
-    if (this.trick) this.trickPose(this.trick, dt);
+    if (this.trick) this.trickPose(this.trick, dt, L);
+
+    // legs: planted with IK
+    for (let i = 0; i < 4; i++) {
+      const l = L[i];
+      _tg.copy(this.legs[i].foot);
+      _tg.z += l.dz;
+      _tg.y += l.lift;
+      this.legs[i].solve(_tg, l.plant, l.off, l.toe);
+    }
   }
 
-  trickPose(tr, dt) {
+  trickPose(tr, dt, L) {
     const B = this.bones;
     const t = tr.t;
     if (tr.name === 'puff') {
@@ -619,11 +641,11 @@ export class Dragon extends Friend {
       B.root.position.y += -crouch * 0.02 + up * (0.2 + Math.sin(t * 7) * 0.012) + Math.abs(land) * -0.01;
       B.root.rotation.y += smooth((t - 0.8) / 1.1) * TAU;
       this.motion.fly = up;
-      if (up > 0.2) {
-        addPose(B.thighL, 0.4 * up, 0, 0);
-        addPose(B.thighR, 0.4 * up, 0, 0);
-        addPose(B.shoulderL, -0.3 * up, 0, 0);
-        addPose(B.shoulderR, -0.3 * up, 0, 0);
+      // hovering: the feet come off the ground, front paws forward, hind legs trailing
+      for (let i = 0; i < 4; i++) {
+        L[i].plant = Math.min(L[i].plant, 1 - clamp(up * 3, 0, 1));
+        L[i].off.z += (i < 2 ? 0.03 : -0.036) * up;
+        L[i].off.y += 0.015 * up;
       }
       if (!tr.fired && t > 0.35) {
         tr.fired = true;
@@ -642,8 +664,10 @@ export class Dragon extends Friend {
       B.root.rotation.y += Math.sin(t * 4.5) * 0.25 * (1 - ramp(t, 2.0, 2.4));
       for (let i = 0; i < 5; i++) addPose(B['tail' + i], 0, Math.sin(t * 14 - i * 0.6) * 0.25, 0);
       addPose(B.jaw, 0.25 * bump(t, 0.1, 2.3), 0, 0);
-      addPose(B.shoulderL, -0.5 * hop, 0, 0);
-      addPose(B.shoulderR, -0.5 * hop, 0, 0);
+      for (let i = 0; i < 2; i++) {
+        L[i].plant = Math.min(L[i].plant, 1 - hop);
+        L[i].off.z += 0.04 * hop;
+      }
       if (!tr.fired && t > 0.1) {
         tr.fired = true;
         this.emit('sound', { name: 'happy' });

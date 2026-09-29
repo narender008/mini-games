@@ -283,7 +283,19 @@ export class PaintEngine {
     this.dirty = null;
     this.clock = 0;
     this.changed = 0; // bumps whenever the painting changes
+    this.warm();
     this.clearAll();
+  }
+
+  // Draw every pass once, into a single texel, so their shaders are compiled
+  // now (while the game loads) and not on the first stroke a child paints.
+  warm() {
+    const box = [0, 0, 1, 1];
+    this.composeMat.uniforms.tP.value = this.base.textures[0];
+    this.composeMat.uniforms.tH.value = this.base.textures[1];
+    this._pass(this.segMat, this.stroke, box);
+    this._pass(this.composeMat, this.live, box);
+    this._copy(this.live, this.base, box);
   }
 
   get textures() {

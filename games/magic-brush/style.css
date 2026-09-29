@@ -498,6 +498,134 @@ body[data-mode='big'] .little-only {
   height: 78%;
 }
 
+/* the toy bar: one round button per toy, on a wooden shelf like the paint box */
+:root {
+  --toy: 64px;
+}
+body[data-mode='big'] {
+  --toy: 56px;
+}
+#toybar {
+  position: fixed;
+  z-index: 10;
+  left: 50%;
+  bottom: calc(12px + var(--safe-b));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 32px;
+  max-width: calc(100vw - 12px - var(--safe-l) - var(--safe-r));
+  background: linear-gradient(180deg, rgba(222, 170, 110, 0.94), rgba(178, 120, 68, 0.94));
+  box-shadow: inset 0 2px 0 rgba(255, 240, 210, 0.6), inset 0 -3px 0 rgba(90, 50, 20, 0.35), var(--shadow);
+}
+.toy {
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--toy);
+  height: var(--toy);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--glass);
+  box-shadow: var(--shadow);
+  transition: transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1), box-shadow 0.2s, background 0.2s;
+}
+.toy svg {
+  width: 78%;
+  height: 78%;
+  overflow: visible;
+  filter: drop-shadow(0 2px 2px rgba(60, 30, 10, 0.28));
+}
+.toy:active {
+  transform: scale(0.92);
+}
+/* the toy in hand: lifted, with a golden ring like the chosen mode */
+.toy[aria-pressed='true'] {
+  background: #fff;
+  box-shadow: 0 0 0 4px #ffd04a, var(--shadow);
+  transform: translateY(-5px);
+}
+.toy.boing {
+  animation: boing 0.5s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+@keyframes boing {
+  30% {
+    transform: translateY(-5px) scale(1.16) rotate(-6deg);
+  }
+  60% {
+    transform: translateY(-3px) scale(0.95) rotate(4deg);
+  }
+}
+.toy[data-toy='paint'] svg {
+  color: var(--c, #f06ab0);
+}
+/* the paints for puddles (Big kids), above the bar */
+#toy-colors {
+  position: fixed;
+  z-index: 10;
+  left: 50%;
+  bottom: calc(var(--toy) + 38px + var(--safe-b));
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 28px;
+  max-width: min(440px, calc(100vw - 16px));
+  background: var(--glass);
+  box-shadow: var(--shadow);
+  animation: fade 0.2s ease;
+}
+.swatch {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.8) 0 9%, rgba(255, 255, 255, 0) 30%), var(--c);
+  box-shadow: inset 0 -3px 5px rgba(0, 0, 0, 0.2), 0 2px 3px rgba(60, 30, 10, 0.3);
+  transition: transform 0.15s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.swatch:active {
+  transform: scale(0.9);
+}
+.swatch[aria-pressed='true'] {
+  transform: scale(1.14);
+  box-shadow: 0 0 0 4px #ffd04a, inset 0 -3px 5px rgba(0, 0, 0, 0.2), 0 2px 3px rgba(60, 30, 10, 0.3);
+}
+/* the welcome star that flies to the friends shelf (moved by play/welcome.js) */
+.fly-star {
+  position: fixed;
+  z-index: 30;
+  left: 0;
+  top: 0;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  display: none;
+  pointer-events: none;
+  filter: drop-shadow(0 0 8px rgba(255, 214, 90, 0.95)) drop-shadow(0 0 18px rgba(255, 170, 60, 0.6));
+}
+.fly-star svg {
+  width: 100%;
+  height: 100%;
+}
+.shelf-btn.bump {
+  animation: bump 0.7s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+@keyframes bump {
+  25% {
+    transform: scale(1.32) rotate(-8deg);
+  }
+  55% {
+    transform: scale(0.92) rotate(5deg);
+  }
+  80% {
+    transform: scale(1.08);
+  }
+}
+
 /* ---------------------------------------------------------------- overlays */
 .overlay {
   position: fixed;
@@ -779,12 +907,43 @@ body.cover #callout {
     width: 80px;
     height: 80px;
   }
+  :root {
+    --toy: min(58px, calc((100vw - 56px) / 5));
+  }
+  body[data-mode='big'] {
+    --toy: min(50px, calc((100vw - 60px) / 6));
+  }
+  #toybar {
+    gap: 6px;
+    padding: 7px 9px;
+    bottom: calc(8px + var(--safe-b));
+    border-radius: 28px;
+  }
+  .swatch {
+    width: 40px;
+    height: 40px;
+  }
+  #toy-colors {
+    bottom: calc(var(--toy) + 30px + var(--safe-b));
+    gap: 6px;
+  }
   .palette-board {
     padding: 6% 5% 12% 6%;
   }
 }
 /* phones held upright: the toolbar wraps into two rows below the canvas */
 @media (orientation: portrait) and (max-width: 760px) {
+  /* in the garden the paint-a-friend button rides above the toy bar, and the paints for
+     puddles stay clear of it */
+  .paint-new {
+    bottom: calc(var(--toy) + 30px + var(--safe-b));
+  }
+  #toy-colors {
+    left: 8px;
+    transform: none;
+    justify-content: flex-start;
+    max-width: calc(100vw - 112px - var(--safe-r));
+  }
   .logo {
     top: calc(74px + var(--safe-t));
     font-size: clamp(38px, 12vw, 64px);

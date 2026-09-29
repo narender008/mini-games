@@ -18,6 +18,7 @@ import { Friend } from './friend.js';
 import { tubeGeometry, withLook, bindTo, bindBy, frameFrom } from './parts.js';
 import { mergeGeometries } from './sculpt.js';
 import { pose, addPose, bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp } from './anim.js';
+import { SoftSpring } from './soft.js';
 import { glide, puff, flaps } from '../sound/calls.js';
 
 const FUZZ = 0x6d4fb0;
@@ -384,14 +385,22 @@ export class Butterfly extends Friend {
     this.fan = 0;
     this.seed = Math.random() * 100;
     this.prevHeading = null;
-    this.bank = new Spring(0, 1.2, 0.7);
-    this.headYaw = new Spring(0, 1.6, 0.8);
-    this.headPitch = new Spring(0, 1.6, 0.8);
-    this.antL = new Spring(0, 2.6, 0.22);
-    this.antR = new Spring(0, 2.4, 0.22);
-    this.antS = new Spring(0, 2.0, 0.3);
+    this.bank = new SoftSpring(0, 1.2, 0.7);
+    this.headYaw = new SoftSpring(0, 1.6, 0.8);
+    this.headPitch = new SoftSpring(0, 1.6, 0.8);
+    this.antL = new SoftSpring(0, 2.6, 0.22);
+    this.antR = new SoftSpring(0, 2.4, 0.22);
+    this.antS = new SoftSpring(0, 2.0, 0.3);
     this.prevY = 0;
     this.prevVy = 0;
+    // eased inputs: the beat rate, how much it is climbing, the wing stroke's
+    // size and a push-off that is spread over a few frames
+    this.hzS = 4.5;
+    this.climbS = 0;
+    this.ampS = 1;
+    this.pushV = 0; // a push-off still to be given, and how far through its window it is
+    this.pushK = 1;
+    this.altF = new Spring(0, 2.2, 1); // the height it is asked for, eased (a step in it must not start the climb with a jerk)
     // what a trick wants of the body, reused every frame (see trickPose)
     this.tp = { alt: null, ofs: [0, 0, 0], yaw: 0, pitch: 0, roll: 0, wing: null, wingAt: [0, 0], hz: null, amp: 1, crouch: 0, squint: 0, head: null, headAt: [0, 0, 0], st: null };
   }
@@ -602,12 +611,18 @@ export class Butterfly extends Friend {
     return p < D ? 1 - 2 * smooth(p / D) : -1 + 2 * smooth((p - D) / (1 - D));
   }
 
+  // (the wing beat carries on from wherever it is: only its size and speed change)
+  // an upward push (m/s), given over a third of a second as a smooth swell, so the climb starts from nothing
+  kickUp(v) {
+    this.pushV = this.pushV * (1 - smooth(this.pushK)) + v;
+    this.pushK = 0;
+  }
+
   takeOff(kick = 0.9) {
     this.st = 'flying';
-    this.alt.kick(kick);
+    this.kickUp(kick);
     this.idleT = 0;
     this.landDelay = 0.8 + Math.random() * 1.6;
-    this.beat = 0.02; // start on a downstroke
   }
 
   animate(dt) {
@@ -664,20 +679,33 @@ export class Butterfly extends Friend {
       if (r.st && !(r.st === 'landing' && this.st === 'landed')) this.st = r.st;
     }
     if (trickAlt !== null) altT = trickAlt;
-    const prevAlt = this.alt.x;
-    let alt = this.alt.update(altT, dt);
+    // a push-off is a swell of the air's speed (zero acceleration at both ends)
+    if (this.pushV !== 0) {
+      const k1 = Math.min(1, this.pushK + dt / 0.35);
+      this.alt.v += this.pushV * (smooth(k1) - smooth(this.pushK));
+      this.pushK = k1;
+      if (k1 >= 1) this.pushV = 0;
+    }
+    let alt = this.alt.update(this.altF.update(altT, dt), dt);
     if (alt < 0) {
       alt = 0;
       this.alt.x = 0;
       if (this.alt.v < 0) this.alt.v = 0;
     }
-    // touching down
-    if ((this.st === 'landing' || (tr && trickAlt === 0)) && alt < 0.004 && prevAlt >= alt) {
-      if (this.st !== 'landed') this.touch = 0;
-      this.st = 'landed';
-      this.alt.x = 0;
-      this.alt.v = 0;
-      alt = 0;
+    // touching down: the last few centimetres ease onto the ground
+    const down = this.st === 'landing' || (tr && trickAlt === 0);
+    if (down && alt < 0.03) {
+      const k = Math.exp(-dt * 9);
+      this.alt.x *= k;
+      this.alt.v *= k;
+      alt = this.alt.x;
+      if (alt < 0.0006) {
+        if (this.st !== 'landed') this.touch = 0;
+        this.st = 'landed';
+        this.alt.x = 0;
+        this.alt.v = 0;
+        alt = 0;
+      }
     }
     this.touch += dt;
     const airborne = this.st !== 'landed' || alt > 0.003;
@@ -702,15 +730,19 @@ export class Butterfly extends Friend {
     this.glide += ((this.gliding ? 1 : 0) - this.glide) * (1 - Math.exp(-dt * 6));
     if (this.gliding) this.alt.v -= dt * 0.08;
 
-    const climb = clamp((altT - alt) * 3, -1, 1);
+    // (eased: the target height can change in a step, the climb should not)
+    this.climbS += (clamp((altT - alt) * 3, -1, 1) - this.climbS) * (1 - Math.exp(-dt * 4));
+    const climb = this.climbS;
     let hz = flapHz ?? (m.air > 0 ? 6.5 : lerp(4.4, 6, Math.max(0, climb)) - (this.st === 'landing' ? 0.8 : 0));
     if (greeting) hz = 6.5;
-    this.beat += dt * hz * (1 - this.glide * 0.9) * Math.max(0.05, fly);
+    this.hzS += (hz - this.hzS) * (1 - Math.exp(-dt * 6));
+    this.beat += dt * this.hzS * (1 - this.glide * 0.9) * Math.max(0.05, fly);
     const ph = this.beat;
     const beatA = Butterfly.stroke(ph);
     const beatAh = Butterfly.stroke(ph - 0.05);
     const dA = (Butterfly.stroke(ph + 0.02) - Butterfly.stroke(ph - 0.02)) / 0.04; // per beat
-    const amp = flapAmp * (m.air > 0 && onCanvas ? 0.6 : 1);
+    this.ampS += (flapAmp * (m.air > 0 && onCanvas ? 0.6 : 1) - this.ampS) * (1 - Math.exp(-dt * 7));
+    const amp = this.ampS;
     // up 1.25 rad .. down -0.42 rad around a raised middle
     const flapF = lerp(0.42, 0.42 + beatA * 0.84, amp);
     const flapH = lerp(0.42, 0.42 + beatAh * 0.84, amp);
@@ -847,7 +879,7 @@ export class Butterfly extends Friend {
       // anticipation: wings up and a crouch; a burst up; a loop seen side-on
       const base = Math.max(start, 0.15);
       const r = 0.19;
-      const load = bump(t, 0, 0.55) * (t < 0.5 ? 1 : 0);
+      const load = bump(t, 0, 0.5);
       const up = ramp(t, 0.4, 0.95);
       const k = smooth((t - 0.95) / 1.35);
       const a = k * TAU;
@@ -860,7 +892,7 @@ export class Butterfly extends Friend {
       if (!tr.fired && t > 0.45) {
         tr.fired = true;
         this.emit('sound', { name: 'loop' });
-        this.alt.kick(0.6);
+        this.kickUp(0.6);
       }
       if (loopOn) {
         tr.trail = (tr.trail ?? 0) - dt;
@@ -889,7 +921,7 @@ export class Butterfly extends Friend {
     if (tr.name === 'sparkle') {
       // wings close up high, then a fast shivering flutter that shakes off
       // sparkle dust, then a slow flutter down
-      const load = t < 0.4 ? bump(t, 0, 0.8) : 0;
+      const load = ramp(t, 0, 0.3) * (1 - ramp(t, 0.32, 0.5));
       const burst = ramp(t, 0.35, 0.5) * (1 - ramp(t, 2.0, 2.3));
       const hover = wasDown ? 0.16 : start;
       if (!tr.fired && t > 0.38) {
@@ -960,10 +992,11 @@ export class Butterfly extends Friend {
       h[0] = -0.2 * perch;
       h[1] = 0;
       h[2] = Math.sin(t * 2) * 0.09 * perch;
-      tp.wing = t > 0.6 ? set2(tp.wingAt, 0.12 + fanA * 1.25, sit) : null;
+      const held = sit * (1 - ramp(t, 3.2, 3.6)); // (lets go as the trick ends, not with a snap)
+      tp.wing = t > 0.6 ? set2(tp.wingAt, 0.12 + fanA * 1.25, held) : null;
       tp.hz = wasDown ? 7 : 5;
       tp.amp = 0.7;
-      tp.crouch = sit * 0.6;
+      tp.crouch = held * 0.6;
       tp.squint = squint;
       tp.st = t < 0.6 ? (wasDown ? null : 'landing') : 'landing';
       return tp;

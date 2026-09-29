@@ -273,4 +273,33 @@ export function bindChain(g, bones) {
   });
 }
 
+// Parts that only show now and then (closed-eye lines, a mouth) are modelled
+// shrunk to a speck round their bone and scaled up by 1 / TINY when shown,
+// so the rest pose (which is what lies flat on the canvas before the friend
+// comes alive) has none of them.
+export const TINY = 0.01;
+export function tiny(g, c) {
+  return g.translate(-c[0], -c[1], -c[2]).scale(TINY, TINY, TINY).translate(c[0], c[1], c[2]);
+}
+
+// the nearest point on a surface (projected onto the tangent plane of the
+// nearest vertex), lifted off it by eps, and its normal
+export function onSurface(geo, p, eps = 0) {
+  const pos = geo.attributes.position.array;
+  const nor = geo.attributes.normal.array;
+  let best = 0;
+  let bd = Infinity;
+  for (let i = 0; i < pos.length; i += 3) {
+    const dx = pos[i] - p[0], dy = pos[i + 1] - p[1], dz = pos[i + 2] - p[2];
+    const d = dx * dx + dy * dy + dz * dz;
+    if (d < bd) {
+      bd = d;
+      best = i;
+    }
+  }
+  const n = [nor[best], nor[best + 1], nor[best + 2]];
+  const k = (p[0] - pos[best]) * n[0] + (p[1] - pos[best + 1]) * n[1] + (p[2] - pos[best + 2]) * n[2] - eps;
+  return { p: [p[0] - n[0] * k, p[1] - n[1] * k, p[2] - n[2] * k], n };
+}
+
 export { _v as scratch };

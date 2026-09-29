@@ -20,13 +20,18 @@ import { Music } from './music.js';
 
 const MASTER = 0.8;
 
-function noiseBuffer(ctx, seconds = 2, color = 'pink') {
+// A second or two of noise, or a reverb tail, is a few hundred thousand
+// samples: both are made in slices (yield*) so they can be spread over idle time.
+const SLICE = 0x3fff;
+
+function* noiseBuffer(ctx, seconds = 2, color = 'pink') {
   const n = Math.floor(ctx.sampleRate * seconds);
   const b = ctx.createBuffer(1, n, ctx.sampleRate);
   const d = b.getChannelData(0);
   let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
   let brown = 0;
   for (let i = 0; i < n; i++) {
+    if ((i & SLICE) === 0) yield;
     const w = Math.random() * 2 - 1;
     if (color === 'white') d[i] = w * 0.5;
     else if (color === 'brown') {
@@ -52,13 +57,14 @@ function noiseBuffer(ctx, seconds = 2, color = 'pink') {
   return b;
 }
 
-function impulse(ctx, seconds = 1.6, decay = 2.6) {
+function* impulse(ctx, seconds = 1.6, decay = 2.6) {
   const n = Math.floor(ctx.sampleRate * seconds);
   const b = ctx.createBuffer(2, n, ctx.sampleRate);
   for (let c = 0; c < 2; c++) {
     const d = b.getChannelData(c);
     let lp = 0;
     for (let i = 0; i < n; i++) {
+      if ((i & SLICE) === 0) yield;
       const t = i / n;
       lp = lp * 0.6 + (Math.random() * 2 - 1) * 0.4;
       d[i] = lp * Math.pow(1 - t, decay) * (i < ctx.sampleRate * 0.012 ? i / (ctx.sampleRate * 0.012) : 1);
@@ -67,25 +73,65 @@ function impulse(ctx, seconds = 1.6, decay = 2.6) {
   return b;
 }
 
+// run fn when the browser has nothing better to do
+// (a browser without idle callbacks gets a few milliseconds a turn)
+const idle = (fn) =>
+  typeof requestIdleCallback === 'function'
+    ? requestIdleCallback(fn, { timeout: 1000 })
+    : setTimeout(() => {
+        const end = performance.now() + 8;
+        fn({ timeRemaining: () => end - performance.now() });
+      }, 40);
+
 export class Audio {
   constructor() {
     this.muted = load('muted', false);
     this.ctx = null;
-    this.ready = false;
+    this.ready = false; // the first tap has come: the sound may play
+    this.build = null; // the steps of the graph still to build
     this.paintState = { tool: 'brush', speed: 0, active: false };
+  }
+
+  // Build the whole graph (the noise beds, the room's reverb, the buses, the
+  // music box) before the first tap, a few milliseconds at a time in the
+  // browser's idle moments, so the tap only has to wake it up. Nothing sounds
+  // until it does: the master stays shut.
+  prepare() {
+    if (this.ctx || this.build || !(window.AudioContext || window.webkitAudioContext)) return;
+    this.build = this.steps();
+    const pump = (deadline) => {
+      while (this.build && deadline.timeRemaining() > 3) if (this.build.next().done) this.build = null;
+      if (this.build) idle(pump);
+    };
+    idle(pump);
+  }
+
+  // finish whatever is still to build (a tap that comes early)
+  finish() {
+    while (this.build) if (this.build.next().done) this.build = null;
   }
 
   // Browsers only allow sound after a tap: call this from any input.
   unlock() {
-    if (this.ctx) {
-      if (this.ctx.state !== 'running' && !this.hidden) this.ctx.resume().catch(() => {});
-      return;
+    if (!this.ctx) this.prepare();
+    this.finish();
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (!this.ready) {
+      this.ready = true;
+      this.master.gain.setValueAtTime(this.muted ? 0 : MASTER, ctx.currentTime);
+      this.setScene(this.scene);
+      this.music.start();
     }
+    if (ctx.state !== 'running' && !this.hidden) ctx.resume().catch(() => {});
+  }
+
+  *steps() {
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
     const ctx = (this.ctx = new AC({ latencyHint: 'interactive' }));
+    yield;
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : MASTER;
+    this.master.gain.value = 0;
     const glue = ctx.createDynamicsCompressor();
     glue.threshold.value = -18;
     glue.knee.value = 12;
@@ -103,7 +149,6 @@ export class Audio {
     this.master.connect(glue).connect(limit).connect(trim).connect(ctx.destination);
     // a warm room for everything
     this.verb = ctx.createConvolver();
-    this.verb.buffer = impulse(ctx, 1.8, 2.8);
     this.verbIn = ctx.createGain();
     this.verbIn.gain.value = 0.35;
     const verbOut = ctx.createGain();
@@ -114,21 +159,22 @@ export class Audio {
     this.sfx.gain.value = 1;
     this.sfx.connect(this.master);
     this.sfx.connect(this.verbIn);
-    this.pink = noiseBuffer(ctx, 3, 'pink');
-    this.white = noiseBuffer(ctx, 2, 'white');
-    this.brown = noiseBuffer(ctx, 3, 'brown');
+    yield;
+    this.verb.buffer = yield* impulse(ctx, 1.8, 2.8);
+    yield;
+    this.pink = yield* noiseBuffer(ctx, 3, 'pink');
+    this.white = yield* noiseBuffer(ctx, 2, 'white');
+    this.brown = yield* noiseBuffer(ctx, 3, 'brown');
     this.buildPaintVoice();
+    yield;
     this.buildAmbience();
     this.music = new Music(ctx, this.master, this.verbIn);
-    this.ready = true;
-    if (this.scene) this.setScene(this.scene);
-    this.music.start();
   }
 
   setMuted(m) {
     this.muted = m;
     save('muted', m);
-    if (this.master) this.master.gain.setTargetAtTime(m ? 0 : MASTER, this.ctx.currentTime, 0.05);
+    if (this.ready) this.master.gain.setTargetAtTime(m ? 0 : MASTER, this.ctx.currentTime, 0.05);
   }
 
   pageHidden(h) {
@@ -351,6 +397,74 @@ export class Audio {
       src.start(t);
       src.stop(t + 1.7);
       for (let i = 0; i < 14; i++) this.bell(rand(2000, 4200), 0.025, t + 0.1 + Math.random() * 1.2, 0.5);
+    } else if (kind === 'gather') {
+      // the paint stirs: a warm chord swells under a few soft sparkles
+      [329.63, 392, 493.88, 659.25].forEach((fr, i) => this.pad(fr, 0.026, t + i * 0.08, 2.6));
+      for (let i = 0; i < 10; i++) this.bell(rand(1800, 3600), 0.02, t + 0.05 + Math.random() * 0.9, 0.45);
+    } else if (kind === 'emerge') {
+      // the seam sweeps across the painting: bells climbing a pentatonic scale,
+      // faster and higher as it goes, over a breath of air that rises with it
+      const scale = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.66, 1318.51, 1567.98, 1760, 2093, 2349.32];
+      const n = 22;
+      for (let i = 0; i < n; i++) {
+        const k = i / (n - 1);
+        this.bell(scale[Math.min(scale.length - 1, Math.floor(k * k * 0.4 * scale.length + k * 0.62 * scale.length))], 0.04, t + 2.2 * Math.pow(k, 0.8), 1.0);
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = this.pink;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.Q.value = 0.9;
+      f.frequency.setValueAtTime(500, t);
+      f.frequency.exponentialRampToValueAtTime(3200, t + 2.4);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.07, t + 1.8);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 2.7);
+      src.connect(f).connect(g).connect(this.sfx);
+      src.start(t);
+      src.stop(t + 2.8);
+    } else if (kind === 'wind') {
+      // the crouch: a soft, springy wind-up
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(420, t);
+      o.frequency.exponentialRampToValueAtTime(230, t + 0.3);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.07, t + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.38);
+      o.connect(g).connect(this.sfx);
+      o.start(t);
+      o.stop(t + 0.4);
+    } else if (kind === 'leap') {
+      // the spring: a bright upward glide and a whoosh of air, with sparkles in its wake
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(240, t);
+      o.frequency.exponentialRampToValueAtTime(980, t + 0.28);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.08, t + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+      o.connect(g).connect(this.sfx);
+      o.start(t);
+      o.stop(t + 0.45);
+      const src = ctx.createBufferSource();
+      src.buffer = this.pink;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.Q.value = 1.2;
+      f.frequency.setValueAtTime(500, t);
+      f.frequency.exponentialRampToValueAtTime(2600, t + 0.5);
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.0001, t);
+      ng.gain.linearRampToValueAtTime(0.12, t + 0.2);
+      ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+      src.connect(f).connect(ng).connect(this.sfx);
+      src.start(t);
+      src.stop(t + 1);
+      [1046.5, 1318.5, 1568, 2093, 2637].forEach((fr, i) => this.bell(fr, 0.035, t + 0.1 + i * 0.09, 0.9));
     } else if (kind === 'whoosh') {
       const src = ctx.createBufferSource();
       src.buffer = this.pink;
@@ -418,7 +532,7 @@ export class Audio {
   // a friend's call. kind: the friend's id; name: which call
   creature(kind, name) {
     if (!this.ready) return;
-    const call = CALLS[kind]?.[name] || CALLS[kind]?.happy || CALLS.generic[name] || CALLS.generic.happy;
+    const call = CALLS[kind]?.[name] || CALLS.generic[name] || CALLS[kind]?.happy || CALLS.generic.happy;
     call(this, this.ctx.currentTime);
   }
 
@@ -457,7 +571,7 @@ export class Audio {
 
   setScene(scene) {
     this.scene = scene;
-    if (!this.ready) return;
+    if (!this.ready || !scene) return;
     const t = this.ctx.currentTime;
     const amb = scene === 'menu' ? 0.5 : scene === 'play' ? 1 : 0.7;
     this.amb.gain.setTargetAtTime(amb, t, 0.8);
@@ -468,10 +582,11 @@ export class Audio {
     if (!this.ready) return;
     const t = this.ctx.currentTime;
     this.leafGain.gain.setTargetAtTime(0.004 + 0.004 * (0.5 + 0.5 * Math.sin(t * 0.3)), t, 0.5);
+    // (once the garden's own birds sing, sound/ambient.js, this stray one keeps quiet)
     this.birdTimer -= dt;
     if (this.birdTimer <= 0) {
       this.birdTimer = rand(3, 9);
-      this.bird();
+      if (!this.synced) this.bird();
     }
     this.music.update();
   }

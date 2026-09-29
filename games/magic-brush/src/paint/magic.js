@@ -189,7 +189,36 @@ export class Magic {
     this.coverMat = m(COVER_FRAG, { tP: { value: null }, tMask: { value: null } });
     this.lookMat = m(LOOK_FRAG, { tP: { value: null } });
     this.look = new THREE.WebGLRenderTarget(640, 480, { depthBuffer: false, generateMipmaps: false, colorSpace: THREE.SRGBColorSpace });
+    this.copyMat = m('uniform sampler2D t; varying vec2 vUv; void main(){ gl_FragColor = texture2D(t, vUv); }', { t: { value: null } });
     this.quad = new FullScreenQuad(null);
+    this.warm();
+  }
+
+  // Run every pass once (they are small) so their shaders are compiled while
+  // the game loads, not in the middle of the sweep.
+  warm() {
+    const e = this.engine;
+    const p = e.live.textures[0];
+    this.seedMat.uniforms.tP.value = p;
+    this._pass(this.seedMat, this.seedA);
+    this.jfaMat.uniforms.tSeed.value = this.seedA.texture;
+    this._pass(this.jfaMat, this.seedB);
+    const f = this.fillMat.uniforms;
+    f.tSeed.value = this.seedB.texture;
+    f.tP.value = p;
+    f.tDefault.value = p;
+    this._pass(this.fillMat, this.fill);
+    this.coverMat.uniforms.tP.value = p;
+    this._pass(this.coverMat, this.cover);
+    this.sweep(null, 0, true);
+    this.skinMat.uniforms.tP.value = p;
+    this._pass(this.skinMat, this.skin);
+    this.lookMat.uniforms.tP.value = p;
+    this._pass(this.lookMat, this.look);
+    this.copyMat.uniforms.t.value = this.look.texture;
+    this._pass(this.copyMat, this.cover);
+    // the sweep drew into the live painting: clear it again
+    e.clearAll();
   }
 
   _pass(mat, target) {
@@ -220,9 +249,34 @@ export class Magic {
     return { inside: b > 0 ? a / b : 0, painted: c / (255 * 128 * 96) };
   }
 
+  // the same, read back in the background (the GPU is a frame or two behind,
+  // and reading it at once would stall the frame until it caught up)
+  async coverageAsync(mask) {
+    const e = this.engine;
+    this.coverMat.uniforms.tP.value = e.live.textures[0];
+    this.coverMat.uniforms.tMask.value = mask;
+    this._pass(this.coverMat, this.cover);
+    const d = new Uint8Array(128 * 96 * 4);
+    try {
+      await this.renderer.readRenderTargetPixelsAsync(this.cover, 0, 0, 128, 96, d);
+    } catch {
+      this.renderer.readRenderTargetPixels(this.cover, 0, 0, 128, 96, d);
+    }
+    let a = 0;
+    let b = 0;
+    let c = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      a += d[i];
+      b += d[i + 1];
+      c += d[i + 2];
+    }
+    return { inside: b > 0 ? a / b : 0, painted: c / (255 * 128 * 96) };
+  }
+
   // Work out the fill from the live painting. defaultTex: the friend's own
   // colours, used where nothing at all has been painted; mask: its outline.
-  prepare(defaultTex, mask) {
+  // It resolves a moment later, when the read-back has come.
+  async prepare(defaultTex, mask) {
     const e = this.engine;
     this.seedMat.uniforms.tP.value = e.live.textures[0];
     this._pass(this.seedMat, this.seedA);
@@ -235,7 +289,7 @@ export class Magic {
       [a, b] = [b, a];
     }
     this.seedResult = a;
-    const cov = this.coverage(mask);
+    const cov = await this.coverageAsync(mask);
     const f = this.fillMat.uniforms;
     f.tSeed.value = a.texture;
     f.tP.value = e.live.textures[0];
@@ -269,22 +323,42 @@ export class Magic {
     return this.skin.texture;
   }
 
-  // a render target as an upright JPEG data URL
-  _image(target, quality) {
+  // A render target as an upright JPEG data URL. Neither the read-back nor
+  // the encoding stalls the frame: the pixels come back when the GPU has
+  // caught up, and the browser encodes them off the main thread.
+  async _image(target, quality) {
     const w = target.width;
     const h = target.height;
-    const px = new Uint8Array(w * h * 4);
-    this.renderer.readRenderTargetPixels(target, 0, 0, w, h, px);
     const c = document.createElement('canvas');
     c.width = w;
     c.height = h;
     const g = c.getContext('2d');
+    // the pixels are read straight into the canvas's own image data, then turned upright and made opaque in place
     const img = g.createImageData(w, h);
+    await this.renderer.readRenderTargetPixelsAsync(target, 0, 0, w, h, img.data);
     const row = w * 4;
-    for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * row, (h - y) * row), y * row);
-    for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
+    const tmp = new Uint8ClampedArray(row);
+    for (let y = 0; y < h >> 1; y++) {
+      const a = img.data.subarray(y * row, (y + 1) * row);
+      const b = img.data.subarray((h - 1 - y) * row, (h - y) * row);
+      tmp.set(a);
+      a.set(b);
+      b.set(tmp);
+    }
+    // (opaque alpha, a whole pixel at a time)
+    const px = new Uint32Array(img.data.buffer);
+    const opaque = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1 ? 0xff000000 : 0x000000ff;
+    for (let i = 0; i < px.length; i++) px[i] |= opaque;
     g.putImageData(img, 0, 0);
-    return c.toDataURL('image/jpeg', quality);
+    return new Promise((resolve, reject) =>
+      c.toBlob((blob) => {
+        if (!blob) return reject(new Error('no image'));
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      }, 'image/jpeg', quality),
+    );
   }
 
   // the friend's skin as a JPEG data URL (upright), kept with the friend
@@ -331,15 +405,8 @@ export class Magic {
     const w = this.skin.width;
     const h = this.skin.height;
     const t = new THREE.WebGLRenderTarget(w, h, { depthBuffer: false, generateMipmaps: false, colorSpace: THREE.SRGBColorSpace });
-    const copy = new THREE.ShaderMaterial({
-      vertexShader: VERT,
-      fragmentShader: 'uniform sampler2D t; varying vec2 vUv; void main(){ gl_FragColor = texture2D(t, vUv); }',
-      uniforms: { t: { value: this.skin.texture } },
-      depthTest: false,
-      depthWrite: false,
-    });
-    this._pass(copy, t);
-    copy.dispose();
+    this.copyMat.uniforms.t.value = this.skin.texture;
+    this._pass(this.copyMat, t);
     return t;
   }
 
