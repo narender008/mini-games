@@ -241,6 +241,7 @@ class App {
     if (probe) {
       scene.remove(probe);
       probe.scale.setScalar(1);
+      this.canvasFriend.primed = true;
     }
     progress(0.96, 'Ready');
     if (QUERY.has('cover')) document.body.classList.add('cover');
@@ -276,7 +277,28 @@ class App {
     const timeout = new Promise((resolve) => setTimeout(resolve, 4000));
     return Promise.race([this.warmer.warm(f.object), timeout]).then(() => {
       f.ready = true;
+      if (f === this.canvasFriend) this.primeFriend(f);
     });
+  }
+
+  // Compiled is not yet drawn: a friend's first frame on screen still costs 80-100 ms (buffers,
+  // vertex bindings, driver state for its dozens of meshes), which used to freeze the picture at
+  // the start of the come-alive. So once its shaders are ready it is drawn for a few frames at a
+  // thousandth of its size, through the real post chain, while the child is still painting.
+  primeFriend(f) {
+    if (f.primed || f.object.parent || this.primed) return;
+    f.primed = true;
+    f.object.scale.setScalar(0.001);
+    this.scene.add(f.object);
+    this.primed = { f, left: 3 };
+  }
+
+  unprime() {
+    const p = this.primed;
+    if (!p) return;
+    this.primed = null;
+    this.scene.remove(p.f.object);
+    p.f.object.scale.setScalar(1);
   }
 
   handlers() {
@@ -522,6 +544,7 @@ class App {
       return;
     }
     this.warmFriend(f);
+    this.unprime();
     if (this.canvasFriend) this.canvasFriend.dispose();
     this.canvasFriend = f;
     if (picked) this.picked = true;
@@ -707,6 +730,7 @@ class App {
     const record = { id: newId(), kind: f.info.id, skin: '', made: Date.now(), mode: this.mode };
     const skinKept = this.magic.skinImage().then((url) => (record.skin = url), () => {});
     if (this.mode === 'big') this.savePainting();
+    this.unprime();
     this.scene.add(f.object);
     const land = this.landingSpot({ home: f.info.home, landScale: f.landScale });
     r.phase = 'alive';
@@ -1081,7 +1105,7 @@ class App {
     if (this.hidden) return;
     const dt = this.pacer.tick(now);
     if (!dt) return;
-    this.governor.sample(Math.min(0.25, this.pacer.real / 1000));
+    this.governor.sample(Math.min(0.25, this.pacer.real / 1000), !!this.magicRun);
     if (this.frozen) return;
     this.update(dt);
     this.render();
@@ -1143,6 +1167,7 @@ class App {
     this.friends.update(dt, t, this.camera);
     this.toys.update(dt, t);
     this.warmer.update();
+    if (this.primed && --this.primed.left <= 0) this.unprime();
     this.updateLife(dt, t);
     this.fx.sparkles.update(dt, t);
     this.fx.droplets.update(dt);

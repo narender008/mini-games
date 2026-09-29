@@ -152,9 +152,16 @@ export class FrameGovernor {
     this.strain = 0;
   }
 
-  sample(realDt) {
+  // hold: a one-off moment (the come-alive) is on; its slow frames say nothing about the device
+  sample(realDt, hold = false) {
     this.clock += realDt;
     this.sinceChange += realDt;
+    if (hold) {
+      this.samples.length = 0;
+      this.cooldown = Math.max(this.cooldown, 3);
+      this.calm = 0;
+      return;
+    }
     this.cooldown -= realDt;
     const target = this.pacer.step / 1000;
     this.samples.push(realDt);

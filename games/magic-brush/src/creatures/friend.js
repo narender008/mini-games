@@ -122,7 +122,13 @@ export class Friend {
     this.computeProjection();
     this.skeleton.calculateInverses();
     for (const m of this.meshes) m.bind(this.skeleton, new THREE.Matrix4());
-    this.restRadius = this.bounds.getBoundingSphere(new THREE.Sphere()).radius;
+    const rest = this.bounds.getBoundingSphere(new THREE.Sphere());
+    this.restRadius = rest.radius;
+    // three.js works out a skinned mesh's bounding sphere by skinning every one of its vertices on the CPU the
+    // first time it is drawn: about 2 ms a mesh, so 75 ms in the first frame of a furry friend (the body and its
+    // 26 shells share one geometry). The rest pose sphere is all the draw order needs.
+    this.body.boundingSphere = rest.clone();
+    for (const m of this.shells) m.boundingSphere = rest.clone();
     return this;
   }
 
