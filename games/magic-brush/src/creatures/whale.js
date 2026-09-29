@@ -14,7 +14,8 @@ import * as THREE from 'three';
 import { Friend } from './friend.js';
 import { bindTo } from './parts.js';
 import { mergeGeometries } from './sculpt.js';
-import { pose, addPose, bump, ramp, smooth, Spring, TAU, clamp, lerp } from './anim.js';
+import { pose, addPose, bump, ramp, smooth, TAU, clamp, lerp } from './anim.js';
+import { SoftSpring } from './soft.js';
 import { Tracker } from './pal-kit.js';
 import { glide, puff } from '../sound/calls.js';
 import { rand } from '../config.js';
@@ -58,15 +59,16 @@ export class Whale extends Friend {
     this.sparkleColors = [[0.8, 1.5, 2.0], [1.6, 1.9, 2.0], [1.2, 1.2, 2.0]];
     this.track = new Tracker();
     this.theta = Math.random() * TAU; // where he is on his circle
-    this.focus = new Spring(0, 1.0, 1.0); // 1: facing forward, centred
+    this.focus = new SoftSpring(0, 1.0, 1.0); // 1: facing forward, centred
     this.swimPh = 0;
-    this.bubbleScale = new Spring(0, 2.2, 0.35);
+    this.bubbleScale = new SoftSpring(0, 2.2, 0.35);
+    this.size = new SoftSpring(0, 1.1, 1); // how far he has grown to garden size (steady: the bubble's own pop overshoots)
     this.portraitRadius = R * 1.4; // the shelf picture shows the whole bubble
-    this.jelly = new Spring(0, 2.6, 0.18);
-    this.lagX = new Spring(0, 1.4, 0.5);
-    this.lagY = new Spring(0, 1.4, 0.5);
-    this.lagZ = new Spring(0, 1.4, 0.5);
-    this.headYaw = new Spring(0, 1.2, 0.8);
+    this.jelly = new SoftSpring(0, 2.6, 0.18);
+    this.lagX = new SoftSpring(0, 1.4, 0.5);
+    this.lagY = new SoftSpring(0, 1.4, 0.5);
+    this.lagZ = new SoftSpring(0, 1.4, 0.5);
+    this.headYaw = new SoftSpring(0, 1.2, 0.8);
     this.small = Array.from({ length: SMALL }, (_, i) => ({ y: i / SMALL, x: rand(-0.07, 0.07), z: rand(-0.07, 0.07), sp: rand(0.045, 0.085), ph: rand(0, TAU), w: rand(2.2, 3.6) }));
     this.sizeK = 1;
   }
@@ -264,7 +266,7 @@ export class Whale extends Friend {
     const bs = this.bubbleScale.update(painting ? 0 : 1, dt);
     const jel = this.jelly.update(0, dt);
     const bob = Math.sin(t * 1.3) * 0.008 + Math.sin(t * 0.47) * 0.004;
-    const grown = smooth(clamp(bs, 0, 1));
+    const grown = smooth(clamp(this.size.update(painting ? 0 : 1, dt), 0, 1));
     B.root.position.y += bob + LIFT * grown;
     // grow to garden size with the bubble: whoever places him sets his scale
     // each frame (friends.js, alive.js) or once (a portrait, a test page), so

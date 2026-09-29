@@ -25,7 +25,7 @@
 // emote, lookAt, release, walkers, nearest, stageSpot). A friend that a toy has
 // its eye on carries e.toy (the toy's name), and other toys leave it be.
 import * as THREE from 'three';
-import { REDUCED_MOTION, rand, clamp, angleDiff } from '../config.js';
+import { REDUCED_MOTION, rand, clamp } from '../config.js';
 import { COLORS, BIG_COLORS } from '../paint/tools.js';
 import { Bits, SHAPE } from './bits.js';
 import { ToySounds } from '../sound/toys.js';
@@ -317,10 +317,10 @@ export class Toys {
     return e.toy === who && !e.leaving && this.friends.list.includes(e);
   }
 
-  // turn a friend's heading towards a point, at a rate (rad/s)
+  // turn a friend towards a point, at a top rate (rad/s), easing in and out (call it
+  // every frame; the friend does the turning in its own update)
   face(e, x, z, dt, rate = 4) {
-    const want = Math.atan2(x - e.pos.x, z - e.pos.z);
-    e.heading += clamp(angleDiff(e.heading, want), -rate * dt, rate * dt);
+    this.friends.face(e, Math.atan2(x - e.pos.x, z - e.pos.z), rate);
   }
 
   // hearts floating up from a friend

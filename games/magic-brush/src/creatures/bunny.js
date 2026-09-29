@@ -62,16 +62,39 @@ const F = 0.58;
 const K = 0.68;
 const stair = (p) => smooth((p - 0.1) / 0.62);
 
-// smooth keyframes [[p, v], ...]
+// smooth keyframes [[p, v], ...]: a monotone cubic through the keys, so a
+// joint keeps its speed as it passes a key (an ease in and out at every key
+// would stop and restart it, a hitch at each one) and never overshoots one
 function keys(p, k) {
+  const n = k.length;
   if (p <= k[0][0]) return k[0][1];
-  for (let i = 1; i < k.length; i++)
-    if (p <= k[i][0]) {
-      const a = k[i - 1];
-      const b = k[i];
-      return lerp(a[1], b[1], smooth((p - a[0]) / (b[0] - a[0])));
-    }
-  return k[k.length - 1][1];
+  if (p >= k[n - 1][0]) return k[n - 1][1];
+  let i = 1;
+  while (p > k[i][0]) i++;
+  const p0 = k[i - 1][0], p1 = k[i][0];
+  const v0 = k[i - 1][1], v1 = k[i][1];
+  const h = p1 - p0;
+  const s = (v1 - v0) / h;
+  const m0 = keyTangent(k, i - 1, s);
+  const m1 = keyTangent(k, i, s);
+  const t = (p - p0) / h;
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * v0 + (t3 - 2 * t2 + t) * h * m0 + (-2 * t3 + 3 * t2) * v1 + (t3 - t2) * h * m1;
+}
+
+// the slope at key i (Fritsch-Carlson: flat at the ends and at any peak or hold)
+function keyTangent(k, i, sNext) {
+  const n = k.length;
+  if (i === 0 || i === n - 1) return 0;
+  const sPrev = (k[i][1] - k[i - 1][1]) / (k[i][0] - k[i - 1][0]);
+  const sN = (k[i + 1][1] - k[i][1]) / (k[i + 1][0] - k[i][0]);
+  if (sPrev * sN <= 0) return 0;
+  const h0 = k[i][0] - k[i - 1][0];
+  const h1 = k[i + 1][0] - k[i][0];
+  const w1 = 2 * h1 + h0;
+  const w2 = h1 + 2 * h0;
+  return (w1 + w2) / (w1 / sPrev + w2 / sN);
 }
 
 const V = (a) => new THREE.Vector3(...a);

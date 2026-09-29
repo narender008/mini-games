@@ -11,13 +11,19 @@
 // boat leaps from stone to stone into the pond, a sun or rainbow floats up
 // into the sky.
 //
+// Its motion is smooth to the last derivative that matters: a heading turns
+// through an angular speed that eases in and out (smooth.js `steer`), a speed
+// changes through an acceleration that comes on gradually (`accelerate`), a squash
+// follows a spring, so no start, stop or turn is ever a jerk.
+//
 // A tap on a friend makes it stop, turn to you and do one of its tricks. Only
 // so many friends play at once (by device); when one more arrives, the friend
 // who has played longest waves goodbye in a puff of sparkles and goes back to
 // the shelf.
 //
 // For the toys and games (play/): every entry `e` has { friend, pos, heading,
-// speed, state, home, scale, busy }. Use
+// speed, state, home, scale, busy }. Never set e.heading or e.speed: to turn a
+// standing friend ask face(e, angle, rate) every frame you want it to. Use
 //   send(e, {x, z}, { pace: 'walk'|'run', stopR, onArrive(e), onCancel(e) })
 //                              run or walk there by a sensible path
 //   release(e)                 back to free roaming
@@ -29,9 +35,10 @@
 // and set `friends.pointer` (a THREE.Vector3 on the ground, or null) each
 // frame so friends notice where the child's finger is.
 import * as THREE from 'three';
-import { clamp, rand, angleDiff, damp, pick, easeBack, REDUCED_MOTION } from './config.js';
+import { clamp, rand, angleDiff, damp, pick, REDUCED_MOTION } from './config.js';
 import { homeSpot, onPond, WATER_Y, stageAt, STAGE, STONES_X } from './world/world.js';
 import { Nav } from './world/nav.js';
+import { steer, accelerate, smoothDamp, smoother } from './smooth.js';
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
@@ -47,8 +54,6 @@ const FIDGETS = [
   ['spin', 1],
   ['bow', 1],
 ];
-
-const moveToward = (v, target, step) => (v < target ? Math.min(target, v + step) : Math.max(target, v - step));
 
 export class Friends {
   constructor({ scene, fx, audio, quality, walkable, groundAt }) {
@@ -90,6 +95,9 @@ export class Friends {
       pos: new THREE.Vector3(x, this.groundAt(x, z), z),
       heading,
       speed: 0,
+      acc: 0, // its acceleration (m/s^2), so speed changes ease in and out
+      turnVel: 0, // its angular speed (rad/s) and acceleration, for the same
+      turnAcc: 0,
       state: 'idle',
       timer: fresh ? 1.4 : rand(0.5, 2),
       task: null,
@@ -103,7 +111,10 @@ export class Friends {
       busy: 0,
       bank: 0,
       fidget: rand(3, 8),
-      squash: 0,
+      squash: 0, // what is asked for (a landing kicks it up; it decays); sqS is what shows
+      sqS: 0,
+      vSq: { v: 0 },
+      vY: { v: 0 },
       hopper: null,
       lookHold: 0,
       journey,
@@ -118,6 +129,11 @@ export class Friends {
       // (the come-alive moment already ended with its own hello)
       e.state = 'hello';
       e.timer = 0.7;
+    }
+    // (a friend that has just landed carries what is left of its landing squash)
+    if (friend.landSquash) {
+      e.squash = e.sqS = friend.landSquash;
+      friend.landSquash = 0;
     }
     friend.object.rotation.order = 'YXZ';
     friend.object.position.copy(e.pos);
@@ -180,7 +196,6 @@ export class Friends {
     e.leaving = 0.001;
     e.state = 'leaving';
     e.task = null;
-    e.speed = 0;
   }
 
   has(record) {
@@ -269,6 +284,14 @@ export class Friends {
     return ok;
   }
 
+  // ask a standing friend to turn to face an angle (call it every frame it should keep
+  // doing so); it turns through the same eased steering as everything else
+  face(e, angle, rate = 4) {
+    e.faceAngle = angle;
+    e.faceRate = rate;
+    e.faceUntil = this.time + 0.1;
+  }
+
   lookAt(e, point, seconds = 2) {
     e.friend.look = point;
     e.lookHold = point ? seconds : 0;
@@ -308,7 +331,6 @@ export class Friends {
     e.trickIndex++;
     this.cancelTask(e);
     e.state = 'trick';
-    e.speed = 0;
     // friends at home in the sky or a bed keep their place and just turn a little
     e.faceCamera = true;
     f.startTrick(name, f.trickLength(name));
@@ -340,8 +362,9 @@ export class Friends {
           f.startTrick('bye', 1.2);
         }
         if (e.waving) e.leaving += dt;
+        this.rest(e, dt);
         const k = clamp((e.leaving - 0.8) / 0.6, 0, 1);
-        shrink = Math.max(0.001, 1 - k);
+        shrink = Math.max(0.001, 1 - smoother(k));
         if (k > 0 && !e.poofed) {
           e.poofed = true;
           this.fx.sparkles.burst(f.worldCenter(_v), 50, { colors: SPARK.concat([[1.8, 1.4, 0.8]]), speed: 0.9, up: 0.5 });
@@ -357,6 +380,7 @@ export class Friends {
       } else if (e.state === 'hello') {
         e.timer -= dt;
         f.look = camera.position;
+        this.rest(e, dt);
         if (e.timer <= 0) this.setOff(e);
       } else if (e.state === 'journey') {
         shrink = this.journey(e, dt);
@@ -365,6 +389,17 @@ export class Friends {
       for (const ev of f.events) this.onEvent(e, ev);
       f.events.length = 0;
     }
+  }
+
+  // stand there: speed and turning ease away to nothing
+  rest(e, dt) {
+    accelerate(e, 0, dt, 1, this.brakeOf(e));
+    steer(e, e.heading, dt, e.friend.turnRate);
+  }
+
+  // how hard this friend brakes (m/s^2): from a run to a stop in under half a second
+  brakeOf(e) {
+    return Math.max(0.6, (e.friend.run * e.scale) / 0.45);
   }
 
   // move, keep apart, settle onto the ground, write the transform
@@ -391,7 +426,8 @@ export class Friends {
         }
       }
       const floor = e.home === 'pond' && e.baseY !== undefined ? WATER_Y : e.home === 'sky' && e.baseY !== undefined ? e.baseY : this.groundAt(e.pos.x, e.pos.z);
-      e.pos.y = damp(e.pos.y, floor, 12, dt);
+      // (a step up or down, like the edge of the deck, is taken in a smooth stride)
+      e.pos.y = smoothDamp(e.pos.y, floor, e.vY, 0.09, dt);
     }
     // planting: a friend that has arrived at its home pops up and grows to size
     let grow = 1;
@@ -399,11 +435,16 @@ export class Friends {
       e.grow += dt;
       const k = clamp(e.grow / 0.9, 0, 1);
       const g0 = e.growFrom ?? 0.001;
-      grow = Math.max(0.001, g0 + (1 - g0) * easeBack(k, 2.2));
+      // (it grows from rest, overshoots a little and settles: no jolt as it starts)
+      const sn = Math.sin(Math.PI * k);
+      grow = Math.max(0.001, g0 + (1 - g0) * (smoother(k) + 0.5 * k * sn * sn));
       if (k >= 1) e.grow = 0;
     }
+    // what is asked for decays; what shows follows it through a spring, so a landing
+    // or a crouch (which set it in one go) never make the body step
     e.squash = damp(e.squash, 0, 9, dt);
-    const sq = e.squash;
+    e.sqS = smoothDamp(e.sqS, e.squash, e.vSq, 0.08, dt);
+    const sq = e.sqS;
     f.object.position.copy(e.pos);
     f.object.rotation.set(0, e.heading, e.bank);
     const s = Math.max(0.001, e.scale * shrink * grow);
@@ -428,14 +469,19 @@ export class Friends {
         desired = roams ? toCam : e.heading + clamp(angleDiff(e.heading, toCam), -0.6, 0.6);
       }
       f.look = camera.position;
-      e.speed = damp(e.speed, 0, 6, dt);
+      accelerate(e, 0, dt, 1, this.brakeOf(e));
       if (!f.trick) {
         e.state = 'idle';
         e.timer = rand(1.5, 3);
         e.faceCamera = false;
       }
     } else if (e.state === 'idle') {
-      e.speed = damp(e.speed, 0, 5, dt);
+      accelerate(e, 0, dt, 1, this.brakeOf(e));
+      // (a toy may want it to face something)
+      if (e.faceUntil > this.time) {
+        desired = e.faceAngle;
+        turnRate = Math.max(turnRate, e.faceRate);
+      }
       e.timer -= dt;
       e.lookTimer -= dt;
       this.gaze(e, camera);
@@ -454,12 +500,12 @@ export class Friends {
       const r = this.followPath(e, dt);
       desired = r.desired;
       turnRate *= r.turnBoost;
-      bankTarget = r.bank;
+      // lean into a bend, in proportion to how hard it is turning at speed
+      bankTarget = clamp(-e.turnVel * 0.07 * r.bank * clamp(e.speed / Math.max(0.05, f.run * e.scale), 0, 1.2), -0.22, 0.22);
       f.look = null;
     }
-    // slow, weighty friends still turn; a friend cannot turn at all while it does a trick in place
-    const diff = angleDiff(e.heading, desired);
-    e.heading += clamp(diff, -turnRate * dt, turnRate * dt);
+    // slow, weighty friends still turn; the turn eases in and out
+    steer(e, desired, dt, turnRate);
     e.bank = damp(e.bank, bankTarget, 6, dt);
   }
 
@@ -588,11 +634,10 @@ export class Friends {
     const vStop = Math.sqrt(2 * decel * 0.8 * Math.max(0, remaining - t.stopR));
     const align = clamp(1.15 - Math.abs(diff) / 1.1, 0.12, 1);
     const want = Math.min(vmax, vStop) * align;
-    e.speed = moveToward(e.speed, want, (want > e.speed ? accel : decel * 1.6) * dt);
-    // arrived
+    accelerate(e, want, dt, accel, decel * 1.6);
+    // arrived (it keeps its speed and eases to a stop as it stands there)
     if (last && remaining <= t.stopR + 0.03) {
       e.task = null;
-      e.speed *= 0.5;
       e.state = 'idle';
       e.timer = rand(1.5, 4);
       t.onArrive?.(e);
@@ -610,9 +655,7 @@ export class Friends {
       cb?.(e);
       return { desired: e.heading, turnBoost: 1, bank: 0 };
     }
-    // lean into the turn, more at a run
-    const bank = clamp(-diff * 0.22 * (e.speed / Math.max(0.05, f.run * e.scale)), -0.22, 0.22);
-    return { desired, turnBoost: t.pace === 'run' ? 1.5 : 1.15, bank };
+    return { desired, turnBoost: t.pace === 'run' ? 1.5 : 1.15, bank: 1 };
   }
 
   // ------------------------------------------------------------ social play
@@ -752,23 +795,30 @@ export class Friends {
       const last = e.jI === path.length - 1;
       e.hopper = { t: -0.16, from: e.pos.clone(), to: new THREE.Vector3(e.pos.x + (dx / d) * step, 0, e.pos.z + (dz / d) * step), dur: dur * Math.min(1, 0.45 + (step / big) * 0.55), reach: d <= big + 1e-3, last };
       e.hopper.heading = Math.atan2(dx, dz);
+      // the ground it comes down on (the pond for the last leap of a boat)
+      e.hopper.y1 = last && e.hopper.reach ? e.spot.y : this.groundAt(e.hopper.to.x, e.hopper.to.z);
     }
     const h = e.hopper;
     h.t += dt;
     // turn towards the hop, then crouch, spring, fly and squash on landing
-    e.heading += clamp(angleDiff(e.heading, h.heading), -f.turnRate * 2.5 * dt, f.turnRate * 2.5 * dt);
+    steer(e, h.heading, dt, f.turnRate * 2.5);
     if (h.t < 0) {
       const k = (h.t + 0.16) / 0.16;
       e.squash = 0.08 * Math.sin(Math.min(1, k) * Math.PI * 0.5);
-      e.speed = 0;
       return 1;
     }
     const k = clamp(h.t / h.dur, 0, 1);
-    e.pos.x = h.from.x + (h.to.x - h.from.x) * k;
-    e.pos.z = h.from.z + (h.to.z - h.from.z) * k;
-    const gy = this.groundAt(e.pos.x, e.pos.z);
-    e.pos.y = gy + 4 * height * k * (1 - k);
-    e.speed = 0.0;
+    // it leaves the ground and comes back to it at no speed at all (a sine
+    // squared up, a quintic along), so a hop has no jolt at take-off or touch-down
+    const kx = smoother(k);
+    e.pos.x = h.from.x + (h.to.x - h.from.x) * kx;
+    e.pos.z = h.from.z + (h.to.z - h.from.z) * kx;
+    // (the ground under it changes between where it left and where it lands as it does, so
+    // the edge of the deck or the water is no step)
+    const gy = h.from.y + (h.y1 - h.from.y) * kx;
+    const sn = Math.sin(Math.PI * k);
+    // (a short hop is a low one, so it is never a violent one)
+    e.pos.y = gy + height * (h.dur / dur) * (h.dur / dur) * sn * sn;
     f.motion.air = 0;
     // stretched in flight
     e.squash = -0.06 * Math.sin(k * Math.PI);
@@ -795,13 +845,13 @@ export class Friends {
     const k = clamp(e.jt / e.jDur, 0, 1);
     const ease = k * k * (3 - 2 * k);
     const s = e.spot;
-    e.pos.x = e.jStart.x + (s.x - e.jStart.x) * ease + Math.sin(k * Math.PI * 2) * 0.25 * (1 - k);
+    const w = Math.sin(k * Math.PI);
+    e.pos.x = e.jStart.x + (s.x - e.jStart.x) * ease + Math.sin(k * Math.PI * 2) * 0.25 * w * w * (1 - k);
     e.pos.z = e.jStart.z + (s.z - e.jStart.z) * ease;
-    e.pos.y = e.jStart.y + (s.y - e.jStart.y) * ease + Math.sin(k * Math.PI) * 0.4;
-    e.heading += clamp(angleDiff(e.heading, Math.atan2(0.4 - s.x, 2 - s.z)), -1.2 * dt, 1.2 * dt);
+    e.pos.y = e.jStart.y + (s.y - e.jStart.y) * ease + w * w * 0.4;
+    steer(e, Math.atan2(0.4 - s.x, 2 - s.z), dt, 1.2);
     const grow = e.jScale0 + (f.worldScale - e.jScale0) * ease;
     if (Math.random() < 0.8) this.fx.sparkles.emit(e.pos.x + rand(-0.1, 0.1), e.pos.y + rand(-0.05, 0.1), e.pos.z + rand(-0.1, 0.1), rand(-0.1, 0.1), rand(-0.15, 0.05), rand(-0.1, 0.1), [1.9, 1.5, 0.8], rand(0.012, 0.03), rand(0.6, 1.2));
-    e.speed = 0;
     if (k >= 1) {
       e.pos.set(s.x, s.y, s.z);
       e.baseY = s.y;
@@ -830,16 +880,12 @@ export class Friends {
     e.timer = rand(2, 4);
     e.speed = 0;
     e.squash = 0.18;
-    if (e.home === 'pond') {
-      e.scale = f.worldScale;
-    } else {
-      // it puts down roots: a puff of earth and sparkles, and it grows to size
-      // (it was hopping at its size on the lawn, so it grows from there)
-      e.growFrom = clamp(e.scale / f.worldScale, 0.2, 1);
-      e.scale = f.worldScale;
-      e.grow = 0.001;
-      this.fx.sparkles.burst(_v.set(spot.x, spot.y + 0.1, spot.z), 60, { colors: [[1.9, 1.5, 0.8], [1.2, 1.6, 1.2]], speed: 1.1, up: 0.9, size: 0.03 });
-    }
+    // it grows to size from what it was hopping at (a boat in the water, a flower or
+    // tree putting down roots in a puff of earth and sparkles)
+    e.growFrom = clamp(e.scale / f.worldScale, 0.2, 1);
+    e.scale = f.worldScale;
+    e.grow = 0.001;
+    if (e.home !== 'pond') this.fx.sparkles.burst(_v.set(spot.x, spot.y + 0.1, spot.z), 60, { colors: [[1.9, 1.5, 0.8], [1.2, 1.6, 1.2]], speed: 1.1, up: 0.9, size: 0.03 });
     this.audio.magic?.('shimmer');
     f.onArrive?.();
     this.arrived(e);

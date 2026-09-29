@@ -16,8 +16,9 @@
 // ?tone=; ?debug exposes window.__mb (see the end of this file).
 import * as THREE from 'three';
 import { QUERY, DEBUG, REDUCED_MOTION, MODES, load, save, pickValid, clamp, damp, rand, lin, tick } from './config.js';
-import { detectQuality, FrameGovernor } from './quality.js';
+import { detectQuality, FrameGovernor, FramePacer } from './quality.js';
 import { Post } from './post.js';
+import { Warmer } from './warm.js';
 import { Sky } from './world/sky.js';
 import { World, walkable, groundAt, STAGE, obstacleAt } from './world/world.js';
 import { Motes, PaintDrops } from './world/air.js';
@@ -73,6 +74,9 @@ class App {
     this.raycaster = new THREE.Raycaster();
     this.pointer = { id: null, down: false, uv: null, hover: null, x: 0, y: 0, type: 'mouse', speed: 0, lastUv: null };
     this.coverage = 0;
+    this.coverToken = 0;
+    this.coverBusy = false; // a coverage read is on its way back from the GPU
+    this.coverAgain = false;
     this.coverTimer = 0;
     this.idleSinceStroke = 0;
     this.lineAlpha = 0;
@@ -188,11 +192,15 @@ class App {
       },
     });
     this.post = new Post(renderer, scene, camera, q);
+    // shader compiles happen ahead of need, a little at a time (see warm.js)
+    this.warmer = new Warmer(renderer, scene, camera, () => this.post.composer.renderTarget1);
     // golden hour: a touch warm in the highlights, cool in the shadows
     this.post.setGrade({ white: [1.0, 0.99, 0.97], saturation: 1.04, contrast: 0.08, shadowTint: [-0.002, 0.0, 0.006], highTint: [0.006, 0.003, -0.004], vignette: 0.24 });
     this.post.bloomStrength = 0.28;
     this.post.bloomThreshold = 1.1;
-    this.governor = new FrameGovernor(() => this.resize());
+    this.pacer = new FramePacer(Number(QUERY.get('fps')) || 0);
+    // a change of render scale re-allocates every target: only when nothing is on the move
+    this.governor = new FrameGovernor(() => this.resize(), this.pacer, () => !this.magicRun && !this.rig.moving);
     this.friendCtx = { quality: q, strain: () => this.governor.strain };
     this.store = new Store();
 
@@ -215,22 +223,60 @@ class App {
     this.rig.snap(this.shot('menu'));
     this.update(0.016);
     progress(0.86, 'Mixing the paints');
-    // compile every material now rather than on the first frames
+    // Compile every material now rather than on the first frames: for the
+    // target the post chain draws into (a program compiled for the screen would
+    // never be used), with the first friend standing in the scene out of sight
+    // so that the shadow pass compiles the shader friends cast shadows with too.
+    this.warmer.step(Infinity);
     this.toys.warm(true);
-    try {
-      await renderer.compileAsync(scene, camera);
-    } catch {
-      /* compileAsync is only an optimisation */
+    const probe = this.canvasFriend?.object;
+    if (probe) {
+      probe.scale.setScalar(0.001);
+      scene.add(probe);
     }
-    this.toys.warm(false);
+    await this.compileScene();
+    // (drawn once with the hidden toys shown, so their textures and buffers are uploaded now too)
     this.render();
+    this.toys.warm(false);
+    if (probe) {
+      scene.remove(probe);
+      probe.scale.setScalar(1);
+    }
     progress(0.96, 'Ready');
     if (QUERY.has('cover')) document.body.classList.add('cover');
     this.setState('menu');
     this.restoreFriends();
     if (QUERY.has('play')) this.startPainting(true);
     renderer.setAnimationLoop((t) => this.frame(t));
+    // (the sound is built in the idle moments from here, so a first tap only wakes it)
+    this.audio.prepare();
     if (DEBUG) this.exposeDebug();
+  }
+
+  // compile all the scene's shaders, for the target the post chain draws into
+  async compileScene() {
+    const r = this.renderer;
+    const prev = r.getRenderTarget();
+    r.setRenderTarget(this.post.composer.renderTarget1);
+    let done;
+    try {
+      done = r.compileAsync(this.scene, this.camera);
+    } catch {
+      done = Promise.resolve();
+    }
+    r.setRenderTarget(prev);
+    // (compileAsync is only an optimisation)
+    await done.catch(() => {});
+  }
+
+  // Compile a friend's shaders a little at a time, from now on; f.ready says
+  // when it can be shown without a hitch (never later than a few seconds).
+  warmFriend(f) {
+    f.ready = false;
+    const timeout = new Promise((resolve) => setTimeout(resolve, 4000));
+    return Promise.race([this.warmer.warm(f.object), timeout]).then(() => {
+      f.ready = true;
+    });
   }
 
   handlers() {
@@ -456,6 +502,7 @@ class App {
     this.endStroke();
     this.paint.clearAll();
     this.coverage = 0;
+    this.coverToken++;
     this.ui.setReady(false);
   }
 
@@ -474,12 +521,14 @@ class App {
       f.dispose();
       return;
     }
+    this.warmFriend(f);
     if (this.canvasFriend) this.canvasFriend.dispose();
     this.canvasFriend = f;
     if (picked) this.picked = true;
     this.outline.clear();
-    this.outline.draw(f);
     this.lineAlpha = 0;
+    await this.outline.draw(f);
+    if (token !== this.subjectToken) return;
     this.showOutline();
     this.checkCoverage();
   }
@@ -512,9 +561,31 @@ class App {
       this.ui.setReady(this.paint.strokes.length > 0);
       return;
     }
-    const c = this.magic.coverage(this.outline.mask);
-    this.coverage = c.inside;
-    this.ui.setReady(this.coverage > READY_COVER);
+    // (read back in the background: waiting for the GPU here would stall the frame; a sample a frame or two old will
+    // do. One read at a time: a burst of strokes asks again once the read in flight is back)
+    if (this.coverBusy) {
+      this.coverAgain = true;
+      return;
+    }
+    this.coverBusy = true;
+    const token = ++this.coverToken;
+    this.magic
+      .coverageAsync(this.outline.mask)
+      .then(
+        (c) => {
+          if (token !== this.coverToken) return;
+          this.coverage = c.inside;
+          if (this.mode === 'little' && this.canvasFriend) this.ui.setReady(this.coverage > READY_COVER);
+        },
+        () => {},
+      )
+      .then(() => {
+        this.coverBusy = false;
+        if (this.coverAgain) {
+          this.coverAgain = false;
+          this.checkCoverage();
+        }
+      });
   }
 
   // GO: make it come alive
@@ -563,8 +634,9 @@ class App {
     }
     // the friend takes the place and size of the painting
     f.computeProjection(this.bigRect);
+    this.warmFriend(f);
     this.outline.clear();
-    this.outline.draw(f);
+    await this.outline.draw(f);
     this.easel.setOutline(this.outline.lines, this.outline.mask);
     this.startMagic(f);
   }
@@ -577,17 +649,25 @@ class App {
     this.canvasFriend = f === this.canvasFriend ? null : this.canvasFriend;
     this.subjectToken++;
     const colors = this.paintedColors();
-    this.magic.prepare(this.defaultSkin(f.info), this.outline.mask);
-    this.magicRun = { f, t: 0, phase: 'sweep', sweep: REDUCED_MOTION.matches ? 0.5 : 1.35, colors, tidy: this.mode === 'little' };
+    this.coverToken++;
+    const run = (this.magicRun = { f, t: 0, phase: 'prepare', sweep: REDUCED_MOTION.matches ? 0.5 : 1.35, colors, tidy: this.mode === 'little' });
     this.easel.uniforms.uHasMask.value = 1;
     this.easel.uniforms.tMask.value = this.outline.mask;
-    this.audio.magic('sweep');
     this.ui.setReady(false);
+    // the fill is worked out first (a frame or two: the GPU is read back in the background), then the sweep begins
+    this.magic
+      .prepare(this.defaultSkin(f.info), this.outline.mask)
+      .catch(() => {})
+      .then(() => {
+        if (this.magicRun !== run) return;
+        run.phase = 'sweep';
+        this.audio.magic('sweep');
+      });
   }
 
   updateMagic(dt) {
     const r = this.magicRun;
-    if (!r) return;
+    if (!r || r.phase === 'prepare') return;
     r.t += dt;
     const u = this.easel.uniforms;
     if (r.phase === 'sweep') {
@@ -599,7 +679,8 @@ class App {
       this.lineSolid = Math.min(1, k * 2);
       // sparkles ride along the sweep line
       if (Math.random() < 0.9) this.sweepSparkle(x);
-      if (k >= 1) {
+      // (the friend's shaders are long ready by now; it never shows before they are)
+      if (k >= 1 && r.f.ready !== false) {
         this.magic.sweep(this.outline.mask, 1.3, r.tidy);
         this.paint.commitLive();
         u.uSweep.value = -1;
@@ -622,7 +703,9 @@ class App {
     const skin = this.magic.skinCopy();
     f.setSkin(skin.texture);
     f.ownSkin = skin;
-    const record = { id: newId(), kind: f.info.id, skin: this.magic.skinImage(), made: Date.now(), mode: this.mode };
+    // (the picture of the skin is made in the background; the record is kept once it is ready)
+    const record = { id: newId(), kind: f.info.id, skin: '', made: Date.now(), mode: this.mode };
+    const skinKept = this.magic.skinImage().then((url) => (record.skin = url), () => {});
     if (this.mode === 'big') this.savePainting();
     this.scene.add(f.object);
     const land = this.landingSpot({ home: f.info.home, landScale: f.landScale });
@@ -640,10 +723,11 @@ class App {
       this.lineAlpha = 0;
       this.friends.add(f, record, { x: land.x, z: land.z, heading: land.yaw, fresh: true, journey: true });
       this.records.unshift(record);
-      this.store.put('friends', record).catch(() => {});
+      skinKept.then(() => this.store.put('friends', record)).catch(() => {});
       this.wantPortrait(f, record, 0.4);
       // the canvas is fresh and white again for the next friend
       this.paint.clearAll();
+      this.coverage = 0;
       this.outline.clear();
       this.easel.setOutline(null, null);
       this.canvasFriend?.dispose();
@@ -706,9 +790,14 @@ class App {
   savePainting() {
     // the picture for the shelf, and the strokes themselves to hang it again
     const strokes = this.paint.strokes.map((c) => ({ brush: c.brush, seed: c.seed, time: c.time, pts: c.pts }));
-    const rec = { id: newId(), image: this.magic.paintingImage(), strokes, w: this.paint.w, made: Date.now() };
+    const rec = { id: newId(), image: '', strokes, w: this.paint.w, made: Date.now() };
     this.paintings.unshift(rec);
-    this.store.put('paintings', rec).catch(() => {});
+    // (the picture is made in the background; the painting is kept once it is ready)
+    this.magic
+      .paintingImage()
+      .then((url) => (rec.image = url), () => {})
+      .then(() => this.store.put('paintings', rec))
+      .catch(() => {});
     // the shelf keeps the newest few dozen
     for (const old of this.paintings.splice(MAX_PAINTINGS)) this.store.remove('paintings', old.id).catch(() => {});
     return rec;
@@ -778,6 +867,9 @@ class App {
       const [f, tex] = await Promise.all([makeFriend(rec.kind, this.friendCtx), loadTexture(rec.skin)]);
       f.setSkin(tex);
       f.ownSkin = tex;
+      // (its shaders compile a little at a time, so it shows without a hitch)
+      await this.warmFriend(f);
+      this.renderer.initTexture(tex);
       return f;
     } catch {
       return null;
@@ -981,13 +1073,17 @@ class App {
     this.last = performance.now();
   }
 
+  // Every screen refresh calls this; the pacer lets a steady share of them through
+  // (a fixed ~60 fps cadence even on a 120 Hz screen) and gives the step in whole
+  // refreshes, so the motion is evenly spaced (see FramePacer in quality.js).
   frame(now) {
-    const realDt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     if (this.hidden) return;
-    this.governor.sample(realDt);
+    const dt = this.pacer.tick(now);
+    if (!dt) return;
+    this.governor.sample(Math.min(0.25, this.pacer.real / 1000));
     if (this.frozen) return;
-    this.update(Math.min(realDt, 1 / 20));
+    this.update(dt);
     this.render();
   }
 
@@ -1046,6 +1142,7 @@ class App {
     }
     this.friends.update(dt, t, this.camera);
     this.toys.update(dt, t);
+    this.warmer.update();
     this.updateLife(dt, t);
     this.fx.sparkles.update(dt, t);
     this.fx.droplets.update(dt);
@@ -1056,7 +1153,12 @@ class App {
     this.rig.update(dt);
     // focus: the canvas when painting, the friends when playing
     // (on a friend the near side of it: its face, not the middle of its body)
-    this.post.setFocus(Math.max(0.3, this.camera.position.distanceTo(this.rig.look) - (this.state === 'play' ? 0.14 : 0)));
+    // (the focus glides to it, so a change of shot racks focus instead of popping; a cut snaps)
+    const focus = Math.max(0.3, this.camera.position.distanceTo(this.rig.look) - (this.state === 'play' ? 0.14 : 0));
+    const cut = this._focusFrom && this._focusFrom.distanceToSquared(this.camera.position) > 0.36;
+    this._focus = this._focus === undefined || cut ? focus : damp(this._focus, focus, 7, dt);
+    (this._focusFrom ??= new THREE.Vector3()).copy(this.camera.position);
+    this.post.setFocus(this._focus);
   }
 
   // the garden's little life (birds, insects, the pond, the wind in the grass) reacts to
@@ -1093,11 +1195,32 @@ class App {
 
   takePortrait({ f, record }) {
     if (!f.object.parent || !record) return;
-    record.portrait = this.portraitOf(f);
-    this.store.put('friends', record).catch(() => {});
+    // (the picture is encoded in the background: reading it back here would wait for the GPU to finish the extra frame)
+    const cv = this.portraitCanvas(f);
+    canvasDataUrl(cv, 'image/jpeg', 0.86)
+      .then((url) => {
+        record.portrait = url;
+        // (a record still waiting for its skin picture is saved, portrait too, when that is ready)
+        if (record.skin) return this.store.put('friends', record);
+      })
+      .catch(() => {});
   }
 
   portraitOf(f, size = 256, quality = 0.86) {
+    return this.portraitCanvas(f, size).toDataURL('image/jpeg', quality);
+  }
+
+  portraitCanvas(f, size = 256) {
+    const el = this.portraitFrame(f);
+    const side = Math.min(el.width, el.height);
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = size;
+    cv.getContext('2d').drawImage(el, (el.width - side) / 2, (el.height - side) / 2, side, side, 0, 0, size, size);
+    return cv;
+  }
+
+  // draws the portrait frame into the canvas (from a camera close on the friend), and gives the camera back
+  portraitFrame(f) {
     const cam = this.camera;
     const savePos = cam.position.clone();
     const saveQ = cam.quaternion.clone();
@@ -1131,20 +1254,21 @@ class App {
     // this close, the usual lens would blur half the friend: stop it down
     const aperture = this.post.lens.aperture;
     this.post.setAperture(aperture * 0.3);
+    // (the shadows were drawn a frame ago and the normal frame right after redraws them: this one reuses them)
+    const shadows = this.renderer.shadowMap;
+    const autoShadows = shadows.autoUpdate;
+    shadows.autoUpdate = false;
     this.post.render();
+    shadows.autoUpdate = autoShadows;
     this.post.setAperture(aperture);
-    const el = this.renderer.domElement;
-    const side = Math.min(el.width, el.height);
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = size;
-    cv.getContext('2d').drawImage(el, (el.width - side) / 2, (el.height - side) / 2, side, side, 0, 0, size, size);
     cam.position.copy(savePos);
     cam.quaternion.copy(saveQ);
     cam.fov = saveFov;
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
-    this.post.setFocus(cam.position.distanceTo(this.rig.look));
-    return cv.toDataURL('image/jpeg', quality);
+    // (the focus goes back to where the frame had it, so the normal frame right after does not jump)
+    this.post.setFocus(this._focus ?? cam.position.distanceTo(this.rig.look));
+    return this.renderer.domElement;
   }
 
   // ------------------------------------------------------------ debug
@@ -1224,7 +1348,7 @@ class App {
             continue;
           }
           app.outline.clear();
-          app.outline.draw(f);
+          await app.outline.draw(f);
           const d = app.outline.data;
           const map = new Uint8Array(MASK_W * MASK_H);
           for (let i = 0; i < map.length; i++) map[i] = d[i * 4] > 127 ? 1 : 0;
@@ -1281,7 +1405,7 @@ class App {
       // the i-th friend in the garden as a square jpeg data URL (picker pictures)
       portrait: (i = 0, size = 256, quality = 0.86) => app.friends.list[i] && app.portraitOf(app.friends.list[i].friend, size, quality),
       friends: () => app.friends.list.map((e) => ({ kind: e.friend.info.id, x: +e.pos.x.toFixed(2), z: +e.pos.z.toFixed(2), state: e.state })),
-      state: () => ({ state: app.state, mode: app.mode, coverage: +app.coverage.toFixed(3), strokes: app.paint.strokes.length, busy: app.alive.busy, magic: app.magicRun?.phase ?? null, scale: app.governor.scale, strain: app.governor.strain }),
+      state: () => ({ state: app.state, mode: app.mode, coverage: +app.coverage.toFixed(3), strokes: app.paint.strokes.length, busy: app.alive.busy, magic: app.magicRun?.phase ?? null, scale: app.governor.scale, strain: app.governor.strain, fps: +(1000 / app.pacer.step).toFixed(1), refresh: +(1000 / app.pacer.vsync).toFixed(1) }),
     };
   }
 }
@@ -1302,14 +1426,30 @@ function squareFov(fov, aspect) {
   return aspect >= 1 ? fov : (360 / Math.PI) * Math.atan(Math.tan((fov * Math.PI) / 360) / aspect);
 }
 
+// a canvas as a data URL, encoded off the main thread
+function canvasDataUrl(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) return reject(new Error('no picture'));
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(blob);
+    }, type, quality);
+  });
+}
+
 function loadTexture(url) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      const t = new THREE.Texture(img);
-      t.colorSpace = THREE.SRGBColorSpace;
-      t.needsUpdate = true;
-      resolve(t);
+      // (decoded now, off the main thread, not by the first frame that draws it)
+      (img.decode ? img.decode() : Promise.resolve()).catch(() => {}).then(() => {
+        const t = new THREE.Texture(img);
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.needsUpdate = true;
+        resolve(t);
+      });
     };
     img.onerror = reject;
     img.src = url;

@@ -18,7 +18,8 @@ import * as THREE from 'three';
 import { Friend } from './friend.js';
 import { tubeGeometry, withLook, bindTo, bindBy, bindChain, tintBy } from './parts.js';
 import { fieldOf, hit, grad, squircle, panelGeometry, placeAlong, stripUv, mergeAll, mergeSkinned } from './shape-kit.js';
-import { bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp, easeOutBack } from './anim.js';
+import { bump, ramp, smooth, wobble, TAU, clamp, lerp, easeOutBack } from './anim.js';
+import { SoftSpring } from './soft.js';
 import { glide, puff } from '../sound/calls.js';
 
 const HULL = 0xfdd835;
@@ -69,20 +70,24 @@ export class Boat extends Friend {
     this.lastYaw = null;
     this.accel = 0;
     this.yawRate = 0;
-    this.heave = new Spring(0, 2.1, 0.22);
-    this.pitch = new Spring(0, 1.7, 0.3);
-    this.roll = new Spring(0, 1.4, 0.28);
-    this.cabX = new Spring(0, 3.4, 0.2);
-    this.cabZ = new Spring(0, 3.4, 0.2);
-    this.fun = new Spring(0, 3.8, 0.16);
-    this.flagS = new Spring(0, 2.2, 0.2);
-    this.headYaw = new Spring(0, 1.3, 0.75);
+    this.heave = new SoftSpring(0, 2.1, 0.22);
+    this.pitch = new SoftSpring(0, 1.7, 0.3);
+    this.roll = new SoftSpring(0, 1.4, 0.28);
+    this.cabX = new SoftSpring(0, 3.4, 0.2);
+    this.cabZ = new SoftSpring(0, 3.4, 0.2);
+    this.fun = new SoftSpring(0, 3.8, 0.16);
+    this.flagS = new SoftSpring(0, 2.2, 0.2);
+    this.headYaw = new SoftSpring(0, 1.3, 0.75);
     this.last = { pitch: 0, roll: 0, heave: 0 };
     this.slapIn = 0.5;
     this.splashIn = 0.2;
     this.smokeIn = 2;
     this.flow = 0;
     this.ring = 9;
+    this.flagPh = 0; // the pennant's flutter, counted up (its speed changes with the boat's, its phase never jumps)
+    this.lastY = undefined; // for the leaps from stone to stone: how fast the world lifts it
+    this.vyRaw = 0;
+    this.vy = new SoftSpring(0, 6, 1);
   }
 
   get tricks() {
@@ -444,6 +449,23 @@ export class Boat extends Friend {
     const idt = dt > 1e-4 ? 1 / dt : 0;
     this.blinker.hold = 0;
 
+    // leaping stone to stone (the world lifts the whole boat along the arc): it
+    // follows the arc, bow up on the way up and bow down on the way down, and
+    // thumps down onto the water or the stone
+    const y = this.object.position.y;
+    const vyRaw = this.lastY === undefined || dt < 1e-4 ? 0 : (y - this.lastY) * idt;
+    this.lastY = y;
+    const vy = this.vy.update(clamp(vyRaw, -6, 6), dt);
+    if (this.vyRaw < -1 && vyRaw > -0.4 && air < 0.05) {
+      const thump = Math.min(3, -this.vyRaw);
+      this.heave.kick(-0.05 * thump);
+      this.pitch.kick(0.3 * thump);
+      this.cabX.kick(1.2 * thump);
+      this.fun.kick(1.5 * thump);
+    }
+    this.vyRaw = vyRaw;
+    const leap = clamp(Math.atan(vy / 2.2) * 0.9, -0.55, 0.55) * (1 - air);
+
     // afloat on the pond, or on dry land?
     const onW = this.forceWater ?? (this.object.position.y < -0.008 ? 1 : 0);
     if (this.wet === undefined) this.wet = onW;
@@ -483,7 +505,7 @@ export class Boat extends Friend {
     const breathe = Math.sin(t * 2.0);
     B.root.position.y += (1 - W) * KEEL;
     B.hull.position.y += swell + heave + breathe * 0.0007 - mv * 0.002 * W;
-    B.hull.rotation.x = pitch + pitchW * W + Math.sin(t * 0.9) * 0.01 * (1 - W) - air * 0.22 * (1 - air * 0.4);
+    B.hull.rotation.x = pitch + pitchW * W + Math.sin(t * 0.9) * 0.01 * (1 - W) - air * 0.22 * (1 - air * 0.4) - leap;
     B.hull.rotation.z = roll + lerp(rollL, rollW, W);
 
     // the wheelhouse is its head: it breathes, turns a little to what it
@@ -512,9 +534,10 @@ export class Boat extends Friend {
     this.flagS.kick(-this.yawRate * dt * 3 - rv * dt * 0.5);
     const fl = this.flagS.update(0, dt);
     const breeze = 0.55 + 0.45 * Math.sin(t * 0.37) + mv * 0.8;
+    this.flagPh += dt * (7.5 + mv * 4);
     for (let i = 0; i < 3; i++) {
       const b = B[FLAGS[i]];
-      b.rotation.y = Math.sin(t * (7.5 + mv * 4) - i * 1.25) * (0.1 + 0.12 * breeze) * (0.5 + i * 0.4) + fl * (0.6 + i * 0.3) + (i === 0 ? Math.sin(t * 0.8) * 0.2 : 0);
+      b.rotation.y = Math.sin(this.flagPh - i * 1.25) * (0.1 + 0.12 * breeze) * (0.5 + i * 0.4) + fl * (0.6 + i * 0.3) + (i === 0 ? Math.sin(t * 0.8) * 0.2 : 0);
       b.rotation.x = (1 - clamp(breeze, 0, 1)) * 0.18 * (i + 1) * 0.5;
     }
 
@@ -591,7 +614,7 @@ export class Boat extends Friend {
           B.funnel.scale.z *= 1 - st * 0.1 * s;
           B.funnel.scale.y *= 1 + st * 0.3 * s;
           B.cabin.scale.y *= 1 + st * 0.05 * s;
-          B.hull.position.y += 4 * u * (1 - u) * 0.013 * s;
+          B.hull.position.y += Math.sin(u * Math.PI) ** 2 * 0.013 * s;
           B.hull.rotation.x -= Math.sin(u * Math.PI) * 0.07 * s;
         }
         if (!tr[key] && t > at) {

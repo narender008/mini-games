@@ -270,6 +270,7 @@ export class UI {
       b.setAttribute('aria-label', BY_ID[r.kind]?.name || r.kind);
       const img = new Image();
       img.alt = '';
+      img.decoding = 'async'; // (a JPEG decoded on the main thread as the shelf opens would stall the frame)
       img.src = r.portrait || r.skin;
       b.appendChild(img);
       b.addEventListener('click', () => {
@@ -289,6 +290,7 @@ export class UI {
       b.setAttribute('aria-label', 'A kept painting');
       const img = new Image();
       img.alt = '';
+      img.decoding = 'async';
       img.src = p.image;
       b.appendChild(img);
       b.addEventListener('click', () => {

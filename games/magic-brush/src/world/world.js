@@ -17,6 +17,26 @@ import { tubeGeometry } from '../creatures/parts.js';
 import { SKY_GLSL } from './sky.js';
 import { stringLights } from './air.js';
 
+// Clear glass (lantern panes, brush jars): the scene shows through, with a faint
+// veil of the pane's own colour and full-strength reflections of the sky.
+// Made without `transmission` on purpose: three then draws the whole opaque
+// scene a second time into a full-size multisampled target every frame just to
+// refract it, which cost about a third of every frame in the studio and the
+// garden. Blending: result = pane + scene * (1 - veil), the pane's colour and
+// opacity both scaled by the veil so its reflections are not dimmed with it.
+const GLASS_VEIL = 0.08;
+function clearGlass(color, roughness) {
+  const m = new THREE.MeshPhysicalMaterial({ color, roughness, transparent: true, opacity: GLASS_VEIL });
+  m.color.multiplyScalar(GLASS_VEIL);
+  m.blending = THREE.CustomBlending;
+  m.blendEquation = THREE.AddEquation;
+  m.blendSrc = THREE.OneFactor;
+  m.blendDst = THREE.OneMinusSrcAlphaFactor;
+  m.blendSrcAlpha = THREE.OneFactor;
+  m.blendDstAlpha = THREE.OneMinusSrcAlphaFactor;
+  return m;
+}
+
 const DECK_Z0 = -1.1;
 const DECK_Z1 = 2.8;
 const DECK_X = 3.0;
@@ -248,7 +268,7 @@ export class World {
   lantern(pos, hanging, lightIntensity) {
     const g = new THREE.Group();
     const metal = new THREE.MeshStandardMaterial({ color: 0x2c2420, roughness: 0.45, metalness: 0.8 });
-    const glass = new THREE.MeshPhysicalMaterial({ color: 0xfff1dc, roughness: 0.08, transmission: 0.9, thickness: 0.002, transparent: true, opacity: 0.35 });
+    const glass = clearGlass(0xfff1dc, 0.08);
     const top = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.08, 6), metal);
     top.position.y = 0.17;
     const base = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.09, 0.03, 6), metal);
@@ -306,7 +326,7 @@ export class World {
     }
     // jars of brushes, paint pots, a palette
     const R = rng(7);
-    const jarMat = new THREE.MeshPhysicalMaterial({ color: 0xe8f2f0, roughness: 0.05, transmission: 0.85, thickness: 0.004, transparent: true, opacity: 0.5 });
+    const jarMat = clearGlass(0xe8f2f0, 0.05);
     const handleMats = [0xb8442f, 0x2f6fb8, 0xe0b23c, 0x3a8a4a, 0x7a4fa8, 0x8a5a3a].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.4 }));
     const ferrule = new THREE.MeshStandardMaterial({ color: 0xc9c2b6, roughness: 0.25, metalness: 1 });
     const bristle = new THREE.MeshStandardMaterial({ color: 0x4a3526, roughness: 0.9 });

@@ -37,9 +37,17 @@ export class Store {
       }
     }
     return new Promise((resolve) => {
-      const tx = this.db.transaction(kind, 'readonly');
-      const req = tx.objectStore(kind).getAll();
-      req.onsuccess = () => resolve((req.result || []).sort((a, b) => a.made - b.made));
+      // one record at a time: a painting with all its strokes is a lot to unpack,
+      // and getAll would unpack every one of them in a single go, stalling a frame
+      const out = [];
+      const req = this.db.transaction(kind, 'readonly').objectStore(kind).openCursor();
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (cursor) {
+          out.push(cursor.value);
+          cursor.continue();
+        } else resolve(out.sort((a, b) => a.made - b.made));
+      };
       req.onerror = () => resolve([]);
     });
   }

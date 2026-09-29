@@ -13,7 +13,8 @@ import * as THREE from 'three';
 import { Friend } from './friend.js';
 import { withLook, bindTo, tintBy } from './parts.js';
 import { fieldOf, hit, grad, stripUv, mergeAll, mergeSkinned } from './shape-kit.js';
-import { bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp, easeOutBack } from './anim.js';
+import { bump, ramp, smooth, wobble, TAU, clamp, lerp, easeOutBack } from './anim.js';
+import { SoftSpring } from './soft.js';
 import { glide, puff } from '../sound/calls.js';
 
 const SUN = 0xffc93c;
@@ -46,9 +47,9 @@ export class Sun extends Friend {
     this.glowU = { uSunGlow: { value: 0.42 } };
     this.spin = 0;
     this.spinV = 0.25;
-    this.flare = new Spring(0, 2.2, 0.3);
-    this.bob = new Spring(0, 1.8, 0.3);
-    this.puffs = [new Spring(0, 2.4, 0.25), new Spring(0, 2.4, 0.25)];
+    this.flare = new SoftSpring(0, 2.2, 0.3);
+    this.bob = new SoftSpring(0, 1.8, 0.3);
+    this.puffs = [new SoftSpring(0, 2.4, 0.25), new SoftSpring(0, 2.4, 0.25)];
   }
 
   get tricks() {
@@ -206,14 +207,16 @@ export class Sun extends Friend {
     const B = this.bones;
     const t = this.t;
     const air = this.motion.air;
+    const u = this.shared;
     this.blinker.hold = 0;
     if (this.winking === undefined) this.winking = this.lids[0].open;
     this.lids[0].open = this.winking;
 
-    // up in the sky it hangs from its middle, not from its clouds
-    // (only once settled at home: never while it comes off the canvas)
-    const high = this.atHome ? 1 : 0;
-    this.high = this.high === undefined ? high : lerp(this.high, high, 1 - Math.exp(-dt * 4));
+    // up in the sky it hangs from its middle, not from its clouds. It settles
+    // into that in step with its climb (never while it comes off the canvas),
+    // so it does not sink or slide when it reaches its place
+    const climb = this.motion.air > 0.01 || u.uAliveOn.value > 0.5 ? 0 : smooth((this.object.position.y - 0.15) / 1.3);
+    this.high = Math.max(this.high ?? 0, this.atHome ? 1 : climb);
     B.root.position.y -= this.high * 0.17;
 
     // floating and beaming

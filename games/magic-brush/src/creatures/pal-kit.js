@@ -5,7 +5,10 @@
 // clumps of hair for manes and tails, and a silky hair material with
 // strands in it.
 import * as THREE from 'three';
-import { twoBone, clamp, smooth } from './anim.js';
+import { twoBone, clamp, smooth, Bend } from './anim.js';
+
+// 0..1 with no speed or acceleration at either end
+const smoother = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * x * (x * (x * 6 - 15) + 10));
 
 const _m = new THREE.Matrix4();
 const _mi = new THREE.Matrix4();
@@ -25,6 +28,11 @@ export class Tracker {
     this.vel = new THREE.Vector3();
     this.acc = new THREE.Vector3();
     this.yawRate = 0;
+    // how far the friend moved this frame, in its own axes and units (the
+    // ground carrying planted feet back), and whether it was a jump (a
+    // teleport is not a movement: nothing follows it, no foot is dragged)
+    this.move = new THREE.Vector3();
+    this.jumped = false;
   }
 
   update(obj, dt) {
@@ -40,7 +48,17 @@ export class Tracker {
       return this;
     }
     // world velocity into the friend's own axes
-    _b.copy(p).sub(this.pos).divideScalar(dt);
+    _b.copy(p).sub(this.pos);
+    this.move.set((_b.x * e[0] + _b.y * e[1] + _b.z * e[2]) / (s * s), (_b.x * e[4] + _b.y * e[5] + _b.z * e[6]) / (s * s), (_b.x * e[8] + _b.y * e[9] + _b.z * e[10]) / (s * s));
+    // (more than a body length in one frame is a jump, not a run)
+    this.jumped = this.move.length() > 0.4;
+    if (this.jumped) {
+      this.move.set(0, 0, 0);
+      this.pos.copy(p);
+      this.yaw = yaw;
+      return this;
+    }
+    _b.divideScalar(dt);
     const vx = (_b.x * e[0] + _b.y * e[1] + _b.z * e[2]) / (s * s);
     const vy = (_b.x * e[4] + _b.y * e[5] + _b.z * e[6]) / (s * s);
     const vz = (_b.x * e[8] + _b.y * e[9] + _b.z * e[10]) / (s * s);
@@ -68,8 +86,10 @@ export class Tracker {
 // bend: +1 bends the knee forward (a horse's front knee, lower leg folding
 // back), -1 bends it backward (a hock, lower leg folding forward).
 export class Leg {
-  constructor(friend, hip, knee, foot, bend = 1) {
+  constructor(friend, hip, knee, foot, bend = 1, soft = 0.05) {
     this.f = friend;
+    this.soft = soft; // (the sculpted legs stand straight: see twoBone)
+    this.ease = new Bend(); // (and the knee eases where the foot lifts and lands: see Bend)
     this.names = [hip, knee, foot];
     this.bend = bend;
     const S = friend.sculptor;
@@ -110,7 +130,8 @@ export class Leg {
     const dz = _c.z - hip.position.z;
     const phi = Math.atan2(dz, -dy);
     const d = Math.hypot(dy, dz);
-    twoBone(this.l1, this.l2, d, _ik);
+    twoBone(this.l1, this.l2, d, _ik, this.soft);
+    this.ease.apply(this.l1, this.l2, _ik, this.f.frameDt || 1 / 60);
     const a1 = _ik[0];
     const a2 = _ik[1];
     const u = phi + this.bend * a1;
@@ -139,6 +160,85 @@ export function stepOffset(phase, duty, stride, lift, peak = 0.45, out = [0, 0])
   out[0] = stride * (-0.5 + smooth(s));
   out[1] = lift * Math.pow(Math.max(0, y), 0.9);
   return out;
+}
+
+// A step cycle that keeps every planted foot exactly where it landed. A foot
+// on the ground is carried back by the ground at the pace the body really
+// moves (measured by the Tracker, not assumed from a speed that may have just
+// changed), so it cannot slide however the pace starts, stops or bends. A foot
+// in the air swings on a path that leaves and lands at zero ground speed (so
+// there is no jerk at either end) and lands where the coming stride wants it.
+// A foot that has to re-centre (the body stopped) lifts to do it. step()
+// returns [dz, lift] from the rest place, like stepOffset.
+export class Gait {
+  constructor(n = 4, reach = 0.09) {
+    this.z = new Float64Array(n); // each foot's place now (dz from rest)
+    this.z0 = new Float64Array(n); // and where it left the ground
+    this.down = new Array(n).fill(true);
+    this.reach = reach; // the furthest a foot is dragged back
+    this.moved = 0; // how far the body went this frame
+    this.v = 0; // its pace (units/s)
+    this.free = false;
+    this.rise = 0.36; // the part of a swing spent going up (and again coming down)
+  }
+
+  // once a frame, before the feet: tr, the friend's Tracker; air > 0: feet are free; dt: the frame
+  begin(tr, air = 0, dt = 1 / 60) {
+    this.moved = tr.move.z;
+    // (its pace as it moves now, a touch smoothed: the Tracker's own pace
+    // lags a stop by a tenth of a second)
+    this.v += (clamp(tr.move.z / Math.max(dt, 1e-3), 0, 4) - this.v) * (1 - Math.exp(-dt * 30));
+    // off the ground the feet forget their places: they land under the body
+    this.free = air > 0.02;
+    if (this.free) {
+      this.z.fill(0);
+      this.z0.fill(0);
+      this.down.fill(true);
+    }
+  }
+
+  // phase: this foot's place in the cycle (cycles); duty: the part of it spent
+  // down; freq: cycles/s; lift: how high it steps at this pace; liftMax: the
+  // step it takes to re-centre
+  step(i, phase, duty, freq, lift, liftMax = lift, out = [0, 0]) {
+    const u = phase - Math.floor(phase);
+    if (this.free) {
+      out[0] = out[1] = 0;
+      return out;
+    }
+    if (u < duty) {
+      this.down[i] = true;
+      const z = clamp(this.z[i] - this.moved, -this.reach, this.reach);
+      this.z[i] = z;
+      out[0] = z;
+      out[1] = 0;
+      return out;
+    }
+    if (this.down[i]) {
+      this.down[i] = false;
+      this.z0[i] = this.z[i];
+    }
+    const q = (u - duty) / (1 - duty);
+    const target = clamp((this.v * duty * 0.5) / Math.max(freq, 1e-3), -this.reach, this.reach); // half a stride ahead of the body
+    const m = (-this.v * (1 - duty)) / Math.max(freq, 1e-3); // ground speed nil at both ends
+    // a quintic that leaves and arrives with the stance's own speed and no
+    // acceleration, so the foot's path has no corner where it lifts or lands
+    const q2 = q * q;
+    const q3 = q2 * q;
+    const q4 = q3 * q;
+    const q5 = q4 * q;
+    const z0 = this.z0[i];
+    const z = (1 - 10 * q3 + 15 * q4 - 6 * q5) * z0 + (q - 6 * q3 + 8 * q4 - 3 * q5) * m + (10 * q3 - 15 * q4 + 6 * q5) * target + (-4 * q3 + 7 * q4 - 3 * q5) * m;
+    this.z[i] = z;
+    // the height: up quickly, held, down quickly (a foot that dawdles just off
+    // the ground would look as if it slid), leaving and landing with no
+    // vertical speed or acceleration
+    const need = Math.abs(target - z0);
+    const h = lift + (liftMax - lift) * clamp(need / (liftMax * 1.5 + 1e-4), 0, 1);
+    out[0] = z;
+    out[1] = h * smoother(q / this.rise) * smoother((1 - q) / this.rise);
+    return out;
+  }
 }
 
 // ------------------------------------------------------------ hair

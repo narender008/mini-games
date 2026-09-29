@@ -307,6 +307,7 @@ export class Petals {
     this.next = 0;
     this._m = new THREE.Matrix4();
     this._q = new THREE.Quaternion();
+    this._s = new THREE.Vector3();
   }
 
   throw(pos, vel, color, size = 0.012) {
@@ -350,7 +351,7 @@ export class Petals {
         m.makeScale(0, 0, 0);
       } else {
         this._q.setFromEuler(d.rot);
-        m.compose(d.pos, this._q, new THREE.Vector3(s, s, s));
+        m.compose(d.pos, this._q, this._s.set(s, s, s));
       }
       this.mesh.setMatrixAt(i, m);
     }

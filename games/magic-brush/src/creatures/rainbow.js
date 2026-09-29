@@ -13,7 +13,8 @@ import * as THREE from 'three';
 import { Friend } from './friend.js';
 import { withLook, bindTo, bindBy, tintBy, eyeGeometry, lidGeometry } from './parts.js';
 import { fieldOf, hit, grad, mergeAll } from './shape-kit.js';
-import { bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp } from './anim.js';
+import { bump, ramp, smooth, wobble, TAU, clamp, lerp } from './anim.js';
+import { SoftSpring } from './soft.js';
 import { glide, puff } from '../sound/calls.js';
 
 const CLOUD = 0xfbfbff;
@@ -48,9 +49,9 @@ export class Rainbow extends Friend {
     this.worldScale = 4.6;
     this.hopScale = 0.6;
     this.sparkleColors = SPARKS;
-    this.puffs = [new Spring(0, 2.4, 0.25), new Spring(0, 2.4, 0.25)];
-    this.flex = new Spring(0, 2.0, 0.25);
-    this.sway = new Spring(0, 1.2, 0.4);
+    this.puffs = [new SoftSpring(0, 2.4, 0.25), new SoftSpring(0, 2.4, 0.25)];
+    this.flex = new SoftSpring(0, 2.0, 0.25);
+    this.sway = new SoftSpring(0, 1.2, 0.4);
     this.glowU = { uGlowK: { value: 0.32 }, uWave: { value: -1 }, uWaveAmp: { value: 0 }, uT2: { value: 0 } };
   }
 
@@ -175,10 +176,11 @@ export class Rainbow extends Friend {
     const air = this.motion.air;
     this.blinker.hold = 0;
 
-    // up in the sky it hangs from the middle of its arch, not its feet
-    // (only once settled at home: never while it comes off the canvas)
-    const high = this.atHome ? 1 : 0;
-    this.high = this.high === undefined ? high : lerp(this.high, high, 1 - Math.exp(-dt * 4));
+    // up in the sky it hangs from the middle of its arch, not its feet. It
+    // settles into that in step with its climb (never while it comes off the
+    // canvas), so it does not sink or slide when it reaches its place
+    const climb = air > 0.01 || this.shared.uAliveOn.value > 0.5 ? 0 : smooth((this.object.position.y - 0.15) / 1.3);
+    this.high = Math.max(this.high ?? 0, this.atHome ? 1 : climb);
     B.root.position.y -= this.high * 0.13;
 
     // floating: a slow bob and sway, the clouds puffing out of step
@@ -264,12 +266,12 @@ export class Rainbow extends Friend {
         if (u > 0 && u < 1) {
           for (const i of which) {
             const b = i === 0 ? B.cloudL : B.cloudR;
-            b.position.y += 4 * u * (1 - u) * h;
+            b.position.y += Math.sin(u * Math.PI) ** 2 * h;
             const st = Math.sin(Math.min(1, u * 1.4) * Math.PI);
             b.scale.y *= 1 + st * 0.12;
             b.scale.x *= 1 - st * 0.05;
           }
-          if (which.length === 2) B.apex.position.y += 4 * u * (1 - u) * h * 1.1;
+          if (which.length === 2) B.apex.position.y += Math.sin(u * Math.PI) ** 2 * h * 1.1;
         }
         if (!tr[key] && t > at) {
           tr[key] = true;

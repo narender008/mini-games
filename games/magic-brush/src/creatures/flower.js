@@ -15,8 +15,10 @@ import * as THREE from 'three';
 import { Friend } from './friend.js';
 import { withLook, bindTo, tintBy } from './parts.js';
 import { fieldOf, hit, grad, stripUv, mergeSkinned } from './shape-kit.js';
-import { bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp, easeOutBack } from './anim.js';
+import { bump, ramp, smooth, wobble, TAU, clamp, lerp } from './anim.js';
+import { SoftSpring } from './soft.js';
 import { glide, puff } from '../sound/calls.js';
+import { Tracker } from './pal-kit.js';
 
 const PETAL = 0xf25a8e;
 const DISK = 0xffd23f;
@@ -42,12 +44,15 @@ export class Flower extends Friend {
     this.worldScale = 1.4;
     this.hopScale = 0.8;
     this.sparkleColors = [[2.0, 1.7, 0.6], [1.9, 1.1, 1.5], [1.6, 1.9, 1.0]];
-    this.sway = [0, 1, 2].map((i) => new Spring(0, 1.5 - i * 0.15, 0.3));
-    this.headYaw = new Spring(0, 1.4, 0.7);
-    this.headPitch = new Spring(0, 1.4, 0.7);
-    this.bob = new Spring(0, 2.6, 0.25);
-    this.leafS = [new Spring(0, 2.8, 0.2), new Spring(0, 2.6, 0.2)];
-    this.open = new Spring(1, 2.2, 0.45);
+    this.sway = [0, 1, 2].map((i) => new SoftSpring(0, 1.5 - i * 0.15, 0.3));
+    this.headYaw = new SoftSpring(0, 1.4, 0.7);
+    this.headPitch = new SoftSpring(0, 1.4, 0.7);
+    this.bob = new SoftSpring(0, 2.6, 0.25);
+    this.leafS = [new SoftSpring(0, 2.8, 0.2), new SoftSpring(0, 2.6, 0.2)];
+    this.open = new SoftSpring(1, 2.2, 0.45);
+    this.rootY = new SoftSpring(1, 2.2, 0.3); // the stem's squash as it puts down roots
+    this.track = new Tracker(); // how the world moves it (its hops), for follow-through
+    this.lean = new SoftSpring(0, 1.8, 0.4);
     this.grow = 9;
     this.gustIn = 2;
   }
@@ -154,13 +159,14 @@ export class Flower extends Friend {
     this.addMesh(mergeSkinned(leaves), lm, { shadow: true }).userData.region = 41;
   }
 
-  // popped up in the garden: grow from a bud and burst open
+  // planted in the garden: it closes up into a bud as its roots go in, then
+  // grows tall and bursts open (everything eases from how it was hopping, so
+  // nothing pops)
   onArrive() {
     this.grow = 0;
     this.grewOpen = false;
     this.grewSound = false;
-    this.open.x = 0;
-    this.open.v = 0;
+    this.rootY.kick(-5);
   }
 
   // ------------------------------------------------------------ motion
@@ -171,6 +177,14 @@ export class Flower extends Friend {
     const air = this.motion.air;
     this.blinker.hold = 0;
 
+    // follow-through on the world's hops: the head and leaves lag a lift and swing
+    // back up on the landing, the stem leans back from a push
+    const tr = this.track.update(this.object, dt);
+    this.bob.kick(-clamp(tr.acc.y, -20, 20) * dt * 0.35);
+    this.leafS[0].kick(clamp(tr.acc.y, -20, 20) * dt * 0.3);
+    this.leafS[1].kick(clamp(tr.acc.y, -20, 20) * dt * 0.3);
+    const lean = this.lean.update(clamp(-tr.acc.z * 0.012, -0.25, 0.25), dt);
+
     // the breeze: slow sways with a gust now and then
     this.gustIn -= dt;
     if (this.gustIn <= 0) {
@@ -180,22 +194,22 @@ export class Flower extends Friend {
       this.leafS[0].kick(g * 3);
       this.leafS[1].kick(-g * 3);
     }
-    let lean = 0;
+    let bend = 0;
     for (let i = 0; i < 3; i++) {
       const b = B[STEMS[i]];
       const s = this.sway[i].update(0, dt);
       const wind = Math.sin(t * 1.1 - i * 0.45) * 0.035 + Math.sin(t * 2.3 + i) * 0.012;
       b.rotation.z = (wind + s * 0.08) * (0.6 + i * 0.3);
-      b.rotation.x = Math.sin(t * 0.83 + i * 0.6) * 0.02 - air * 0.12 * (i === 0 ? 1 : 0.5);
-      lean += b.rotation.z;
+      b.rotation.x = Math.sin(t * 0.83 + i * 0.6) * 0.02 - air * 0.12 * (i === 0 ? 1 : 0.5) + lean * (0.6 + i * 0.3);
+      bend += b.rotation.z;
     }
 
-    // growing up out of the ground, just arrived
+    // growing up out of the ground, just arrived: the stem sinks a little as
+    // the roots go in and springs up tall
+    const ry = this.rootY.update(1, dt);
+    B.root.scale.set(1 + (1 - ry) * 0.4, ry, 1 + (1 - ry) * 0.4);
     if (this.grow < 2) {
       this.grow += dt;
-      const g = clamp(this.grow / 1.2, 0, 1);
-      const st = easeOutBack(g, 2.2);
-      B.root.scale.set(lerp(0.9, 1, g), lerp(0.55, 1, st), lerp(0.9, 1, g));
       if (this.grow > 0.45 && !this.grewSound) {
         this.grewSound = true;
         this.emit('sound', { name: 'grow' });
@@ -218,7 +232,7 @@ export class Flower extends Friend {
     const hp = this.headPitch.update(pitchT, dt);
     const bob = this.bob.update(0, dt);
     if (this.trick && (this.trick.name === 'hello' || this.trick.name === 'bye')) this.bob.kick(Math.cos(this.trick.t * 7) * dt * 6);
-    B.head.rotation.set(hp * 0.6 + bob * 0.3 + air * 0.25, hy * 0.6, -lean * 0.7 + Math.sin(t * 0.45) * 0.05);
+    B.head.rotation.set(hp * 0.6 + bob * 0.3 + air * 0.25, hy * 0.6, -bend * 0.7 + Math.sin(t * 0.45) * 0.05);
 
     // leaves flutter on their springs
     const l0 = this.leafS[0].update(0, dt);
@@ -228,9 +242,12 @@ export class Flower extends Friend {
 
     // how open the bloom is: 1 open, 0 a closed bud, more: spread wide
     let openT = 1 + Math.sin(t * 1.3) * 0.03 + air * 0.25;
-    // just arrived: a closed bud until it bursts open
-    if (this.grow < 0.55) openT = 0.02;
+    // just arrived: it folds into a closed bud (steadily, no wobble) until it bursts open
+    const bud = this.grow < 0.55;
+    if (bud) openT = 0.02;
     if (this.trick) openT = this.trickPose(this.trick, dt) ?? openT;
+    this.open.freq = bud ? 3 : 2.2;
+    this.open.zeta = bud ? 1 : 0.45;
     const open = this.open.update(openT, dt);
     this.poseP(open, t);
   }
@@ -301,7 +318,9 @@ export class Flower extends Friend {
     if (tr.name === 'sun') {
       // stretch up tall, face to the sky, petals wide; then relax with a bounce
       const up = ramp(t, 0.15, 0.8) * (1 - ramp(t, 1.9, 2.25));
-      B.root.scale.set(1 - up * 0.05, 1 + up * 0.14, 1 - up * 0.05);
+      B.root.scale.x *= 1 - up * 0.05;
+      B.root.scale.y *= 1 + up * 0.14;
+      B.root.scale.z *= 1 - up * 0.05;
       B.head.rotation.x -= up * 0.55;
       B.stem2.rotation.x -= up * 0.12;
       B.leafL.rotation.z += up * 0.7;

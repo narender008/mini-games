@@ -16,7 +16,8 @@ import * as THREE from 'three';
 import { Friend } from './friend.js';
 import { tubeGeometry, withLook, bindTo, tintBy } from './parts.js';
 import { fieldOf, hit, grad, placeAlong, stripUv, mergeAll, latheX } from './shape-kit.js';
-import { addPose, bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp, easeOutBack } from './anim.js';
+import { addPose, bump, ramp, smooth, wobble, TAU, clamp, lerp, easeOutBack } from './anim.js';
+import { SoftSpring } from './soft.js';
 import { glide, puff } from '../sound/calls.js';
 
 const WHITE = 0xf2f2f5;
@@ -51,13 +52,14 @@ export class Rocket extends Friend {
     this.hopScale = 1.2;
     this.phase = 0;
     this.hopping = 0;
-    this.lean = new Spring(0, 1.6, 0.5);
-    this.sway = new Spring(0, 1.4, 0.35);
-    this.noseLag = new Spring(0, 2.4, 0.25);
-    this.noseLagZ = new Spring(0, 2.4, 0.25);
-    this.squash = new Spring(0, 3, 0.35);
-    this.headYaw = new Spring(0, 1.2, 0.7);
-    this.flameAmt = 0;
+    this.lean = new SoftSpring(0, 1.6, 0.5);
+    this.sway = new SoftSpring(0, 1.4, 0.35);
+    this.noseLag = new SoftSpring(0, 2.4, 0.25);
+    this.noseLagZ = new SoftSpring(0, 2.4, 0.25);
+    this.squash = new SoftSpring(0, 3, 0.35);
+    this.headYaw = new SoftSpring(0, 1.2, 0.7);
+    this.flameAmt = 0; // what the pose wants this frame (steps, being a max of many things)
+    this.flameS = 0; // what is shown: it lights fast and dies a little slower, never blinking on or off
     this.flicker = 0;
     this.rumbleIn = 4 + Math.random() * 4;
     this.lastHop = 0;
@@ -346,7 +348,8 @@ export class Rocket extends Friend {
     const hopK = this.hopping;
     // 0..0.18 crouch, 0.18..0.8 flight, 0.8..1 land and settle
     const flight = clamp((ph - 0.18) / 0.62, 0, 1);
-    const hopH = flight > 0 && flight < 1 ? 4 * flight * (1 - flight) : 0;
+    // (a sine squared: it leaves the ground and comes down to it at no speed, so a hop has no jolt)
+    const hopH = flight > 0 && flight < 1 ? Math.sin(flight * Math.PI) ** 2 : 0;
     B.root.position.y += hopH * 0.06 * hopK;
     const crouch = bump(ph, 0, 0.22) + bump(ph, 0.78, 1.0) * 0.8;
     const stretch = Math.sin(flight * Math.PI) * (flight < 0.5 ? 1 : 0.4);
@@ -413,12 +416,15 @@ export class Rocket extends Friend {
 
     // the flame and the bulb
     this.flicker += dt * 40;
-    const fl = this.flameAmt;
+    this.flameS += (this.flameAmt - this.flameS) * (1 - Math.exp(-dt * (this.flameAmt > this.flameS ? 24 : 12)));
+    if (this.flameAmt === 0 && this.flameS < 0.003) this.flameS = 0;
+    const fl = this.flameS;
     const len = (fl * (0.85 + 0.15 * Math.sin(this.flicker) + 0.1 * Math.sin(this.flicker * 2.3 + 1))) / FLAME_REST;
-    const wid = (fl > 0 ? 0.6 + Math.min(fl, 1) * 0.5 : 0) / FLAME_REST;
+    // (as wide as it is long at first, so a spark does not show as a flat disc)
+    const wid = (0.6 * smooth(fl / 0.2) + Math.min(fl, 1) * 0.5) / FLAME_REST;
     B.flame.scale.set(Math.max(1e-3, wid * (0.95 + 0.05 * Math.sin(this.flicker * 1.7))), Math.max(1e-3, len), Math.max(1e-3, wid));
-    this.flameMat.emissiveIntensity = fl > 0.01 ? 0.95 : 0;
-    this.flameMat.visible = fl > 0.01;
+    this.flameMat.emissiveIntensity = 0.95 * smooth(fl / 0.02);
+    this.flameMat.visible = fl > 0.002;
     this.bulbMat.emissiveIntensity = 0.25 + 0.2 * Math.pow(Math.max(0, Math.sin(t * 2.4)), 6) + fl * 1.5;
   }
 

@@ -354,7 +354,28 @@ export function meshField(prims, nBones, { voxel = 0.005, smooth = 8 } = {}) {
   const skinWeight = new Float32Array(nv * 4);
   topFour(W, nv, nb, skinIndex, skinWeight);
   const index = nv > 65535 ? new Uint32Array(tris) : new Uint16Array(tris);
-  return { position: P, normal: N, skinIndex, skinWeight, tint, mix, index };
+  return { position: P, normal: N, skinIndex, skinWeight, tint, mix, index, bounds: boundsOf(P, nv) };
+}
+
+// the box and bounding sphere of the mesh, found here so the main thread does not need a pass over every vertex
+function boundsOf(P, nv) {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (let v = 0; v < nv; v++)
+    for (let a = 0; a < 3; a++) {
+      const x = P[v * 3 + a];
+      if (x < min[a]) min[a] = x;
+      if (x > max[a]) max[a] = x;
+    }
+  const c = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
+  let r2 = 0;
+  for (let v = 0; v < nv; v++) {
+    const dx = P[v * 3] - c[0];
+    const dy = P[v * 3 + 1] - c[1];
+    const dz = P[v * 3 + 2] - c[2];
+    r2 = Math.max(r2, dx * dx + dy * dy + dz * dz);
+  }
+  return { min, max, center: c, radius: Math.sqrt(r2) };
 }
 
 function adjacency(nv, tris) {

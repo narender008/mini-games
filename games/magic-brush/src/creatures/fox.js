@@ -13,7 +13,7 @@ import { Friend } from './friend.js';
 import { tubeGeometry, withLook, bindTo } from './parts.js';
 import { mergeGeometries } from './sculpt.js';
 import { pose, addPose, bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp } from './anim.js';
-import { Tracker, Leg, stepOffset } from './pal-kit.js';
+import { Tracker, Leg, Gait, stepOffset } from './pal-kit.js';
 import { glide, puff } from '../sound/calls.js';
 import { rand } from '../config.js';
 
@@ -218,12 +218,13 @@ export class Fox extends Friend {
     const speed = m.speed;
     const air = m.air;
     const moving = clamp(speed / 0.16, 0, 1) * (1 - air);
-    const freq = lerp(1.8, 2.6, clamp(speed / 0.3, 0, 1));
+    const freq = lerp(1.8, 2.6, clamp(speed / 0.3, 0, 1)) * 0.8; // (a slower cadence with longer strides steps more smoothly)
     this.phase += dt * freq;
     const ph = this.phase;
     const duty = 0.5;
-    const stride = (speed * duty) / freq;
     const breathe = Math.sin(t * 2.3);
+    const gait = (this.gait ??= new Gait(4));
+    gait.begin(tr, air, dt);
 
     const L = (this.legState ??= [0, 1, 2, 3].map(() => ({ plant: 1, off: new THREE.Vector3(), toe: 0, lift: 0, dz: 0 })));
     for (const l of L) {
@@ -296,7 +297,7 @@ export class Fox extends Friend {
 
     // gait: a light, springy trot, diagonal pairs
     for (let i = 0; i < 4; i++) {
-      stepOffset(ph + TROT[i], duty, stride, 0.022 * moving, 0.45, _step);
+      gait.step(i, ph + TROT[i], duty, freq, 0.022 * moving, 0.016, _step);
       L[i].dz = _step[0];
       L[i].lift = _step[1];
       L[i].toe += (i < 2 ? 0.9 : 0.5) * (_step[1] / 0.022);
@@ -376,6 +377,18 @@ export class Fox extends Friend {
       const airW = ramp(t, 0.6, 0.72) * (1 - ramp(t, 1.2, 1.34)); // legs off the ground
       const land = wobble(t - T_LAND, 2.2, 0.55);
       const shake = bump(t, 1.85, 2.3);
+      // the paws come off the ground as the leap starts (never a cut at
+      // take-off: all of this is zero until airW is up)
+      const fwd0 = Math.sin(k * Math.PI * 0.5) * 0.07 * (1 - back);
+      for (let i = 0; i < 4; i++) {
+        const front = i < 2;
+        const l = L[i];
+        l.plant = Math.min(l.plant, 1 - airW);
+        l.off.set(0, (front ? 0.014 : 0.018) * airW, (front ? 0.07 * (1 - k) + 0.015 : -0.065) * airW);
+        l.toe += (front ? 0.2 + 0.6 * k : 1.1) * airW;
+        l.dz += fwd0; // planted paws come down where the body has got to
+        l.lift += Math.max(0, Math.sin((t - 1.4) * TAU * 2.5 + i * 1.6)) * 0.012 * bump(t, 1.4, 2.1);
+      }
       // crouch: chest low, bottom up
       B.root.position.y += -0.018 * crouch;
       addPose(B.root, 0.16 * crouch, 0, 0);
@@ -393,15 +406,6 @@ export class Fox extends Friend {
         addPose(B.root, pitch * hold, 0, 0);
         addPose(B.neck, (lerp(-0.2, 0.2, k) * inK + 0.15 * down) * hold, 0, 0);
         addPose(B.head, 0.3 * down * hold + Math.sin(t * 26) * 0.18 * shake, 0, Math.sin(t * 26) * 0.25 * shake);
-        for (let i = 0; i < 4; i++) {
-          const front = i < 2;
-          const l = L[i];
-          l.plant = Math.min(l.plant, 1 - airW);
-          l.off.set(0, (front ? 0.014 : 0.018) * airW, (front ? 0.07 * (1 - k) + 0.015 : -0.065) * airW);
-          l.toe += (front ? 0.2 + 0.6 * k : 1.1) * airW;
-          l.dz += fwd; // planted paws come down where the body has got to
-          l.lift += Math.max(0, Math.sin((t - 1.4) * TAU * 2.5 + i * 1.6)) * 0.012 * bump(t, 1.4, 2.1);
-        }
         this.tailUp = t < T_LAND ? lerp(0.8, -0.6, k) * inK : lerp(-0.6, 0.9, ramp(t, T_LAND, 1.45)) * hold;
         this.tailWag = Math.sin(t * 20) * 0.5 * bump(t, 1.3, 2.2);
       }

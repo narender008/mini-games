@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import { Sculpt } from './sculpt.js';
 import { friendUniforms, hideMaterial, shellMaterial, eyeMaterial, solidMaterial, membraneMaterial, depthMaterial } from './materials.js';
 import { eyeGeometry, lidGeometry, bindTo } from './parts.js';
-import { Blinker, Spring } from './anim.js';
+import { Blinker, Spring, Eased, Inertia } from './anim.js';
 
 export const CANVAS_W = 0.64;
 export const CANVAS_H = 0.48;
@@ -24,6 +24,7 @@ const _m = new THREE.Matrix4();
 const Z = new THREE.Vector3(0, 0, 1);
 const _s = new THREE.Vector3();
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
 // how long each generic emote lasts (s)
 const EMOTES = { hop: 0.9, cheer: 1.5, giggle: 1.1, spin: 1.0, eat: 1.6, nuzzle: 1.4, sniff: 1.4, bow: 1.2 };
 // a full turn that eases in and out
@@ -46,7 +47,16 @@ export class Friend {
     this.events = [];
     this.t = Math.random() * 10;
     this.blinker = new Blinker();
-    this.motion = { speed: 0, turn: 0, air: 0, vy: 0, fly: 0, swim: 0, landed: 0 };
+    // What the world tells the pose about how the friend moves. `speed` and
+    // `air` are written in steps now and then (a trick stops a walk dead, the
+    // come-alive jumps from crouch to leap), so they are read back eased: every
+    // pose built from them is continuous whatever is written (see Eased).
+    this.motion = { turn: 0, vy: 0, fly: 0, swim: 0, landed: 0 };
+    this.eased = { speed: new Eased(5, 5, 0), air: new Eased(6, 5, 0, 1) };
+    for (const k of Object.keys(this.eased)) {
+      const e = this.eased[k];
+      Object.defineProperty(this.motion, k, { get: () => e.value, set: (v) => (e.raw = v), enumerable: true });
+    }
     this.look = null; // world point to look at, or null
     this.trick = null; // { name, t, dur }
     this.happy = new Spring(0, 1.5, 0.9);
@@ -133,7 +143,10 @@ export class Friend {
     this.shared.uShellCount.value = n;
     for (let i = 1; i <= n; i++) {
       const m = this.addMesh(geo, shellMaterial(this.shared, i / n, a2c), { shadow: false, receive: this.q.tier !== 'low' });
-      m.renderOrder = i;
+      // drawn from the outermost shell inwards: the picture is the same (every
+      // shell is depth tested), but a strand tip already drawn hides what lies
+      // behind it before that is shaded, which spares much of the fur's cost
+      m.renderOrder = n + 1 - i;
       this.shells.push(m);
     }
     this.shellsShown = n;
@@ -187,7 +200,8 @@ export class Friend {
     const box = new THREE.Box3();
     for (const m of this.meshes) {
       if (m.userData.noProject) continue;
-      m.geometry.computeBoundingBox();
+      // (a friend's fur shells share the body's geometry: measure each geometry once)
+      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
       box.union(m.geometry.boundingBox);
     }
     this.bounds = box;
@@ -266,6 +280,7 @@ export class Friend {
   // dt: seconds. camera: for fur detail and eye contact.
   update(dt, camera) {
     this.t += dt;
+    this.frameDt = dt;
     this.shared.uTime.value = this.t;
     // bones start from rest every frame; animate() poses them
     for (const b of this.boneList) {
@@ -284,12 +299,15 @@ export class Friend {
       this.lookLocal = (this.lookLocal || new THREE.Vector3()).copy(this.look);
       this.object.worldToLocal(this.lookLocal);
     } else this.lookLocal = null;
+    for (const k in this.eased) this.eased[k].step(dt);
     // 0 at a walk .. 1 at a run, for gaits that change with pace
     this.motion.run = clamp01((this.motion.speed - this.walkSpeed) / Math.max(1e-3, this.run - this.walkSpeed));
     this.animate(dt);
     if (this.trick && (this.trick.name === 'hello' || this.trick.name === 'bye')) this.greet(this.trick);
     if (this.emoteState) this.playEmote(this.emoteState, dt);
     this.poseEyes(dt, camera);
+    // whatever still jumped is cross-faded from where the bones were heading
+    (this.inertia ??= new Inertia(this.boneList)).apply(dt);
     this.shared.uHappy.value = Math.max(0, this.happy.update(0, dt));
     if (camera && this.shells.length) this.fitShells(camera);
   }
@@ -358,9 +376,10 @@ export class Friend {
     const t = tr.t;
     const hops = tr.name === 'bye' ? 1 : 2;
     const k = Math.min(1, t / (tr.dur * 0.85));
-    const h = Math.max(0, Math.sin(k * Math.PI * hops));
+    // (sines squared, so the hops leave and touch the ground at no speed)
+    const h = Math.max(0, Math.sin(k * Math.PI * hops)) ** 2;
     root.position.y += h * 0.05 * (this.hopScale ?? 1);
-    const sq = Math.max(0, -Math.sin(k * Math.PI * hops + 0.4)) * (1 - k);
+    const sq = Math.max(0, -Math.sin(k * Math.PI * hops + 0.4)) ** 2 * (1 - k);
     root.scale.set(1 + sq * 0.08, 1 - sq * 0.1, 1 + sq * 0.08);
     if (tr.name === 'bye') root.rotation.y += k * k * Math.PI * 2;
     else root.rotation.z += Math.sin(t * 10) * 0.08 * (1 - k);
@@ -408,9 +427,11 @@ export class Friend {
     // a bouncing hop with a squash at each landing: n hops of height h (metres)
     const hop = (n, h) => {
       const ph = k * n;
-      const up = Math.max(0, Math.sin(ph * Math.PI));
+      // (sines squared: it leaves the ground and comes down to it at no speed, and the squash
+      // eases in and out, so a hop has no jolt at take-off or landing)
+      const up = Math.max(0, Math.sin(ph * Math.PI)) ** 2;
       root.position.y += up * h * hs;
-      const sq = Math.max(0, -Math.sin(ph * Math.PI + 0.35)) * (1 - k * 0.6);
+      const sq = Math.max(0, -Math.sin(ph * Math.PI + 0.35)) ** 2 * (1 - k * 0.6);
       root.scale.multiply(_s.set(1 + sq * 0.09, 1 - sq * 0.11, 1 + sq * 0.09));
     };
     switch (em.name) {
@@ -506,6 +527,9 @@ export class Friend {
     return out.set(offset[0], offset[1], offset[2]).applyMatrix4(b.matrixWorld);
   }
 
+  // (the materials are left to the garbage collector: disposing one releases
+  // its shader program, and the next friend of the same kind would have to
+  // compile it all over again)
   dispose() {
     const seen = new Set();
     for (const m of this.meshes) {
@@ -513,12 +537,7 @@ export class Friend {
         m.geometry.dispose();
         seen.add(m.geometry);
       }
-      if (!seen.has(m.material)) {
-        m.material.dispose();
-        seen.add(m.material);
-      }
     }
-    this._depth?.dispose();
     this.ownSkin?.dispose(); // the skin texture or target it came alive with
     this.skeleton.dispose();
   }

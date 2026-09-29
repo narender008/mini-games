@@ -212,8 +212,13 @@ export class Sculpt {
     g.setAttribute('aTint', new THREE.BufferAttribute(out.tint, 3));
     g.setAttribute('aMix', new THREE.BufferAttribute(out.mix, 4));
     g.setIndex(new THREE.BufferAttribute(out.index, 1));
-    g.computeBoundingSphere();
-    g.computeBoundingBox();
+    if (out.bounds) {
+      g.boundingBox = new THREE.Box3(new THREE.Vector3(...out.bounds.min), new THREE.Vector3(...out.bounds.max));
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(...out.bounds.center), out.bounds.radius);
+    } else {
+      g.computeBoundingSphere();
+      g.computeBoundingBox();
+    }
     return g;
   }
 

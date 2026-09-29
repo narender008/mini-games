@@ -18,8 +18,12 @@
 //    and tracks it.
 // 5. Landing: it lands with a squash, a thump of the camera, a splash of the
 //    paint colours, and says hello.
+// Every phase runs into the next without a step: position, size, squash and the
+// pose (`motion.air`) are continuous functions of time, and speeds ease in and
+// out at the crouch, the take-off and the touch-down, so nothing pops.
 import * as THREE from 'three';
 import { clamp, smoothstep, easeInOut, rand, REDUCED_MOTION } from './config.js';
+import { smoother } from './smooth.js';
 import { CANVAS_W, CANVAS_H } from './creatures/friend.js';
 
 const _m = new THREE.Matrix4();
@@ -34,6 +38,22 @@ const _u = new THREE.Vector3();
 const _c = new THREE.Vector3();
 const _look = new THREE.Vector3();
 const _shot = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: 40 };
+
+// how much of the leap the spring out of the crouch takes (the share of it before full stretch)
+const SPRING = 0.27;
+
+// the squash of the touch-down, as a function of seconds since it lands: the body
+// starts to give a moment before contact, is lowest just after, and springs back
+// with a little overshoot. Starts and ends at rest, with no step anywhere.
+const LAND_LEAD = 0.06;
+const LAND_LOW = 0.16;
+const LAND_AMP = 0.14;
+const landSquash = (ls) => {
+  if (ls <= -LAND_LEAD) return 0;
+  if (ls < LAND_LOW) return LAND_AMP * smoother((ls + LAND_LEAD) / (LAND_LOW + LAND_LEAD));
+  const u = ls - LAND_LOW;
+  return LAND_AMP * Math.exp(-4.5 * u) * (Math.cos(12.6 * u) + (4.5 / 12.6) * Math.sin(12.6 * u));
+};
 
 export class ComeAlive {
   constructor({ easel, fx, audio, groundAt, rig }) {
@@ -179,7 +199,7 @@ export class ComeAlive {
     const easelU = this.easel.uniforms;
     // the paint under the friend lifts away as soon as it takes over
     easelU.uLift.value = smoothstep(0.0, 0.15, t);
-    easelU.uGlow.value = Math.max(0, 1 - t / a.glow) * 0.8;
+    easelU.uGlow.value = (1 - smoother(t / a.glow)) * 0.8;
 
     // the seam sweeps from head to tail
     const e = clamp(tE / a.emerge, 0, 1);
@@ -192,68 +212,75 @@ export class ComeAlive {
     if (tC >= 0 && !a.wind) {
       a.wind = true;
       this.audio.magic?.('wind');
+      // the camera starts to draw back as the friend gathers itself, so it is already
+      // moving (not starting from rest) when the friend springs
+      this.followLeap(a);
     }
     if (tL >= 0 && !a.leapCam) {
       a.leapCam = true;
-      this.followLeap(a);
       this.audio.magic?.('leap');
     }
 
     const n = a.n;
     const s = clamp(tL / a.leap, 0, 1);
     // where the friend is: pushed out from the canvas while it emerges and crouches, then leaping
-    const push = smoothstep(0, 1, e) * 0.3;
+    const push = smoother(e) * 0.3;
     _p.copy(a.from.pos).addScaledVector(n, push);
     if (!a.launch && tL >= 0) a.launch = _p.clone();
     if (tL >= 0) {
-      // horizontal at an even pace, height a smooth fall from the canvas plus a high arc
+      // ground speed builds out of the crouch and eases into the touch-down; height is
+      // a fall from the canvas with a hump on top, arriving gently (the landing squash
+      // takes the rest of the impact)
+      const hx = smoother(s);
       _p.copy(a.launch);
-      _p.x += (a.to.pos.x - a.launch.x) * s;
-      _p.z += (a.to.pos.z - a.launch.z) * s;
-      _p.y = a.launch.y + (a.to.pos.y - a.launch.y) * s + 4 * 0.42 * s * (1 - s);
-    } else {
-      // a slow breath in the air as it gathers itself
-      _p.y += Math.sin(t * 5) * 0.004 * e;
+      _p.x += (a.to.pos.x - a.launch.x) * hx;
+      _p.z += (a.to.pos.z - a.launch.z) * hx;
+      // (the hump is a smooth bump, so the arc leaves and meets the ground with no acceleration either)
+      _p.y = a.launch.y + (a.to.pos.y - a.launch.y) * smoother(s) + 0.42 * smoother(s < 0.5 ? 2 * s : 2 - 2 * s);
     }
+    // a slow breath in the air as it gathers itself, fading out as it springs
+    _p.y += Math.sin(t * 5) * 0.004 * e * (1 - smoother(tL / 0.25));
     f.object.position.copy(_p);
     // it turns from lying along the canvas to facing us
-    const turn = smoothstep(0.15, 1, e) * 0.5 + (tL > 0 ? smoothstep(0, 0.7, s) * 0.5 : 0);
+    const turn = smoother(clamp((e - 0.15) / 0.85, 0, 1)) * 0.5 + smoother(s / 0.7) * 0.5;
     _q.copy(a.from.quat).slerp(a.to.quat, turn);
     f.object.quaternion.copy(_q);
     // its size settles gradually, never jumping
-    const grow = clamp(0.6 * smoothstep(0, 1, e) + 0.4 * smoothstep(0, 1, s), 0, 1);
+    const grow = clamp(0.6 * smoother(e) + 0.4 * smoother(s), 0, 1);
     const sc = a.from.scale + (a.to.scale - a.from.scale) * grow;
-    // squash and stretch: low before the spring, long in flight
-    let sy = 1;
-    let sxz = 1;
-    if (tC > 0 && tL < 0) {
-      const ck = smoothstep(0, 1, tC / a.crouch);
-      sy = 1 - 0.17 * ck;
-      sxz = 1 + 0.09 * ck;
-    } else if (tL >= 0 && !a.landed) {
-      const st = Math.sin(clamp(s * 1.6, 0, 1) * Math.PI); // the take-off stretch
-      sy = 1 + 0.13 * st;
-      sxz = 1 - 0.06 * st;
-    }
-    f.object.scale.set(sc * sxz, sc * sy, sc * sxz);
+    // squash and stretch as one continuous curve: low before the spring, snapping
+    // out to long in flight, then the landing squash and its rebound
+    let o = 0;
+    if (tL < 0) o = -0.17 * smoother(tC / a.crouch);
+    else o = s < SPRING ? -0.17 + 0.3 * smoother(s / SPRING) : 0.13 * (1 - smoother((s - SPRING) / (0.66 - SPRING)));
+    const sq = landSquash(tL - a.leap);
+    o -= sq;
+    f.object.scale.set(sc * (1 - 0.5 * o), sc * (1 + o), sc * (1 - 0.5 * o));
     // the flat, not-yet-alive part stays exactly on the canvas
     f.object.updateMatrixWorld(true);
     _m.copy(f.object.matrixWorld).invert();
     const plane = this.easel.plane;
     u.uCanvasLocal.value.copy(_m).multiply(plane).multiply(f.restToPlane);
     u.uCanvasN.value.copy(n).transformDirection(_m);
-    // pose: reaching out of the canvas, gathered for the spring, stretched in flight, tucked to land
-    f.motion.air = tL >= 0 ? (s < 1 ? 1 - smoothstep(0.78, 1, s) : 0) : tC > 0 ? 0.35 : smoothstep(0.2, 0.8, e);
+    // pose: reaching out of the canvas, gathering for the spring (lowest as the
+    // squash is), released into the full stretch, tucked to land. One curve.
+    let air;
+    if (tC < 0) air = smoother((e - 0.2) / 0.6);
+    else if (tL < 0) air = 1 - 0.65 * smoother(tC / a.crouch);
+    else air = (s < SPRING ? 0.35 + 0.65 * smoother(s / SPRING) : 1) * (1 - smoother((s - 0.78) / 0.22));
+    f.motion.air = air;
     f.motion.speed = 0;
 
     // wet droplets and sparkles fly off the seam, colour gathers into it
+    // (they thin out at both ends of the emerge rather than starting and stopping)
+    const seamK = smoother(e / 0.06) * (1 - smoother((e - 0.94) / 0.06));
     if (e > 0 && e < 1) {
-      a.dropAcc += dt * (a.reduced ? 12 : 100);
+      a.dropAcc += dt * (a.reduced ? 12 : 100) * seamK;
       while (a.dropAcc > 1) {
         a.dropAcc -= 1;
         this.seamParticle(a);
       }
-      a.gatherAcc += dt * (a.reduced ? 10 : 140);
+      a.gatherAcc += dt * (a.reduced ? 10 : 140) * seamK;
       while (a.gatherAcc > 1) {
         a.gatherAcc -= 1;
         this.gatherParticle(a);
@@ -262,7 +289,7 @@ export class ComeAlive {
     // and the paint still on the canvas starts to lift: glitter and flecks of
     // paint peel off the strokes, most of all near the seam
     if (e < 0.97) {
-      a.peelAcc += dt * (a.reduced ? 10 : 130) * (t < a.glow ? t / a.glow : 1);
+      a.peelAcc += dt * (a.reduced ? 10 : 130) * (t < a.glow ? t / a.glow : 1) * (1 - smoother((e - 0.85) / 0.12));
       while (a.peelAcc > 1) {
         a.peelAcc -= 1;
         this.peelParticle(a);
@@ -270,7 +297,7 @@ export class ComeAlive {
     }
     // in flight: a trail of paint-coloured sparkles and the odd drop
     if (tL >= 0 && s < 1 && !a.landed) {
-      a.trailAcc += dt * (a.reduced ? 20 : 150);
+      a.trailAcc += dt * (a.reduced ? 20 : 150) * smoother(tL / 0.15) * (1 - smoother((s - 0.85) / 0.15));
       while (a.trailAcc > 1) {
         a.trailAcc -= 1;
         this.trailParticle(a);
@@ -278,27 +305,19 @@ export class ComeAlive {
     }
     if (tL >= a.leap && !a.landed) {
       a.landed = true;
-      f.object.position.copy(a.to.pos);
       u.uAliveOn.value = 0;
       f.happy.kick(4);
       this.land(a);
       this.onLand?.(f);
     }
-    if (a.landed) {
-      // a landing squash that springs back with a bounce
-      const ls = tL - a.leap;
-      const k = Math.min(1, ls / 0.55);
-      const sq = Math.sin(k * Math.PI * 1.5) * Math.exp(-ls * 4) * 0.2;
-      f.object.scale.set(a.to.scale * (1 + sq * 0.5), a.to.scale * (1 - sq), a.to.scale * (1 + sq * 0.5));
-      f.object.quaternion.copy(a.to.quat);
-      if (ls > a.settle) {
-        f.object.scale.setScalar(a.to.scale);
-        const done = a.onDone;
-        this.active = null;
-        easelU.uLift.value = 0;
-        easelU.uGlow.value = 0;
-        done?.(f);
-      }
+    if (a.landed && tL - a.leap > a.settle) {
+      // what is left of the rebound goes with it into the garden, so the squash carries on
+      f.landSquash = sq;
+      const done = a.onDone;
+      this.active = null;
+      easelU.uLift.value = 0;
+      easelU.uGlow.value = 0;
+      done?.(f);
     }
   }
 

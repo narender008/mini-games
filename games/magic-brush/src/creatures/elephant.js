@@ -13,7 +13,7 @@ import { Friend } from './friend.js';
 import { tubeGeometry, withLook, bindTo, bindBy, frameFrom } from './parts.js';
 import { mergeGeometries } from './sculpt.js';
 import { pose, addPose, bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp } from './anim.js';
-import { Tracker, Leg, stepOffset, hairClump, hairMaterial } from './pal-kit.js';
+import { Tracker, Leg, Gait, stepOffset, hairClump, hairMaterial } from './pal-kit.js';
 import { glide, puff, flaps } from '../sound/calls.js';
 import { rand } from '../config.js';
 
@@ -344,12 +344,13 @@ export class Elephant extends Friend {
     const speed = m.speed;
     const air = m.air;
     const moving = clamp(speed / 0.1, 0, 1) * (1 - air);
-    const freq = lerp(0.8, 1.05, clamp(speed / 0.17, 0, 1));
+    const freq = lerp(0.8, 1.05, clamp(speed / 0.17, 0, 1)) * 0.85; // (a slower cadence with longer strides steps more smoothly)
     this.phase += dt * freq;
     const ph = this.phase;
     const duty = 0.68;
-    const stride = (speed * duty) / freq;
     const breathe = Math.sin(t * 1.5);
+    const gait = (this.gait ??= new Gait(4));
+    gait.begin(tr, air, dt);
 
     const L = (this.legState ??= [0, 1, 2, 3].map(() => ({ plant: 1, off: new THREE.Vector3(), toe: 0, lift: 0, dz: 0 })));
     for (const l of L) {
@@ -390,7 +391,7 @@ export class Elephant extends Friend {
 
     // gait: a four-beat plod (left hind, left fore, right hind, right fore)
     for (let i = 0; i < 4; i++) {
-      stepOffset(ph + PLOD[i], duty, stride, 0.018 * moving, 0.5, _step);
+      gait.step(i, ph + PLOD[i], duty, freq, 0.018 * moving, 0.013, _step);
       L[i].dz = _step[0];
       L[i].lift = _step[1];
       L[i].toe += 0.4 * (_step[1] / 0.018);

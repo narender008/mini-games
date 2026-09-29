@@ -26,6 +26,17 @@ export class Welcome {
     this.fly = null;
     this.bumpT = 0;
     this.button = null;
+    this.make(); // now, hidden, so the first star flies as smoothly as the fifth
+  }
+
+  make() {
+    const el = (this.el = document.createElement('div'));
+    el.className = 'fly-star';
+    el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = '<svg viewBox="0 0 24 24"><use href="#i-star" /></svg>';
+    el.style.display = 'none';
+    el.style.willChange = 'transform, opacity';
+    document.body.appendChild(el);
   }
 
   celebrate(e) {
@@ -70,14 +81,8 @@ export class Welcome {
       T.snd.arrive();
       return;
     }
-    if (!this.el) {
-      this.el = document.createElement('div');
-      this.el.className = 'fly-star';
-      this.el.setAttribute('aria-hidden', 'true');
-      this.el.innerHTML = '<svg viewBox="0 0 24 24"><use href="#i-star" /></svg>';
-      document.body.appendChild(this.el);
-    }
     const view = T.view();
+    if (!this.el) this.make();
     this.fly = { t: 0, x0: T.px.x, y0: T.px.y, x1: to.left + to.width / 2, y1: to.top + to.height / 2, cx: 0, cy: 0 };
     const f = this.fly;
     // the arc first rises, then curves in to the button

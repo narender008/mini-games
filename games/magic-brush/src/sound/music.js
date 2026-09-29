@@ -25,6 +25,8 @@ export class Music {
     this.beat = 0;
     this.nextTime = 0;
     this.last = 4;
+    // voices waiting to be built, [kind, freq, when, length or loudness]: a few a frame, never a whole chord at once
+    this.todo = [];
   }
 
   start() {
@@ -43,10 +45,23 @@ export class Music {
     if (!this.playing) return;
     const ctx = this.ctx;
     const spb = 60 / BPM / 2; // eighth notes
-    while (this.nextTime < ctx.currentTime + 0.25) {
+    // (after a long pause, say a hidden tab, the beats missed are skipped rather than all played at once)
+    if (this.nextTime < ctx.currentTime - 0.5) {
+      const missed = Math.floor((ctx.currentTime - this.nextTime) / spb);
+      this.beat += missed;
+      this.nextTime += missed * spb;
+      this.todo.length = 0;
+    }
+    // (planned well ahead, so that the voices can be built over a few frames and still start on time)
+    while (this.nextTime < ctx.currentTime + 0.6) {
       this.step(this.beat, this.nextTime);
       this.beat++;
       this.nextTime += spb;
+    }
+    for (let n = 0; n < 2 && this.todo.length; n++) {
+      const [kind, freq, t, x] = this.todo.shift();
+      if (kind === 0) this.pad(freq, t, x);
+      else this.box(freq, t, x);
     }
   }
 
@@ -54,7 +69,7 @@ export class Music {
     const bar = Math.floor(b / 8);
     const chord = CHORDS[bar % CHORDS.length];
     const pos = b % 8;
-    if (pos === 0) for (const f of chord) this.pad(f / 2, t, (60 / BPM) * 4);
+    if (pos === 0) for (const f of chord) this.todo.push([0, f / 2, t, (60 / BPM) * 4]);
     // melody: a note on most beats, resting now and then
     const rest = pos % 2 === 1 ? Math.random() < 0.55 : Math.random() < 0.12;
     if (!rest) {
@@ -66,7 +81,7 @@ export class Music {
         if (tones.length) i = tones.reduce((a, k) => (Math.abs(k - this.last) < Math.abs(a - this.last) ? k : a), tones[0]);
       }
       this.last = i;
-      this.box(PENTA[i], t, pos % 4 === 0 ? 0.5 : 0.35);
+      this.todo.push([1, PENTA[i], t, pos % 4 === 0 ? 0.5 : 0.35]);
     }
   }
 

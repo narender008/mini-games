@@ -15,7 +15,7 @@ import { tubeGeometry, withLook, bindTo, bindBy, frameFrom } from './parts.js';
 import { hideMaterial } from './materials.js';
 import { mergeGeometries } from './sculpt.js';
 import { pose, addPose, bump, ramp, smooth, wobble, Spring, TAU, clamp, lerp } from './anim.js';
-import { Tracker, Leg, stepOffset, hairClump, hairMaterial } from './pal-kit.js';
+import { Tracker, Leg, Gait, stepOffset, hairClump, hairMaterial } from './pal-kit.js';
 import { glide, puff } from '../sound/calls.js';
 import { rand } from '../config.js';
 
@@ -513,12 +513,13 @@ export class Unicorn extends Friend {
     const speed = m.speed;
     const air = m.air;
     const moving = clamp(speed / 0.16, 0, 1) * (1 - air);
-    const freq = lerp(1.4, 2.0, clamp(speed / 0.26, 0, 1));
+    const freq = lerp(1.4, 2.0, clamp(speed / 0.26, 0, 1)) * 0.8; // (a slower cadence with longer strides steps more smoothly)
     this.phase += dt * freq;
     const ph = this.phase;
     const duty = 0.52;
-    const stride = (speed * duty) / freq;
     const breathe = Math.sin(t * 1.9);
+    const gait = (this.gait ??= new Gait(4));
+    gait.begin(tr, air, dt);
 
     // a leg state the tricks can change: planted weight, free offsets and toes
     const L = (this.legState ??= [0, 1, 2, 3].map(() => ({ plant: 1, off: new THREE.Vector3(), toe: 0, lift: 0 })));
@@ -602,7 +603,7 @@ export class Unicorn extends Friend {
 
     // gait: a prancing trot, diagonal pairs together, knees lifted high
     for (let i = 0; i < 4; i++) {
-      stepOffset(ph + TROT[i], duty, stride, 0.03 * moving * (i < 2 ? 1.2 : 0.8), 0.45, _step);
+      gait.step(i, ph + TROT[i], duty, freq, 0.03 * moving * (i < 2 ? 1.2 : 0.8), 0.02, _step);
       L[i].dz = _step[0];
       L[i].lift = _step[1];
       L[i].toe += (i < 2 ? 1.1 : 0.6) * (_step[1] / 0.036);
