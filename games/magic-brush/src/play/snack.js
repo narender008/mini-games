@@ -56,7 +56,7 @@ export class Snack {
     blob.visible = false;
     blob.renderOrder = -1;
     T.scene.add(group, blob);
-    return { group, inner, glow, blob, on: false, state: 'idle', pos: new THREE.Vector3(), vy: 0, t: 0, scale: 1, target: 1, size: 1, bites: 0, eater: null, sharer: null, age: 0, sparkT: 0, ground: 0, retry: 1 };
+    return { group, inner, glow, blob, on: false, state: 'idle', pos: new THREE.Vector3(), vy: 0, t: 0, scale: 1, target: 1, size: 1, bites: 0, eater: null, sharer: null, tok: 0, age: 0, sparkT: 0, ground: 0, retry: 1 };
   }
 
   warm(on) {
@@ -206,6 +206,7 @@ export class Snack {
         if (b.sharer === e) b.sharer = null;
       },
     });
+    if (!share) b.tok = e.toyTok;
     if (!ok) {
       if (b.eater === e) b.eater = null;
       if (b.sharer === e) b.sharer = null;
@@ -323,7 +324,7 @@ export class Snack {
           b.t = 0;
         }
         // a berry with no eater yet may find one when a friend frees up
-        if ((!b.eater || !T.mine(b.eater, 'snack')) && (b.retry -= dt) <= 0) {
+        if ((!b.eater || !T.mine(b.eater, 'snack') || b.eater.toyTok !== b.tok) && (b.retry -= dt) <= 0) {
           b.retry = 1;
           const eater = this.pickEater(b, null);
           if (eater) {

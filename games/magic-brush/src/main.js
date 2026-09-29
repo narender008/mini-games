@@ -992,11 +992,9 @@ class App {
       this.idleSinceStroke = 0;
     } else if (this.state === 'play' || this.state === 'menu') {
       this.trackGround(e);
+      if (this.state === 'play') capture(this.canvas, e.pointerId, true);
       // a toy may take the touch (petting, a bubble, the ball, a treat ...)
-      if (this.state === 'play' && this.toys.pointerDown(e.clientX, e.clientY, e)) {
-        capture(this.canvas, e.pointerId, true);
-        return;
-      }
+      if (this.state === 'play' && this.toys.pointerDown(e.clientX, e.clientY, e)) return;
       const hit = this.friends.pick(e.clientX, e.clientY, this.camera, this.view);
       if (hit) {
         this.friends.play(hit, this.camera);

@@ -201,7 +201,7 @@ export class Toys {
   pointerDown(x, y, ev = null) {
     if (!this.on) return false;
     const id = ev?.pointerId ?? 0;
-    if (this.down && this.down.id !== id) return false;
+    if (this.down && this.down.id !== id && (this.pet.active || this.ball.aiming)) return false;
     this.down = { id, x, y, moved: 0 };
     const gp = this.ground(x, y);
     if (this.bubbles.hit(x, y, 1)) return true;
