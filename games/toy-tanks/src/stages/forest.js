@@ -262,12 +262,13 @@ export async function build({ app, quality, terrain, layout }) {
   const bx0 = cxb - span / 2;
   const bx1 = cxb + span / 2;
   const bridge = await tryProp('rope-bridge');
+  let swing = null;
   if (bridge) {
     fitRopeBridge(bridge, span);
     bridge.position.set(cxb, Math.min(H(bx0, ZB), H(bx1, ZB)) - 0.012, ZB);
     bridge.rotation.y = 0.03 * Math.sin(g.phase);
     group.add(bridge);
-    const swing = swingBridge(THREE, bridge, cxb, ZB, span);
+    swing = swingBridge(THREE, bridge, cxb, ZB, span);
     reactors.add(swing);
     disposers.push(() => reactors.delete(swing));
   }
@@ -365,7 +366,7 @@ export async function build({ app, quality, terrain, layout }) {
       mid.update(dt, time, a.world);
       far.update(dt, time, a.world);
       stream.update(dt, time);
-      swing.update(dt, a.world.wind ?? 0);
+      swing?.update(dt, a.world.wind ?? 0);
       canopy.update(dt, time, a.world);
       motes.update(dt, time, a.world);
       flag.update(dt, time, a.world.wind);
