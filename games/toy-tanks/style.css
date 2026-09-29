@@ -1140,14 +1140,35 @@ body[data-mode='little'] .big-only {
 }
 
 @media (max-height: 520px) {
+  /* a phone on its side: everything on one screen, no scrolling to find
+     Play, which waits in the bottom right corner */
+  #menu {
+    padding-top: calc(var(--edge) + var(--safe-t) + 34px);
+  }
+  .menu-main {
+    gap: 6px;
+    /* keep the rows clear of Play */
+    padding-right: 150px;
+  }
   .menu-gap {
-    min-height: 10px;
+    min-height: 4px;
   }
   .logo {
-    font-size: clamp(30px, 7vmin, 60px);
+    font-size: clamp(28px, 7vmin, 60px);
   }
   .stages {
-    width: min(640px, 100%);
+    width: min(560px, 100%);
+  }
+  .stage-card {
+    padding: 3px 3px 4px;
+    gap: 2px;
+    font-size: 11px;
+  }
+  #play-btn {
+    position: fixed;
+    z-index: 12;
+    right: calc(var(--edge) + var(--safe-r));
+    bottom: calc(var(--edge) + var(--safe-b));
   }
   /* a short screen: the angle and power go up in the sky, top right, so the
      tanks along the bottom stay in view */
@@ -1158,6 +1179,44 @@ body[data-mode='little'] .big-only {
   }
   .dial input {
     height: 26px;
+  }
+}
+
+@media (max-height: 420px) {
+  /* a small phone on its side: the title makes way (the star count stays
+     at the top) and the buttons shrink a little, still big for small
+     fingers */
+  #menu {
+    padding-top: calc(var(--edge) + var(--safe-t) + 50px);
+  }
+  .logo,
+  .menu-gap {
+    display: none;
+  }
+  .menu-main {
+    grid-template-rows: none;
+    align-content: start;
+    gap: 5px;
+  }
+  .setup {
+    gap: 5px;
+  }
+  .mode {
+    min-height: 44px;
+    padding: 3px 14px 3px 8px;
+  }
+  .mode svg {
+    width: 26px;
+    height: 26px;
+  }
+  .level {
+    min-height: 40px;
+  }
+  .stages {
+    width: min(440px, 100%);
+  }
+  .tank-pick {
+    height: 44px;
   }
 }
 

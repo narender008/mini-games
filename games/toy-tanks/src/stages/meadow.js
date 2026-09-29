@@ -112,13 +112,13 @@ export const STAGE = {
   sunTint: 0xfff0dc,
   rim: 0.3,
   hemi: { sky: 0xbcd7ff, ground: 0x5a6b33, intensity: 0.5 },
-  exposure: 1.35,
+  exposure: 1.6,
   // blue aerial haze on the far hills
   fog: { color: 0x6f9ad0, density: 0.0011 },
   // the play area sharp; the far scenery only a touch soft (haze shows the distance)
   lens: { base: 14, max: 1.5, band: 1.2 },
   // warm sunlight, crisp and saturated like the sample picture
-  grade: { white: [1.2, 1.0, 0.86], saturation: 1.2, contrast: 0.4, vignette: 0.22 },
+  grade: { white: [1.2, 1.0, 0.86], saturation: 1.2, contrast: 0.5, vignette: 0.22 },
   // (the photo's own far hills sit higher than the 3D mountains: fade them out)
   backdrop: { haze: 0, saturation: 0.85, contrast: 0.05, gain: 1.8, horizon: 0.9, horizonTop: 0.2 },
   wind: [0.08, 0.45],
