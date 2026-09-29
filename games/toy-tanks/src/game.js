@@ -93,7 +93,7 @@ export class Game {
     this.timer = 0;
     app.ui.setScores(this.sides, this.mode);
     const far = solo ? this.sides[0].x + 1.4 : this.sides[1].x;
-    app.director.frame(this.sides[0].x - 0.3, far + 0.3, 0, 0.45, { pace: 1.4, yaw: 0.16, pitch: 0.05 });
+    this.frameLane(this.sides[0].x - 0.3, far + 0.3, 0, 0.45, { pace: 1.4, yaw: 0.16 });
     this.newWind();
   }
 
@@ -144,19 +144,24 @@ export class Game {
     const s = this.side;
     const lo = Math.min(a.x, b.x) - 0.3;
     const hi = Math.max(a.x, b.x) + 0.3;
-    // low and close, like a photo taken lying in the grass: the tanks in the
-    // lower third, room above them for the arc, leaning a little towards
-    // whoever is aiming. A tall phone shows the lane whole and centred; a
-    // short one lifts the tanks clear of the buttons along the bottom.
+    // lean the picture a little towards whoever is aiming
+    this.frameLane(lo, hi, Math.min(a.y, b.y) - 0.08, Math.max(a.y, b.y) + 0.5, { pace: 1.1, yaw: 0.1 * -s.facing, shiftX: s.facing * -0.04 });
+  }
+
+  // Frame part of the lane low and close, like a photo taken lying in the
+  // grass: the tanks in the lower third with room above for the arc. A tall
+  // phone shows it whole and centred from a little higher; a short one lifts
+  // the tanks clear of the buttons along the bottom.
+  frameLane(x0, x1, y0, y1, opts = {}) {
     const tall = this.app.director.aspect < 1;
     const short = innerHeight < 520;
-    this.app.director.frame(lo, hi, Math.min(a.y, b.y) - (short ? 0.24 : 0.08), Math.max(a.y, b.y) + 0.5, {
-      pace: 1.1,
+    this.app.director.frame(x0, x1, y0 - (short ? 0.16 : 0), y1, {
       margin: tall ? 1.1 : 1.02,
       maxDist: tall ? 6 : undefined,
-      yaw: (tall ? 0.04 : 0.1) * -s.facing,
       pitch: tall ? 0.1 : 0.02,
-      shiftX: tall ? 0 : s.facing * -0.04,
+      ...opts,
+      yaw: (opts.yaw ?? 0) * (tall ? 0.4 : 1),
+      shiftX: tall ? 0 : opts.shiftX ?? 0,
     });
   }
 
@@ -426,13 +431,13 @@ export class Game {
         if (b && L) {
           const x0 = Math.min(b.pos.x, L.x) - 0.22;
           const x1 = Math.max(b.pos.x, L.x) + 0.22;
-          app.director.frame(x0, x1, Math.min(b.pos.y, L.y) - 0.04, Math.max(b.pos.y, L.y) + 0.08, { pace: 0.55, pitch: 0.11, minDist: 0.6 });
+          app.director.frame(x0, x1, Math.min(b.pos.y, L.y) - 0.04, Math.max(b.pos.y, L.y) + 0.08, { pace: 0.55, pitch: 0.06, minDist: 0.6 });
         }
         if (!app.flight.active) {
           this.phase = 'impact';
           this.timer = 0;
           const last = this.impacts[this.impacts.length - 1] ?? this.expected;
-          app.director.frame(last.x - 0.3, last.x + 0.3, last.y - 0.05, last.y + 0.22, { pace: 0.7, pitch: 0.16 });
+          app.director.frame(last.x - 0.3, last.x + 0.3, last.y - 0.05, last.y + 0.22, { pace: 0.7, pitch: 0.1 });
         }
         break;
       }
@@ -506,7 +511,7 @@ export class Game {
     const a = this.sides[0];
     const b = this.mode === 'targets' ? { x: a.x + 1.1, y: a.y } : this.sides[1];
     for (const s of this.sides) s.view.celebrate(true);
-    app.director.frame(Math.min(a.x, b.x) - 0.25, Math.max(a.x, b.x) + 0.25, Math.min(a.y, b.y), Math.max(a.y, b.y) + 0.3, { pace: 1.6, yaw: 0, pitch: 0.1 });
+    this.frameLane(Math.min(a.x, b.x) - 0.25, Math.max(a.x, b.x) + 0.25, Math.min(a.y, b.y) - 0.05, Math.max(a.y, b.y) + 0.4, { pace: 1.6, yaw: 0 });
     app.onCelebrate(this.sides, this.mode);
   }
 
