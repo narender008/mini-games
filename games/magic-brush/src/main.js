@@ -12,8 +12,9 @@
 // device (store.js) and wait on the friends shelf.
 //
 // ?play starts straight at the easel, ?mode=little|big, ?pick=<id>, ?cover
-// hides the UI, plus ?quality=, ?msaa=, ?shadows=0, ?ao=0, ?dof=0, ?fur=,
-// ?tone=; ?debug exposes window.__mb (see the end of this file).
+// hides the UI, ?fps=N forces the frame pacing (quality.js), plus ?quality=,
+// ?msaa=, ?shadows=0, ?ao=0, ?dof=0, ?fur=, ?tone=; ?debug exposes
+// window.__mb (see the end of this file).
 import * as THREE from 'three';
 import { QUERY, DEBUG, REDUCED_MOTION, MODES, load, save, pickValid, clamp, damp, rand, lin, tick } from './config.js';
 import { detectQuality, FrameGovernor, FramePacer } from './quality.js';

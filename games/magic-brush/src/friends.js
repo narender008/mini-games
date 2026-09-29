@@ -35,7 +35,7 @@
 // and set `friends.pointer` (a THREE.Vector3 on the ground, or null) each
 // frame so friends notice where the child's finger is.
 import * as THREE from 'three';
-import { clamp, rand, angleDiff, damp, pick, REDUCED_MOTION } from './config.js';
+import { clamp, rand, angleDiff, damp, pick } from './config.js';
 import { homeSpot, onPond, WATER_Y, stageAt, STAGE, STONES_X } from './world/world.js';
 import { Nav } from './world/nav.js';
 import { steer, accelerate, smoothDamp, smoother } from './smooth.js';
