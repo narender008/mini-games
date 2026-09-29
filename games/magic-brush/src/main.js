@@ -19,8 +19,9 @@ import { QUERY, DEBUG, REDUCED_MOTION, MODES, load, save, pickValid, clamp, damp
 import { detectQuality, FrameGovernor } from './quality.js';
 import { Post } from './post.js';
 import { Sky } from './world/sky.js';
-import { World, walkable, groundAt } from './world/world.js';
+import { World, walkable, groundAt, STAGE } from './world/world.js';
 import { Motes, PaintDrops } from './world/air.js';
+import { GardenLife } from './world/life.js';
 import { Easel } from './paint/canvas.js';
 import { PaintEngine } from './paint/engine.js';
 import { Outline } from './paint/outline.js';
@@ -31,6 +32,8 @@ import { Sparkles, Droplets, Petals } from './fx.js';
 import { ComeAlive } from './alive.js';
 import { Friends } from './friends.js';
 import { CameraRig } from './camera.js';
+import { GardenCam } from './garden-cam.js';
+import { Toys } from './play/toys.js';
 import { Audio } from './sound/audio.js';
 import { Store, newId } from './store.js';
 import { SUBJECTS, BY_ID, makeFriend } from './creatures/catalog.js';
@@ -158,9 +161,31 @@ class App {
       petals: new Petals(scene, 160, groundAt),
     };
     this.audio = new Audio();
+    this.life = new GardenLife({ scene, quality: q, groundAt, walkable, world: this.world, audio: this.audio });
     this.friends = new Friends({ scene, fx: this.fx, audio: this.audio, quality: q, walkable, groundAt });
-    this.alive = new ComeAlive({ easel: this.easel, fx: this.fx, audio: this.audio, groundAt });
     this.rig = new CameraRig(camera);
+    this.alive = new ComeAlive({ easel: this.easel, fx: this.fx, audio: this.audio, groundAt, rig: this.rig });
+    this.gcam = new GardenCam({ camera, friends: this.friends });
+    this.friends.onJourney = (e, phase) => this.onJourney(e, phase);
+    // the toys: petting, bubbles, a ball, treats, the call, puddles and the welcome (play/toys.js)
+    this.toys = new Toys({
+      scene,
+      camera,
+      view: () => this.view,
+      fx: this.fx,
+      audio: this.audio,
+      sky: this.sky,
+      friends: this.friends,
+      gcam: this.gcam,
+      quality: q,
+      strain: () => this.governor?.strain ?? 0,
+      groundAt,
+      direct: (e, kind, seconds) => this.direct(e, kind, seconds),
+      onTapFriend: (e) => {
+        this.friends.play(e, this.camera);
+        if (this.state === 'play' && e.state === 'trick') this.direct(e, 'close', 3.4);
+      },
+    });
     this.post = new Post(renderer, scene, camera, q);
     // golden hour: a touch warm in the highlights, cool in the shadows
     this.post.setGrade({ white: [1.0, 0.99, 0.97], saturation: 1.04, contrast: 0.08, shadowTint: [-0.002, 0.0, 0.006], highTint: [0.006, 0.003, -0.004], vignette: 0.24 });
@@ -172,6 +197,7 @@ class App {
 
     this.ui = new UI(this.handlers());
     this.ui.setMode(this.mode);
+    this.toys.setMode(this.mode);
     this.ui.setMuted(this.audio.muted);
     this.ui.setColor('red', 'brush');
     this.ui.setSize('medium');
@@ -189,11 +215,13 @@ class App {
     this.update(0.016);
     progress(0.86, 'Mixing the paints');
     // compile every material now rather than on the first frames
+    this.toys.warm(true);
     try {
       await renderer.compileAsync(scene, camera);
     } catch {
       /* compileAsync is only an optimisation */
     }
+    this.toys.warm(false);
     this.render();
     progress(0.96, 'Ready');
     if (QUERY.has('cover')) document.body.classList.add('cover');
@@ -282,6 +310,7 @@ class App {
     this.mode = m;
     save('mode', m);
     this.ui.setMode(m);
+    this.toys?.setMode(m);
     this.applyTool();
     if (this.state === 'paint') this.showOutline();
   }
@@ -289,6 +318,7 @@ class App {
   setState(s) {
     this.state = s;
     this.ui.setState(s);
+    this.toys?.setActive(s === 'play');
     this.audio.setScene(s === 'menu' ? 'menu' : s === 'play' ? 'play' : 'paint');
   }
 
@@ -310,6 +340,8 @@ class App {
     this.post.setSize(w, h, dpr);
     this.fx.sparkles.setViewport(h * dpr);
     this.motes?.setViewport(h * dpr);
+    this.toys?.resize(h * dpr);
+    this.life?.setViewport(h * dpr);
     if (!first && this.state !== 'loading') {
       // keep the canvas framed when the screen turns
       if (this.state === 'paint' && !this.rig.moving) this.rig.snap(this.shot('paint'));
@@ -355,8 +387,9 @@ class App {
     if (name === 'hello' && this.helloAt) {
       // close on a friend that has just landed
       const p = this.helloAt;
-      const k = tall ? 1.35 : 1;
-      return { pos: new THREE.Vector3(p.x + 0.32 * k, p.y + 0.34 * k, p.z + 0.95 * k), look: new THREE.Vector3(p.x, p.y + 0.14, p.z), fov: tall ? 46 : 38 };
+      // (a big friend needs the camera further back to fit)
+      const k = (tall ? 1.35 : 1) * (this.helloSize ?? 1);
+      return { pos: new THREE.Vector3(p.x + 0.32 * k, p.y + 0.34 * k, p.z + 0.95 * k), look: new THREE.Vector3(p.x, p.y + 0.14 * (this.helloSize ?? 1), p.z), fov: tall ? 46 : 38 };
     }
     if (name === 'play') {
       return tall
@@ -390,10 +423,32 @@ class App {
     this.checkCoverage();
   }
 
+  // the garden: glide to the group shot, then the garden director keeps the
+  // friends nicely framed (camera follows them, comes close on a tap)
   toPlay() {
     this.endStroke();
     this.setState('play');
-    this.rig.go(this.shot('play'), 1.8, 0.25);
+    this.gcam.release();
+    const g = this.gcam.shot(0);
+    this.rig.go({ pos: g.pos.clone(), look: g.look.clone(), fov: g.fov }, this.rig.pos.distanceTo(g.pos) > 0.5 ? 1.8 : 0.4, 0.25);
+    this.directing = true;
+  }
+
+  // a friend sets off for the garden (or arrives): the camera runs with it
+  onJourney(e, phase) {
+    if (phase === 'start') {
+      if (this.state !== 'play') this.setState('play');
+      this.gcam.frame(e, 'chase', 0);
+      this.directing = true;
+      this.rig.follow((dt) => this.gcam.shot(dt), { smooth: 0.55, lookSmooth: 0.3 });
+    } else {
+      if (this.state === 'magic') this.setState('play');
+      // a close look at the arrival cheer, then back to the whole garden
+      this.gcam.frame(e, 'close', 2.4);
+      this.rig.follow((dt) => this.gcam.shot(dt), { smooth: 0.7, lookSmooth: 0.4 });
+      this.directing = true;
+      this.toys.onFriendArrived(e);
+    }
   }
 
   newCanvas() {
@@ -569,20 +624,20 @@ class App {
     const record = { id: newId(), kind: f.info.id, skin: this.magic.skinImage(), made: Date.now(), mode: this.mode };
     if (this.mode === 'big') this.savePainting();
     this.scene.add(f.object);
-    const land = this.landingSpot();
+    const land = this.landingSpot({ home: f.info.home, landScale: f.landScale });
     r.phase = 'alive';
     r.record = record;
-    this.rig.go(this.shot('alive'), REDUCED_MOTION.matches ? 0.3 : 2.2, 0.05);
     this.alive.onLand = () => {
       f.startTrick('hello', 1.5);
       r.landedAt = this.time;
       this.helloAt = f.object.position.clone();
+      this.helloSize = Math.max(1, (f.restRadius * f.object.scale.x) / 0.4);
       this.rig.go(this.shot('hello'), REDUCED_MOTION.matches ? 0.3 : 1.2, 0.02);
     };
     this.alive.start(f, land, r.colors, () => {
       this.magicRun = null;
       this.lineAlpha = 0;
-      this.friends.add(f, record, { x: land.x, z: land.z, heading: land.yaw, fresh: true });
+      this.friends.add(f, record, { x: land.x, z: land.z, heading: land.yaw, fresh: true, journey: true });
       this.records.unshift(record);
       this.store.put('friends', record).catch(() => {});
       this.wantPortrait(f, record, 0.4);
@@ -594,21 +649,22 @@ class App {
       this.canvasFriend = null;
       this.picked = false;
       if (this.mode === 'little') this.setSubject(this.subjectId);
-      this.toPlayAt = this.time + 1.2;
+      // (the friend now says hello and sets off for the garden: see onJourney)
     });
   }
 
   // in front of the easel, clear of friends already there
-  landingSpot() {
+  landingSpot(info) {
     let best = null;
     for (let i = 0; i < 12; i++) {
-      const x = rand(-0.28, 0.28);
-      const z = rand(0.5, 0.64);
+      const x = rand(-0.3, 0.3);
+      const z = rand(0.78, 0.92);
       let near = Infinity;
       for (const e of this.friends.list) near = Math.min(near, Math.hypot(e.pos.x - x, e.pos.z - z));
       if (!best || near > best.near) best = { x, z, near };
     }
-    return { x: best.x, z: best.z, yaw: Math.atan2(this.camera.position.x - best.x, this.camera.position.z - best.z) * 0.6, scale: 1 };
+    // facing where the camera settles for the hello
+    return { x: best.x, z: best.z, yaw: Math.atan2(0.4 - best.x, 2.3 - best.z), scale: info?.home === 'ground' ? info.landScale : 1 };
   }
 
   // the colours the child painted with (for droplets and sparkles)
@@ -728,12 +784,7 @@ class App {
   }
 
   freeSpot() {
-    for (let i = 0; i < 30; i++) {
-      const x = rand(-2.5, 2.2);
-      const z = rand(-4, -0.8);
-      if (walkable(x, z) < -0.3 && this.friends.list.every((e) => Math.hypot(e.pos.x - x, e.pos.z - z) > 0.5)) return { x, z };
-    }
-    return { x: rand(-1, 1), z: -2.2 };
+    return this.friends.stageSpot();
   }
 
   openShelf() {
@@ -758,7 +809,7 @@ class App {
       return;
     }
     const spot = this.freeSpot();
-    const e = this.friends.add(f, rec, { x: spot.x, z: spot.z, heading: rand(-Math.PI, Math.PI), fresh: true });
+    const e = this.friends.add(f, rec, { x: spot.x, z: spot.z, heading: rand(-Math.PI, Math.PI), fresh: true, journey: false });
     this.fx.sparkles.burst(_v.copy(e.pos).setY(e.pos.y + 0.12), 50, { colors: [[1.8, 1.4, 0.8], [1.3, 1.2, 1.9]], speed: 0.9, up: 0.6 });
     this.audio.poof();
     f.startTrick('hello', 1.5);
@@ -773,7 +824,10 @@ class App {
     el.addEventListener('pointerup', (e) => this.onUp(e));
     el.addEventListener('pointercancel', (e) => this.onUp(e));
     el.addEventListener('pointerleave', (e) => {
-      if (e.pointerType === 'mouse') this.pointer.hover = null;
+      if (e.pointerType === 'mouse') {
+        this.pointer.hover = null;
+        this.friends.pointer = null;
+      }
     });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('keydown', (e) => {
@@ -820,14 +874,46 @@ class App {
       this.paint.begin(this.brushSpec(), uv.x * this.paint.w, uv.y * this.paint.h, this.pressureOf(e));
       this.idleSinceStroke = 0;
     } else if (this.state === 'play' || this.state === 'menu') {
+      this.trackGround(e);
+      // a toy may take the touch (petting, a bubble, the ball, a treat ...)
+      if (this.state === 'play' && this.toys.pointerDown(e.clientX, e.clientY, e)) return;
       const hit = this.friends.pick(e.clientX, e.clientY, this.camera, this.view);
-      if (hit) this.friends.play(hit, this.camera);
-      else if (this.state === 'play') this.tapGround(e.clientX, e.clientY);
+      if (hit) {
+        this.friends.play(hit, this.camera);
+        if (this.state === 'play' && hit.state === 'trick') this.direct(hit, 'close', 3.4);
+      } else if (this.state === 'play') this.tapGround(e.clientX, e.clientY);
     }
+  }
+
+  // the garden camera follows friends; (re)start it and frame a friend for a while
+  direct(e = null, kind = 'close', seconds = 2.5) {
+    if (e) this.gcam.frame(e, kind, seconds);
+    if (!this.rig.following) this.rig.follow((dt) => this.gcam.shot(dt), { smooth: 0.65, lookSmooth: 0.35 });
+    this.directing = true;
+  }
+
+  // where the finger or mouse is on the lawn, so friends can notice it
+  trackGround(e) {
+    if (this.state !== 'play') {
+      this.friends.pointer = null;
+      return;
+    }
+    const ndc = new THREE.Vector2((e.clientX / this.view.w) * 2 - 1, -(e.clientY / this.view.h) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const ray = this.raycaster.ray;
+    if (ray.direction.y >= -0.01) {
+      this.friends.pointer = null;
+      return;
+    }
+    const at = (this.groundPtr ??= new THREE.Vector3());
+    ray.at((0.03 - ray.origin.y) / ray.direction.y, at);
+    this.friends.pointer = Math.hypot(at.x - STAGE.x, at.z - STAGE.z) < 4.5 ? at : null;
   }
 
   onMove(e) {
     const p = this.pointer;
+    if (this.state === 'play' && (e.pointerType === 'mouse' || e.buttons)) this.trackGround(e);
+    if (this.state === 'play') this.toys.pointerMove(e.clientX, e.clientY, e);
     if (this.state !== 'paint') return;
     if (p.id !== null && e.pointerId !== p.id) return;
     const events = e.getCoalescedEvents?.() || [e];
@@ -842,6 +928,8 @@ class App {
 
   onUp(e) {
     const p = this.pointer;
+    if (e.pointerType !== 'mouse') this.friends.pointer = null;
+    this.toys.pointerUp(e.clientX, e.clientY);
     if (e.pointerId !== p.id) return;
     this.endStroke();
     if (e.pointerType !== 'mouse') p.hover = null;
@@ -870,7 +958,17 @@ class App {
     at.y = groundAt(at.x, at.z) + 0.02;
     this.fx.sparkles.burst(at, 16, { colors: [[1.8, 1.5, 0.9], [1.2, 1.4, 1.9]], speed: 0.4, up: 0.5, size: 0.016, life: 0.9 });
     this.audio.tap();
-    for (const e of this.friends.list) if (!e.leaving && e.state !== 'trick') e.friend.look = at.clone();
+    for (const e of this.friends.list) if (!e.leaving && e.state !== 'trick') this.friends.lookAt(e, at.clone(), 2.5);
+    // the nearest friend trots over to see what it is
+    const walkers = this.friends.walkers();
+    const who = this.friends.nearest(at, (e) => walkers.includes(e) && (e.state === 'idle' || e.state === 'go') && !e.friend.trick);
+    if (who) {
+      const d = Math.hypot(who.pos.x - at.x, who.pos.z - at.z);
+      if (d > 0.35 && d < 4) {
+        const spot = this.friends.nav.nearestFree(at.x, at.z, 0.18) || at;
+        this.friends.send(who, spot, { pace: d > 1.3 ? 'run' : 'walk', stopR: 0.22, onArrive: (en) => this.friends.emote(en, Math.random() < 0.5 ? 'sniff' : 'giggle') });
+      }
+    }
   }
 
   // ------------------------------------------------------------ frame loop
@@ -934,10 +1032,6 @@ class App {
       }
     }
 
-    if (this.toPlayAt && this.time >= this.toPlayAt) {
-      this.toPlayAt = 0;
-      if (this.state === 'magic') this.toPlay();
-    }
     this.updateMagic(dt);
     if (this.magicRun?.phase === 'alive') {
       const f = this.magicRun.f;
@@ -950,13 +1044,35 @@ class App {
       }
     }
     this.friends.update(dt, t, this.camera);
+    this.toys.update(dt, t);
+    this.updateLife(dt, t);
     this.fx.sparkles.update(dt, t);
     this.fx.droplets.update(dt);
     this.fx.petals.update(dt, t);
 
+    if (this.state === 'play' && this.directing && !this.rig.moving && !this.rig.following) this.direct();
+    if (this.state !== 'play') this.friends.pointer = null;
     this.rig.update(dt);
     // focus: the canvas when painting, the friends when playing
-    this.post.setFocus(this.camera.position.distanceTo(this.rig.look));
+    // (on a friend the near side of it: its face, not the middle of its body)
+    this.post.setFocus(Math.max(0.3, this.camera.position.distanceTo(this.rig.look) - (this.state === 'play' ? 0.14 : 0)));
+  }
+
+  // the garden's little life (birds, insects, the pond, the wind in the grass) reacts to
+  // the friends on the ground and to a finger
+  updateLife(dt, t) {
+    const inp = (this._lifeIn ??= { camera: this.camera, friends: [], pointer: null, state: '' });
+    inp.friends.length = 0;
+    for (const e of this.friends.list) {
+      if (e.leaving || e.home === 'sky') continue;
+      const o = (e.lifeObj ??= { pos: e.pos, radius: 0, speed: 0 });
+      o.radius = e.friend.restRadius * e.scale;
+      o.speed = e.speed;
+      inp.friends.push(o);
+    }
+    inp.pointer = this.friends.pointer;
+    inp.state = this.state;
+    this.life.update(dt, t, inp);
   }
 
   render() {
@@ -1023,6 +1139,7 @@ class App {
     const toPx = (u, v) => [u * app.paint.w, v * app.paint.h];
     window.__mb = {
       app,
+      toys: app.toys,
       freeze() {
         app.frozen = true;
       },
@@ -1121,17 +1238,26 @@ class App {
           e.state = 'trick';
           e.faceCamera = true;
           e.friend.startTrick(name, e.friend.trickLength?.(name) ?? 2);
-        } else app.friends.play(e, app.camera);
+        } else {
+          app.friends.play(e, app.camera);
+          if (e.state === 'trick') app.direct(e, 'close', 3.4);
+        }
       },
+      // (view, shot and close hold the camera where they put it: the garden camera stands down)
       view(pos, look, fov = 40) {
+        app.directing = false;
         app.rig.snap({ pos: new THREE.Vector3(...pos), look: new THREE.Vector3(...look), fov });
       },
-      shot: (name) => app.rig.snap(app.shot(name)),
+      shot: (name) => {
+        app.directing = false;
+        app.rig.snap(app.shot(name));
+      },
       // the camera close on the i-th friend (from its front, yaw degrees to the side, k times
       // further; with abs, yaw is a world direction instead)
       close(i = 0, yaw = 25, k = 1.3, fov = 32, abs = false) {
         const f = app.friends.list[i]?.friend;
         if (!f) return;
+        app.directing = false;
         const c = f.worldCenter(new THREE.Vector3());
         const d = ((f.portraitRadius ?? f.restRadius) * f.object.scale.x * k) / Math.tan((fov * Math.PI) / 360);
         const a = (abs ? 0 : f.object.rotation.y) + (yaw * Math.PI) / 180;

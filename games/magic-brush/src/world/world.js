@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import { rng, TAU } from '../config.js';
 import { woodTextures, drawSplatters, periodicNoise, SPLAT_COLORS } from './textures.js';
-import { grassField, foliage, leafCardTexture, flowerBeds, WIND } from './foliage.js';
+import { grassField, foliage, leafCardTexture, flowerBeds, cloudLight, WIND } from './foliage.js';
 import { tubeGeometry } from '../creatures/parts.js';
 import { SKY_GLSL } from './sky.js';
 import { stringLights } from './air.js';
@@ -23,7 +23,7 @@ const DECK_X = 3.0;
 
 export const POND = { x: -2.3, z: -4.2, r: 1.15 };
 // lantern posts along the path: x, z, light
-const POSTS = [
+export const POSTS = [
   [0.95, -2.2, 0.35],
   [-0.9, -4.6, 0.35],
   [1.1, -6.9, 0],
@@ -38,17 +38,38 @@ export const TREES = [
 // the pond, tree trunks and the easel. Returns a signed distance (m): < 0
 // inside, so a friend steers back in when it goes positive.
 export function walkable(x, z) {
-  // an ellipse over the lawn and the front of the deck
+  // an ellipse over the lawn and the front of the deck...
   const ex = (x + 0.2) / 3.4;
   const ez = (z + 2.5) / 2.6;
-  let d = (Math.hypot(ex, ez) - 1) * 2.6;
+  const lawn = (Math.hypot(ex, ez) - 1) * 2.6;
+  // ...and the deck, where a friend lands and runs out from
+  const deck = Math.max(Math.abs(x - 0.0) - 2.4, Math.abs(z - 0.45) - 1.25);
+  return Math.max(Math.min(lawn, deck), obstacleAt(x, z));
+}
+
+// Signed distance to what stands in the way (positive inside): the pond,
+// trunks, lantern posts, the easel, the worktable, the stool and plant pots.
+// Cameras use it too, to keep out of the props.
+export function obstacleAt(x, z) {
   const circ = (cx, cz, r) => r - Math.hypot(x - cx, z - cz);
-  d = Math.max(d, circ(POND.x, POND.z, POND.r + 0.25));
+  // boxes: blocked (positive) inside, like the circles
+  const box = (cx, cz, hx, hz) => Math.min(hx - Math.abs(x - cx), hz - Math.abs(z - cz));
+  let d = circ(POND.x, POND.z, POND.r + 0.25);
   for (const t of TREES) d = Math.max(d, circ(t.x, t.z, t.r + 0.2));
   for (const [px, pz] of POSTS) d = Math.max(d, circ(px, pz, 0.2));
-  d = Math.max(d, circ(0, -0.2, 0.55)); // the easel
-  d = Math.max(d, circ(-1.05, 0.55, 0.55)); // the worktable
+  d = Math.max(d, box(0, -0.26, 0.4, 0.42)); // the easel
+  d = Math.max(d, box(-1.05, 0.55, 0.52, 0.34)); // the worktable
+  d = Math.max(d, circ(0.95, 0.35, 0.22)); // the stool
+  d = Math.max(d, circ(1.25, 0.9, 0.25)); // a plant pot
+  d = Math.max(d, circ(-2.2, -0.6, 0.28)); // another
   return d;
+}
+
+// Where friends spend their time once they are out to play: the lawn in
+// front of the garden camera. Signed distance like walkable (< 0 inside).
+export const STAGE = { x: -0.6, z: -2.0, r: 1.75 };
+export function stageAt(x, z) {
+  return Math.hypot((x - STAGE.x) * 0.85, z - STAGE.z) - STAGE.r;
 }
 
 export function groundAt(x, z) {
@@ -429,6 +450,7 @@ export class World {
         float big = sin(wp.x * 0.21) * sin(wp.y * 0.17) * 0.5 + 0.5;
         diffuseColor.rgb *= 0.85 + 0.25 * big;`,
       );
+      cloudLight(s); // soft cloud shadows drift over the lawn
     };
     // a disc with the pond cut out (its water and bed lie below the lawn),
     // with the same uvs as a plain disc
@@ -454,28 +476,29 @@ export class World {
     const pinks = [0xf58fb5, 0xf2a3c7, 0xffffff, 0xe96b9a];
     const blues = [0x8f86e8, 0x7aa6f0, 0xb98ff0, 0xffffff];
     const warm = [0xffc93c, 0xff9a3c, 0xf36b4b, 0xfff1a8];
-    this.group.add(
-      flowerBeds({
-        avoid: (x, z) => Math.hypot(x - POND.x, z - POND.z) < POND.r + 0.1,
-        beds: [
-          [-3.6, -1.2, 0.9, 70, pinks],
-          [-3.2, -3.1, 0.7, 50, blues],
-          [-1.1, -5.6, 0.8, 60, warm],
-          [0.6, -6.3, 0.9, 60, pinks],
-          [2.6, -3.6, 0.8, 60, blues],
-          [3.6, -1.6, 0.9, 70, warm],
-          [2.2, -6.4, 0.7, 40, pinks],
-          [-2.9, -5.6, 0.5, 30, warm],
-          [-1.2, -3.4, 0.35, 18, blues],
-          [4.8, -4.4, 1.0, 60, pinks],
-          [-5.2, -4.2, 1.2, 70, warm],
-        ].map((b) => [b[0], b[1], b[2], Math.round(b[3] * Math.max(0.5, k)), b[4]]),
-      }),
-    );
+    // (kept as this.flowers: its userData.spots are where butterflies alight)
+    this.flowers = flowerBeds({
+      avoid: (x, z) => Math.hypot(x - POND.x, z - POND.z) < POND.r + 0.1,
+      beds: [
+        [-3.6, -1.2, 0.9, 70, pinks],
+        [-3.2, -3.1, 0.7, 50, blues],
+        [-1.1, -5.6, 0.8, 60, warm],
+        [0.6, -6.3, 0.9, 60, pinks],
+        [2.6, -3.6, 0.8, 60, blues],
+        [3.6, -1.6, 0.9, 70, warm],
+        [2.2, -6.4, 0.7, 40, pinks],
+        [-2.9, -5.6, 0.5, 30, warm],
+        [-1.2, -3.4, 0.35, 18, blues],
+        [4.8, -4.4, 1.0, 60, pinks],
+        [-5.2, -4.2, 1.2, 70, warm],
+      ].map((b) => [b[0], b[1], b[2], Math.round(b[3] * Math.max(0.5, k)), b[4]]),
+    });
+    this.group.add(this.flowers);
     // bushes and trees
     const leaf = this.leafTex();
     const leafDark = leafCardTexture({ seed: 9, hue: 0x3f6f2a, light: 0x7fae44 });
-    const bush = (x, z, r, n = 90) => this.group.add(foliage({ blobs: [[x, r * 0.8, z, r, r * 0.8, r]], count: Math.round(n * Math.max(0.6, k)), texture: leafDark, seed: Math.floor(x * 31 + z * 7), size: 0.32 }));
+    this.bushes = []; // where small birds perch
+    const bush = (x, z, r, n = 90) => (this.bushes.push({ x, z, r }), this.group.add(foliage({ blobs: [[x, r * 0.8, z, r, r * 0.8, r]], count: Math.round(n * Math.max(0.6, k)), texture: leafDark, seed: Math.floor(x * 31 + z * 7), size: 0.32 })));
     bush(-4.4, -3.4, 0.55);
     bush(4.2, -2.8, 0.5);
     bush(-1.9, -6.6, 0.6);
@@ -530,18 +553,17 @@ export class World {
       this.group.add(s);
     }
     // strings of little lights from the trees to the lantern posts
-    const lights = stringLights(
-      [
-        [[TREES[0].x - 0.15, 2.4, TREES[0].z + 0.1], [0.95, 1.02, -2.2]],
-        [[TREES[1].x + 0.12, 2.2, TREES[1].z - 0.1], [-0.9, 1.02, -4.6]],
-        [[TREES[2].x, 2.3, TREES[2].z + 0.15], [1.1, 1.02, -6.9]],
-        [[TREES[0].x, 2.6, TREES[0].z - 0.1], [TREES[2].x + 0.1, 2.5, TREES[2].z]],
-        [[-0.9, 1.02, -4.6], [0.95, 1.02, -2.2]],
-      ],
-      { sag: 0.5 },
-    );
+    this.spans = [
+      [[TREES[0].x - 0.15, 2.4, TREES[0].z + 0.1], [0.95, 1.02, -2.2]],
+      [[TREES[1].x + 0.12, 2.2, TREES[1].z - 0.1], [-0.9, 1.02, -4.6]],
+      [[TREES[2].x, 2.3, TREES[2].z + 0.15], [1.1, 1.02, -6.9]],
+      [[TREES[0].x, 2.6, TREES[0].z - 0.1], [TREES[2].x + 0.1, 2.5, TREES[2].z]],
+      [[-0.9, 1.02, -4.6], [0.95, 1.02, -2.2]],
+    ];
+    const lights = stringLights(this.spans, { sag: 0.5 });
     this.group.add(lights);
     this.stringMat = lights.userData.mat;
+    this.stringBulbs = lights.children[0];
     // lanterns on posts along the path
     const postMat = new THREE.MeshStandardMaterial({ color: 0x3b2c22, roughness: 0.6, metalness: 0.4 });
     for (const [x, z, lit] of POSTS) {
@@ -620,17 +642,7 @@ export class World {
     surf.position.set(P.x, -0.02, P.z);
     surf.receiveShadow = true;
     this.group.add(surf);
-    // lily pads
-    const padMat = new THREE.MeshStandardMaterial({ color: 0x4f8a36, roughness: 0.5, side: THREE.DoubleSide });
-    for (let i = 0; i < 6; i++) {
-      const a = R() * TAU;
-      const r = 0.3 + R() * 0.6;
-      const pad = new THREE.Mesh(new THREE.CircleGeometry(0.08 + R() * 0.05, 16, 0.3, TAU - 0.6), padMat);
-      pad.rotation.x = -Math.PI / 2;
-      pad.rotation.z = R() * TAU;
-      pad.position.set(P.x + Math.cos(a) * r, -0.012, P.z + Math.sin(a) * r);
-      this.group.add(pad);
-    }
+    // (the lily pads, the frog and the fish live in life.js)
     // the falling water: a sheet of streaks tumbling off the rocks
     const fallU = { uTime: waterU.uTime };
     const fall = new THREE.ShaderMaterial({
@@ -757,6 +769,6 @@ export class World {
 }
 
 // the stepping-stone path wanders a little
-function STONES_X(z) {
+export function STONES_X(z) {
   return 0.25 + Math.sin(z * 0.9) * 0.35;
 }

@@ -1,29 +1,115 @@
 // Plants for the garden, all instanced: grass blades that sway in the
 // breeze, leaf cards for bushes and tree crowns (each card a small spray of
 // leaves drawn once on a canvas), and little flowers in clumps.
+//
+// Everything that sways reads one shared WIND block: the steady breeze, gusts
+// whose crests visibly sweep across the lawn, and a few "pushers" (friends,
+// a finger) that grass and flowers bend away from (world/life.js fills them
+// in every frame). The same block drifts soft cloud shadows over the sunlit
+// plants and lawn (cloudLight patches a material's sun term).
 import * as THREE from 'three';
 import { rng } from '../config.js';
 
-// shared breeze uniform for everything that sways
-export const WIND = { uWindTime: { value: 0 }, uWindStrength: { value: 1 } };
+export const MAX_PUSH = 10;
+
+// shared uniforms for everything that sways
+export const WIND = {
+  uWindTime: { value: 0 },
+  uWindStrength: { value: 1 },
+  // how hard a gust is blowing now (0..1), and the way it travels
+  uGust: { value: 0 },
+  uGustDir: { value: new THREE.Vector2(0.92, 0.38) },
+  // how dark the drifting cloud shadows are (0 = none)
+  uCloud: { value: 1 },
+  // [x, z, radius, strength] of whatever pushes the low plants aside
+  uPush: { value: Array.from({ length: MAX_PUSH }, () => new THREE.Vector4(0, 0, 0, 0)) },
+};
 
 const WIND_GLSL = /* glsl */ `
 uniform float uWindTime;
 uniform float uWindStrength;
+uniform float uGust;
+uniform vec2 uGustDir;
+uniform vec4 uPush[${MAX_PUSH}];
+// the crest of a gust: bands that travel across the lawn along uGustDir, wobbling across their width
+float gustAt(vec3 p) {
+  vec2 gd = uGustDir;
+  float across = dot(p.xz, vec2(-gd.y, gd.x));
+  float ph = dot(p.xz, gd) * 1.0 - uWindTime * 2.6 + sin(across * 0.7 + uWindTime * 0.5) * 0.9;
+  float band = 0.5 + 0.5 * sin(ph);
+  return uGust * band * band;
+}
 vec2 windAt(vec3 p) {
   float t = uWindTime;
   float g = sin(p.x * 0.35 + t * 1.1) * 0.5 + sin(p.z * 0.27 - t * 0.8 + 1.3) * 0.5;
   float f = sin(p.x * 2.1 + p.z * 1.7 + t * 3.1) * 0.25;
-  return vec2(0.8, 0.35) * (g * 0.7 + f + 0.35) * uWindStrength;
+  return vec2(0.8, 0.35) * (g * 0.7 + f + 0.35) * uWindStrength + uGustDir * gustAt(p) * 1.5;
+}
+// low plants lean away from friends and fingers: xy = which way and how far
+// (0..1 of the plant's height), z = how hard the strongest one pushes
+vec3 pushAt(vec2 p) {
+  vec2 s = vec2(0.0);
+  float k = 0.0;
+  for (int i = 0; i < ${MAX_PUSH}; i++) {
+    vec4 q = uPush[i];
+    if (q.z <= 0.0) continue;
+    vec2 d = p - q.xy;
+    float r = length(d);
+    float f = 1.0 - smoothstep(0.0, q.z, r);
+    f = f * f * (3.0 - 2.0 * f) * q.w;
+    s += d / max(r, 0.04) * f;
+    k = max(k, f);
+  }
+  float l = length(s);
+  if (l > 1.2) s *= 1.2 / l;
+  return vec3(s, k);
 }`;
 
-// project an instanced vertex, swaying it in world space by `amount`
-function windProject(amount) {
+// Drifting cloud shadows: a soft, cool patch pattern that slides over the
+// ground with the breeze. cloudTint() is multiplied into the colour of the
+// sun (the first directional light) only, so the fill light, lanterns and
+// the sun's own shadows are untouched. It fades out under the studio roof.
+const CLOUD_GLSL = /* glsl */ `
+uniform float uCloud;
+float cloudN(vec2 p) {
+  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  float a = fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5453);
+  float b = fract(sin(dot(i + vec2(1.0, 0.0), vec2(127.1, 311.7))) * 43758.5453);
+  float c = fract(sin(dot(i + vec2(0.0, 1.0), vec2(127.1, 311.7))) * 43758.5453);
+  float d = fract(sin(dot(i + vec2(1.0, 1.0), vec2(127.1, 311.7))) * 43758.5453);
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+vec3 cloudTint() {
+  vec3 wp = cameraPosition - transpose(mat3(viewMatrix)) * vViewPosition;
+  // a few broad waves of shade sliding over the lawn, edges broken up by noise
+  vec2 p = (wp.xz + vec2(uWindTime * 0.28, uWindTime * 0.11)) * 0.7;
+  float n = 0.5 + 0.22 * sin(p.x * 1.3 + sin(p.y * 0.9) * 1.2) + 0.2 * sin(p.y * 1.1 - p.x * 0.7 + 1.7)
+          + 0.1 * sin((p.x + p.y) * 2.3 + 4.0) + (cloudN(p * 1.7) - 0.5) * 0.18;
+  float k = smoothstep(0.56, 0.7, n) * uCloud * (1.0 - smoothstep(-2.2, -1.0, wp.z));
+  return mix(vec3(1.0), vec3(0.44, 0.52, 0.74), k);
+}`;
+
+// patch a standard material's shader so the sun's light passes through the
+// drifting cloud shadows (call from onBeforeCompile, after WIND is assigned)
+export function cloudLight(s) {
+  Object.assign(s.uniforms, WIND);
+  s.fragmentShader = s.fragmentShader
+    .replace('#include <common>', `#include <common>\nuniform float uWindTime;\n${CLOUD_GLSL}`)
+    .replace(
+      '#include <lights_fragment_begin>',
+      THREE.ShaderChunk.lights_fragment_begin.replace('getDirectionalLightInfo( directionalLight, directLight );', 'getDirectionalLightInfo( directionalLight, directLight );\n#if UNROLLED_LOOP_INDEX == 0\ndirectLight.color *= cloudTint();\n#endif'),
+    );
+}
+
+// project an instanced vertex, swaying it in world space by `amount`; `extra`
+// adds more once the instance position ipw and the sway are known
+function windProject(amount, extra = '') {
   return /* glsl */ `
   vec4 mvPosition = vec4(transformed, 1.0);
   mvPosition = instanceMatrix * mvPosition;
   vec3 ipw = instanceMatrix[3].xyz;
   mvPosition.xz += windAt(ipw) * (${amount});
+  ${extra}
   mvPosition = modelViewMatrix * mvPosition;
   gl_Position = projectionMatrix * mvPosition;`;
 }
@@ -64,12 +150,24 @@ export function grassField({ count, x0, x1, z0, z1, density, height = 0.09, widt
   mat.onBeforeCompile = (s) => {
     Object.assign(s.uniforms, WIND);
     s.vertexShader = s.vertexShader
-      .replace('#include <common>', `#include <common>\n${WIND_GLSL}\nvarying float vH;`)
+      .replace('#include <common>', `#include <common>\n${WIND_GLSL}\nvarying float vH;\nvarying float vGust;`)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvH = uv.y;')
-      .replace('#include <project_vertex>', windProject('uv.y * uv.y * 0.035 * length(instanceMatrix[1].xyz) / 0.09'));
+      .replace(
+        '#include <project_vertex>',
+        // blades lean away from pushers, more towards the tip; gust crests glint on the tips
+        windProject(
+          'uv.y * uv.y * 0.035 * length(instanceMatrix[1].xyz) / 0.09',
+          `vGust = gustAt(ipw);
+          vec3 pu = pushAt(ipw.xz);
+          float hh = length(instanceMatrix[1].xyz) * uv.y * uv.y;
+          mvPosition.xz += pu.xy * hh * 0.9;
+          mvPosition.y -= pu.z * hh * 0.3;`,
+        ),
+      );
     s.fragmentShader = s.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vH;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= 0.45 + 0.75 * vH;');
+      .replace('#include <common>', '#include <common>\nvarying float vH;\nvarying float vGust;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= (0.45 + 0.75 * vH) * (1.0 + vGust * 0.7 * vH);');
+    cloudLight(s);
   };
   const mesh = new THREE.InstancedMesh(geo, mat, count);
   const m = new THREE.Matrix4();
@@ -197,10 +295,11 @@ export function foliage({ blobs, count, texture, seed = 3, size = 0.35, tint = 0
       {
         vec3 L = directionalLights[0].direction;
         float th = pow(saturate(dot(normalize(vViewPosition), -L)), 3.0);
-        reflectedLight.directDiffuse += diffuseColor.rgb * directionalLights[0].color * th * 0.6;
+        reflectedLight.directDiffuse += diffuseColor.rgb * directionalLights[0].color * cloudTint() * th * 0.6;
       }
       #endif`,
     );
+    cloudLight(s);
   };
   const mesh = new THREE.InstancedMesh(geo, mat, count);
   const m = new THREE.Matrix4();
@@ -307,12 +406,17 @@ export function flowerBeds({ beds, avoid, seed = 5, headSize = 0.045, stem = 0.2
           mvPosition = instanceMatrix * mvPosition;
         #endif
         mvPosition.xz += windAt(ip) * 0.03 * ip.y / 0.25;
+        // a friend or finger passing bends the stem and the head with it
+        vec3 pu = pushAt(ip.xz);
+        mvPosition.xz += pu.xy * 0.11;
+        mvPosition.y -= pu.z * 0.05;
         mvPosition = modelViewMatrix * mvPosition;
         gl_Position = projectionMatrix * mvPosition;`,
       );
     s.fragmentShader = s.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying float vPetal;')
       .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = mix(vec3(0.95, 0.72, 0.18), diffuseColor.rgb, vPetal);');
+    cloudLight(s);
   };
   const heads = new THREE.InstancedMesh(headGeo, headMat, total);
   const stemGeo = new THREE.CylinderGeometry(0.004, 0.006, 1, 4, 1).translate(0, 0.5, 0);
@@ -321,7 +425,17 @@ export function flowerBeds({ beds, avoid, seed = 5, headSize = 0.045, stem = 0.2
     Object.assign(s.uniforms, WIND);
     s.vertexShader = s.vertexShader
       .replace('#include <common>', `#include <common>\n${WIND_GLSL}`)
-      .replace('#include <project_vertex>', windProject('0.03 * position.y * position.y'));
+      .replace(
+        '#include <project_vertex>',
+        windProject(
+          '0.03 * position.y * position.y',
+          `vec3 pu = pushAt(ipw.xz);
+          float s2 = position.y * position.y;
+          mvPosition.xz += pu.xy * 0.11 * s2;
+          mvPosition.y -= pu.z * 0.05 * s2;`,
+        ),
+      );
+    cloudLight(s);
   };
   const stems = new THREE.InstancedMesh(stemGeo, stemMat, total);
   const m = new THREE.Matrix4();
@@ -331,6 +445,7 @@ export function flowerBeds({ beds, avoid, seed = 5, headSize = 0.045, stem = 0.2
   const sc = new THREE.Vector3();
   const c = new THREE.Color();
   let n = 0;
+  const spots = []; // [x, y, z] of every head, for the butterflies
   for (const [bx, bz, br, cnt, colors] of beds) {
     for (let i = 0; i < cnt; i++) {
       const a = R() * Math.PI * 2;
@@ -353,6 +468,7 @@ export function flowerBeds({ beds, avoid, seed = 5, headSize = 0.045, stem = 0.2
       heads.setMatrixAt(n, m);
       c.set(colors[Math.floor(R() * colors.length)]).multiplyScalar(0.85 + R() * 0.25);
       heads.setColorAt(n, c);
+      spots.push([x, h + s * 0.14, z]);
       n++;
     }
   }
@@ -363,5 +479,6 @@ export function flowerBeds({ beds, avoid, seed = 5, headSize = 0.045, stem = 0.2
   heads.frustumCulled = stems.frustumCulled = false;
   const g = new THREE.Group();
   g.add(stems, heads);
+  g.userData.spots = spots;
   return g;
 }

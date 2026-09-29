@@ -22,6 +22,12 @@ const _w = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _m = new THREE.Matrix4();
 const Z = new THREE.Vector3(0, 0, 1);
+const _s = new THREE.Vector3();
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+// how long each generic emote lasts (s)
+const EMOTES = { hop: 0.9, cheer: 1.5, giggle: 1.1, spin: 1.0, eat: 1.6, nuzzle: 1.4, sniff: 1.4, bow: 1.2 };
+// a full turn that eases in and out
+const easeSpin = (k) => k * k * (3 - 2 * k);
 
 export class Friend {
   // info: { id, name, view, ... } (the subject's catalogue entry)
@@ -54,9 +60,27 @@ export class Friend {
     // is, like a flower), how fast it turns (rad/s), and its size once home
     // (a painted tree grows, a sun rises big into the sky)
     this.walkSpeed = 0.28;
+    this.runSpeed = 0; // m/s at a run (0: 2.6 x walkSpeed); see get run()
     this.turnRate = 2.4;
     this.worldScale = 1;
     this.hopScale = 1; // how high hello and goodbye hops go
+    // how it gets about: 'legs' (walks and runs), 'fly', 'hop' (a hopping
+    // journey, for friends without legs), 'drive', 'float' (rises, for sky friends)
+    this.style = 'legs';
+    this.flyHeight = 0; // metres above the ground it cruises at, for style 'fly'
+    this.emoteState = null; // { name, t, dur } while a generic emote plays
+  }
+
+  // how big it is once out to play: a pet a child can hug, so friends are sized
+  // by their bounding radius (a tiny whale and a long dragon come out about the
+  // same armful) and the garden camera can frame them close and full of face
+  get landScale() {
+    return Math.max(1, Math.min(3.6, 0.5 / (this.restRadius || 0.3)));
+  }
+
+  // speed at a run
+  get run() {
+    return this.runSpeed || this.walkSpeed * 2.6;
   }
 
   // ------------------------------------------------------------ to override
@@ -174,6 +198,7 @@ export class Friend {
     const max = box.max.toArray();
     const eh = max[ha] - min[ha];
     const ev = max[va] - min[va];
+    this.extentH = eh;
     let cu = 0.5, cv = 0.5, aw = CANVAS_W, ah = CANVAS_H;
     let margin = this.info.margin ?? 0.84;
     if (rect) {
@@ -259,8 +284,11 @@ export class Friend {
       this.lookLocal = (this.lookLocal || new THREE.Vector3()).copy(this.look);
       this.object.worldToLocal(this.lookLocal);
     } else this.lookLocal = null;
+    // 0 at a walk .. 1 at a run, for gaits that change with pace
+    this.motion.run = clamp01((this.motion.speed - this.walkSpeed) / Math.max(1e-3, this.run - this.walkSpeed));
     this.animate(dt);
     if (this.trick && (this.trick.name === 'hello' || this.trick.name === 'bye')) this.greet(this.trick);
+    if (this.emoteState) this.playEmote(this.emoteState, dt);
     this.poseEyes(dt, camera);
     this.shared.uHappy.value = Math.max(0, this.happy.update(0, dt));
     if (camera && this.shells.length) this.fitShells(camera);
@@ -345,6 +373,109 @@ export class Friend {
   startTrick(name, dur) {
     this.trick = { name, t: 0, dur };
     this.happy.kick(3);
+  }
+
+  // Generic emotes any friend can play, layered on top of whatever its own
+  // animation is doing (they only use the bones nearly every friend has:
+  // root, chest, neck, head, jaw, ears, tail): hop, cheer, giggle, spin, eat,
+  // nuzzle, sniff, bow. Returns false when a trick is running.
+  emote(name, dur = EMOTES[name] ?? 1.2) {
+    if (this.trick && this.trick.name !== 'hello') return false;
+    this.emoteState = { name, t: 0, dur, fired: false };
+    this.happy.kick(name === 'cheer' || name === 'giggle' ? 4 : 2);
+    return true;
+  }
+
+  get emoting() {
+    return this.emoteState?.name ?? null;
+  }
+
+  playEmote(em, dt) {
+    em.t += dt;
+    const k = Math.min(1, em.t / em.dur);
+    const env = Math.sin(k * Math.PI); // 0 -> 1 -> 0 over the emote
+    const B = this.bones;
+    const root = B.root;
+    const t = em.t;
+    const hs = this.hopScale ?? 1;
+    const add = (b, x = 0, y = 0, z = 0) => {
+      if (b) {
+        b.rotation.x += x;
+        b.rotation.y += y;
+        b.rotation.z += z;
+      }
+    };
+    // a bouncing hop with a squash at each landing: n hops of height h (metres)
+    const hop = (n, h) => {
+      const ph = k * n;
+      const up = Math.max(0, Math.sin(ph * Math.PI));
+      root.position.y += up * h * hs;
+      const sq = Math.max(0, -Math.sin(ph * Math.PI + 0.35)) * (1 - k * 0.6);
+      root.scale.multiply(_s.set(1 + sq * 0.09, 1 - sq * 0.11, 1 + sq * 0.09));
+    };
+    switch (em.name) {
+      case 'hop':
+        hop(2, 0.05);
+        break;
+      case 'cheer':
+        hop(3, 0.085);
+        add(B.chest, -0.12 * env);
+        add(B.neck, -0.18 * env);
+        add(B.head, -0.1 * env, 0, Math.sin(t * 14) * 0.1 * env);
+        add(B.jaw, 0.3 * env);
+        root.rotation.z += Math.sin(t * 12) * 0.07 * env;
+        break;
+      case 'giggle': {
+        const w = Math.sin(t * 24) * env;
+        root.rotation.z += w * 0.09;
+        root.scale.multiply(_s.set(1 + w * 0.03, 1 - w * 0.035, 1 + w * 0.03));
+        add(B.head, 0, 0, w * 0.1);
+        add(B.jaw, 0.16 * env);
+        this.blinker.hold = env > 0.3 ? 0.8 : 0; // a happy squint
+        break;
+      }
+      case 'spin':
+        root.rotation.y += easeSpin(k) * Math.PI * 2;
+        hop(1, 0.045);
+        break;
+      case 'eat': {
+        // head down to the food, munching, then up with a chew
+        const dip = Math.min(1, em.t / 0.35) * (1 - Math.max(0, (k - 0.8) / 0.2));
+        add(B.neck, 0.5 * dip);
+        add(B.head, 0.35 * dip + Math.sin(t * 16) * 0.05 * dip);
+        add(B.jaw, (0.12 + Math.sin(t * 22) * 0.1) * dip);
+        root.rotation.x += 0.05 * dip;
+        break;
+      }
+      case 'nuzzle':
+        // leaning into a stroking hand, eyes shut with happiness
+        root.rotation.z += Math.sin(t * 5) * 0.05 * env;
+        add(B.neck, 0.08 * env);
+        add(B.head, 0.05 * env, Math.sin(t * 5) * 0.12 * env, -0.16 * env);
+        root.scale.multiply(_s.set(1 + 0.02 * env, 1 - 0.03 * env, 1 + 0.02 * env));
+        this.blinker.hold = env > 0.25 ? 0.9 : 0;
+        break;
+      case 'sniff':
+        add(B.neck, 0.4 * env);
+        add(B.head, 0.3 * env + Math.sin(t * 30) * 0.025 * env, Math.sin(t * 3) * 0.2 * env);
+        break;
+      case 'bow':
+        // a play bow: front down, tail and hindquarters up
+        add(B.chest, 0.4 * env);
+        add(B.neck, 0.1 * env);
+        add(B.hips, -0.22 * env);
+        break;
+      default:
+        break;
+    }
+    if (!em.fired) {
+      em.fired = true;
+      this.emit('sound', { name: em.name === 'eat' ? 'munch' : em.name === 'nuzzle' ? 'purr' : em.name === 'giggle' ? 'giggle' : 'happy' });
+    }
+    if (em.t >= em.dur) {
+      this.emoteState = null;
+      this.blinker.hold = 0;
+    }
   }
 
   emit(type, data = {}) {

@@ -51,6 +51,9 @@ export class Sparkles {
     this.base = new Float32Array(max * 4);
     this.drag = new Float32Array(max);
     this.grav = new Float32Array(max);
+    // a sparkle can be pulled towards a point (paint gathering into a friend)
+    this.tgt = new Float32Array(max * 3);
+    this.pull = new Float32Array(max);
     g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('aColor', new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('aInfo', new THREE.BufferAttribute(this.info, 3).setUsage(THREE.DynamicDrawUsage));
@@ -78,8 +81,9 @@ export class Sparkles {
     this.uniforms.uScale.value = heightPx * 0.9;
   }
 
-  // one sparkle: position, velocity, colour [r,g,b] (HDR allowed), size (m), life (s)
-  emit(x, y, z, vx, vy, vz, color, size = 0.02, life = 1, { drag = 1.5, gravity = -0.4 } = {}) {
+  // one sparkle: position, velocity, colour [r,g,b] (HDR allowed), size (m), life (s).
+  // target {x, y, z} and pull (m/s^2): it is drawn towards that point
+  emit(x, y, z, vx, vy, vz, color, size = 0.02, life = 1, { drag = 1.5, gravity = -0.4, target = null, pull = 0 } = {}) {
     const i = this.next;
     this.next = (this.next + 1) % this.max;
     this.pos[i * 3] = x;
@@ -99,6 +103,12 @@ export class Sparkles {
     this.age[i] = 0;
     this.drag[i] = drag;
     this.grav[i] = gravity;
+    this.pull[i] = target ? pull : 0;
+    if (target) {
+      this.tgt[i * 3] = target.x;
+      this.tgt[i * 3 + 1] = target.y;
+      this.tgt[i * 3 + 2] = target.z;
+    }
   }
 
   // a burst of sparkles from a point
@@ -133,6 +143,18 @@ export class Sparkles {
         this.life[i] = 0;
         this.col[i * 4 + 3] = 0;
         continue;
+      }
+      if (this.pull[i] > 0) {
+        const tx = this.tgt[i * 3] - this.pos[i * 3];
+        const ty = this.tgt[i * 3 + 1] - this.pos[i * 3 + 1];
+        const tz = this.tgt[i * 3 + 2] - this.pos[i * 3 + 2];
+        const l = Math.hypot(tx, ty, tz) || 1;
+        const a = (this.pull[i] * dt) / l;
+        this.vel[i * 3] += tx * a;
+        this.vel[i * 3 + 1] += ty * a;
+        this.vel[i * 3 + 2] += tz * a;
+        // it melts into the friend as it arrives
+        if (l < 0.03) this.age[i] = Math.max(this.age[i], this.life[i] * 0.92);
       }
       const d = Math.exp(-this.drag[i] * dt);
       this.vel[i * 3] *= d;
