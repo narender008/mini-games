@@ -112,6 +112,63 @@ const nuke = recipe(10.6, [
   { k: 'echo', taps: [[0.9, 0.45], [1.9, 0.38], [3.1, 0.3], [4.6, 0.22], [6.3, 0.14]], fc: 360, atk: 0.12, tau: 0.9, amp: 1.3 },
 ]);
 
+// A bomb off an aircraft: a deep, punchy ground blast with no gun crack, only a
+// dull slap of air. Heavy low end: a long sub thump and a doubled ground pulse,
+// a dark roar, a deep rumble, big clods coming down.
+const bomb = recipe(4.8, [
+  { k: 'crack', amp: 0.5, dur: 0.02, hp: 300, snap: 1.0, snapFc: 1500, snapTau: 0.04 },
+  { k: 'body', f0: 92, f1: 27, tp: 0.075, tau: 0.46, amp: 1.0, drive: 2.5, attack: 0.002 },
+  { k: 'body', at: 0.012, f0: 160, f1: 55, tp: 0.05, tau: 0.15, amp: 0.7, drive: 1.7 },
+  { k: 'body', at: 0.13, f0: 62, f1: 24, tp: 0.12, tau: 0.5, amp: 0.55, drive: 1.8, attack: 0.01 },
+  { k: 'roar', dur: 2.3, amp: 1.0, fA: 2800, fB: 150, tauF: 0.45, modFc: 16, modDepth: 0.6, env: [[0, 0], [0.005, 1], [0.1, 0.85], [0.6, 0.4], [2.3, 0.01], [2.304, 0]] },
+  { k: 'rumble', at: 0.02, dur: 4.6, amp: 1.3, fc: 118, att: 0.03, tau: 1.3, rollFc: 4, rollDepth: 0.55 },
+  { k: 'clods', n: 34, t0: 0.35, t1: 3.4, amp: 0.65, fLo: 45, fHi: 130 },
+  { k: 'debris', n: 90, t0: 0.15, t1: 2.8, lam: 0.9, amp: 0.26, fLo: 600, fHi: 4200 },
+  { k: 'echo', taps: [[0.55, 0.38], [1.25, 0.26], [2.1, 0.16], [3.1, 0.09]], fc: 440, atk: 0.09, tau: 0.55, amp: 1.1 },
+]);
+
+// A missile warhead: a sharp, bright high-explosive crack, a short hard punch, and
+// the rest of the motor spitting and fizzing out in a bright, flickering tail.
+const missile = recipe(3.2, [
+  { k: 'crack', amp: 1.0, dur: 0.01, hp: 2200, snap: 0.55, snapFc: 5200, snapTau: 0.014 },
+  { k: 'body', f0: 175, f1: 62, tp: 0.04, tau: 0.17, amp: 0.85, drive: 2.0 },
+  { k: 'roar', dur: 0.9, amp: 0.75, fA: 8000, fB: 520, tauF: 0.16, hp: 500, modFc: 46, modDepth: 0.5, env: [[0, 0], [0.002, 1], [0.04, 0.7], [0.9, 0.01], [0.904, 0]] },
+  { k: 'rumble', at: 0.02, dur: 2.2, amp: 0.55, fc: 210, att: 0.02, tau: 0.5, rollFc: 5, rollDepth: 0.5 },
+  { k: 'roar', at: 0.06, dur: 1.9, amp: 0.38, fA: 10500, fB: 3800, tauF: 0.6, hp: 3200, modFc: 90, modDepth: 0.92, env: [[0, 0], [0.05, 0.8], [0.18, 1], [0.7, 0.5], [1.9, 0.01], [1.904, 0]] },
+  { k: 'roar', at: 0.1, dur: 1.3, amp: 0.3, fA: 4200, fB: 1500, tauF: 0.4, hp: 1300, modFc: 28, modDepth: 0.85, env: [[0, 0], [0.04, 1], [0.4, 0.55], [1.3, 0.01], [1.304, 0]] },
+  { k: 'debris', n: 120, t0: 0.08, t1: 1.9, lam: 0.55, amp: 0.3, fLo: 3200, fHi: 9000, grit: 0.4 },
+  { k: 'echo', taps: [[0.4, 0.28], [0.9, 0.18], [1.55, 0.1]], fc: 900, atk: 0.06, tau: 0.38, amp: 0.85 },
+]);
+
+// A sabot dart striking: a double supersonic snap, a hard short punch, a steel clang
+// that rings for a moment, a spray of sparks and spall. Hardly any blast body, it
+// plays alongside hit('metal') on a tank, and on a miss it is a hard punch into earth.
+const sabot = recipe(1.6, [
+  { k: 'crack', amp: 1.0, dur: 0.004, hp: 3200, snap: 0.3, snapFc: 6000, snapTau: 0.006 },
+  { k: 'crack', at: 0.0045, amp: 0.7, dur: 0.005, hp: 2400, snap: 0.5, snapFc: 4500, snapTau: 0.01 },
+  { k: 'body', f0: 150, f1: 58, tp: 0.025, tau: 0.075, amp: 0.95, drive: 2.2 },
+  { k: 'roar', dur: 0.2, amp: 0.45, fA: 5500, fB: 700, tauF: 0.045, hp: 800, env: [[0, 0], [0.001, 1], [0.03, 0.55], [0.2, 0.01], [0.204, 0]] },
+  { k: 'plate', at: 0.0015, base: 330, amp: 0.5, tau: 0.3 },
+  { k: 'plate', at: 0.0015, base: 1180, amp: 0.2, tau: 0.12, n: 5 },
+  { k: 'modal', to: 'lo', amp: 0.35, partials: [[140, 0.7, 0.14], [260, 0.45, 0.1]] },
+  { k: 'clods', n: 3, t0: 0.06, t1: 0.5, amp: 0.3, fLo: 70, fHi: 170 },
+  { k: 'debris', n: 38, t0: 0.012, t1: 0.7, lam: 0.2, amp: 0.3, fLo: 3000, fHi: 8500, grit: 0.35 },
+  { k: 'echo', taps: [[0.26, 0.2], [0.6, 0.1]], fc: 950, atk: 0.04, tau: 0.22, amp: 0.7 },
+]);
+
+// A rolling bomb going off: a medium blast, then a long gravelly tail of stones and grit
+// pattering and sliding down, low gravel thuds under it.
+const roller = recipe(4.4, [
+  { k: 'crack', amp: 0.75, dur: 0.013, hp: 850, snap: 0.8, snapFc: 3000, snapTau: 0.022 },
+  { k: 'body', f0: 118, f1: 42, tp: 0.06, tau: 0.3, amp: 1.0, drive: 2.2 },
+  { k: 'roar', dur: 1.5, amp: 0.8, fA: 4400, fB: 240, tauF: 0.3, modFc: 24, modDepth: 0.55, env: [[0, 0], [0.003, 1], [0.05, 0.8], [0.4, 0.38], [1.5, 0.01], [1.504, 0]] },
+  { k: 'rumble', at: 0.03, dur: 3.2, amp: 0.85, fc: 175, att: 0.03, tau: 0.75, rollFc: 5, rollDepth: 0.5 },
+  { k: 'debris', n: 230, t0: 0.08, t1: 3.6, lam: 1.25, amp: 0.4, fLo: 500, fHi: 3400, grit: 0.8, gritLen: 2.6 },
+  { k: 'debris', n: 120, t0: 0.5, t1: 3.9, lam: 1.5, amp: 0.28, fLo: 250, fHi: 1500, grit: 0.9, gritLen: 4 },
+  { k: 'clods', n: 36, t0: 0.4, t1: 3.8, lam: 1.3, amp: 0.5, fLo: 85, fHi: 230 },
+  { k: 'echo', taps: [[0.5, 0.28], [1.1, 0.18], [1.8, 0.1]], fc: 540, atk: 0.07, tau: 0.45, amp: 0.85 },
+]);
+
 // ammunition cooking off: a fire's roar with bangs of every size going off in it
 const cookoff = recipe(5.2, (r) => {
   const L = [
@@ -165,4 +222,8 @@ export const BOOMS = {
   buster: { sr: 22050, variants: 2, render: buster, send: 0.34 },
   nuke: { sr: 16000, variants: 1, render: nuke, send: 0.35 },
   cookoff: { sr: 22050, variants: 3, render: cookoff, send: 0.3 },
+  bomb: { sr: 22050, variants: 2, render: bomb, send: 0.4 },
+  missile: { sr: 22050, variants: 2, render: missile, send: 0.34 },
+  sabot: { sr: 22050, variants: 3, render: sabot, send: 0.26 },
+  roller: { sr: 22050, variants: 2, render: roller, send: 0.34 },
 };

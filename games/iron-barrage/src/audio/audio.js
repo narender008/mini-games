@@ -46,7 +46,7 @@ const GAP_MS = 9; // pause between build chunks
 const TARGET = {
   'boom.he': -14.5, 'boom.heavy': -12.5, 'boom.small': -19, 'boom.cluster': -23, 'boom.air': -17, 'boom.napalm': -15,
   'boom.buster': -12.5, 'boom.nuke': -7, 'boom.cookoff': -16.5,
-  'boom.bomb': -13, 'boom.missile': -14.5, 'boom.sabot': -17, 'boom.roller': -15,
+  'boom.bomb': -14, 'boom.missile': -14.5, 'boom.sabot': -15, 'boom.roller': -16.5,
   'fire.cannon': -24, 'fire.heavy': -22, 'fire.mortar': -25, 'fire.missile': -23, 'fire.sabot': -24, 'fire.flare': -29, 'fire.mg': -27,
   'hit.metal': -14, 'hit.ricochet': -17, 'hit.dirt': -20, 'hit.debris': -19, 'hit.splat': -22, 'hit.thud': -21, 'hit.shield': -18, 'hit.repair': -21, 'hit.chute': -22,
   'ui.click': -31, 'ui.select': -30, 'ui.buy': -30, 'ui.deny': -33, 'ui.turn': -26, 'ui.alarm': -27, 'ui.tick': -35, 'ui.reward': -26,
@@ -63,7 +63,7 @@ const KMAX = { 'boom.cluster': 10, 'boom.small': 8, 'fire.mg': 8, 'hit.debris': 
 
 // a recipe may be lifted this much to reach its target (the nuke, spread thin over ten seconds, more)
 const GAIN_CAP = 1.8;
-const CAP = { 'boom.nuke': 4 };
+const CAP = { 'boom.nuke': 4, 'boom.bomb': 2.2 };
 
 // Two loudness figures of a rendered sound, in dB: an A-weighted-ish one (mean
 // square after a 170 Hz high-pass, as the ear hears little below that) and the

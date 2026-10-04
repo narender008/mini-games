@@ -71,7 +71,8 @@ export function when(r, t0, t1, lam) {
   return t0 - lam * Math.log(1 - u * (1 - E(-(t1 - t0) / lam)));
 }
 
-// debris: { n, t0, t1, lam, amp, fLo, fHi }  (seconds; fLo..fHi is the pitch of the ticks)
+// debris: { n, t0, t1, lam, amp, fLo, fHi, grit, gritLen }  (seconds; fLo..fHi is the pitch of the ticks;
+// grit is the share that are sprays of grit rather than pings, gritLen how long they run)
 export function* debris(out, sr, r, o) {
   const tab = whiteSync(8192, r);
   const fLo = o.fLo ?? 1500;
@@ -81,9 +82,9 @@ export function* debris(out, sr, r, o) {
     const fall = 1 - 0.7 * ((t - o.t0) / (o.t1 - o.t0 + 1e-6));
     const a = (o.amp ?? 1) * (0.2 + 0.8 * r() * r()) * fall;
     const at = Math.round(t * sr);
-    if (r() < 0.55) {
+    if (r() < (o.grit ?? 0.55)) {
       // a spray of grit: a few ms of differenced noise
-      const len = Math.round((0.002 + 0.008 * r()) * sr);
+      const len = Math.round((0.002 + 0.008 * r()) * (o.gritLen ?? 1) * sr);
       const off = (r() * 8000) | 0;
       const dec = 4 / len;
       let prev = 0;

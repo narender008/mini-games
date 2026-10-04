@@ -520,7 +520,7 @@ class BattleTrack extends Track {
 class VictoryTrack extends Track {
   constructor(m) {
     super(m, 'victory');
-    this.trim = 0.26;
+    this.trim = 2.0;
     this.fade = 0.03;
     const c = this.ctx;
     const t0 = this.t0;
@@ -550,7 +550,7 @@ class VictoryTrack extends Track {
 class DefeatTrack extends Track {
   constructor(m) {
     super(m, 'defeat');
-    this.trim = 0.7;
+    this.trim = 1.0;
     this.fade = 0.03;
     const c = this.ctx;
     const t0 = this.t0;

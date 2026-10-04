@@ -49,7 +49,7 @@ function* engine(sr, seed) {
     for (let i = 0; i < 160; i++) big[at + i] += a * 0.3 * tab[(off + i) & 2047] * E(-i / 70);
     if ((k & 7) === 7) yield;
   }
-  const out = fold(big, n);
+  const out = yield* fold(big, n);
   const body = yield* noiseLoop(n, sr, r, [['lowpass', 260, 0.8], ['lowpass', 260, 0.8]]);
   yield* normalise(body, 1);
   for (let i = 0; i < n; i++) out[i] += body[i] * 0.22;
@@ -71,7 +71,7 @@ function* squeal(sr, seed) {
     const off = (r() * 1000) | 0;
     for (let i = 0; i < 90; i++) big[at + i] += a * 0.25 * tab[(off + i) & 1023] * E(-i / 25);
   }
-  const clank = fold(big, n);
+  const clank = yield* fold(big, n);
   yield* normalise(clank, 1);
   const gate = yield* slowLoop(n, sr, r, 1.3);
   const sq = new Float32Array(n);
@@ -128,7 +128,7 @@ function* burnCrackle(sr, seed) {
     if ((k & 15) === 15) yield;
   }
   for (let k = 0; k < 14; k++) damped(big, sr, Math.round(r() * n), 1500 + 2000 * r(), 0.15 + 0.4 * r(), 0.004 + 0.004 * r());
-  const out = fold(big, n);
+  const out = yield* fold(big, n);
   const hiss = yield* noiseLoop(n, sr, r, [['highpass', 2500, 0.7]]);
   yield* normalise(hiss, 1);
   const fl = yield* slowLoop(n, sr, r, 3);
@@ -267,7 +267,7 @@ function* rain(sr, seed) {
     if ((k & 63) === 63) yield;
   }
   for (let k = 0; k < 60; k++) damped(big, sr, Math.round(r() * n), 700 + 1400 * r(), 0.15 + 0.35 * r(), 0.008 + 0.012 * r());
-  const drops = fold(big, n);
+  const drops = yield* fold(big, n);
   const out = new Float32Array(n);
   for (let i = 0; i < n; i++) out[i] = a[i] * 0.5 + drops[i];
   return yield* loopOut(out, sr);
@@ -298,8 +298,8 @@ function* crickets(sr, seed) {
           out[idx] += amp * e * e * Math.sin(ph);
         }
       }
+      if ((j & 3) === 3) yield;
     }
-    yield;
   }
   return yield* loopOut(out.subarray(0, n).slice(), sr, 0.8);
 }

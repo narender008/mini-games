@@ -452,9 +452,13 @@ export function* removeDCg(buf) {
 
 // Fold a buffer that was rendered twice as long (event tails spilling past the
 // end) back onto itself: a seamless loop.
-export function fold(big, n) {
+export function* fold(big, n) {
   const out = new Float32Array(n);
-  for (let i = 0; i < n; i++) out[i] = big[i] + (big[i + n] || 0);
+  for (let b = 0; b < n; b += BLOCK) {
+    const e = Math.min(n, b + BLOCK);
+    for (let i = b; i < e; i++) out[i] = big[i] + (big[i + n] || 0);
+    yield;
+  }
   return out;
 }
 
