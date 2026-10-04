@@ -89,7 +89,7 @@ window.MINI_GAMES = [
     description: 'Turn-based tank artillery for ages 14 and up: read the wind, set angle and power, and shell computer tanks across five battlefields that every blast tears apart.',
     path: 'games/iron-barrage/',
     image: 'games/iron-barrage/cover.jpg',
-    imageAlt: 'A tank on a scorched ridge at dawn firing at an enemy tank as a shell explodes beside it',
+    imageAlt: 'A tank at dawn firing across farmland as a heavy shell bursts in a fireball short of an enemy tank',
     tags: ['2D', 'Ages 14+', 'Touch friendly'],
   },
 ];

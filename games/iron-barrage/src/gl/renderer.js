@@ -393,7 +393,16 @@ export class Renderer {
       gl.uniform3fv(p.u.uSmokeCol, L.smokeCol || [0.05, 0.05, 0.05]);
       gl.uniform4fv(p.u.uFire, L.fire || [60, 0, 0, 8]);
       gl.bindVertexArray(this.vao);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      // in strips, each flushed on its own: one draw over a whole 4096-wide
+      // layer can run long enough on a phone GPU to trip its watchdog
+      gl.enable(gl.SCISSOR_TEST);
+      const strip = 512;
+      for (let x = 0; x < w; x += strip) {
+        gl.scissor(x, 0, Math.min(strip, w - x), h);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.flush();
+      }
+      gl.disable(gl.SCISSOR_TEST);
       gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
       gl.generateMipmap(gl.TEXTURE_2D);
