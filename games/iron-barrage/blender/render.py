@@ -1,7 +1,7 @@
 """Render the Iron Barrage frames with Cycles and save each as <name>.a.png / .n.png / .json in the output directory.
 
 blender -b --factory-startup -t 8 -P render.py -- --out DIR [--only warden,crew,...] [--only-frame name,name]
-Groups: warden bulwark lynx crew gore debris ordnance jet parachute
+Groups: warden bulwark lynx crew gore debris ordnance jet parachute props
 """
 import importlib
 import json
@@ -27,7 +27,7 @@ def opt(name, default=None):
 
 
 OUT = opt('--out', os.path.join(bl.TMP, 'frames'))
-ONLY = opt('--only', 'warden,bulwark,lynx,crew,gore,debris,ordnance,jet,parachute').split(',')
+ONLY = opt('--only', 'warden,bulwark,lynx,crew,gore,debris,ordnance,jet,parachute,props').split(',')
 ONLY_FRAME = opt('--only-frame')
 ONLY_FRAME = set(ONLY_FRAME.split(',')) if ONLY_FRAME else None
 if opt('--ss'):
@@ -147,8 +147,26 @@ def parachute():
         clear_objects()
 
 
+def props():
+    """Battlefield props: pivot at the bottom centre where the prop meets the ground; everything below z = 0 is cut off."""
+    import props as P
+    for name, (build, ppm) in P.PROPS.items():
+        if not want(name):
+            continue
+        m = build()
+        ob = m.to_obj(name)
+        m.free()
+        x0, x1, z0, z1 = bbox_xz([ob])
+        cx = round((x0 + x1) / 2, 3)
+        rect = frame_rect((x0, x1, 0.0, z1), (cx, 0.0), ppm, 3)
+        rect = (rect[0], rect[1], 0, rect[3])
+        fr = render_frame([ob], (cx, 0.0), ppm, tag='r', rect=rect)
+        done(name, fr)
+        clear_objects()
+
+
 GROUPS = dict(warden=lambda: tank('warden'), bulwark=lambda: tank('bulwark'), lynx=lambda: tank('lynx'),
-              crew=crew, gore=gore, debris=debris, ordnance=ordnance, jet=jet, parachute=parachute)
+              crew=crew, gore=gore, debris=debris, ordnance=ordnance, jet=jet, parachute=parachute, props=props)
 
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)

@@ -66,7 +66,7 @@ def make_gear(g, T, phase, wreck=False, seed=0):
     spin = 0.0
     # road wheels
     wheels = Mesh('wheels')
-    base_rw = road_wheel(Rrw, n_rw, T.rubber, T.steel, T.dark)
+    base_rw = road_wheel(Rrw, n_rw, T.rubber, T.gear, T.dark)
     hub = Mesh('hub')
     for i, x in enumerate(g['rw_x']):
         if wreck and i in g.get('lost_wheels', ()):
@@ -77,7 +77,7 @@ def make_gear(g, T, phase, wreck=False, seed=0):
         ang = -phase * (p / 4) / Rrw if not wreck else rnd.uniform(0, 2 * pi)
         m.add(base_rw, trans(x, yw, zc) @ roty(-ang))
     # rollers
-    base_rl = roller_wheel(Rr, n_rl, T.rubber, T.steel, T.dark)
+    base_rl = roller_wheel(Rr, n_rl, T.rubber, T.gear, T.dark)
     for i, x in enumerate(g['rollers']):
         if wreck and i in g.get('lost_rollers', ()):
             continue
@@ -85,12 +85,12 @@ def make_gear(g, T, phase, wreck=False, seed=0):
         m.add(base_rl, trans(x, yw, zu - (Rr + th / 2)) @ roty(-ang))
     # idler
     ang = -(phase * (p / 4) / Rid) if not wreck else rnd.uniform(0, 2 * pi)
-    m.add(idler_wheel(Rid, n_id, T.rubber, T.steel, T.dark), trans(ix, yw, zu - (Rid + th / 2)) @ roty(-ang))
+    m.add(idler_wheel(Rid, n_id, T.rubber, T.gear, T.dark), trans(ix, yw, zu - (Rid + th / 2)) @ roty(-ang))
     # sprocket, with its teeth sitting between the track pins
     s0, a0 = belt.arc_start[0]
     j0 = math.ceil(s0 / pitch) * pitch
     a_joint = a0 - (j0 - s0) / Rs
     ang = a_joint - phase * (2 * pi / Nt) / 4
-    m.add(sprocket_wheel(Rs, Nt, pitch, ang, T.steel, T.dark, T.dark), trans(sx, yw, zu - Rs))
+    m.add(sprocket_wheel(Rs, Nt, pitch, ang, T.gear, T.dark, T.dark), trans(sx, yw, zu - Rs))
     info = dict(Rrw=Rrw, zc=zc, Rs=Rs, Rid=Rid, Rr=Rr, pitch=pitch, N=N, belt=belt, circles=circles)
     return m, info

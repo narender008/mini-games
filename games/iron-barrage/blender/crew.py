@@ -145,7 +145,7 @@ def boot(sc=1.0):
     m.sphere((-0.02 * s, 0.0, 0.05 * s), 0.07 * s, 'leather', seg=14, sc=(1.5, 0.95, 0.9), smooth=70)
     shaft = Mesh('shaft')
     shaft.lathe([(0.0, 0.064 * s), (0.08 * s, 0.064 * s), (0.17 * s, 0.058 * s), (0.20 * s, 0.054 * s)], 'leather', seg=14, smooth=60, cap=False)
-    m.add(shaft, trans(-0.075 * s, 0.0, 0.03 * s) @ roty(-pi / 2 + 0.12))
+    m.add(shaft, trans(-0.075 * s, 0.0, 0.03 * s) @ roty(-0.15))
     m.cyl((-0.1 * s, 0.0, 0.17 * s), (-0.125 * s, 0.0, 0.225 * s), 0.074 * s, 0.066 * s, 'cloth', seg=14, smooth=70, cap=False)
     for i in range(5):
         z = 0.055 * s + i * 0.027 * s

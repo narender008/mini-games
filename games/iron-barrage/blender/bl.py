@@ -164,9 +164,11 @@ class Mesh:
         """Displace every vertex by smooth noise (bends and dents burnt-out metal)."""
         from mathutils import noise as mn
         off = Vector((seed * 3.7, seed * 1.9, seed * 5.1))
+        oy, oz = Vector((17.3, 4.1, 9.7)), Vector((-6.2, 23.9, 11.3))
         for v in self.bm.verts:
-            d = mn.noise_vector(v.co * freq + off)
-            v.co += d * amp
+            # three scalar noise lookups: mathutils' noise_vector is not repeatable between runs, noise() is
+            p = v.co * freq + off
+            v.co += Vector((mn.noise(p), mn.noise(p + oy), mn.noise(p + oz))) * amp
 
     def copy(self):
         m = Mesh(self.name)
@@ -527,9 +529,9 @@ def combine(r, w, h, left, top, ppm):
     nrm = r['nrm'][..., :3] * inv
     msk = r['msk'][..., 0:1] * inv
     ao = r['ao'][..., :3] * inv
-    ao_s, ao_l = ao[..., 0:1], ao[..., 1:2]
-    occ = np.clip(ao_s ** 0.7 * ao_l ** 0.75, 0, 1)
-    shade = 1.0 - 0.65 * (1.0 - occ)
+    ao_s, ao_l, ao_c = ao[..., 0:1], ao[..., 1:2], ao[..., 2:3]
+    occ = np.clip(ao_s ** 0.8 * ao_l ** 0.75 * ao_c ** 1.3, 0, 1)
+    shade = 1.0 - 0.68 * (1.0 - occ)
     col = lin2srgb(np.clip(alb, 0, 1) * shade)
     n = nrm * 2.0 - 1.0
     ln = np.maximum(np.linalg.norm(n, axis=-1, keepdims=True), 1e-6)

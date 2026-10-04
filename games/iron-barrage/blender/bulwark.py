@@ -57,7 +57,7 @@ def hull_body(T, wreck=False):
         # panel: chamfered slab hanging from the shelf
         lx1 = x1 - x0
         pts = [(0.0, -(z1 - z0) + 0.06), (0.06, -(z1 - z0)), (lx1 - 0.06, -(z1 - z0)), (lx1, -(z1 - z0) + 0.06), (lx1, 0.0), (0.0, 0.0)]
-        m.slab(pts, ys, ys + 0.12, T.hull, mx=mx, bevel=0.012)
+        m.slab(pts, ys, ys + 0.12, T.low, mx=mx, bevel=0.012)
         # pressed ribs and bolt rows
         for zr in (-0.28, -0.50):
             m.box(0.05, lx1 - 0.05, ys - 0.014, ys + 0.004, zr - 0.012, zr + 0.012, T.hull, mx, bevel=0.004)

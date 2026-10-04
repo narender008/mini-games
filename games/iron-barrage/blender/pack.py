@@ -38,43 +38,49 @@ def load_frames(d):
     return frames
 
 
-def shelf_pack(items, W):
-    """items: list of (key, w, h) already including padding. Returns (positions, H) or None."""
-    items = sorted(items, key=lambda t: (-t[2], -t[1]))
+def maxrects(items, W, H):
+    """MaxRects (best short side fit). items: (key, w, h). Returns {key: (x, y)} or None."""
+    free = [(0, 0, W, H)]
     pos = {}
-    x = y = shelf_h = 0
-    for key, w, h in items:
-        if w > W:
+    for key, w, h in sorted(items, key=lambda t: (-max(t[1], t[2]), -min(t[1], t[2]))):
+        best = None
+        for fx, fy, fw, fh in free:
+            if w <= fw and h <= fh:
+                sc = (min(fw - w, fh - h), max(fw - w, fh - h))
+                if best is None or sc < best[0]:
+                    best = (sc, fx, fy)
+        if best is None:
             return None
-        if x + w > W:
-            y += shelf_h
-            x = 0
-            shelf_h = 0
+        _, x, y = best
         pos[key] = (x, y)
-        x += w
-        shelf_h = max(shelf_h, h)
-    return pos, y + shelf_h
+        new_free = []
+        for fx, fy, fw, fh in free:
+            if x >= fx + fw or x + w <= fx or y >= fy + fh or y + h <= fy:
+                new_free.append((fx, fy, fw, fh))
+                continue
+            if x > fx:
+                new_free.append((fx, fy, x - fx, fh))
+            if x + w < fx + fw:
+                new_free.append((x + w, fy, fx + fw - x - w, fh))
+            if y > fy:
+                new_free.append((fx, fy, fw, y - fy))
+            if y + h < fy + fh:
+                new_free.append((fx, y + h, fw, fy + fh - y - h))
+        free = [r for i, r in enumerate(new_free)
+                if not any(j != i and o[0] <= r[0] and o[1] <= r[1] and o[0] + o[2] >= r[0] + r[2] and o[1] + o[3] >= r[1] + r[3] for j, o in enumerate(new_free))]
+    return pos
 
 
 def choose_layout(items):
-    best = None
-    for W in (256, 512, 1024, 2048):
-        r = shelf_pack(items, W)
-        if r is None:
-            continue
-        pos, H = r
-        Hp = 1
-        while Hp < H:
-            Hp *= 2
-        if Hp > 2048:
-            continue
-        # square-ish power-of-two preferred, then the smaller area
-        score = (W * Hp, abs(W - Hp))
-        if best is None or score < best[0]:
-            best = (score, W, Hp, pos)
-    if best is None:
-        raise SystemExit('atlas does not fit in 2048x2048')
-    return best[1], best[2], best[3]
+    """Smallest atlas (width and height multiples of 256, at most 2048) that holds every frame; ties go to the squarer, then power-of-two sizes."""
+    sizes = list(range(256, 2049, 256))
+    pot = lambda v: (v & (v - 1)) == 0
+    cands = sorted(((w * h, abs(w - h), not (pot(w) and pot(h)), w, h) for w in sizes for h in sizes))
+    for area, _, _, W, H in cands:
+        pos = maxrects(items, W, H)
+        if pos is not None:
+            return W, H, pos
+    raise SystemExit('atlas does not fit in 2048x2048')
 
 
 def dilate(rgb, known, iters=4):

@@ -58,30 +58,47 @@ def hatch():
     return m
 
 
-def _plate_grid(seed, W, H, cell=0.022, ragged=0.35):
-    """Return (xs, zs, keep) for a torn plate outline: a grid whose boundary is eroded by noise."""
+def _in_poly(X, Z, poly):
+    """Even-odd point-in-polygon test on grids X, Z."""
+    inside = np.zeros(X.shape, bool)
+    n = len(poly)
+    for k in range(n):
+        x0, z0 = poly[k]
+        x1, z1 = poly[(k + 1) % n]
+        cond = (z0 > Z) != (z1 > Z)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            xi = x0 + (Z - z0) * (x1 - x0) / (z1 - z0)
+        inside ^= cond & (X < xi)
+    return inside
+
+
+def _plate_grid(seed, W, H, cell=0.022):
+    """Return (X, Z, keep) for a torn plate: an angular outline (jagged edges, cut corners, a deep notch) sampled on a grid."""
     rnd = np.random.RandomState(seed)
     nx, nz = int(W / cell), int(H / cell)
     x = (np.arange(nx + 1) - nx / 2) * cell
     z = (np.arange(nz + 1) - nz / 2) * cell
     X, Z = np.meshgrid(x, z, indexing='ij')
-    # base outline: rounded irregular polygon
-    ang = np.arctan2(Z / (H / 2), X / (W / 2))
-    rad = np.sqrt((X / (W / 2)) ** 2 + (Z / (H / 2)) ** 2)
-    k = rnd.uniform(0, 6, 4)
-    edge = 1.0 + 0.0 * ang
-    for f in range(2, 7):
-        edge += rnd.uniform(-1, 1) * ragged / f * np.sin(f * ang + rnd.uniform(0, 6))
-    # a squarish plate: use superellipse
-    se = (np.abs(X / (W / 2)) ** 6 + np.abs(Z / (H / 2)) ** 6) ** (1 / 6)
-    # tear bites
-    keep_v = se < edge * 0.98
-    for b in range(3):
-        a = rnd.uniform(0, 2 * pi)
-        cx, cz = cos(a) * W * 0.5, sin(a) * H * 0.5
-        rr = rnd.uniform(0.08, 0.2) * min(W, H)
-        keep_v &= (np.hypot(X - cx, Z - cz) > rr * (0.8 + 0.4 * rnd.rand()))
-    return X, Z, keep_v
+    hw, hh = W / 2, H / 2
+    m = min(W, H)
+    corners = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+    poly = []
+    cut = set(rnd.choice(4, 2, replace=False).tolist())
+    for k in range(4):
+        (ax, az), (bx, bz) = corners[k], corners[(k + 1) % 4]
+        # inward normal of this edge (the polygon runs counter-clockwise)
+        ex, ez = bx - ax, bz - az
+        ln = float(np.hypot(ex, ez))
+        nxn, nzn = -ez / ln, ex / ln
+        jit = 0.28 * m if k in cut else 0.07 * m
+        poly.append((ax + nxn * rnd.uniform(0, jit) + (ex / ln) * rnd.uniform(0, jit), az + nzn * rnd.uniform(0, jit) + (ez / ln) * rnd.uniform(0, jit)))
+        for s in sorted(rnd.uniform(0.2, 0.85, rnd.randint(2, 4)).tolist()):
+            d = rnd.uniform(0.0, 0.14) * m
+            if rnd.rand() < 0.2:
+                d = rnd.uniform(0.18, 0.3) * m          # a deeper bite
+            poly.append((ax + ex * s + nxn * d, az + ez * s + nzn * d))
+    keep = _in_poly(X, Z, poly)
+    return X, Z, keep
 
 
 def plate(i):
@@ -93,8 +110,8 @@ def plate(i):
     nx, nz = X.shape
     rnd = np.random.RandomState(seed + 1)
     # bend: a fold line across the plate, a curl at one end and random ripples
-    fold = rnd.uniform(-0.15, 0.15) * W
-    ang = rnd.uniform(0.5, 1.0) * (1 if i != 1 else -1)
+    fold = rnd.uniform(-0.2, 0.2) * W
+    ang = rnd.uniform(0.8, 1.3) * (1 if i != 1 else -1)
     d = np.maximum(0.0, X - fold)
     Y = np.zeros_like(X)
     Zb = Z.copy()
@@ -104,9 +121,9 @@ def plate(i):
     Y = np.where(X > fold, -d * np.sin(ang), 0.0)
     # curl along z
     curl = rnd.uniform(-0.25, 0.25)
-    Y += curl * (Z / (H / 2)) ** 2 * 0.3
+    Y += curl * (Z / (H / 2)) ** 2 * 0.5
     # ripples and a dent
-    Y += 0.012 * np.sin(Z * 21 + X * 9 + seed) + 0.01 * np.sin(Z * 7 - X * 13)
+    Y += 0.02 * np.sin(Z * 15 + X * 7 + seed) + 0.016 * np.sin(Z * 5 - X * 11)
     cx, cz = rnd.uniform(-0.2, 0.2), rnd.uniform(-0.1, 0.1)
     Y += -0.05 * np.exp(-((X - cx) ** 2 + (Z - cz) ** 2) / 0.015)
     # twist the whole plate a little
@@ -163,15 +180,15 @@ def plate(i):
 
 
 def track_run():
+    """Seven links lying on their backs along a gentle curve, the last one flipped up; tipped toward the camera so the pad face and cleats show."""
     m = Mesh('debris_track')
     p = 0.19
     link = track_link(p, -0.29, 0.29, 0.085, 'track')
-    # five links lying along a gentle curve, one flipped up at the end
-    pos = [(-0.40, -0.01), (-0.2, -0.03), (0.0, -0.035), (0.2, -0.025), (0.40, 0.0)]
-    ang = [0.03, 0.06, 0.0, -0.08, -0.25]
-    # lay the links so that their width (y) is the depth: rotate about x so the plan view shows the side face
+    pos = [(-0.56, 0.0), (-0.38, 0.0), (-0.19, 0.0), (0.0, 0.0), (0.19, 0.0), (0.37, 0.0), (0.54, 0.0)]
+    ang = [0.0, 0.05, 0.09, 0.05, -0.02, -0.12, -0.55]
     for (x, z), a in zip(pos, ang):
-        m.add(link, trans(x, 0.0, z) @ roty(-a) @ rotz(0.0))
+        m.add(link, trans(x, 0.0, z) @ roty(-a))
+    m.transform(rotz(0.22) @ rotx(0.62))
     return m
 
 

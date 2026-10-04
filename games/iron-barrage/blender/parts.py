@@ -24,6 +24,7 @@ class Theme:
             self.gunp = 'paint:%s:gun' % tank
             self.plain = 'paint:%s:plain' % tank
             self.steel = 'steel'
+            self.gear = 'steel_gear'
             self.dark = 'steel_dark'
             self.bright = 'steel_bright'
             self.gun = 'gun'
@@ -40,7 +41,7 @@ class Theme:
         else:
             b = 'burnt:%s' % tank
             self.hull = self.low = self.turret = self.gunp = self.plain = b
-            self.steel = self.dark = self.bright = self.gun = 'charred'
+            self.steel = self.dark = self.bright = self.gun = self.gear = 'charred'
             self.rubber = 'charred_rubber'
             self.track = 'charred'
             self.optic = 'charred'
