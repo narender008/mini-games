@@ -45,21 +45,25 @@ const GAP_MS = 9; // pause between build chunks
 // then shots, impacts, the interface quietest.
 const TARGET = {
   'boom.he': -14.5, 'boom.heavy': -12.5, 'boom.small': -19, 'boom.cluster': -23, 'boom.air': -17, 'boom.napalm': -15,
-  'boom.buster': -12.5, 'boom.nuke': -9, 'boom.cookoff': -16.5,
+  'boom.buster': -12.5, 'boom.nuke': -7, 'boom.cookoff': -16.5,
+  'boom.bomb': -13, 'boom.missile': -14.5, 'boom.sabot': -17, 'boom.roller': -15,
   'fire.cannon': -24, 'fire.heavy': -22, 'fire.mortar': -25, 'fire.missile': -23, 'fire.sabot': -24, 'fire.flare': -29, 'fire.mg': -27,
-  'hit.metal': -14, 'hit.ricochet': -17, 'hit.dirt': -20, 'hit.debris': -19, 'hit.splat': -22, 'hit.thud': -19, 'hit.shield': -18, 'hit.repair': -21, 'hit.chute': -22,
-  'ui.click': -34, 'ui.select': -32, 'ui.buy': -30, 'ui.deny': -33, 'ui.turn': -26, 'ui.alarm': -27, 'ui.tick': -38, 'ui.reward': -26,
-  'loop.engine': -31, 'loop.squeal': -37, 'loop.burnRoar': -27, 'loop.burnCrackle': -35, 'loop.jet': -23, 'loop.rocket': -21,
+  'hit.metal': -14, 'hit.ricochet': -17, 'hit.dirt': -20, 'hit.debris': -19, 'hit.splat': -22, 'hit.thud': -21, 'hit.shield': -18, 'hit.repair': -21, 'hit.chute': -22,
+  'ui.click': -31, 'ui.select': -30, 'ui.buy': -30, 'ui.deny': -33, 'ui.turn': -26, 'ui.alarm': -27, 'ui.tick': -35, 'ui.reward': -26,
+  'loop.engine': -27, 'loop.squeal': -34, 'loop.burnRoar': -27, 'loop.burnCrackle': -35, 'loop.jet': -23, 'loop.rocket': -21,
   'loop.windFarm': -29, 'loop.windDesert': -30, 'loop.windSnow': -30, 'loop.windCity': -31, 'loop.windNight': -33, 'loop.rain': -30, 'loop.crickets': -35,
   'ev.farGun': -29, 'ev.farBurst': -32, 'ev.crow': -35, 'ev.siren': -37, 'ev.thunder': -25,
 };
+
+// built just after `ready`: the big or rarely used blasts (a player cannot fire one in the first seconds)
+const LATE = new Set(['boom.nuke', 'boom.bomb', 'boom.missile', 'boom.sabot', 'boom.roller']);
 
 // how many of a kind may sound at once (the rest are dropped), so pops and debris never crowd out blasts
 const KMAX = { 'boom.cluster': 10, 'boom.small': 8, 'fire.mg': 8, 'hit.debris': 4, 'hit.dirt': 5, 'hit.ricochet': 4, 'hit.splat': 4 };
 
 // a recipe may be lifted this much to reach its target (the nuke, spread thin over ten seconds, more)
 const GAIN_CAP = 1.8;
-const CAP = { 'boom.nuke': 3.2 };
+const CAP = { 'boom.nuke': 4 };
 
 // Two loudness figures of a rendered sound, in dB: an A-weighted-ish one (mean
 // square after a 170 Hz high-pass, as the ear hears little below that) and the
@@ -104,9 +108,9 @@ function* makeIR(ctx) {
   const sr = ctx.sampleRate;
   const secs = 2.6;
   const n = Math.round(sr * secs);
-  const buf = ctx.createBuffer(2, n, sr);
+  const chans = [new Float32Array(n), new Float32Array(n)];
   for (let ch = 0; ch < 2; ch++) {
-    const d = buf.getChannelData(ch);
+    const d = chans[ch];
     const r = seeded(900 + ch);
     let lp = 0;
     let e = 0;
@@ -136,6 +140,13 @@ function* makeIR(ctx) {
       yield;
     }
   }
+  // the audio buffer last, one small step at a time
+  yield;
+  const buf = ctx.createBuffer(2, n, sr);
+  yield;
+  buf.getChannelData(0).set(chans[0]);
+  yield;
+  buf.getChannelData(1).set(chans[1]);
   return buf;
 }
 
@@ -184,7 +195,7 @@ export class Sound {
     this._tsRate = 1;
     this._tsAt = 0;
     this._want = { music: undefined, intensity: 0, amb: undefined, wind: 0 };
-    this.stats = { chunks: 0, longest: 0, total: 0, startedAt: 0, readyAt: 0, doneAt: 0, jobs: 0 };
+    this.stats = { chunks: 0, longest: 0, total: 0, startedAt: 0, readyAt: 0, doneAt: 0, jobs: 0, slowest: 0, slowestKey: '' };
     this._music = null;
     this._amb = null;
   }
@@ -401,7 +412,7 @@ export class Sound {
     for (const [g, tbl] of groups) {
       for (const [name, e] of Object.entries(tbl)) {
         const key = `${g}.${name}`;
-        add(key, 0, g === 'ui' || g === 'fire' ? 1 : name === 'nuke' ? 3 : 2, e);
+        add(key, 0, g === 'ui' || g === 'fire' ? 1 : LATE.has(key) ? 3 : 2, e);
       }
     }
     for (const name of ['engine', 'burnRoar', 'burnCrackle', 'squeal', 'jet', 'rocket']) add(`loop.${name}`, 0, 3, { ...LOOPS[name], variants: 1 });
@@ -473,7 +484,16 @@ export class Sound {
     }
     const t0 = performance.now();
     const st = this.stats;
-    while (jobs.length && performance.now() - t0 < BUDGET_MS) this._step(jobs);
+    while (jobs.length && performance.now() - t0 < BUDGET_MS) {
+      const key = jobs[0].key + '#' + jobs[0].v;
+      const s0 = performance.now();
+      this._step(jobs);
+      const sd = performance.now() - s0;
+      if (sd > st.slowest) {
+        st.slowest = sd;
+        st.slowestKey = key;
+      }
+    }
     const dt = performance.now() - t0;
     st.chunks++;
     st.total += dt;
@@ -702,7 +722,7 @@ export class Sound {
     if (e) this._play(`fire.${kind}`, x, 1, 1, e.send);
   }
 
-  // kind: 'he' | 'heavy' | 'cluster' | 'napalm' | 'buster' | 'nuke' | 'cookoff' | 'air' | 'small'
+  // kind: 'he' | 'heavy' | 'cluster' | 'napalm' | 'buster' | 'nuke' | 'cookoff' | 'air' | 'small' | 'bomb' | 'missile' | 'sabot' | 'roller'
   // size roughly 0..1, 1 a heavy shell, the nuke 3: bigger is louder, deeper and longer
   boom(kind, x = 0, size = 1) {
     const e = BOOMS[kind];

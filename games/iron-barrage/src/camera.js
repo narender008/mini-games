@@ -3,7 +3,7 @@
 // a beat on each blast, a close look at every kill. The player can zoom
 // (wheel or pinch) and pan (drag with two fingers or the right mouse
 // button); that holds until the next shot.
-import { WORLD, clamp, damp, REDUCED_MOTION } from './config.js';
+import { WORLD, clamp, damp, PREFS } from './config.js';
 
 export class Camera {
   constructor(renderer) {
@@ -87,12 +87,33 @@ export class Camera {
     // shake: trauma squared, smooth noise
     const c = this.r.cam;
     const tr = fx ? fx.trauma : 0;
-    const s = tr * tr * (REDUCED_MOTION ? 0.3 : 1);
+    const s = tr * tr * (PREFS.calm ? 0.3 : 1);
     const n = (k) => Math.sin(this.t * 31 * k + k * 7) * 0.6 + Math.sin(this.t * 53 * k + k) * 0.4;
     c.x = this.x + n(1.1) * s * this.viewW * 0.03;
     c.y = this.y + n(1.7) * s * this.viewW * 0.022;
     c.roll = n(2.3) * s * 0.025;
     c.viewW = this.viewW;
+  }
+
+  // A reused list of points to frame (no garbage each frame).
+  pts() {
+    if (!this._pool) {
+      this._pool = [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }];
+      this._pts = [];
+    }
+    this._pts.length = 0;
+    return this._pts;
+  }
+  pt(list, x, y) {
+    const p = this._pool[list.length];
+    p.x = x;
+    p.y = y;
+    list.push(p);
+  }
+  nearest(list, x) {
+    let best = null;
+    for (const t of list) if (!best || Math.abs(t.x - x) < Math.abs(best.x - x)) best = t;
+    return best;
   }
 
   // What should be in shot right now.
@@ -116,20 +137,19 @@ export class Camera {
       return;
     }
     if (b.phase === 'aim' && cur) {
-      const foes = b.enemies(cur);
-      const pts = [{ x: cur.x, y: cur.y + 6 }];
-      if (foes.length) {
-        foes.sort((a, c) => Math.abs(a.x - cur.x) - Math.abs(c.x - cur.x));
-        pts.push({ x: foes[0].x, y: foes[0].y + 4 });
-      }
+      const foe = this.nearest(b.enemies(cur), cur.x);
+      const pts = this.pts();
+      this.pt(pts, cur.x, cur.y + 6);
+      if (foe) this.pt(pts, foe.x, foe.y + 4);
       this.frame(pts, T, 30, 16, 12);
       // keep tanks a readable size: past this the far tank is off to the side
-      const maxW = this.aspect() < 1 ? 110 : 190;
+      const maxW = this.aspect() < 1 ? 100 : 150;
       if (this.tw > maxW) {
         this.tw = maxW;
         const dir = pts.length > 1 ? Math.sign(pts[1].x - pts[0].x) : 1;
-        this.tx = cur.x + dir * maxW * 0.28;
-        this.ty = T.groundBelow(cur.x, cur.y + 3) - 12 + (maxW / this.aspect()) / 2;
+        this.tx = cur.x + dir * maxW * 0.3;
+        // the ground a fifth of the way up: some cross-section below, room to lob above
+        this.ty = T.groundBelow(cur.x, cur.y + 3) - (maxW / this.aspect()) * 0.2 + (maxW / this.aspect()) / 2;
       }
       this.rate = 2.2;
       return;
@@ -137,14 +157,12 @@ export class Camera {
     if (b.phase === 'flight' && b.projectiles.list.length) {
       const p = b.projectiles.list[0];
       const owner = p.owner;
-      const foes = owner ? b.enemies(owner) : [];
-      const pts = [{ x: p.x, y: p.y }];
+      const foe = owner ? this.nearest(b.enemies(owner), p.x) : null;
+      const pts = this.pts();
+      this.pt(pts, p.x, p.y);
       // look ahead to where it is heading
-      pts.push({ x: p.x + p.vx * 0.8, y: Math.max(T.groundBelow(p.x + p.vx * 0.8, p.y), p.y + p.vy * 0.5) });
-      if (foes.length && p.vy < 0) {
-        foes.sort((a, c) => Math.abs(a.x - p.x) - Math.abs(c.x - p.x));
-        if (Math.abs(foes[0].x - p.x) < 90) pts.push({ x: foes[0].x, y: foes[0].y + 3 });
-      }
+      this.pt(pts, p.x + p.vx * 0.8, Math.max(T.groundBelow(p.x + p.vx * 0.8, p.y), p.y + p.vy * 0.5));
+      if (foe && p.vy < 0 && Math.abs(foe.x - p.x) < 90) this.pt(pts, foe.x, foe.y + 3);
       this.frame(pts, T, 14, 22, 8);
       this.rate = 4;
       return;
@@ -156,7 +174,7 @@ export class Camera {
       return;
     }
     if (b.phase === 'over') {
-      const t = b.result === 'win' ? b.player : b.player;
+      const t = b.player;
       this.look(t.x, t.y + 8, this.minW() * 1.1);
       this.rate = 0.8;
     }

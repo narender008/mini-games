@@ -15,6 +15,9 @@ const COMMON = [
   ['prop_truck_wreck', 1],
 ];
 
+// Heavy things that only scorch: blasts never fling or topple them.
+const STATIC = new Set(['prop_rock_spire', 'prop_rocks_desert', 'prop_rubble', 'prop_logs', 'prop_truck_wreck', 'prop_car_wreck', 'prop_jeep_wreck']);
+
 export const PROP_SETS = {
   ashfield: [...COMMON, ['prop_haybale', 3], ['prop_fence', 3], ['prop_cart', 1]],
   dunes: [...COMMON.filter(([n]) => n !== 'prop_deadtree' && n !== 'prop_stump'), ['prop_rocks_desert', 4], ['prop_jeep_wreck', 1]],
@@ -62,6 +65,7 @@ export class Props {
             flip: r() < 0.5 ? -1 : 1,
             scale: 0.85 + r() * 0.3,
             big,
+            fixed: STATIC.has(name),
             hp: big ? 2 : 1,
             char: 0,
             fall: 0,
@@ -84,6 +88,7 @@ export class Props {
       if (d > reach) continue;
       const k = 1 - d / reach;
       p.char = Math.min(1, p.char + k * 1.2);
+      if (p.fixed) continue;
       p.hp -= k * power * 2.2;
       if (p.hp > 0) continue;
       const dir = Math.sign(p.x - x) || 1;

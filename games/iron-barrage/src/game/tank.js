@@ -152,6 +152,14 @@ export class Tank {
         this.chuteOpen = 0;
       }
     } else {
+      if (!this.grounded) {
+        // came down within a hair of the ground: still a landing
+        const speed = Math.max(0, -this.vy);
+        this.vy = 0;
+        this.grounded = true;
+        if (onLand) onLand(this, speed, this.chuteOpen > 0.5);
+        this.chuteOpen = 0;
+      }
       this.grounded = true;
       this.y = damp(this.y, R.y, 30, dt);
       this.angle = damp(this.angle, R.a, 10, dt);

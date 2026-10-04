@@ -9,6 +9,7 @@ import { flatten } from '../world/battlefields.js';
 import { Tank } from './tank.js';
 import { WEAPONS } from './weapons.js';
 import { Projectiles } from './projectiles.js';
+import { Hazards } from './hazards.js';
 import { Commander } from './ai.js';
 
 export const SKINS = {
@@ -30,6 +31,7 @@ export class Battle {
     this.bf = setup.battlefield;
     this.terrain = new Terrain();
     this.projectiles = new Projectiles(this);
+    this.hazards = new Hazards(this); // napalm fires, airstrikes, shield domes (hazards.js)
     this.tanks = [];
     this.turn = -1;
     this.phase = 'intro';
@@ -66,6 +68,8 @@ export class Battle {
       spots.push(clamp(lo + rand(4, (W * 0.36) / n - 8), W * 0.5, W - 22));
     }
     for (const x of spots) h = flatten(h, x, 7);
+    this.spawns = spots;
+    this.seed = seed;
     this.terrain.fromHeights(h);
     if (bf.sculpt) bf.sculpt(this.terrain, seed);
     this.terrain.commit();
@@ -136,6 +140,8 @@ export class Battle {
     const t = this.current();
     t.fuel = t.maxFuel;
     t.driving = 0;
+    t.utilUsed = {}; // each utility works once per turn
+    this.hazards.turnStart(t); // burning ground hurts, a shield may run out
     // the wind shifts between turns, now and then sharply
     const gust = Math.random() < 0.15 ? 0.6 : 0.25;
     this.wind = clamp(this.wind * 0.75 + gauss() * gust, -1, 1);
@@ -156,10 +162,14 @@ export class Battle {
   // ---- actions
   fire(t) {
     if (this.phase !== 'aim' || this.current() !== t || this.fired) return false;
+    if (!t.alive || t.hp <= 0) return false; // burnt out at the start of its turn
     const id = t.weapon;
     const w = WEAPONS[id];
     if (!w || !(t.inventory[id] > 0)) return false;
     if (w.utility) return this.useUtility(t, id);
+    // some weapons are limited per battle (the Sunburst: one)
+    if (w.perBattle && (t.used?.[id] || 0) >= w.perBattle) return false;
+    (t.used ||= {})[id] = (t.used[id] || 0) + 1;
     if (t.inventory[id] !== Infinity) t.inventory[id]--;
     if (!(t.inventory[t.weapon] > 0)) t.weapon = 'shell';
     this.fired = true;
@@ -171,19 +181,32 @@ export class Battle {
     const p = this.projectiles.launch(t, id, t.muzzleX, t.muzzleY, vx, vy);
     this.lastShot = p;
     t.stats.shots++;
+    this.shotNo = (this.shotNo || 0) + 1;
     this.fx.muzzle(t.muzzleX, t.muzzleY, t.aim, w.power > 1.2 ? 1.3 : 1);
     // recoil rocks the tank back on its suspension
-    t.vx -= Math.cos(t.aim) * 0.9;
+    t.vx -= Math.cos(t.aim) * 0.9 * clamp(w.power, 0.6, 1.8);
     this.sound.fire(w.fire, t.muzzleX);
     this.setPhase('flight');
     return true;
   }
 
+  // Utilities work on your own tank, do not end the turn and work once per
+  // turn each (t.utilUsed is reset in nextTurn). Only on the tank's own turn,
+  // while aiming and before it has fired. Returns true if it was used, false
+  // (nothing spent) if it could not be: no stock, used already this turn, or
+  // it would do nothing (a repair kit at full health, a shield already up).
+  // The tank's selected weapon is left alone unless it was the utility itself.
   useUtility(t, id) {
     const w = WEAPONS[id];
-    if (w.use) w.use(t, this);
+    if (!w || !w.utility || this.phase !== 'aim' || this.current() !== t || this.fired || !t.alive || t.hp <= 0) return false;
+    if (!(t.inventory[id] > 0)) return false;
+    if ((t.utilUsed && t.utilUsed[id]) || (w.use && w.use(t, this) === false)) {
+      if (!t.ai) this.sound.ui('deny');
+      return false;
+    }
+    (t.utilUsed ||= {})[id] = true;
     if (t.inventory[id] !== Infinity) t.inventory[id]--;
-    t.weapon = 'shell';
+    if (t.weapon === id) t.weapon = 'shell';
     return true;
   }
 
@@ -206,6 +229,8 @@ export class Battle {
       if (hitTank) this.sound.hit('metal', x, w.power);
     }
     this.damageArea(x, y, w, owner, hitTank);
+    if (w.onBlast) w.onBlast(this, x, y, owner); // the Sunburst's shock
+    this.app.props?.blast(x, y, r, w.power, this.fx);
     this.events.push({ type: 'blast', x, y, r, power: w.power });
     this.lastBlast = { x, y, t: this.time, power: w.power };
   }
@@ -220,32 +245,51 @@ export class Battle {
       const kick = w.power * f * (t.alive ? 3.2 : 2);
       t.vx += dir * kick;
       if (w.power > 1.5 && f > 0.4) t.vy += kick * 0.6;
+      // a thermobaric blast throws tanks (and wrecks) into the air: they come down hard
+      if (w.impulse) {
+        t.vx += dir * w.impulse * f * 0.6;
+        t.vy += w.impulse * f * 0.75;
+      }
       if (!t.alive) {
         t.blood *= 0.6;
         continue;
       }
       let dmg = w.damage * Math.pow(f, 1.4);
+      if (t !== direct && w.splashK !== undefined) dmg *= w.splashK; // a near miss with a dart does little
       if (t === owner) dmg *= 0.6;
-      dmg *= 1 - t.armour;
-      if (t.shield > 0) {
-        const absorbed = Math.min(t.shield, dmg * 0.75);
-        t.shield -= absorbed;
-        dmg -= absorbed;
-        this.sound.hit('shield', t.x, 1);
-      }
-      this.hurt(t, dmg, owner, dir);
+      this.harm(t, dmg, owner, dir, t === direct ? w.pierce || 0 : 0);
     }
+  }
+
+  // Damage to a living tank after its armour (a share `pierce` of it ignored)
+  // and its shield, which soaks up most of each hit until it is used up.
+  harm(t, dmg, owner, dir = 1, pierce = 0) {
+    dmg *= 1 - t.armour * (1 - pierce);
+    if (t.shield > 0) {
+      const absorbed = Math.min(t.shield, dmg * 0.75);
+      t.shield -= absorbed;
+      dmg -= absorbed;
+      this.sound.hit('shield', t.x, 1);
+      this.hazards.shieldPulse(t, t.shield > 0 ? 0.7 : 1);
+    }
+    this.hurt(t, dmg, owner, dir);
   }
 
   hurt(t, dmg, by, dir = 1) {
     dmg = Math.round(dmg);
     if (dmg <= 0 || !t.alive) return;
+    const took = Math.min(dmg, t.hp);
     t.hp = Math.max(0, t.hp - dmg);
     t.hurt = 1;
     t.char = Math.min(0.75, t.char + dmg / t.maxHp * 0.5);
-    if (by && by !== t) {
-      by.stats.damage += dmg;
-      by.stats.hits++;
+    // credit only the health actually taken, and a shot hits once however
+    // many bomblets or bombs land
+    if (by && by !== t && by.team !== t.team) {
+      by.stats.damage += took;
+      if (by.hitShot !== this.shotNo) {
+        by.hitShot = this.shotNo;
+        by.stats.hits++;
+      }
     }
     this.app.hud?.float(t.x, t.y + t.hgt + 1.5, `-${dmg}`, t.team === 0 ? 'bad' : 'good');
     if (t.hp <= 0) this.pendingDeaths.push({ t, by, dir });
@@ -257,8 +301,9 @@ export class Battle {
       for (let i = 0; i < 10; i++) this.fx.smoke(t.x + rand(-4, 4), t.y + 0.3, rand(-6, 6), rand(0.5, 2), rand(0.8, 1.6), rand(1.5, 3), 0.18, 0.5);
       this.fx.shake(Math.min(0.4, speed * 0.02));
     }
+    if (chute) t.chute = false; // the parachute opened and is used up
     if (!chute && speed > FALL_SAFE && t.alive) {
-      const dmg = (speed - FALL_SAFE) * 3.2;
+      const dmg = (speed - FALL_SAFE) * 2.6;
       this.hurt(t, dmg, null, 1);
     }
   }
@@ -321,6 +366,8 @@ export class Battle {
       }
     }
     this.projectiles.update(dt);
+    this.hazards.update(dt);
+    this.engines(dt);
 
     // deaths wait for the blast that caused them to show first
     if (this.pendingDeaths.length) {
@@ -352,8 +399,42 @@ export class Battle {
     this.events.length = 0;
   }
 
+  // The tank whose turn it is idles its engine; driving revs it and kicks
+  // up dust from the tracks.
+  engines(dt) {
+    const cur = this.phase === 'aim' ? this.current() : null;
+    for (const t of this.tanks) {
+      const on = t === cur && t.alive;
+      if (on && !t.engineV) t.engineV = this.sound.engine();
+      if (!on && t.engineV) {
+        t.engineV.stop();
+        t.engineV = null;
+      }
+      if (!t.engineV) continue;
+      const moving = t.driving && t.grounded && t.fuel > 0;
+      t.engineV.update(t.x, moving ? 1 : 0.12);
+      if (moving) {
+        t.dustT = (t.dustT || 0) - dt;
+        if (t.dustT <= 0) {
+          t.dustT = 0.06;
+          const back = t.x - t.driving * t.len * 0.45;
+          const soil = this.fx.soil;
+          const i = this.fx.smoke(back, t.y + 0.3, -t.driving * rand(1, 3), rand(0.3, 1.2), rand(0.4, 0.8), rand(1, 2), 0, 0.45);
+          if (i >= 0) {
+            const P = this.fx.p;
+            P.r[i] = soil[0] * 1.6 + 0.05;
+            P.g[i] = soil[1] * 1.6 + 0.045;
+            P.b[i] = soil[2] * 1.6 + 0.04;
+            P.drag[i] = 2;
+          }
+        }
+      }
+    }
+  }
+
   // Anything still moving that the next turn should wait for?
   busy() {
+    if (this.hazards.busy()) return true; // an airstrike on its way
     if (this.app.waitHooks?.some((f) => f())) return true;
     for (const t of this.tanks) if (!t.grounded || Math.abs(t.vx) > 0.4) return true;
     return false;

@@ -1,7 +1,7 @@
 // The battle HUD: wind, whose turn, the gunnery readouts, fuel, the weapon
 // tray, name tags with health over each tank, damage numbers and the kill
 // feed. DOM, updated only when a value changes.
-import { WEAPONS } from '../game/weapons.js';
+import { WEAPONS, ARSENAL_ORDER } from '../game/weapons.js';
 import { WORLD } from '../config.js';
 
 const $ = (id) => document.getElementById(id);
@@ -64,7 +64,8 @@ export class Hud {
     const t = b.player;
     this.arsenal.textContent = '';
     let n = 0;
-    for (const [id, w] of Object.entries(WEAPONS)) {
+    for (const id of ARSENAL_ORDER) {
+      const w = WEAPONS[id];
       const have = t.inventory[id] || 0;
       if (!have && !w.alwaysShow) continue;
       n++;
@@ -78,14 +79,19 @@ export class Hud {
       btn.children[0].textContent = `${n}. ${w.name}`;
       btn.children[1].textContent = have === Infinity ? '∞' : String(have);
       btn.children[2].textContent = w.desc;
+      btn.disabled = !have || !!(w.utility && t.utilUsed?.[id]);
+      if (w.utility) btn.classList.add('util');
       btn.addEventListener('click', () => {
-        this.app.selectWeapon(id);
+        // utilities act at once and leave the turn going
+        if (w.utility) this.app.useUtility(id);
+        else this.app.selectWeapon(id);
         this.toggleArsenal(false);
       });
       this.arsenal.appendChild(btn);
     }
     this.arsenal.hidden = false;
     this.weaponBtn.setAttribute('aria-expanded', 'true');
+    this.app.coach?.tray();
   }
 
   float(x, y, text, kind = 'good') {
@@ -128,10 +134,11 @@ export class Hud {
     this.set('angle', this.angleVal, deg, (el, v) => (el.textContent = `${v}°`));
     this.set('power', this.powerVal, Math.round(t.power * 100), (el, v) => (el.textContent = String(v)));
     this.set('fuel', this.fuelFill, Math.round((t.fuel / t.maxFuel) * 50), (el) => (el.style.transform = `scaleX(${t.fuel / t.maxFuel})`));
-    const wpn = WEAPONS[b.player.weapon];
-    const ammo = b.player.inventory[b.player.weapon];
+    // the computer's choice shows while it aims (its stock stays hidden)
+    const wpn = WEAPONS[t.weapon] || WEAPONS.shell;
+    const ammo = t === b.player ? b.player.inventory[b.player.weapon] : '';
     this.set('wname', this.weaponName, wpn.name, (el, v) => (el.textContent = v));
-    this.set('wammo', this.weaponAmmo, ammo, (el, v) => (el.textContent = v === Infinity ? '∞' : String(v)));
+    this.set('wammo', this.weaponAmmo, ammo, (el, v) => (el.textContent = v === Infinity ? '∞' : v === '' ? '' : String(v)));
 
     // name tags with health
     for (const tk of b.tanks) {
@@ -155,12 +162,36 @@ export class Hud {
       if (tk.shield !== e.lastS) {
         e.lastS = tk.shield;
         e.sh.style.display = tk.shield > 0 ? 'block' : 'none';
-        e.sh.style.transform = `scaleX(${Math.min(1, tk.shield / 60)})`;
+        e.sh.style.transform = `scaleX(${Math.min(1, tk.shield / (tk.shieldMax || 60))})`;
       }
       if (!tk.alive && !e.dead) {
         e.dead = true;
         e.el.classList.add('dead');
       }
+      // off-screen tanks get a marker on the edge of the screen
+      const off = tk.alive && (this.pt.x < 8 || this.pt.x > R.cssW - 8);
+      if (off) {
+        if (!e.edge) {
+          const m = document.createElement('div');
+          m.style.cssText = 'position:absolute;left:0;top:0;padding:3px 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;background:rgba(16,18,20,.78);border:1px solid rgba(255,255,255,.15);will-change:transform;pointer-events:none';
+          m.style.color = tk.team === 0 ? '#9fd36a' : '#ff8a5c';
+          this.tags.appendChild(m);
+          e.edge = m;
+        }
+        const right = this.pt.x > R.cssW / 2;
+        const ref = b.player.alive ? b.player : tk;
+        const dist = Math.round(Math.abs(tk.x - ref.x));
+        const label = `${right ? '' : '◀ '}${tk.team === 0 ? 'You' : tk.name} ${dist} m${right ? ' ▶' : ''}`;
+        if (e.edgeText !== label) {
+          e.edgeText = label;
+          e.edge.textContent = label;
+          e.edge.style.display = 'block';
+          e.edgeW = e.edge.offsetWidth;
+        }
+        const y = Math.min(R.cssH - 120, Math.max(70, this.pt.y + 26));
+        if (e.edge.style.display !== 'block') e.edge.style.display = 'block';
+        e.edge.style.transform = `translate(${right ? R.cssW - 12 - e.edgeW : 12}px, ${y.toFixed(0)}px)`;
+      } else if (e.edge && e.edge.style.display !== 'none') e.edge.style.display = 'none';
     }
     // damage numbers rise and fade
     for (let i = this.floatList.length - 1; i >= 0; i--) {

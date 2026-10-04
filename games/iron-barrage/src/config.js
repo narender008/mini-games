@@ -5,6 +5,12 @@ export const DEBUG = QUERY.has('debug');
 export const COVER = QUERY.has('cover');
 export const REDUCED_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// Player preferences that the settings screen changes at run time (loaded
+// from the save at start): `gore` false swaps blood and body parts for
+// smoke and dust; `calm` softens shake, flashes and slow motion as
+// prefers-reduced-motion does.
+export const PREFS = { gore: true, calm: REDUCED_MOTION };
+
 export const WORLD = {
   width: 320, // battlefield width
   height: 160, // terrain texture height (the sky goes on above it)
