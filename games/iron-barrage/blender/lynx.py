@@ -6,6 +6,7 @@ from math import pi, sin, cos
 from bl import Mesh, trans, roty, rotx, rotz, at_xz, scale
 from parts import *
 from gear import make_gear
+import kit
 
 NAME = 'lynx'
 G = dict(p=0.16, th=0.075, n_rw=12, rw_x=[(i - 2) * 0.80 for i in range(5)], zu=0.84,
@@ -75,6 +76,7 @@ def hull_body(T, wreck=False):
         m.cyl((3.36, yy, 0.58), (3.365, yy, 0.58), 0.025, 0.025, 'steel_dark', seg=10, smooth=0)
     mudflap(m, 3.2, 0.74, -1.5, -0.98, 0.3, T, 0.1)
     mudflap(m, -3.38, 0.78, -1.5, -0.98, 0.34, T, -0.05)
+    kit.hull_dressing(m, T, (3.36, -0.7, 0.58), (-3.4, -0.62, 0.62), (-2.8, -0.97, 0.86), (0.7, 0.25))
     return m
 
 
@@ -116,28 +118,26 @@ def hull_mesh(T, phase, wreck=False, seed=0):
 def turret_mesh(T, wreck=False):
     m = Mesh('turret')
     HY = 0.86
-    body = [(-0.95, 0.0), (0.88, 0.0), (1.18, 0.20), (1.10, 0.46), (0.62, 0.68), (-0.45, 0.70), (-0.95, 0.52)]
+    body = [(-0.95, 0.0), (0.88, 0.0), (1.10, 0.10), (1.20, 0.26), (1.14, 0.44), (0.90, 0.60), (0.55, 0.70), (-0.1, 0.73), (-0.6, 0.70), (-0.9, 0.60), (-0.97, 0.44)]
     cuts = [((0.55, -0.835, 0.0), 0.55 * 0.2 + 0.835 * HY), ((0.55, 0.835, 0.0), 0.55 * 0.2 + 0.835 * HY),
             ((0.0, -0.6, 0.8), 0.6 * HY + 0.8 * 0.5), ((0.0, 0.6, 0.8), 0.6 * HY + 0.8 * 0.5)]
-    m.slab(body, -HY, HY, T.turret, cuts=cuts, bevel=0.012)
+    m.slab(body, -HY, HY, T.turret, cuts=cuts, bevel=0.03, smooth=45.0)
     ys = -HY
     # small bustle with a stowage basket
     m.slab([(-1.38, 0.10), (-0.92, 0.04), (-0.92, 0.6), (-1.32, 0.52)], -0.72, 0.72, T.turret,
            cuts=[((-0.5, -0.866, 0), 0.5 * 1.3 + 0.866 * 0.72), ((-0.5, 0.866, 0), 0.5 * 1.3 + 0.866 * 0.72)], bevel=0.01)
-    # near side: bolted panel, welds, handles
-    def panel(x0, x1, z0, z1, th=0.026):
-        m.slab([(x0, z0), (x1, z0), (x1, z1 - 0.05), (x1 - 0.05, z1), (x0, z1)], ys - th, ys + 0.002, T.turret, bevel=0.006)
-        bolts_xz(m, [(x0 + 0.04, z0 + 0.04), (x1 - 0.04, z0 + 0.04), (x0 + 0.04, z1 - 0.04), (x1 - 0.06, z1 - 0.05), ((x0 + x1) / 2, z0 + 0.04), ((x0 + x1) / 2, z1 - 0.04)],
-                 ys - th, 0.014, T.steel)
-    panel(-0.78, -0.12, 0.08, 0.60)
+    # near side: bolted plates with cut corners, welds, handles
+    for (x0, x1, z1) in ((-0.82, -0.14, 0.56), (-0.06, 0.40, 0.62)):
+        kit.plate_poly(m, T, [(x0, 0.08), (x1, 0.08), (x1, z1 - 0.07), (x1 - 0.07, z1), (x0 + 0.07, z1), (x0, z1 - 0.07)], ys, 0.026, bolt_r=0.014, step=0.2, bolts=True)
     weld_bead(m, (-0.85, 0.02), (-0.85, 0.5), ys - 0.002, 0.009, T.turret)
     weld_bead(m, (0.0, 0.05), (0.0, 0.66), ys - 0.002, 0.009, T.turret)
     handle(m, -0.55, -0.25, 0.62, ys - 0.03, T.steel, 0.011, 0.045)
     lug(m, 0.45, 0.12, ys, 0.036, 0.016, 0.025, T.steel)
-    smoke_bank(m, 0.72, 0.40, -0.62, T, n=3, ang=0.95, ln=0.22, r=0.032, face=-1)
+    kit.smoke_launcher(m, T, 0.60, 0.40, ys - 0.02, n=4, spacing=0.07, ang=0.95, ln=0.2, r=0.029)
+    kit.spare_links(m, T, 0.46, 0.10, ys - 0.03, n=3, w=0.30, th=0.05, depth=0.1)
     # roof: sight box, cupola, loader's hatch and MG
-    m.box(0.30, 0.62, -0.5, -0.2, 0.69, 0.80, T.turret, bevel=0.012)
-    m.box(0.60, 0.63, -0.46, -0.24, 0.72, 0.78, 'optic')
+    kit.sight_hump(m, T, 0.28, 0.70, 0.68, 0.88, -0.52, -0.2)
+    kit.grab_rail(m, T, -0.85, -0.5, 0.64, -0.55, 0.06, 3, 0.011)
     cx, cy = -0.22, -0.34
     m.cyl((cx, cy, 0.68), (cx, cy, 0.78), 0.30, 0.28, T.turret, seg=28, smooth=30, bevel=0.004)
     m.cyl((cx, cy, 0.78), (cx, cy, 0.805), 0.26, 0.255, T.dark, seg=28, smooth=30)
@@ -156,7 +156,8 @@ def turret_mesh(T, wreck=False):
     m.cyl((lx, ly, 0.745), (lx, ly, 0.76), 0.21, 0.21, T.dark, seg=22, smooth=30)
     if not wreck:
         m.add(mg_gun(T, 0.9), trans(lx + 0.04, ly, 0.76) @ roty(-0.04))
-    antenna_base(m, -0.75, 0.45, 0.62, T)
+    kit.whip_aerial(m, T, -0.75, 0.45, 0.62, h=1.2, lean=-0.10)
+    kit.whip_aerial(m, T, -1.12, -0.5, 0.5, h=1.5, lean=-0.14, bend=0.12)
     rolled_tarp(m, -1.32, -0.95, 0.62, -0.3, 0.085, T)
     wire_basket(m, -1.55, -1.38, 0.12, 0.48, -0.74, 0.74, T, 0.1)
     return m
@@ -167,13 +168,11 @@ def gun_mesh(T, wreck=False):
     to_x = roty(pi / 2)
     m.slab([(-0.9, 0.0), (-0.85, -0.07), (-0.5, -0.13), (-0.04, -0.15), (-0.04, 0.16), (-0.5, 0.13), (-0.85, 0.07)], -0.14, 0.14, T.dark, bevel=0.008)
     m.cyl((-0.98, 0, 0.0), (-0.84, 0, 0.0), 0.02, 0.03, T.steel, seg=8)
-    m.slab([(-0.06, -0.18), (0.18, -0.2), (0.28, -0.1), (0.28, 0.1), (0.18, 0.2), (-0.06, 0.18)], -0.3, 0.3, T.gunp, bevel=0.015,
-           cuts=[((0.7, -0.714, 0), 0.7 * 0.3), ((0.7, 0.714, 0), 0.7 * 0.3)])
-    bolts_xz(m, [(0.0 + i * 0.08, 0.1) for i in range(3)] + [(0.0 + i * 0.08, -0.1) for i in range(3)], -0.305, 0.013, T.steel)
+    kit.cast_mantlet(m, T, 0.10, 0.25, 0.30, 0.21, 0.10)
     m.cyl((0.0, -0.32, 0.0), (0.0, -0.37, 0.0), 0.05, 0.05, T.steel, seg=12, smooth=40)
-    m.lathe([(0.26, 0.14), (0.32, 0.125), (0.42, 0.10), (0.5, 0.085), (0.51, 0.0)], T.rubber, to_x, seg=22, smooth=40, cap=False)
+    m.lathe([(0.34, 0.14), (0.38, 0.125), (0.45, 0.10), (0.52, 0.085), (0.53, 0.0)], T.rubber, to_x, seg=22, smooth=40, cap=False)
     # slender barrel: bore evacuator, then the double-baffle brake
-    m.lathe([(0.5, 0.0), (0.5, 0.074), (1.6, 0.074), (1.6, 0.0)], T.gunp, to_x, seg=22, smooth=40)
+    m.lathe([(0.52, 0.0), (0.52, 0.074), (1.6, 0.074), (1.6, 0.0)], T.gunp, to_x, seg=22, smooth=40)
     for x in (0.62, 1.1, 1.55):
         m.lathe([(x - 0.012, 0.0), (x - 0.012, 0.084), (x + 0.012, 0.084), (x + 0.012, 0.0)], T.dark, to_x, seg=22, smooth=35)
     m.lathe([(1.6, 0.0), (1.6, 0.06), (1.66, 0.092), (2.0, 0.092), (2.06, 0.06), (2.06, 0.0)], T.gun, to_x, seg=22, smooth=40)

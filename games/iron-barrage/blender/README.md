@@ -27,7 +27,7 @@ Switches (environment variables):
 | `WORK=dir` | scratch directory, default `$TMPDIR/iron-barrage-build` (frames, atlas PNGs). Delete it with a guarded `rm -rf "${WORK:?}"` |
 
 Groups: `warden bulwark lynx crew gore debris ordnance jet parachute props`. Without `ONLY` the frame directory is wiped first.
-Output is deterministic: every random choice uses a fixed seed and Cycles runs with its default seed, so two builds give the same files.
+Geometry is deterministic: every random choice uses a fixed seed, and `Mesh.warp` uses `mathutils.noise.noise` (its `noise_vector` is not repeatable between runs). Rendering is repeatable except for rare single-pixel differences of one colour level between runs (Cycles' Bevel node samples at random, and the result also varies with machine load, even on one thread), so two builds can differ by a few bytes. Commit the output of one build; do not chase byte-identical rebuilds.
 
 ## Output
 
@@ -67,6 +67,7 @@ Output is deterministic: every random choice uses a fixed seed and Cycles runs w
 | `review.py` | decodes the final webp (`dwebp`) and writes the contact sheets and the assembled tanks, composed from the json mounts only |
 | `bl.py` | geometry kit (`Mesh` with box, prism, slab, convex, lathe, cyl, sphere, tube, grid_sheet), matrices (`at_xz`: positive angle is counter-clockwise in the side view), scene setup, the four-pass render, PNG reader and writer |
 | `mats.py` | procedural material library (node trees): paint with subtle three-tone camo, chips, rust, oil, dust, mud, soot, brick, wood, snow, rock and so on, each with an albedo, normal, paint-mask and ambient-occlusion output mode |
+| `kit.py` | shared turret and hull detailing: appliqué plates and sloped side panels, sight hump, grab rails, spare track links, side bins, whip aerials, smoke launchers, cast mantlet, tow shackles, soot |
 | `parts.py` | shared fittings: bolts, welds, tools, wheels, tracks, `Theme` (maps part names to paint or burnt materials for a tank or its wreck) |
 | `gear.py` | running gear of the three tanks: track belt, road wheels, rollers, idler, sprocket, the wreck variant with a sagging track |
 | `warden.py`, `bulwark.py`, `lynx.py` | the three tanks: hull, turret, gun, wreck hull, wreck turret, and the mount constants |

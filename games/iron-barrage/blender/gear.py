@@ -92,5 +92,15 @@ def make_gear(g, T, phase, wreck=False, seed=0):
     a_joint = a0 - (j0 - s0) / Rs
     ang = a_joint - phase * (2 * pi / Nt) / 4
     m.add(sprocket_wheel(Rs, Nt, pitch, ang, T.gear, T.dark, T.dark), trans(sx, yw, zu - Rs))
+    # track tension: idler hub cap with its adjusting screw, rod and bracket
+    zi = zu - (Rid + th / 2)
+    yi = yw - 0.135
+    m.cyl((ix, yi, zi), (ix, yi - 0.045, zi), 0.17, 0.15, T.dark, seg=20, smooth=30)
+    for k_ in range(6):
+        a_ = k_ * pi / 3
+        bolt(m, ix + 0.115 * cos(a_), zi + 0.115 * sin(a_), yi - 0.045, 0.017, 0.014, T.steel)
+    m.cyl((ix, yi - 0.045, zi), (ix, yi - 0.08, zi), 0.06, 0.055, T.steel, seg=6)
+    m.cyl((ix - 0.08, yi - 0.03, zi), (ix - 0.62, yi - 0.03, zi - 0.03), 0.024, 0.024, T.steel, seg=8)
+    m.box(ix - 0.72, ix - 0.56, yi - 0.07, yi + 0.01, zi - 0.08, zi + 0.03, T.dark, bevel=0.01)
     info = dict(Rrw=Rrw, zc=zc, Rs=Rs, Rid=Rid, Rr=Rr, pitch=pitch, N=N, belt=belt, circles=circles)
     return m, info

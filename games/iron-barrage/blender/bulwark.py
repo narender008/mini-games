@@ -6,6 +6,7 @@ from math import pi, sin, cos
 from bl import Mesh, trans, roty, rotx, rotz, at_xz, scale
 from parts import *
 from gear import make_gear
+import kit
 
 NAME = 'bulwark'
 G = dict(p=0.22, th=0.10, n_rw=12, rw_x=[(i - 3) * 0.90 for i in range(7)], zu=1.12,
@@ -121,6 +122,7 @@ def hull_body(T, wreck=False):
     m.cyl((2.5, -0.6, 1.50), (2.5, -0.6, 1.535), 0.28, 0.27, T.dark, seg=24, smooth=30)
     for dy in (-0.2, 0.0, 0.2):
         periscope(m, 2.88, 1.42, -0.6 + dy, 0.18, 0.10, 0.08, T)
+    kit.hull_dressing(m, T, (4.2, -1.0, 0.72), (-4.04, -1.0, 0.7), (-3.95, -2.0, 1.0), (0.7, 0.25))
     return m
 
 
@@ -182,18 +184,10 @@ def turret_mesh(T, wreck=False):
     m.slab([(-2.62, 0.14), (-1.72, 0.05), (-1.72, 1.06), (-2.52, 0.96)], -1.18, 1.18, T.turret,
            cuts=[((-0.5, -0.866, 0), 0.5 * 2.4 + 0.866 * 1.18), ((-0.5, 0.866, 0), 0.5 * 2.4 + 0.866 * 1.18)], bevel=0.014)
     m.slab([(-2.5, 0.96), (-1.72, 1.06), (-1.72, 1.12), (-2.48, 1.02)], -0.9, 0.9, T.turret, bevel=0.008)
-    # near side: big bolted appliqué panels
-    def panel(x0, x1, z0, z1, th=0.04):
-        m.slab([(x0, z0), (x1, z0), (x1, z1 - 0.08), (x1 - 0.08, z1), (x0, z1)], ys - th, ys + 0.002, T.turret, bevel=0.008)
-        pts = []
-        nx = max(2, int((x1 - x0) / 0.28))
-        for i in range(nx + 1):
-            pts.append((x0 + 0.06 + (x1 - x0 - 0.12) * i / nx, z0 + 0.06))
-            pts.append((x0 + 0.06 + (x1 - x0 - 0.12) * i / nx, z1 - 0.05))
-        bolts_xz(m, pts, ys - th, 0.019, T.steel)
-    panel(-1.60, -0.80, 0.10, 0.94)
-    panel(-0.72, 0.08, 0.10, 1.02)
-    panel(0.16, 0.86, 0.10, 1.10)
+    # near side: big bolted appliqué plates with cut corners, stacked above a skirt band
+    for (x0, x1, z1) in ((-1.60, -0.80, 0.94), (-0.72, 0.08, 1.02), (0.16, 0.86, 1.10)):
+        kit.plate_poly(m, T, [(x0, 0.10), (x1, 0.10), (x1, z1 - 0.12), (x1 - 0.12, z1), (x0 + 0.12, z1), (x0, z1 - 0.12)], ys, 0.045, bolt_r=0.02, step=0.3)
+        kit.plate_poly(m, T, [(x0 + 0.1, 0.16), (x1 - 0.1, 0.16), (x1 - 0.1, 0.34), (x0 + 0.1, 0.34)], ys - 0.045, 0.02, bolts=False, mat=T.dark)
     weld_bead(m, (-1.64, 0.02), (-1.64, 0.9), ys - 0.002, 0.013, T.turret)
     weld_bead(m, (-0.76, 0.02), (-0.76, 1.0), ys - 0.002, 0.013, T.turret)
     weld_bead(m, (0.12, 0.02), (0.12, 1.05), ys - 0.002, 0.013, T.turret)
@@ -205,11 +199,11 @@ def turret_mesh(T, wreck=False):
     lug(m, 0.9, 0.16, ys - 0.0, 0.05, 0.022, 0.03, T.steel)
     lug(m, -1.68, 0.14, ys, 0.05, 0.022, 0.03, T.steel)
     # smoke dischargers: two banks on the cheek
-    smoke_bank(m, 1.15, 0.52, -1.02, T, n=6, ang=0.9, ln=0.30, r=0.042, face=-1)
+    kit.smoke_launcher(m, T, 1.05, 0.62, ys - 0.05, n=6, spacing=0.1, ang=0.95, ln=0.30, r=0.04)
+    kit.spare_links(m, T, 1.45, 0.12, ys - 0.06, n=5, w=0.46, th=0.07, depth=0.15)
     # roof: gunner's sight housing, commander's raised cupola with periscopes, loader's hatch and MG
-    m.box(0.35, 0.95, -0.9, -0.5, 1.10, 1.28, T.turret, bevel=0.02)
-    m.box(0.93, 0.97, -0.84, -0.56, 1.14, 1.25, 'optic')
-    m.box(0.30, 0.40, -0.95, -0.45, 1.24, 1.30, T.dark, bevel=0.01)
+    kit.sight_hump(m, T, 0.35, 1.0, 1.14, 1.40, -0.98, -0.5)
+    kit.grab_rail(m, T, -1.5, -0.9, 1.19, -1.0, 0.09, 3)
     cx, cy = -0.42, -0.70
     m.cyl((cx, cy, 1.12), (cx, cy, 1.30), 0.44, 0.42, T.turret, seg=36, smooth=30, bevel=0.005)
     m.cyl((cx, cy, 1.30), (cx, cy, 1.34), 0.39, 0.38, T.dark, seg=36, smooth=30)
@@ -228,8 +222,8 @@ def turret_mesh(T, wreck=False):
     m.cyl((lx, ly, 1.22), (lx, ly, 1.24), 0.28, 0.28, T.dark, seg=24, smooth=30)
     if not wreck:
         m.add(mg_gun(T, 1.05), trans(lx + 0.05, ly, 1.22) @ roty(-0.03))
-    antenna_base(m, -1.35, 0.6, 1.05, T)
-    antenna_base(m, -1.9, -0.8, 1.0, T, 0.26)
+    kit.whip_aerial(m, T, -1.35, 0.6, 1.2, h=1.5, lean=-0.10)
+    kit.whip_aerial(m, T, -2.0, -0.85, 1.0, h=2.0, lean=-0.15, bend=0.14)
     rolled_tarp(m, -2.35, -1.8, 1.10, -0.5, 0.12, T)
     wire_basket(m, -2.85, -2.62, 0.18, 0.85, -1.1, 1.1, T, 0.1)
     return m
@@ -240,18 +234,14 @@ def gun_mesh(T, wreck=False):
     to_x = roty(pi / 2)
     m.slab([(-1.3, 0.0), (-1.2, -0.12), (-0.7, -0.2), (-0.05, -0.24), (-0.05, 0.26), (-0.7, 0.22), (-1.2, 0.12)], -0.22, 0.22, T.dark, bevel=0.012)
     m.cyl((-1.4, 0, 0.0), (-1.2, 0, 0.0), 0.03, 0.05, T.steel, seg=8)
-    # big mantlet
-    m.slab([(-0.1, -0.34), (0.34, -0.38), (0.52, -0.18), (0.52, 0.18), (0.34, 0.40), (-0.1, 0.36)], -0.52, 0.52, T.gunp, bevel=0.025,
-           cuts=[((0.7, -0.714, 0), 0.7 * 0.52), ((0.7, 0.714, 0), 0.7 * 0.52)])
-    for zz in (-0.25, 0.25):
-        bolts_xz(m, [(0.0 + i * 0.12, zz) for i in range(4)], -0.525, 0.02, T.steel)
-    m.box(0.30, 0.50, -0.56, -0.50, -0.12, 0.12, T.dark, bevel=0.01)
+    # big cast mantlet bulging out of the wedge front
+    kit.cast_mantlet(m, T, 0.42, 0.46, 0.52, 0.42, 0.18)
     m.cyl((0.0, -0.56, 0.0), (0.0, -0.64, 0.0), 0.085, 0.085, T.steel, seg=14, smooth=40)
-    m.lathe([(0.50, 0.28), (0.60, 0.25), (0.75, 0.2), (0.95, 0.17), (0.96, 0.0)], T.rubber, to_x, seg=26, smooth=40, cap=False)
+    m.lathe([(0.80, 0.27), (0.88, 0.245), (1.0, 0.19), (1.1, 0.17), (1.12, 0.0)], T.rubber, to_x, seg=26, smooth=40, cap=False)
 
     def band(x0, x1, r, mat=None):
         m.lathe([(x0, 0.0), (x0, r), (x1, r), (x1, 0.0)], mat or T.gunp, to_x, seg=30, smooth=35)
-    band(0.95, 2.45, 0.135)
+    band(1.10, 2.45, 0.135)
     band(2.47, 3.85, 0.135)
     for x in (1.05, 1.7, 2.3, 2.55, 3.2, 3.75):
         m.lathe([(x - 0.016, 0.0), (x - 0.016, 0.148), (x + 0.016, 0.148), (x + 0.016, 0.0)], T.dark, to_x, seg=30, smooth=35)

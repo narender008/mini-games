@@ -6,6 +6,7 @@ from math import pi, sin, cos
 from bl import Mesh, trans, roty, rotx, rotz, at_xz, scale
 from parts import *
 from gear import make_gear
+import kit
 
 NAME = 'warden'
 G = dict(p=0.19, th=0.085, n_rw=12, rw_x=[(i - 2.5) * 0.82 for i in range(6)], zu=0.97,
@@ -90,6 +91,7 @@ def hull_body(T, wreck=False):
     mudflap(m, 3.80, 0.86, -1.78, -1.12, 0.38, T, 0.07)
     mudflap(m, -3.64, 0.96, -1.78, -1.12, 0.42, T, -0.05)
     # welds along the glacis edge and deck seam
+    kit.hull_dressing(m, T, (3.9, -0.95, 0.72), (-3.64, -0.9, 0.66), (-3.1, -1.17, 1.0), (0.9, 0.3))
     return m
 
 
@@ -154,112 +156,102 @@ TX0, TX1 = -1.30, 1.52
 
 
 def turret_mesh(T, wreck=False, with_gun=False, droop=0.0):
+    """Welded, faceted turret: sloped upper sides under bolted appliqué plates, cheek wedges, sight hump, cupola, bustle with stowage."""
     m = Mesh('turret')
-    rnd = random.Random(5)
     HY = 1.18
-    # ---- main body: welded angular shell with chamfered cheeks
-    body = [(-1.28, 0.0), (1.22, 0.0), (1.55, 0.30), (1.50, 0.76), (1.12, 1.02), (-0.58, 1.06), (-1.28, 0.82)]
-    cuts = [((0.52, -0.854, 0.0), 0.52 * 0.35 + 0.854 * 1.18), ((0.52, 0.854, 0.0), 0.52 * 0.35 + 0.854 * 1.18)]
+    ZS, SA = 0.42, 0.46                       # the upper side leans in from height ZS by SA radians
+    ys = -HY
+    body = [(-1.28, 0.0), (1.22, 0.0), (1.50, 0.20), (1.50, 0.58), (1.30, 0.86), (1.06, 1.02), (0.05, 1.07), (-0.5, 1.08), (-0.96, 1.00), (-1.28, 0.84)]
+    cuts = [((0.52, -0.854, 0.0), 0.52 * 0.35 + 0.854 * 1.18), ((0.52, 0.854, 0.0), 0.52 * 0.35 + 0.854 * 1.18)] + kit.chamfer_cuts(HY, ZS, SA)
     m.slab(body, -HY, HY, T.turret, cuts=cuts, bevel=0.014)
-    # roof overhang and gun-opening frame on the front plate
-    m.slab([(-0.55, 1.04), (1.10, 1.04), (1.12, 1.06), (-0.55, 1.08)], -HY + 0.04, HY - 0.04, T.turret, bevel=0.01)
+    # roof plate overhang
+    m.slab([(-0.5, 1.06), (1.06, 1.02), (1.08, 1.05), (-0.5, 1.10)], -0.80, 0.80, T.turret, bevel=0.01)
     # ---- rear bustle
     m.slab([(-2.00, 0.10), (-1.22, 0.04), (-1.22, 0.94), (-1.92, 0.82)], -1.02, 1.02, T.turret,
            cuts=[((-0.5, -0.866, 0), 0.5 * 1.9 + 0.866 * 1.02), ((-0.5, 0.866, 0), 0.5 * 1.9 + 0.866 * 1.02)], bevel=0.012)
-    # rear access/ammo blow-off panel on top of bustle
     m.slab([(-1.90, 0.82), (-1.22, 0.94), (-1.22, 0.99), (-1.88, 0.87)], -0.8, 0.8, T.turret, bevel=0.008)
-    ys = -HY - 0.0          # near side plate
-    # ---- near side plate: add-on armour panels with bolts and welds
-    def panel(x0, x1, z0, z1, th=0.032, bolts=True):
-        m.slab([(x0, z0), (x1, z0), (x1, z1 - 0.06), (x1 - 0.06, z1), (x0, z1)], ys - th, ys + 0.002, T.turret, bevel=0.007)
-        if bolts:
-            bolts_xz(m, [(x0 + 0.05, z0 + 0.05), (x1 - 0.05, z0 + 0.05), (x0 + 0.05, z1 - 0.05), (x1 - 0.08, z1 - 0.07),
-                         ((x0 + x1) / 2, z0 + 0.05), ((x0 + x1) / 2, z1 - 0.04)], ys - th, 0.017, T.steel)
-    panel(-1.12, -0.52, 0.10, 0.94)
-    panel(-0.45, 0.18, 0.10, 0.98)
-    # bustle side
     m.slab([(-1.95, 0.14), (-1.24, 0.08), (-1.24, 0.90), (-1.88, 0.78)], -1.06, -0.98, T.turret, bevel=0.008)
+    # ---- near side, lower vertical band: bolted plates, welds
+    for (x0, x1) in ((-1.18, -0.55), (-0.48, 0.14), (0.22, 0.9)):
+        kit.plate_poly(m, T, [(x0, 0.08), (x1, 0.08), (x1, ZS - 0.02), (x0, ZS - 0.02)], ys, 0.03)
+    # ---- near side, sloped upper band: plates in the slope frame, front cheek wedge cut to the profile
+    sf = kit.slope_frame(HY, ZS, SA)
+    for (x0, x1, s1) in ((-1.15, -0.55, 0.60), (-0.48, 0.14, 0.66), (0.22, 0.88, 0.66)):
+        kit.plate_poly(m, T, [(x0, 0.04), (x1, 0.04), (x1, s1 - 0.05), (x1 - 0.05, s1), (x0, s1)], 0.0, 0.032, mx=sf)
+    kit.plate_poly(m, T, [(0.95, 0.04), (1.44, 0.04), (1.44, 0.2), (1.28, 0.47), (1.04, 0.63), (0.95, 0.64)], 0.0, 0.036, mx=sf)
+    # cheek ear: a thick cast wedge flanking the mantlet on the vertical band
+    kit.plate_poly(m, T, [(0.96, 0.08), (1.46, 0.08), (1.52, 0.18), (1.52, ZS - 0.02), (0.96, ZS - 0.02)], ys, 0.045, bolt_r=0.02)
     weld_bead(m, (-1.28, 0.02), (-1.28, 0.8), ys - 0.002, 0.012, T.turret)
-    weld_bead(m, (-0.40, 1.0), (1.05, 1.0), ys + 0.01, 0.01, T.turret)
-    weld_bead(m, (0.19, 0.06), (0.19, 0.96), ys - 0.002, 0.011, T.turret)
-    # lifting eyes, hinges, grab handles
-    handle(m, -0.95, -0.55, 0.98 - 0.02, ys - 0.032, T.steel, 0.013, 0.05)
+    weld_bead(m, (-0.51, 0.05), (-0.51, 0.40), ys - 0.002, 0.011, T.turret)
+    weld_bead(m, (0.18, 0.06), (0.18, 0.40), ys - 0.002, 0.011, T.turret)
+    # lifting eyes, hinges, grab handles, grab rail along the chamfer edge
+    handle(m, -0.98, -0.60, 0.40, ys - 0.032, T.steel, 0.013, 0.05)
     lug(m, 0.40, 0.14, ys, 0.045, 0.02, 0.03, T.steel)
     lug(m, -1.18, 0.12, ys, 0.045, 0.02, 0.03, T.steel)
-    hinge(m, -0.3, 0.55, ys - 0.032, 0.13)
-    # cheek: smoke grenade dischargers on the chamfer and a sight box
-    m.slab([(0.62, 0.50), (1.08, 0.50), (1.08, 0.56), (0.62, 0.56)], -1.04, -0.60, T.turret, bevel=0.006)
-    smoke_bank(m, 0.95, 0.66, -0.88, T, n=4, ang=0.95, ln=0.27, r=0.038, face=-1)
-    # gunner's sight on the roof front and the commander's cupola
-    m.box(0.58, 0.98, -0.78, -0.40, 1.06, 1.20, T.turret, bevel=0.015)
-    m.box(0.96, 0.99, -0.74, -0.44, 1.10, 1.17, 'optic')
-    m.box(0.54, 0.62, -0.82, -0.36, 1.18, 1.23, T.dark, bevel=0.01)
-    # commander's cupola (near side of the roof)
-    cx, cy = -0.25, -0.58
-    m.cyl((cx, cy, 1.05), (cx, cy, 1.205), 0.38, 0.36, T.turret, seg=32, smooth=30, bevel=0.005)
-    m.cyl((cx, cy, 1.205), (cx, cy, 1.235), 0.34, 0.33, T.dark, seg=32, smooth=30)
+    hinge(m, -0.3, 0.30, ys - 0.032, 0.13)
+    # spare track links strapped to the lower cheek, smoke launcher bank on the sloped front plate
+    kit.spare_links(m, T, 1.00, 0.10, ys - 0.045, n=4, w=0.40, th=0.06, depth=0.12)
+    sub = Mesh('smoke')
+    kit.smoke_launcher(sub, T, 0.38, 0.30, -0.036, n=5, spacing=0.085, ang=0.95, ln=0.26, r=0.034)
+    m.add(sub, sf)
+    # ---- roof: gunner's sight hump (near side), commander's cupola, loader's hatch, aerials, rails
+    kit.sight_hump(m, T, 0.52, 1.02, 1.05, 1.26, -0.66, -0.28)
+    m.box(0.52, 0.6, -0.50, -0.44, 1.25, 1.31, T.dark, bevel=0.01)
+    # commander's cupola
+    cx, cy = -0.25, -0.50
+    m.cyl((cx, cy, 1.07), (cx, cy, 1.22), 0.37, 0.35, T.turret, seg=32, smooth=30, bevel=0.005)
+    m.cyl((cx, cy, 1.22), (cx, cy, 1.25), 0.33, 0.32, T.dark, seg=32, smooth=30)
     for i in range(8):
         a = i * 2 * pi / 8 + pi / 8
-        px, py = cx + 0.36 * cos(a), cy + 0.36 * sin(a)
-        m.box(px - 0.05, px + 0.05, py - 0.04, py + 0.04, 1.215, 1.265, T.dark, bevel=0.006)
+        px, py = cx + 0.35 * cos(a), cy + 0.35 * sin(a)
+        m.box(px - 0.05, px + 0.05, py - 0.04, py + 0.04, 1.23, 1.285, T.dark, bevel=0.006)
         if sin(a) < -0.3:
-            m.box(px - 0.04, px + 0.04, py - 0.045, py - 0.036, 1.226, 1.255, 'optic')
-    # hatch ring handle and an open hatch cover leaning behind the commander
+            m.box(px - 0.04, px + 0.04, py - 0.045, py - 0.036, 1.242, 1.272, 'optic')
+    m.cyl((cx, cy, 1.285), (cx, cy, 1.30), 0.30, 0.3, T.steel, seg=28, smooth=0)             # ring rim
     if not wreck:
-        mxl = at_xz(cx - 0.38, 1.24, -1.35)
-        m.cyl((0, cy, 0.0), (0, cy, 0.035), 0.36, 0.36, T.turret, mx=mxl, seg=28, smooth=30)
+        mxl = at_xz(cx - 0.38, 1.26, -1.35)
+        m.cyl((0, cy, 0.0), (0, cy, 0.035), 0.35, 0.35, T.turret, mx=mxl, seg=28, smooth=30)
         m.cyl((0, cy, 0.035), (0, cy, 0.05), 0.2, 0.2, T.dark, mx=mxl, seg=20, smooth=30)
         m.box(-0.20, 0.20, cy - 0.1, cy + 0.1, 0.035, 0.07, T.dark, mxl, bevel=0.01)
     # loader hatch (far side) and its machine gun
-    lx, ly = -0.55, 0.62
-    m.cyl((lx, ly, 1.05), (lx, ly, 1.12), 0.30, 0.29, T.turret, seg=28, smooth=30)
-    m.cyl((lx, ly, 1.12), (lx, ly, 1.135), 0.27, 0.27, T.dark, seg=24, smooth=30)
+    lx, ly = -0.55, 0.52
+    m.cyl((lx, ly, 1.07), (lx, ly, 1.14), 0.30, 0.29, T.turret, seg=28, smooth=30)
+    m.cyl((lx, ly, 1.14), (lx, ly, 1.155), 0.27, 0.27, T.dark, seg=24, smooth=30)
     if not wreck:
-        m.add(mg_gun(T, 1.0), trans(lx + 0.05, ly - 0.0, 1.12) @ roty(-0.04))
-    # antenna base, roof rails
-    antenna_base(m, -1.02, 0.55, 1.04, T)
-    antenna_base(m, -1.45, -0.62, 0.86, T)
+        m.add(mg_gun(T, 1.0), trans(lx + 0.05, ly, 1.14) @ roty(-0.04))
+    # roof grab rails, aerial bases with whips
+    kit.grab_rail(m, T, -1.15, -0.55, 1.07, -0.78, 0.08, 3)
+    kit.whip_aerial(m, T, -1.0, 0.55, 1.08, h=1.3, lean=-0.10)
+    kit.whip_aerial(m, T, -1.55, -0.56, 0.9, h=1.7, lean=-0.14, bend=0.12)
     # ---- bustle stowage
-    # rolled tarp across the top of the bustle, strapped
     rolled_tarp(m, -1.92, -1.30, 1.0, -0.40, 0.11, T)
+    kit.side_bin(m, T, -1.92, -1.32, 0.10, 0.46, -1.06, 0.22, T.turret)
+    jerrycan(m, -1.62, 0.70, -1.12, T.can, 0.0, 0.34, 0.46, 0.16, True)
     if not wreck:
         wire_basket(m, -2.18, -1.98, 0.15, 0.82, -1.04, 1.04, T, 0.1)
-        # jerrycans mounted on the near side of the bustle
-        jerrycan(m, -1.70, 0.34, -1.12, T.can, 0.0, 0.34, 0.46, 0.16, True)
-        m.box(-1.92, -1.50, -1.145, -1.125, 0.58, 0.60, T.strap)
-        jerrycan(m, -1.30, 0.62, -1.12, T.can, 0.0, 0.34, 0.46, 0.16, True)
-        for xx in (-1.88, -1.12):
-            m.box(xx - 0.015, xx + 0.015, -1.18, -1.04, 0.10, 0.90, T.dark, bevel=0.004)
+        m.box(-1.80, -1.44, -1.16, -1.14, 0.58, 0.60, T.strap)
     else:
         wire_basket(m, -2.18, -1.98, 0.15, 0.55, -1.04, 1.04, T, 0.12)
     return m
 
 
 def gun_mesh(T, wreck=False, trunnion=(0, 0)):
-    """The gun: mantlet, shroud, thermal sleeve with clamps, fume extractor, muzzle. Origin at the trunnion, pointing +x."""
+    """The gun: cast mantlet, boot, shroud, thermal sleeve with clamps, fume extractor, muzzle. Origin at the trunnion, pointing +x."""
     m = Mesh('gun')
     to_x = roty(pi / 2)                                    # local +z -> world +x
     # breech and cradle behind the trunnion (hidden inside the turret)
     m.slab([(-1.0, 0.0), (-0.95, -0.10), (-0.55, -0.17), (-0.05, -0.20), (-0.05, 0.22), (-0.55, 0.19), (-0.95, 0.10)], -0.18, 0.18, T.dark, bevel=0.01)
     m.cyl((-1.06, 0, 0.0), (-0.9, 0, 0.0), 0.025, 0.04, T.steel, seg=8)
-    # mantlet: a rounded armoured block around the tube root
-    m.slab([(-0.08, -0.25), (0.28, -0.29), (0.42, -0.14), (0.42, 0.14), (0.28, 0.30), (-0.08, 0.27)], -0.42, 0.42, T.gunp, bevel=0.02,
-           cuts=[((0.7, -0.714, 0), 0.7 * 0.42 + 0.714 * 0.0 + 0.0 + 0.0), ((0.7, 0.714, 0), 0.7 * 0.42)])
-    for zz in (-0.2, 0.2):
-        bolts_xz(m, [(0.0 + i * 0.1, zz) for i in range(3)], -0.425, 0.018, T.steel)
-    m.box(0.22, 0.40, -0.455, -0.40, -0.09, 0.09, T.dark, bevel=0.008)     # cheek plate with coax port
-    # trunnion cap
-    m.cyl((0.0, -0.46, 0.0), (0.0, -0.52, 0.0), 0.07, 0.07, T.steel, seg=14, smooth=40)
+    kit.cast_mantlet(m, T, 0.20, 0.36, 0.42, 0.34, 0.14)
+    m.cyl((0.0, -0.46, 0.0), (0.0, -0.52, 0.0), 0.07, 0.07, T.steel, seg=14, smooth=40)           # trunnion cap
     # rubber shroud (gun boot) in front of the mantlet
-    m.lathe([(0.40, 0.22), (0.48, 0.20), (0.60, 0.16), (0.74, 0.135), (0.76, 0.0)], T.rubber, to_x, seg=24, smooth=40, cap=False)
-    # thermal sleeve: two sections with clamp bands, sleeve is painted
+    m.lathe([(0.52, 0.22), (0.58, 0.20), (0.66, 0.16), (0.76, 0.135), (0.78, 0.0)], T.rubber, to_x, seg=24, smooth=40, cap=False)
     def band(x0, x1, r, mat=None):
         m.lathe([(x0, 0.0), (x0, r), (x1, r), (x1, 0.0)], mat or T.gunp, to_x, seg=28, smooth=35, cap=True)
     band(0.74, 1.95, 0.108)
     band(1.97, 3.16, 0.108)
     for x in (0.82, 1.35, 1.9, 2.04, 2.6, 3.1):
         m.lathe([(x - 0.014, 0.0), (x - 0.014, 0.119), (x + 0.014, 0.119), (x + 0.014, 0.0)], T.dark, to_x, seg=28, smooth=35)
-    # sleeve seam bolts and a hatch for the sleeve
     # fume extractor
     m.lathe([(3.18, 0.0), (3.18, 0.085), (3.24, 0.125), (3.74, 0.125), (3.80, 0.085), (3.80, 0.0)], T.gun, to_x, seg=28, smooth=40)
     m.lathe([(3.30, 0.0), (3.30, 0.13), (3.36, 0.13), (3.36, 0.0)], T.dark, to_x, seg=28, smooth=35)

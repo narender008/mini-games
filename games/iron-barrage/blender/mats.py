@@ -445,6 +445,10 @@ def spec_for(key):
         elif part == 'gun':
             # gun tubes, sleeves and mantlets: plain paint, no camo, slight wear
             d.update(camo=None, base=(0.215, 0.215, 0.215), base2=(0.165, 0.165, 0.165), vary=0.6, vscale=(2.5, 28, 28), mud=0.0, dust=0.45, chip=0.35, grime=0.2, grime_h=(0.0, 3.5))
+        elif part == 'cast':
+            # cast armour: unpainted-looking dark grey, coarse casting texture, edges worn bright
+            d.update(camo=None, base=(0.19, 0.19, 0.19), base2=(0.15, 0.15, 0.15), vary=0.8, vscale=(7, 7, 7), mud=0.0, dust=0.5, chip=0.5, grime=0.3, grime_h=(0.0, 3.0),
+                     bump=0.55, bscale=26.0, wave=0.9, edge_light=0.35, rust=0.12, oil=0.25)
         elif part == 'plain':
             d.update(mud=0.0)
         return d
