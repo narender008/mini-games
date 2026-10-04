@@ -727,12 +727,7 @@ vec4 fireAt(float u, float vm, out vec4 flare) {
   return res;
 }
 
-void main() {
-  TW = max(fwidth(vUV.x) * uSize.x, 1e-4);
-  TH = max(fwidth(vUV.y) * uSize.y, 1e-4);
-  float u = vUV.x * uSize.x;
-  float v = vUV.y;
-  float vm = v * uSize.y;
+vec4 paintAll(float u, float v, float vm) {
   vec4 r;
   if (uKind == 0) r = paintMountains(u, v, vm);
   else if (uKind == 1) r = paintHills(u, v, vm);
@@ -756,7 +751,28 @@ void main() {
   r = vec4(over / max(oa, 1e-3), oa);
   oa = fl.a + r.a * (1.0 - fl.a);
   over = fl.rgb * fl.a + r.rgb * r.a * (1.0 - fl.a);
-  r = vec4(over / max(oa, 1e-3), oa);
-  o = r;
+  return vec4(over / max(oa, 1e-3), oa);
+}
+
+void main() {
+  TW = max(fwidth(vUV.x) * uSize.x, 1e-4);
+  TH = max(fwidth(vUV.y) * uSize.y, 1e-4);
+  float u = vUV.x * uSize.x;
+  float v = vUV.y;
+  float vm = v * uSize.y;
+  // The layer repeats. Most features are built to wrap, but some are not (field
+  // patchwork, ruined blocks, distant fires), so over the last few metres the
+  // painting fades into what lies just before its start: the right edge then
+  // meets the left one exactly. Features that wrap paint the same either way.
+  float s = smoothstep(uSize.x - min(24.0, uSize.x * 0.06), uSize.x, u);
+  int passes = s > 0.0 ? 2 : 1;
+  vec4 acc = vec4(0.0);
+  for (int i = 0; i < 2; i++) {
+    if (i >= passes) break;
+    vec4 r = paintAll(i == 0 ? u : u - uSize.x, v, vm);
+    float w = i == 0 ? 1.0 - s : s;
+    acc += vec4(r.rgb * r.a, r.a) * w;
+  }
+  o = vec4(acc.rgb / max(acc.a, 1e-3), acc.a);
 }`,
 };

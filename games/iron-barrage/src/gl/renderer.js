@@ -598,11 +598,28 @@ export class Renderer {
     p = this.p.backdrop;
     gl.useProgram(p.p);
     const half = c.viewW / 2;
+    // A tall (portrait) view shows more than the strip below each layer's
+    // ground line; there the layers come down to sit on the lowest ground in view
+    // (eased, so the hills passing underneath do not jolt them).
+    const viewH = (c.viewW * H) / W;
+    let fg = -1;
+    if (H > W && this.terrain) {
+      let g = Infinity;
+      for (let i = 0; i <= 16; i++) g = Math.min(g, this.terrain.top(c.x - half + (c.viewW * i) / 16));
+      this.bdropG = this.bdropG === undefined || Math.abs(this.bdropG - g) > 60 ? g : this.bdropG + (g - this.bdropG) * 0.08;
+      fg = (this.bdropG - (c.y - viewH / 2)) / viewH;
+    } else this.bdropG = undefined;
     for (const Lr of this.layers) {
       this.tex(p, 'uTex', Lr.tex, 0);
       const k = Lr.scale * Math.pow(60 / half, 1 - Lr.parallax);
       gl.uniform4f(p.u.uLayer, Lr.parallax, k, Lr.width, Lr.height);
-      gl.uniform2f(p.u.uAnchor, Lr.anchorY, Lr.offsetX || 0);
+      let anchor = Lr.anchorY;
+      if (fg > 0) {
+        const hh = (viewH / 2) * k; // half the layer's visible height, layer metres
+        const cy = anchor + c.y * Lr.parallax;
+        if ((hh - cy) / (2 * hh) > fg) anchor += hh * (1 - 2 * fg) - cy; // strip foot onto the ground line
+      }
+      gl.uniform2f(p.u.uAnchor, anchor, Lr.offsetX || 0);
       gl.uniform4fv(p.u.uHaze, Lr.haze);
       gl.uniform1f(p.u.uLightK, Lr.lightK ?? 0.05);
       gl.uniform4fv(p.u.uMist, Lr.mist || MIST4);

@@ -50,9 +50,11 @@ export class Camera {
     this.tw = clamp(Math.max(w, h * a), this.minW(), WORLD.width + 60);
     const vh = this.tw / a;
     this.tx = (x0 + x1) / 2;
-    // keep the ground in the lower part of the picture
-    this.ty = y0 - padBottom + vh / 2;
-    this.ty = Math.min(this.ty, (y1 + y0 - padBottom + padTop) / 2 + vh * 0.1);
+    // keep the ground in the lower part of the picture (in portrait, clear of the
+    // controls along the bottom)
+    const pb = a < 1 ? Math.max(padBottom, vh * 0.22) : padBottom;
+    this.ty = y0 - pb + vh / 2;
+    this.ty = Math.min(this.ty, (y1 + y0 - pb + padTop) / 2 + vh * 0.1);
   }
 
   look(x, y, w) {
@@ -143,13 +145,16 @@ export class Camera {
       if (foe) this.pt(pts, foe.x, foe.y + 4);
       this.frame(pts, T, 30, 16, 12);
       // keep tanks a readable size: past this the far tank is off to the side
-      const maxW = this.aspect() < 1 ? 115 : 175;
+      // (portrait is tall and narrow: a closer view, the far tank marked at the edge)
+      const tall = this.aspect() < 1;
+      const maxW = tall ? 64 : 175;
       if (this.tw > maxW) {
         this.tw = maxW;
         const dir = pts.length > 1 ? Math.sign(pts[1].x - pts[0].x) : 1;
-        this.tx = cur.x + dir * maxW * 0.3;
+        this.tx = cur.x + dir * maxW * (tall ? 0.22 : 0.3);
         // the ground a fifth of the way up: some cross-section below, room to lob above
-        this.ty = T.groundBelow(cur.x, cur.y + 3) - (maxW / this.aspect()) * 0.2 + (maxW / this.aspect()) / 2;
+        const vh = maxW / this.aspect();
+        this.ty = T.groundBelow(cur.x, cur.y + 3) - vh * (tall ? 0.24 : 0.2) + vh / 2;
       }
       this.rate = 2.2;
       return;

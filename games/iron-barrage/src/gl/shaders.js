@@ -233,7 +233,9 @@ void main() {
     uv.y += uEmit.z * env * 0.5 * sin(vL.x * 0.35 + uRotT.z * 1.3) / uLayer.w;
   }
   vec4 t = texture(uTex, uv);
-  if (uv.y < 0.0) t = vec4(texture(uTex, vec2(uv.x, 0.001)).rgb, 1.0);
+  // below the painted strip (tall portrait views): the layer's own ground carries
+  // on, taken from a blurred level so its bottom row does not smear into streaks
+  if (uv.y < 0.0) t = vec4(textureLod(uTex, vec2(uv.x, 0.03), 5.0).rgb, 1.0);
   vec3 c = t.rgb * (uSky.rgb * 0.9 + uSunCol.rgb * 0.25);
   // texels brighter than any painted body glow by themselves
   float mx = max(t.r, max(t.g, t.b));
@@ -259,9 +261,8 @@ void main() {
   float mist = uMist.z * exp(-max(hv, 0.0) * uMist.y);
   float sink = uMist.w * smoothstep(0.0, -0.2, hv);
   float hz = clamp(uHaze.a + mist + sink, 0.0, 1.0) * (1.0 - 0.7 * em);
-  // below the painted strip (tall portrait views) the layer melts into its haze
-  // rather than smearing its bottom row downwards
-  hz = mix(hz, 1.0, smoothstep(0.0, -0.04, uv.y));
+  // and sinks a little further into the haze the deeper it goes
+  hz = mix(hz, min(1.0, hz + 0.3), smoothstep(0.0, -0.3, uv.y));
   c = mix(c, uHaze.rgb, hz);
   o = vec4(c * t.a, t.a);
 }`,
