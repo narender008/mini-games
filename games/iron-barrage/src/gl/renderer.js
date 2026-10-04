@@ -7,6 +7,13 @@ import * as S from './shaders.js';
 import { BACKDROP_BAKE } from './bake.js';
 import { WORLD, clamp } from '../config.js';
 
+const byScore = (a, b) => b.score - a.score;
+// shared defaults for the look uniforms (no allocation per frame)
+const ZERO4 = new Float32Array(4);
+const MIST4 = new Float32Array([0.3, 6, 0, 0]);
+const ACC3 = new Float32Array([0.2, 0.17, 0.12]);
+const SKYA0 = new Float32Array([0.04, 0, 0, 0]);
+const SKYB0 = new Float32Array([0, 1, 0, 0]);
 const FRAME_FLOATS = 4 * (8 + S.MAX_LIGHTS * 2);
 
 // Stride of the per-instance buffers, in floats.
@@ -169,6 +176,7 @@ export class Renderer {
       composite: P(S.COMPOSITE, 'composite'),
       line: P(S.LINE, 'line'),
       solid: P(S.SOLID, 'solid'),
+      blob: P(S.BLOB, 'blob'),
     };
     this.vao = gl.createVertexArray();
     this.noise = makeNoise(gl);
@@ -177,6 +185,7 @@ export class Renderer {
     this.spriteVao = this.instanceVao(SPRITE_STRIDE, this.p.sprite, ['aA', 'aB', 'aC', 'aD', 'aE']);
     this.partVao = this.instanceVao(PARTICLE_STRIDE, this.p.lit, ['aA', 'aB', 'aC']);
     this.decalVao = this.instanceVao(DECAL_STRIDE, this.p.decal, ['aA', 'aB', 'aC']);
+    this.blobVao = this.instanceVao(4, this.p.blob, ['aA']);
     this.lineBuf = gl.createBuffer();
     this.lineVao = gl.createVertexArray();
     gl.bindVertexArray(this.lineVao);
@@ -239,6 +248,18 @@ export class Renderer {
     if (this.origTex) gl.deleteTexture(this.origTex);
     this.maskTex = texture(gl, { w: cols, h: rows, internal: gl.R8, format: gl.RED, data: terrain.mask });
     this.origTex = texture(gl, { w: cols, h: rows, internal: gl.R8, format: gl.RED, data: terrain.orig });
+    // where the ground stood before the first shot, per column (metres): the
+    // terrain shader reads its layers (and fresh earth in craters) from it
+    const surf = terrain.surf0 || new Float32Array(cols);
+    for (let i = 0; i < cols && !terrain.surf0; i++) {
+      let j = rows - 1;
+      while (j > 0 && terrain.orig[j * cols + i] <= 127) j--;
+      const v = terrain.orig[j * cols + i] / 255;
+      const above = j + 1 < rows ? terrain.orig[(j + 1) * cols + i] / 255 : 0;
+      surf[i] = (j + v + above) / terrain.res;
+    }
+    if (this.surfTex) gl.deleteTexture(this.surfTex);
+    this.surfTex = texture(gl, { w: cols, h: 1, internal: gl.R16F, format: gl.RED, type: gl.FLOAT, data: surf });
     const fr = this.q.fieldRes;
     if (!this.fieldT) this.fieldT = new Target(gl, 4, 4, { internal: gl.RGBA8 });
     this.fieldT.resize(WORLD.width * fr, WORLD.height * fr);
@@ -359,6 +380,18 @@ export class Renderer {
       gl.uniform3fv(p.u.uCol, L.color);
       gl.uniform3fv(p.u.uCol2, L.color2 || L.color);
       gl.uniform3fv(p.u.uLit, L.lit || [1, 0.6, 0.3]);
+      gl.uniform3fv(p.u.uCol3, L.color3 || L.color2 || L.color);
+      gl.uniform3fv(p.u.uCol4, L.color4 || L.color);
+      gl.uniform4fv(p.u.uP, L.p || [0, 0, 0, 0]);
+      gl.uniform4fv(p.u.uQ, L.q || [0, 0, 0, 0]);
+      gl.uniform3f(p.u.uLight, clamp(bf.sun[0] * 1.6, -1, 1), bf.sun[1], L.light ?? bf.layerLight ?? 1);
+      const sm = L.smoke || [];
+      const smk = new Float32Array(16);
+      sm.slice(0, 4).forEach((s4, i) => smk.set(s4, i * 4));
+      gl.uniform4fv(p.u.uSmoke, smk);
+      gl.uniform4f(p.u.uSmokeA, Math.min(4, sm.length), L.smokeOp ?? 0.6, L.smokeBase ?? L.base, 0);
+      gl.uniform3fv(p.u.uSmokeCol, L.smokeCol || [0.05, 0.05, 0.05]);
+      gl.uniform4fv(p.u.uFire, L.fire || [60, 0, 0, 8]);
       gl.bindVertexArray(this.vao);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -446,21 +479,23 @@ export class Renderer {
     const nx = -dy / l;
     const ny = dx / l;
     const v = this.lineData;
-    let k = this.lineCount * 6;
-    const put = (x, y, a) => {
-      v[k++] = x;
-      v[k++] = y;
-      v[k++] = r;
-      v[k++] = g;
-      v[k++] = b;
-      v[k++] = a;
-    };
-    put(x0 + nx * w0, y0 + ny * w0, a0);
-    put(x0 - nx * w0, y0 - ny * w0, a0);
-    put(x1 + nx * w1, y1 + ny * w1, a1);
-    put(x1 + nx * w1, y1 + ny * w1, a1);
-    put(x0 - nx * w0, y0 - ny * w0, a0);
-    put(x1 - nx * w1, y1 - ny * w1, a1);
+    const k = this.lineCount * 6; // lineCount counts vertices, 6 floats each
+    const P = this.segPts || (this.segPts = new Float32Array(18));
+    P[0] = x0 + nx * w0; P[1] = y0 + ny * w0; P[2] = a0;
+    P[3] = x0 - nx * w0; P[4] = y0 - ny * w0; P[5] = a0;
+    P[6] = x1 + nx * w1; P[7] = y1 + ny * w1; P[8] = a1;
+    P[9] = x1 + nx * w1; P[10] = y1 + ny * w1; P[11] = a1;
+    P[12] = x0 - nx * w0; P[13] = y0 - ny * w0; P[14] = a0;
+    P[15] = x1 - nx * w1; P[16] = y1 - ny * w1; P[17] = a1;
+    for (let i = 0; i < 6; i++) {
+      const o = k + i * 6;
+      v[o] = P[i * 3];
+      v[o + 1] = P[i * 3 + 1];
+      v[o + 2] = r;
+      v[o + 3] = g;
+      v[o + 4] = b;
+      v[o + 5] = P[i * 3 + 2];
+    }
     this.lineCount += 6;
   }
 
@@ -496,14 +531,15 @@ export class Renderer {
     const L = this.lights;
     const halfW = c.viewW / 2 + 20;
     const halfH = (c.viewW * H) / W / 2 + 20;
-    const list = [];
+    const list = this.lightSel || (this.lightSel = []);
+    list.length = 0;
     for (let i = 0; i < L.n; i++) {
       const l = L.pool[i];
       if (Math.abs(l.x - c.x) > halfW + l.radius || Math.abs(l.y - c.y) > halfH + l.radius) continue;
       l.score = (l.r + l.g + l.b) * l.radius;
       list.push(l);
     }
-    list.sort((a, b) => b.score - a.score);
+    if (list.length > q.lights) list.sort(byScore);
     const nl = Math.min(list.length, q.lights);
     F[31] = nl;
     for (let i = 0; i < nl; i++) {
@@ -541,6 +577,8 @@ export class Renderer {
     gl.uniform4fv(p.u.uCloud, bf.cloud);
     gl.uniform3fv(p.u.uCloudCol, bf.cloudCol);
     gl.uniform1f(p.u.uStars, bf.stars || 0);
+    gl.uniform4fv(p.u.uSkyA, bf.skyA || SKYA0);
+    gl.uniform4fv(p.u.uSkyB, bf.skyB || SKYB0);
     gl.uniform1f(p.u.uAspect, W / H);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -558,6 +596,8 @@ export class Renderer {
       gl.uniform2f(p.u.uAnchor, Lr.anchorY, Lr.offsetX || 0);
       gl.uniform4fv(p.u.uHaze, Lr.haze);
       gl.uniform1f(p.u.uLightK, Lr.lightK ?? 0.05);
+      gl.uniform4fv(p.u.uMist, Lr.mist || MIST4);
+      gl.uniform4fv(p.u.uEmit, Lr.emit || ZERO4);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
 
@@ -578,9 +618,23 @@ export class Renderer {
     gl.uniform4fv(p.u.uDeep, m.deep);
     gl.uniform4fv(p.u.uRock, m.rock);
     gl.uniform4fv(p.u.uGrass, m.grass);
+    this.tex(p, 'uSurf', this.surfTex, 5);
+    gl.uniform4fv(p.u.uMat, m.mat || ZERO4);
+    gl.uniform4fv(p.u.uMat2, m.mat2 || ZERO4);
+    gl.uniform3fv(p.u.uAcc, m.acc || ACC3);
+    gl.uniform3fv(p.u.uAcc2, m.acc2 || ACC3);
     gl.uniform1f(p.u.uWind, s.wind || 0);
     gl.bindVertexArray(this.vao);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    // contact shadows
+    if (s.shadows && s.shadows.count) {
+      p = this.p.blob;
+      gl.useProgram(p.p);
+      this.tex(p, 'uMask', this.maskTex, 0);
+      this.tex(p, 'uField', this.fieldT.tex, 1);
+      this.drawInstances(this.blobVao, s.shadows);
+    }
 
     // props, wrecks, tanks, debris
     if (this.atlas) {

@@ -6,6 +6,14 @@
 import { clamp, DEG } from './config.js';
 
 const $ = (id) => document.getElementById(id);
+// the pointer can be gone by the time the handler runs (a quick tap, a cancelled touch)
+const capture = (el, id) => {
+  try {
+    el.setPointerCapture(id);
+  } catch {
+    /* nothing to hold on to */
+  }
+};
 
 export class Input {
   constructor(app) {
@@ -50,7 +58,7 @@ export class Input {
       const el = $(id);
       const start = (e) => {
         e.preventDefault();
-        el.setPointerCapture?.(e.pointerId);
+        capture(el, e.pointerId);
         this.held.set(id, 0);
         el.classList.add('held');
         this.nudge(id, true);
@@ -159,8 +167,10 @@ export class Input {
         break;
       case 'Space':
       case 'Enter':
-        if (this.battle() && document.activeElement?.tagName !== 'BUTTON') {
+        if (this.battle()) {
           e.preventDefault();
+          // a HUD button the mouse left focused would take the key as a click and the shell would stay in the gun
+          if (document.activeElement && document.activeElement.closest('#hud')) document.activeElement.blur();
           app.fire();
         }
         break;
@@ -206,7 +216,7 @@ export class Input {
 
   // ---- pointers on the battlefield
   down(e) {
-    this.canvas.setPointerCapture?.(e.pointerId);
+    capture(this.canvas, e.pointerId);
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY });
     this.app.hud?.toggleArsenal(false);
     this.app.sound.unlock?.();

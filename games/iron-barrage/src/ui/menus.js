@@ -270,7 +270,7 @@ export class Menus {
     const pauseOpen = !$('pause').hidden;
     const name = pauseOpen ? 'pause' : this.cur && this.cur.name;
     if (!name) return;
-    if (e.code === 'KeyM' || e.code === 'KeyF') return;
+    if (e.code === 'KeyM' || e.code === 'KeyF' || (pauseOpen && e.code === 'KeyP')) return; // the battle's own handler takes these
     if (e.code === 'Escape') {
       if (pauseOpen) return; // the battle's own Esc handler resumes
       e.stopImmediatePropagation();
@@ -322,6 +322,7 @@ export class Menus {
         sync();
         b.addEventListener('click', () => {
           s[key] = it.value;
+          P.save();
           for (const c of box.children) c._sync();
           this.sfx('select');
           this.setupNote();

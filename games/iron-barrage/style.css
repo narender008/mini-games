@@ -748,6 +748,26 @@ body[data-turn='busy'] .hud-bottom button {
 .fire:active {
   filter: brightness(1.2);
 }
+/* first-battle hints: up under the wind bar, clear of the guns and the controls */
+.coach {
+  position: fixed;
+  left: 50%;
+  top: calc(54px + var(--safe-t));
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px - var(--safe-l) - var(--safe-r)));
+  padding: 10px 14px;
+  background: rgba(14, 16, 18, 0.86);
+  border: 1px solid rgba(242, 179, 61, 0.45);
+  border-left: 3px solid #f2b33d;
+  color: #e9e4d8;
+  font: 14px/1.4 system-ui, sans-serif;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  z-index: 20;
+  opacity: 0;
+  transition: opacity 0.35s;
+}
 #arsenal {
   position: absolute;
   left: 50%;
@@ -2077,8 +2097,26 @@ kbd {
   .panel {
     padding: 16px;
   }
+  .coach {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  .arm {
+    min-height: 40px;
+    padding: 6px 8px;
+  }
+  .arm small {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
 }
 @media (max-width: 560px) and (orientation: portrait) {
+  .coach {
+    top: calc(90px + var(--safe-t));
+  }
   .hud-bottom {
     flex-wrap: wrap;
   }
@@ -2203,18 +2241,58 @@ kbd {
     padding: 3px 8px;
   }
   .brief-banner {
-    height: 68px;
-    padding: 8px 14px;
+    height: 48px;
+    padding: 6px 14px;
   }
   .brief-where h3 {
-    font-size: 22px;
+    font-size: 20px;
   }
   .brief-where p {
     display: none;
   }
   .orders {
-    margin: 8px 0;
-    font-size: 14px;
+    margin: 6px 0;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  .orders-k {
+    display: inline;
+    margin-right: 8px;
+  }
+  /* the Enemy, Objectives and Your tank boxes side by side, in view without scrolling */
+  .brief-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .brief-box {
+    padding: 8px 10px;
+  }
+  .brief-box h4 {
+    margin-bottom: 6px;
+  }
+  .foes,
+  .goals {
+    gap: 3px;
+  }
+  .foe,
+  .mine {
+    gap: 8px;
+  }
+  .foe b,
+  .mine b {
+    font-size: 15px;
+    line-height: 1.1;
+  }
+  .foe small,
+  .mine small {
+    font-size: 11px;
+    line-height: 1.3;
+  }
+  .brief-box p {
+    margin-top: 5px;
+  }
+  .tank-fig svg {
+    width: 48px;
   }
   .field {
     display: grid;

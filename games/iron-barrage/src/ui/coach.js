@@ -23,9 +23,7 @@ export class Coach {
     }
     this.el = document.createElement('div');
     this.el.className = 'coach';
-    this.el.setAttribute('role', 'status');
-    this.el.style.cssText =
-      'position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom, 0px) + 112px);transform:translateX(-50%);max-width:min(560px, calc(100vw - 32px));padding:10px 14px;background:rgba(14,16,18,.86);border:1px solid rgba(242,179,61,.45);border-left:3px solid #f2b33d;color:#e9e4d8;font:14px/1.4 system-ui, sans-serif;letter-spacing:.01em;pointer-events:none;z-index:20;opacity:0;transition:opacity .35s';
+    this.el.setAttribute('role', 'status'); // looks: .coach in style.css, up under the wind bar so it never covers the guns
     document.body.appendChild(this.el);
     this.tip = null;
     this.shots = 0;
@@ -65,7 +63,7 @@ export class Coach {
       return;
     }
     const mine = b.isPlayerTurn();
-    if (!mine) {
+    if (!mine || app.hud.arsenal.hidden === false) {
       if (this.tip) this.hide();
       return;
     }

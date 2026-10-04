@@ -3,7 +3,7 @@
 // A turn: drive (fuel permitting), aim, pick a weapon, fire; then the shot
 // flies, the ground and the tanks settle, the dead burn, and the next tank
 // goes. Last side with a tank standing wins.
-import { WORLD, clamp, rand, gauss, DEG, damp } from '../config.js';
+import { WORLD, PREFS, clamp, rand, gauss, DEG, damp } from '../config.js';
 import { Terrain } from '../world/terrain.js';
 import { flatten } from '../world/battlefields.js';
 import { Tank } from './tank.js';
@@ -127,6 +127,17 @@ export class Battle {
     return this.tanks.filter((o) => o.alive && o.team !== t.team);
   }
 
+  // The battle is being replaced (menu, restart, retry): let go of the
+  // sounds it holds so nothing carries on into the next one.
+  dispose() {
+    for (const t of this.tanks) {
+      if (t.engineV) t.engineV.stop();
+      t.engineV = null;
+    }
+    this.projectiles.clear(); // shells in flight, napalm and airstrike sounds
+    this.sound.setTimeScale?.(1);
+  }
+
   // ---- the turn cycle
   nextTurn() {
     const n = this.tanks.length;
@@ -200,8 +211,12 @@ export class Battle {
     const w = WEAPONS[id];
     if (!w || !w.utility || this.phase !== 'aim' || this.current() !== t || this.fired || !t.alive || t.hp <= 0) return false;
     if (!(t.inventory[id] > 0)) return false;
-    if ((t.utilUsed && t.utilUsed[id]) || (w.use && w.use(t, this) === false)) {
-      if (!t.ai) this.sound.ui('deny');
+    const used = !!(t.utilUsed && t.utilUsed[id]);
+    if (used || (w.use && w.use(t, this) === false)) {
+      if (!t.ai) {
+        this.sound.ui('deny');
+        this.app.hud?.float(t.x, t.y + t.hgt + 1.5, used ? 'USED THIS TURN' : 'NOT NEEDED', 'info'); // say why nothing happened
+      }
       return false;
     }
     (t.utilUsed ||= {})[id] = true;
@@ -313,7 +328,7 @@ export class Battle {
     t.alive = false;
     t.hp = 0;
     t.crew = false;
-    t.blood = 0.85;
+    t.blood = PREFS.gore ? 0.8 : 0;
     t.hot = 1;
     t.char = 1;
     t.wreckX = t.x;
@@ -339,6 +354,7 @@ export class Battle {
         this.timeScale = 1;
         this.slow = null;
       }
+      if (PREFS.calm) this.timeScale = 0.55 + 0.45 * this.timeScale; // reduced effects: no hit-stop, a gentle slowdown
       this.sound.setTimeScale(this.timeScale);
     }
     const dt = realDt * this.timeScale;
@@ -384,7 +400,9 @@ export class Battle {
         if (this.phaseT > 2.4) this.nextTurn();
         break;
       case 'aim':
+        // the tank whose turn it is has died, or the sides are decided
         if (cur && !cur.alive) this.endTurn();
+        else if (!this.player.alive || !this.tanks.some((t) => t.team !== 0 && t.alive)) this.endTurn();
         break;
       case 'flight':
         if (!this.projectiles.active && !this.busy()) this.setPhase('settle');

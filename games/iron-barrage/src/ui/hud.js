@@ -27,6 +27,7 @@ export class Hud {
     this.weaponBtn = $('weapon-btn');
     this.tagEls = new Map();
     this.floatList = [];
+    this.edgeY = [[], []]; // where this frame's off-screen markers sit, left and right
     this.cache = {};
     this.pt = { x: 0, y: 0 };
     this.weaponBtn.addEventListener('click', () => this.toggleArsenal());
@@ -89,6 +90,11 @@ export class Hud {
       });
       this.arsenal.appendChild(btn);
     }
+    // sits just above the controls whatever their layout (one row, or two on a phone held upright)
+    const top = $('controls').getBoundingClientRect().top;
+    const bar = this.el.querySelector('.hud-top').getBoundingClientRect().bottom;
+    this.arsenal.style.bottom = `${Math.round(innerHeight - top + 8)}px`;
+    this.arsenal.style.maxHeight = `${Math.max(120, Math.round(top - bar - 24))}px`;
     this.arsenal.hidden = false;
     this.weaponBtn.setAttribute('aria-expanded', 'true');
     this.app.coach?.tray();
@@ -141,6 +147,7 @@ export class Hud {
     this.set('wammo', this.weaponAmmo, ammo, (el, v) => (el.textContent = v === Infinity ? '∞' : v === '' ? '' : String(v)));
 
     // name tags with health
+    this.edgeY[0].length = this.edgeY[1].length = 0;
     for (const tk of b.tanks) {
       let e = this.tagEls.get(tk);
       if (!e) {
@@ -188,7 +195,14 @@ export class Hud {
           e.edge.style.display = 'block';
           e.edgeW = e.edge.offsetWidth;
         }
-        const y = Math.min(R.cssH - 120, Math.max(70, this.pt.y + 26));
+        let y = Math.min(R.cssH - 120, Math.max(70, this.pt.y + 26));
+        // two tanks off the same edge at the same height: stack the markers
+        const used = this.edgeY[right ? 1 : 0];
+        for (let moved = true; moved; ) {
+          moved = false;
+          for (let k = 0; k < used.length; k++) if (Math.abs(used[k] - y) < 26) (y = used[k] + 26), (moved = true);
+        }
+        used.push(y);
         if (e.edge.style.display !== 'block') e.edge.style.display = 'block';
         e.edge.style.transform = `translate(${right ? R.cssW - 12 - e.edgeW : 12}px, ${y.toFixed(0)}px)`;
       } else if (e.edge && e.edge.style.display !== 'none') e.edge.style.display = 'none';
