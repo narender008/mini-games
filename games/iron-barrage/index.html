@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>Iron Barrage · Mini Games</title>
+    <meta name="description" content="Turn-based tank artillery for ages 14 and up. Set angle and power, read the wind, and shell computer tanks across ground that every blast tears apart." />
+    <meta name="theme-color" content="#14171a" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <!-- "Add to Home Screen" opens the game full screen, with no browser bars -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Iron Barrage" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body data-state="loading">
+    <canvas id="scene" aria-label="Iron Barrage battlefield"></canvas>
+
+    <div id="loader" role="progressbar" aria-label="Loading Iron Barrage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <p class="loader-title">Iron Barrage</p>
+      <div class="bar"><span id="loader-fill"></span></div>
+      <p id="loader-text">Loading…</p>
+    </div>
+
+    <!-- title screen -->
+    <section id="menu" class="screen" hidden aria-labelledby="title">
+      <a class="chip home-link" href="../../index.html" aria-label="Back to all games">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Games</span>
+      </a>
+      <div class="menu-main">
+        <h1 id="title" class="logo"><span class="logo-a">Iron</span><span class="logo-b">Barrage</span></h1>
+        <p class="tagline">Turn-based tank artillery · Ages 14+</p>
+        <div class="menu-buttons" id="menu-buttons">
+          <button type="button" class="btn primary" id="quick-btn" data-go="quick">Quick battle</button>
+        </div>
+      </div>
+      <p class="menu-foot" id="menu-foot"></p>
+    </section>
+
+    <!-- battle set-up -->
+    <section id="setup" class="screen" hidden aria-labelledby="setup-title">
+      <div class="panel setup-panel">
+        <h2 id="setup-title">Quick battle</h2>
+        <div class="field"><span class="label">Battlefield</span><div class="choices" id="pick-field" role="radiogroup" aria-label="Battlefield"></div></div>
+        <div class="field"><span class="label">Your tank</span><div class="choices" id="pick-tank" role="radiogroup" aria-label="Your tank"></div></div>
+        <div class="field"><span class="label">Enemy tanks</span><div class="choices" id="pick-count" role="radiogroup" aria-label="Enemy tanks"></div></div>
+        <div class="field"><span class="label">Enemy skill</span><div class="choices" id="pick-level" role="radiogroup" aria-label="Enemy skill"></div></div>
+        <div class="row-buttons">
+          <button type="button" class="btn" data-back>Back</button>
+          <button type="button" class="btn primary" id="deploy-btn">Deploy</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- in-battle HUD -->
+    <div id="hud" hidden>
+      <div class="hud-top">
+        <div class="hud-buttons">
+          <button type="button" class="round" id="pause-btn" aria-label="Pause"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" /></svg></button>
+          <button type="button" class="round mute" aria-pressed="false" aria-label="Sound off"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg></button>
+          <button type="button" class="round fs" aria-pressed="false" aria-label="Full screen" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path class="enter" d="M4 9.5V4h5.5M14.5 4H20v5.5M20 14.5V20h-5.5M9.5 20H4v-5.5" /><path class="exit" d="M9.5 4v5.5H4M20 9.5h-5.5V4M14.5 20v-5.5H20M4 14.5h5.5V20" /></svg></button>
+        </div>
+        <div id="wind" aria-label="Wind">
+          <span class="wind-label">Wind</span>
+          <div class="wind-bar"><i class="wind-left"></i><i class="wind-right"></i></div>
+          <span class="wind-val" id="wind-val">0.0</span>
+        </div>
+        <div id="turn" aria-live="polite"><span id="turn-who"></span></div>
+      </div>
+      <div id="tags" aria-hidden="true"></div>
+      <div id="floats" aria-hidden="true"></div>
+      <div id="feed" aria-live="polite"></div>
+
+      <div class="hud-bottom" id="controls">
+        <div class="ctl drive">
+          <button type="button" class="round hold" id="drive-l" aria-label="Drive left"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg></button>
+          <div class="fuel" aria-label="Fuel"><span class="ctl-label">Fuel</span><span class="fuel-bar"><i id="fuel-fill"></i></span></div>
+          <button type="button" class="round hold" id="drive-r" aria-label="Drive right"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg></button>
+        </div>
+        <div class="ctl dial">
+          <button type="button" class="round small hold" id="angle-dn" aria-label="Lower the gun"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" /></svg></button>
+          <div class="readout"><span class="ctl-label">Angle</span><b id="angle-val">40°</b></div>
+          <button type="button" class="round small hold" id="angle-up" aria-label="Raise the gun"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12" /></svg></button>
+        </div>
+        <div class="ctl dial">
+          <button type="button" class="round small hold" id="power-dn" aria-label="Less power"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" /></svg></button>
+          <div class="readout"><span class="ctl-label">Power</span><b id="power-val">62</b></div>
+          <button type="button" class="round small hold" id="power-up" aria-label="More power"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12" /></svg></button>
+        </div>
+        <button type="button" class="weapon-btn" id="weapon-btn" aria-haspopup="true" aria-expanded="false" aria-label="Choose weapon">
+          <span class="ctl-label">Weapon</span><b id="weapon-name">HE Shell</b><span id="weapon-ammo">∞</span>
+        </button>
+        <button type="button" class="fire" id="fire-btn" aria-label="Fire">Fire</button>
+      </div>
+      <div id="arsenal" class="panel" hidden role="listbox" aria-label="Weapons"></div>
+    </div>
+
+    <!-- pause -->
+    <section id="pause" class="screen dim" hidden aria-labelledby="pause-title">
+      <div class="panel">
+        <h2 id="pause-title">Paused</h2>
+        <div class="col-buttons">
+          <button type="button" class="btn primary" id="resume-btn">Resume</button>
+          <button type="button" class="btn" id="restart-btn">Restart battle</button>
+          <button type="button" class="btn" id="quit-btn">Quit to menu</button>
+        </div>
+        <p class="keys">Arrows: angle and power (Shift for fine) · A/D: drive · Space: fire · Q/E or 1–9: weapon · Tab: overview · F: full screen · M: sound</p>
+      </div>
+    </section>
+
+    <!-- result -->
+    <section id="result" class="screen dim" hidden aria-live="polite">
+      <div class="panel result-panel">
+        <h2 id="result-title">Victory</h2>
+        <p id="result-sub"></p>
+        <dl class="stats" id="result-stats"></dl>
+        <div class="row-buttons">
+          <button type="button" class="btn" id="result-menu">Menu</button>
+          <button type="button" class="btn primary" id="result-again">Again</button>
+        </div>
+      </div>
+    </section>
+
+    <button type="button" class="round fs menu-fs" aria-pressed="false" aria-label="Full screen" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path class="enter" d="M4 9.5V4h5.5M14.5 4H20v5.5M20 14.5V20h-5.5M9.5 20H4v-5.5" /><path class="exit" d="M9.5 4v5.5H4M20 9.5h-5.5V4M14.5 20v-5.5H20M4 14.5h5.5V20" /></svg></button>
+    <button type="button" class="round mute menu-mute" aria-pressed="false" aria-label="Sound off" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg></button>
+
+    <noscript><p class="noscript">Iron Barrage needs JavaScript to run.</p></noscript>
+    <script type="module" src="src/boot.js"></script>
+  </body>
+</html>
