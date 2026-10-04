@@ -198,9 +198,11 @@ export class Hud {
         let y = Math.min(R.cssH - 120, Math.max(70, this.pt.y + 26));
         // two tanks off the same edge at the same height: stack the markers
         const used = this.edgeY[right ? 1 : 0];
-        for (let moved = true; moved; ) {
+        // (a margin under the 26 px step: (a + 26) - a can come out a hair under
+        // 26 in floating point, which would set y to the same value forever)
+        for (let moved = true, pass = 0; moved && pass < 8; pass++) {
           moved = false;
-          for (let k = 0; k < used.length; k++) if (Math.abs(used[k] - y) < 26) (y = used[k] + 26), (moved = true);
+          for (let k = 0; k < used.length; k++) if (Math.abs(used[k] - y) < 25.5) (y = used[k] + 26), (moved = true);
         }
         used.push(y);
         if (e.edge.style.display !== 'block') e.edge.style.display = 'block';
