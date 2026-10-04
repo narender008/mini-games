@@ -10,8 +10,19 @@ const TIERS = {
   low: { tier: 'low', maxDpr: 1.15, maxPixels: 1.3e6, lights: 12, bloomLevels: 3, particles: 2600, particleScale: 0.5, distort: false, grain: false, fieldRes: 1 },
 };
 
+// The tier chosen on the Settings screen ('auto' or unset: none). The save is
+// plain JSON under 'iron-barrage' (see game/progress.js); ?quality= still wins.
+export function savedQuality() {
+  try {
+    const q = JSON.parse(localStorage.getItem('iron-barrage'))?.settings?.quality;
+    return TIERS[q] ? q : null;
+  } catch {
+    return null;
+  }
+}
+
 export function detectQuality() {
-  const forced = QUERY.get('quality');
+  const forced = QUERY.get('quality') || savedQuality();
   if (forced && TIERS[forced]) return { ...TIERS[forced], scale: 1 };
   const coarse = matchMedia('(pointer: coarse)').matches;
   const mobile = coarse || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);

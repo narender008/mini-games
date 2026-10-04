@@ -5,19 +5,24 @@
 // ?field=<battlefield>, ?enemies=1..3, ?level=recruit|regular|veteran|elite,
 // ?tank=warden|bulwark|lynx pick it; ?quality=high|medium|low; ?cover hides
 // the interface; ?debug exposes window.__ib (see the end of this file).
-import { QUERY, DEBUG, COVER, WORLD, clamp, rand } from './config.js';
+import { QUERY, DEBUG, COVER, PREFS, WORLD, clamp, rand, damp } from './config.js';
 import { detectQuality, FrameGovernor } from './quality.js';
 import { Renderer, InstanceList, SPRITE_STRIDE } from './gl/renderer.js';
 import { loadAtlas } from './gl/atlas.js';
 import { Effects } from './fx/effects.js';
 import { Camera } from './camera.js';
 import { Weather } from './world/weather.js';
+import { Props } from './world/props.js';
+import { Coach } from './ui/coach.js';
 import { BATTLEFIELDS, BATTLEFIELD_IDS, prepare } from './world/battlefields.js';
 import { Battle } from './game/battle.js';
-import { WEAPONS, starterKit } from './game/weapons.js';
+import { WEAPONS, ARSENAL_ORDER, starterKit } from './game/weapons.js';
 import { TANK_TYPES } from './game/tank.js';
 import { LEVELS, LEVEL_IDS } from './game/ai.js';
 import { Hud } from './ui/hud.js';
+import { Menus } from './ui/menus.js';
+import * as Progress from './game/progress.js';
+import * as Campaign from './game/campaign.js';
 import { Input } from './input.js';
 import { canFullscreen, enterFullscreen, toggleFullscreen, isFullscreen, onFullscreenChange } from './fullscreen.js';
 
@@ -26,21 +31,10 @@ const $ = (id) => document.getElementById(id);
 const HANDLE = { update() {}, stop() {} };
 const SILENT = new Proxy({}, { get: (t, k) => (k === 'muted' ? false : k === 'ready' ? false : () => HANDLE) });
 
-const STORE_KEY = 'iron-barrage';
-export function load() {
-  try {
-    return JSON.parse(localStorage.getItem(STORE_KEY)) || {};
-  } catch {
-    return {};
-  }
-}
-export function save(data) {
-  try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(data));
-  } catch {
-    /* private mode: nothing kept */
-  }
-}
+// Save data (localStorage 'iron-barrage', kept on this device) lives in
+// game/progress.js; these keep the old names for the rest of this file.
+export const load = () => Progress.data;
+export const save = () => Progress.save();
 
 const ENEMY_NAMES = ['Viper', 'Jackal', 'Kestrel', 'Mamba', 'Wolfhound', 'Raptor', 'Sabre', 'Cobra', 'Hyena', 'Talon'];
 
@@ -68,6 +62,8 @@ class App {
     this.fx = new Effects(this.q, this.sound);
     this.camera = new Camera(this.renderer);
     this.weather = new Weather(this.q);
+    this.props = new Props();
+    this.coach = new Coach();
     this.hud = new Hud(this);
     this.input = new Input(this);
     this.governor = new FrameGovernor(this.q, () => this.resize());
@@ -77,6 +73,7 @@ class App {
       debris: this.fx.debrisList,
     };
     this.spriteOrder = [this.sprites.units, this.sprites.debris, this.sprites.over];
+    this.shadows = new InstanceList(4, 64);
     this.paused = false;
     this.battle = null;
     this.fadeT = 0;
@@ -89,7 +86,7 @@ class App {
     this.startAttract();
     this.warmUp();
     progress(1, 'Ready');
-    if (QUERY.has('play')) this.deploy(this.setupFromQuery());
+    if (QUERY.has('play') || QUERY.has('mission')) this.deploy(this.setupFromQuery());
     else this.showMenu();
     document.body.dataset.state = 'ready';
     this.last = performance.now();
@@ -110,6 +107,9 @@ class App {
   }
 
   setupFromQuery() {
+    // ?mission=1..15 starts that campaign mission with your saved armoury
+    const mn = Number(QUERY.get('mission'));
+    if (Campaign.mission(mn)) return Campaign.missionSetup(Campaign.mission(mn));
     const field = BATTLEFIELDS[QUERY.get('field')] ? QUERY.get('field') : 'ashfield';
     const n = clamp(Number(QUERY.get('enemies')) || 1, 1, 3);
     const level = LEVELS[QUERY.get('level')] ? QUERY.get('level') : 'regular';
@@ -135,6 +135,7 @@ class App {
     const b = new Battle(this, { ...setup, battlefield: bf });
     this.battle = b;
     this.fx.setWorld(b.terrain, bf, this.atlas);
+    this.props.place(bf, b.terrain, this.atlas, b.spawns, b.seed);
     if (this.bfId !== bf.id) {
       this.renderer.setBattlefield(bf);
       this.bfId = bf.id;
@@ -167,12 +168,13 @@ class App {
     this.hideScreens();
     this.hud.show(!COVER);
     this.sound.unlock?.();
-    this.sound.music?.('battle');
+    this.ui.music('battle');
     document.body.dataset.state = 'battle';
   }
 
   onTurn(t) {
     if (this.attract) return;
+    this.ui.noteTurn();
     this.camera.release();
   }
 
@@ -183,15 +185,8 @@ class App {
       }, 5000);
       return;
     }
-    this.sound.music?.(result === 'win' ? 'victory' : 'defeat');
-    const rec = (this.data.records ||= { wins: 0, losses: 0, kills: 0, shots: 0, hits: 0 });
-    const st = this.battle.player.stats;
-    if (result === 'win') rec.wins++;
-    else rec.losses++;
-    rec.kills += st.kills;
-    rec.shots += st.shots;
-    rec.hits += st.hits;
-    save(this.data);
+    this.ui.music(result === 'win' ? 'victory' : 'defeat');
+    this.ui.settle(result);
     setTimeout(() => this.showResult(result), 2600);
   }
 
@@ -200,27 +195,37 @@ class App {
     if (!b || this.paused || !b.isPlayerTurn()) return;
     this.sound.unlock?.();
     this.camera.release();
-    b.fire(b.player);
+    const t = b.player;
+    if (!WEAPONS[t.weapon]?.utility) t.lastShot = { aim: t.aim, power: t.power, x: t.x };
+    if (b.fire(t)) this.coach.fired();
   }
 
   selectWeapon(id) {
     const b = this.battle;
     if (!b || !b.isPlayerTurn()) return;
     if (b.player.inventory[id] > 0) {
+      if (WEAPONS[id].utility) return this.useUtility(id);
       b.player.weapon = id;
       this.sound.ui('select');
     } else this.sound.ui('deny');
   }
 
+  useUtility(id) {
+    const b = this.battle;
+    if (!b || this.paused || !b.isPlayerTurn()) return;
+    this.sound.unlock?.();
+    b.useUtility(b.player, id);
+  }
+
   available() {
     const t = this.battle.player;
-    return Object.keys(WEAPONS).filter((id) => t.inventory[id] > 0);
+    return ARSENAL_ORDER.filter((id) => t.inventory[id] > 0);
   }
 
   cycleWeapon(d) {
     const b = this.battle;
     if (!b || !b.isPlayerTurn()) return;
-    const list = this.available();
+    const list = this.available().filter((id) => !WEAPONS[id].utility);
     const i = list.indexOf(b.player.weapon);
     this.selectWeapon(list[(i + d + list.length) % list.length]);
   }
@@ -228,37 +233,12 @@ class App {
   weaponSlot(n) {
     const b = this.battle;
     if (!b || !b.isPlayerTurn()) return;
-    const ids = Object.keys(WEAPONS).filter((id) => b.player.inventory[id] !== undefined);
+    const ids = this.available();
     if (ids[n]) this.selectWeapon(ids[n]);
   }
 
-  // ---- screens
+  // ---- screens (the menus themselves are in ui/menus.js)
   setupUI() {
-    const go = (fn) => () => {
-      this.sound.unlock?.();
-      this.sound.ui('click');
-      fn();
-    };
-    $('quick-btn').addEventListener('click', go(() => this.showSetup()));
-    for (const b of document.querySelectorAll('[data-back]')) b.addEventListener('click', go(() => this.showMenu()));
-    $('deploy-btn').addEventListener('click', go(() => {
-      enterFullscreen();
-      const s = this.pickState;
-      this.data.quick = s;
-      this.deploy(this.quickSetup(s.field, s.tank, s.count, s.level));
-    }));
-    $('pause-btn').addEventListener('click', () => this.togglePause());
-    $('resume-btn').addEventListener('click', () => this.togglePause(false));
-    $('restart-btn').addEventListener('click', go(() => {
-      this.togglePause(false);
-      this.deploy(this.setup);
-    }));
-    $('quit-btn').addEventListener('click', go(() => {
-      this.togglePause(false);
-      this.toMenu();
-    }));
-    $('result-again').addEventListener('click', go(() => this.deploy(this.setup)));
-    $('result-menu').addEventListener('click', go(() => this.toMenu()));
     for (const b of document.querySelectorAll('.mute')) b.addEventListener('click', () => this.toggleMute());
     for (const b of document.querySelectorAll('.fs')) {
       b.hidden = !canFullscreen;
@@ -269,57 +249,20 @@ class App {
       this.resize();
     });
     this.syncMute();
-    // quick battle choices
-    const s = (this.pickState = { field: 'ashfield', tank: 'warden', count: 1, level: 'regular', ...(this.data.quick || {}) });
-    if (!BATTLEFIELDS[s.field]) s.field = 'ashfield';
-    const group = (id, items, key) => {
-      const box = $(id);
-      box.textContent = '';
-      for (const [value, label, sub] of items) {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'choice';
-        b.setAttribute('role', 'radio');
-        b.innerHTML = '<span></span><small></small>';
-        b.firstChild.textContent = label;
-        b.lastChild.textContent = sub || '';
-        const sync = () => b.setAttribute('aria-checked', String(s[key] === value));
-        b.addEventListener('click', () => {
-          s[key] = value;
-          for (const c of box.children) c._sync();
-          this.sound.ui('select');
-        });
-        b._sync = sync;
-        sync();
-        box.appendChild(b);
-      }
-    };
-    group('pick-field', BATTLEFIELD_IDS.map((id) => [id, BATTLEFIELDS[id].name, '']), 'field');
-    group('pick-tank', Object.entries(TANK_TYPES).map(([id, t]) => [id, t.name, `${t.hp} HP · ${Math.round(t.armour * 100)}% armour`]), 'tank');
-    group('pick-count', [[1, 'One'], [2, 'Two'], [3, 'Three']], 'count');
-    group('pick-level', LEVEL_IDS.map((id) => [id, LEVELS[id].name, '']), 'level');
-    const rec = this.data.records;
-    if (rec) $('menu-foot').textContent = `Wins ${rec.wins} · Losses ${rec.losses} · Kills ${rec.kills}`;
+    $('pause-btn').addEventListener('click', () => this.togglePause());
+    this.ui = new Menus(this);
   }
 
   hideScreens() {
-    for (const id of ['menu', 'setup', 'pause', 'result']) $(id).hidden = true;
-    for (const b of document.querySelectorAll('.menu-fs, .menu-mute')) b.hidden = true;
+    this.ui.hideAll();
   }
 
   showMenu() {
-    this.hideScreens();
-    this.hud.show(false);
-    $('menu').hidden = COVER;
-    for (const b of document.querySelectorAll('.menu-mute')) b.hidden = COVER;
-    for (const b of document.querySelectorAll('.menu-fs')) b.hidden = COVER || !canFullscreen;
-    document.body.dataset.state = 'menu';
-    this.sound.music?.('menu');
+    this.ui.show('menu', null, 'root');
   }
 
   showSetup() {
-    this.hideScreens();
-    $('setup').hidden = false;
+    this.ui.show('setup');
   }
 
   toMenu() {
@@ -327,37 +270,14 @@ class App {
     this.showMenu();
   }
 
-  showResult(result) {
-    const b = this.battle;
-    const st = b.player.stats;
-    const el = $('result');
-    el.className = `screen dim ${result}`;
-    $('result-title').textContent = result === 'win' ? 'Victory' : 'Defeat';
-    $('result-sub').textContent = result === 'win' ? `${b.bf.name} is yours` : 'Your tank was destroyed';
-    const acc = st.shots ? Math.round((st.hits / st.shots) * 100) : 0;
-    const dl = $('result-stats');
-    dl.textContent = '';
-    for (const [k, v] of [
-      ['Kills', st.kills],
-      ['Damage dealt', st.damage],
-      ['Shots fired', st.shots],
-      ['Accuracy', `${acc}%`],
-      ['Rounds', b.round],
-    ]) {
-      const dt = document.createElement('dt');
-      dt.textContent = k;
-      const dd = document.createElement('dd');
-      dd.textContent = String(v);
-      dl.append(dt, dd);
-    }
-    this.hud.show(false);
-    el.hidden = false;
+  showResult() {
+    this.ui.showResult();
   }
 
   togglePause(on) {
-    if (!this.battle || this.attract) return;
+    if (!this.battle || this.attract || this.ui.cur) return; // no pausing behind a menu screen
     this.paused = on ?? !this.paused;
-    $('pause').hidden = !this.paused;
+    this.ui.pause(this.paused);
     if (this.paused) this.sound.suspend?.();
     else this.sound.resume?.();
   }
@@ -429,6 +349,9 @@ class App {
     for (const l of Object.values(this.sprites)) l.clear();
     const S = this.sprites;
     if (b) {
+      this.props.update(sim, b.terrain, WORLD.gravity);
+      this.props.draw(this.atlas, S.units);
+      this.castShadows(b);
       for (const t of b.tanks) if (!t.alive) t.draw(this.atlas, S.units, R.time);
       for (const t of b.tanks) if (t.alive) t.draw(this.atlas, S.units, R.time);
       b.projectiles.draw(this.atlas, S.over, R.lights, this.fx, sim);
@@ -439,12 +362,13 @@ class App {
     const weather = this.weather.update(sim, R.cam, R.cssW / R.cssH, wind / WORLD.maxWind);
     // aim guide on the player's turn
     R.lineBegin();
+    if (b) b.hazards?.drawDomes(R, R.time);
     if (b && b.isPlayerTurn() && !COVER) this.aimGuide(b.player);
     R.flash[0] = this.fx.flashCol[0];
     R.flash[1] = this.fx.flashCol[1];
     R.flash[2] = this.fx.flashCol[2];
     R.flash[3] = this.fx.flash;
-    R.chroma = this.fx.chroma;
+    R.chroma = this.fx.chroma * (PREFS.calm ? 0.3 : 1);
     // decals fade: blood over about a minute, the hot glow in seconds
     this.fadeT += sim;
     if (this.fadeT > 0.2) {
@@ -453,6 +377,7 @@ class App {
     }
     R.render({
       sprites: this.spriteOrder,
+      shadows: this.shadows,
       litBack: P.litBack,
       lit: P.lit,
       hot: P.hot,
@@ -463,11 +388,66 @@ class App {
       saturation: b && b.slow ? 0.55 : 1,
     });
     if (b && !this.hud.el.hidden) this.hud.update(real, b);
+    this.coach.update(b && !this.hud.el.hidden && !COVER ? b : null, this);
     this.sound.listen?.(R.cam.x, R.cam.viewW / 2);
+    if (b) this.mood(b, real);
   }
 
   // A dashed line from the muzzle: its direction is the aim, its length the
   // power. Your last shot's impact is marked so you can walk your fire in.
+  // Contact shadows under everything standing on the ground.
+  castShadows(b) {
+    const L = this.shadows;
+    L.clear();
+    const put = (x, y, hw, k) => {
+      const o = L.alloc();
+      L.data[o] = x;
+      L.data[o + 1] = y;
+      L.data[o + 2] = hw;
+      L.data[o + 3] = k;
+    };
+    for (const t of b.tanks) {
+      const gap = t.y - b.terrain.groundBelow(t.x, t.y + 1);
+      if (gap > 6) continue;
+      put(t.x, t.y, t.len * 0.5, (t.alive ? 0.55 : 0.65) * (1 - gap / 6));
+    }
+    for (const p of this.props.list) {
+      if (p.gone || p.fall > 0.5) continue;
+      const f = this.atlas.frames[p.name];
+      if (f) put(p.x, p.y, Math.min(4, f.w * 0.5 * p.scale), p.big ? 0.3 : 0.45);
+    }
+  }
+
+  // Wind in the weather bed, and how much of the battle score plays: it
+  // builds while shells fly, after big blasts and as tanks get low.
+  mood(b, dt) {
+    const w = Math.round(b.windShown * 20) / 20;
+    if (w !== this.lastWind) {
+      this.lastWind = w;
+      this.sound.setWind?.(w);
+    }
+    if (b.phase === 'over') return;
+    let want = 0.3;
+    if (b.phase === 'flight') want = 0.6;
+    let low = 1;
+    for (const t of b.tanks) if (t.alive) low = Math.min(low, t.hp / t.maxHp);
+    want += (1 - low) * 0.3;
+    if (b.player.alive && b.player.hp / b.player.maxHp < 0.35) want += 0.15;
+    const lb = b.lastBlast;
+    if (lb && lb !== this.heardBlast) {
+      this.heardBlast = lb;
+      this.heat = Math.min(1, (this.heat || 0) + 0.25 + lb.power * 0.15);
+    }
+    this.heat = Math.max(0, (this.heat || 0) - dt * 0.08);
+    want = Math.min(1, want + this.heat * 0.3);
+    this.intensity = damp(this.intensity ?? want, want, 0.5, dt);
+    const q = Math.round(this.intensity * 25) / 25;
+    if (q !== this.lastIntensity) {
+      this.lastIntensity = q;
+      this.sound.setIntensity?.(q);
+    }
+  }
+
   aimGuide(t) {
     const R = this.renderer;
     const len = 4 + t.power * 18;
@@ -481,6 +461,15 @@ class App {
       const b = ((i + 0.55) / n) * len;
       const k = 1 - i / n;
       R.seg(x0 + ca * a, y0 + sa * a, x0 + ca * b, y0 + sa * b, 0.07, 0.05, 1.6, 1.0, 0.25, 0.85 * k + 0.15);
+    }
+    // a ghost of the last shot's angle and power while the tank hasn't moved
+    const g = t.lastShot;
+    if (g && Math.abs(g.x - t.x) < 0.5 && (Math.abs(g.aim - t.aim) > 0.004 || Math.abs(g.power - t.power) > 0.004)) {
+      const gl = 4 + g.power * 18;
+      const gc = Math.cos(g.aim);
+      const gs = Math.sin(g.aim);
+      R.seg(x0, y0, x0 + gc * gl, y0 + gs * gl, 0.04, 0.04, 1.0, 1.0, 1.0, 0.22);
+      R.seg(x0 + gc * (gl - 0.35), y0 + gs * (gl - 0.35), x0 + gc * gl, y0 + gs * gl, 0.12, 0.12, 1.0, 1.0, 1.0, 0.4);
     }
     const last = t.lastImpact;
     if (last) {
@@ -499,6 +488,9 @@ export async function start(progress) {
       app,
       get battle() {
         return app.battle;
+      },
+      get ui() {
+        return app.ui;
       },
       freeze() {
         app.paused = true;
@@ -525,6 +517,12 @@ export async function start(progress) {
       explode(x, y, r = 4, power = 1) {
         app.fx.explode(x, y ?? app.battle.terrain.top(x), r, power, {});
       },
+      // A weapon's whole blast (crater, damage, effects, sound) at a point.
+      blast(weaponId, x, y) {
+        const b = app.battle;
+        const w = WEAPONS[weaponId];
+        b.blast(x, y ?? b.terrain.top(x), w, b.player, null);
+      },
       kill(i = 1) {
         const b = app.battle;
         const t = b.tanks[i];
@@ -538,6 +536,46 @@ export async function start(progress) {
         const f = app.frameTimes.slice();
         app.frameTimes.length = 0;
         return f;
+      },
+      // Hands the player's tank to the computer too (for soak tests).
+      auto(level = 'veteran') {
+        const b = app.battle;
+        const C = b.tanks.find((t) => t.ai).ai.constructor;
+        b.player.ai = new C(b, b.player, level);
+        if (b.isPlayerTurn()) b.player.ai.begin();
+      },
+      // Runs for `ms` of real time and reports frame intervals and the
+      // time spent in each frame's work (ms): mean, p50, p95, p99, max.
+      bench(ms = 10000) {
+        return new Promise((resolve) => {
+          const gaps = [];
+          app.frameTimes.length = 0;
+          const t0 = performance.now();
+          let last = t0;
+          const hitches = [];
+          let blasts = 0;
+          let lastBlast = app.battle?.lastBlast;
+          const tick = (t) => {
+            gaps.push(t - last);
+            const b = app.battle;
+            if (b && b.lastBlast !== lastBlast) {
+              lastBlast = b.lastBlast;
+              blasts++;
+            }
+            if (t - last > 25 && gaps.length > 1) hitches.push({ at: +((t - t0) / 1000).toFixed(2), ms: +(t - last).toFixed(1), phase: b?.phase, blastAgo: b?.lastBlast ? +(b.time - b.lastBlast.t).toFixed(2) : null });
+            last = t;
+            if (t - t0 < ms) requestAnimationFrame(tick);
+            else {
+              const st = (a) => {
+                const s = a.slice().sort((x, y) => x - y);
+                const q = (k) => s[Math.min(s.length - 1, Math.floor(s.length * k))];
+                return { n: s.length, mean: +(s.reduce((x, y) => x + y, 0) / s.length).toFixed(2), p50: +q(0.5).toFixed(2), p95: +q(0.95).toFixed(2), p99: +q(0.99).toFixed(2), max: +s[s.length - 1].toFixed(2) };
+              };
+              resolve({ interval: st(gaps.slice(1)), work: st(app.frameTimes.slice()), hitches, blasts, size: [app.renderer.w, app.renderer.h], tier: app.q.tier, scale: app.q.scale });
+            }
+          };
+          requestAnimationFrame(tick);
+        });
       },
     };
   }

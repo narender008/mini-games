@@ -31,27 +31,110 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Games</span>
       </a>
       <div class="menu-main">
-        <h1 id="title" class="logo"><span class="logo-a">Iron</span><span class="logo-b">Barrage</span></h1>
-        <p class="tagline">Turn-based tank artillery · Ages 14+</p>
-        <div class="menu-buttons" id="menu-buttons">
-          <button type="button" class="btn primary" id="quick-btn" data-go="quick">Quick battle</button>
+        <div class="menu-brand">
+          <h1 id="title" class="logo"><span class="logo-a">Iron</span><span class="logo-b">Barrage</span></h1>
+          <p class="tagline">Turn-based tank artillery · Ages 14+</p>
         </div>
+        <nav class="menu-buttons" id="menu-buttons" aria-label="Main menu">
+          <button type="button" class="btn primary menu-btn" id="menu-campaign" data-go="campaign"><span class="mb-t">Campaign</span><small class="mb-s" id="menu-campaign-sub"></small></button>
+          <button type="button" class="btn menu-btn" data-go="setup"><span class="mb-t">Quick battle</span></button>
+          <button type="button" class="btn menu-btn" data-go="armoury"><span class="mb-t">Armoury</span><small class="mb-s" id="menu-armoury-sub"></small></button>
+          <button type="button" class="btn menu-btn" data-go="records"><span class="mb-t">Records</span></button>
+          <button type="button" class="btn menu-btn" data-go="settings"><span class="mb-t">Settings</span></button>
+        </nav>
       </div>
       <p class="menu-foot" id="menu-foot"></p>
     </section>
 
-    <!-- battle set-up -->
-    <section id="setup" class="screen" hidden aria-labelledby="setup-title">
-      <div class="panel setup-panel">
-        <h2 id="setup-title">Quick battle</h2>
-        <div class="field"><span class="label">Battlefield</span><div class="choices" id="pick-field" role="radiogroup" aria-label="Battlefield"></div></div>
-        <div class="field"><span class="label">Your tank</span><div class="choices" id="pick-tank" role="radiogroup" aria-label="Your tank"></div></div>
-        <div class="field"><span class="label">Enemy tanks</span><div class="choices" id="pick-count" role="radiogroup" aria-label="Enemy tanks"></div></div>
-        <div class="field"><span class="label">Enemy skill</span><div class="choices" id="pick-level" role="radiogroup" aria-label="Enemy skill"></div></div>
-        <div class="row-buttons">
-          <button type="button" class="btn" data-back>Back</button>
-          <button type="button" class="btn primary" id="deploy-btn">Deploy</button>
+    <!-- quick battle set-up -->
+    <section id="setup" class="screen page" hidden aria-labelledby="setup-title">
+      <div class="sheet narrow">
+        <header class="sheet-head">
+          <button type="button" class="btn back" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Back</span></button>
+          <h2 id="setup-title">Quick battle</h2>
+          <span class="funds" data-funds></span>
+        </header>
+        <div class="sheet-body">
+          <div class="field"><span class="label">Battlefield</span><div class="choices" id="pick-field" role="radiogroup" aria-label="Battlefield"></div></div>
+          <div class="field"><span class="label">Your tank</span><div class="choices" id="pick-tank" role="radiogroup" aria-label="Your tank"></div></div>
+          <div class="field"><span class="label">Enemy tanks</span><div class="choices" id="pick-count" role="radiogroup" aria-label="Enemy tanks"></div></div>
+          <div class="field"><span class="label">Enemy skill</span><div class="choices" id="pick-level" role="radiogroup" aria-label="Enemy skill"></div></div>
+          <p class="note" id="setup-note"></p>
         </div>
+        <footer class="sheet-foot">
+          <button type="button" class="btn primary" id="deploy-btn">Deploy</button>
+        </footer>
+      </div>
+    </section>
+
+    <!-- campaign map -->
+    <section id="campaign" class="screen page" hidden aria-labelledby="campaign-title">
+      <div class="sheet wide">
+        <header class="sheet-head">
+          <button type="button" class="btn back" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Back</span></button>
+          <h2 id="campaign-title">Campaign</h2>
+          <span class="funds" data-funds></span>
+        </header>
+        <div class="sheet-body" id="campaign-body"></div>
+        <footer class="sheet-foot" id="campaign-foot"></footer>
+      </div>
+    </section>
+
+    <!-- mission briefing -->
+    <section id="briefing" class="screen page" hidden aria-labelledby="briefing-title">
+      <div class="sheet">
+        <header class="sheet-head">
+          <button type="button" class="btn back" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Back</span></button>
+          <h2 id="briefing-title">Briefing</h2>
+          <span class="funds" data-funds></span>
+        </header>
+        <div class="sheet-body" id="briefing-body"></div>
+        <footer class="sheet-foot" id="briefing-foot"></footer>
+      </div>
+    </section>
+
+    <!-- armoury -->
+    <section id="armoury" class="screen page" hidden aria-labelledby="armoury-title">
+      <div class="sheet wide">
+        <header class="sheet-head">
+          <button type="button" class="btn back" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Back</span></button>
+          <h2 id="armoury-title">Armoury</h2>
+          <span class="funds" data-funds></span>
+        </header>
+        <div class="tabs" id="armoury-tabs" role="tablist" aria-label="Armoury"></div>
+        <div class="sheet-body" id="armoury-body" role="tabpanel"></div>
+      </div>
+    </section>
+
+    <!-- records -->
+    <section id="records" class="screen page" hidden aria-labelledby="records-title">
+      <div class="sheet wide">
+        <header class="sheet-head">
+          <button type="button" class="btn back" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Back</span></button>
+          <h2 id="records-title">Records</h2>
+          <span class="funds" data-funds></span>
+        </header>
+        <div class="sheet-body" id="records-body"></div>
+        <footer class="sheet-foot" id="records-foot"></footer>
+      </div>
+    </section>
+
+    <!-- settings -->
+    <section id="settings" class="screen page" hidden aria-labelledby="settings-title">
+      <div class="sheet narrow">
+        <header class="sheet-head">
+          <button type="button" class="btn back" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Back</span></button>
+          <h2 id="settings-title">Settings</h2>
+        </header>
+        <div class="sheet-body" id="settings-body"></div>
+      </div>
+    </section>
+
+    <!-- campaign complete -->
+    <section id="complete" class="screen page dim" hidden aria-labelledby="complete-title">
+      <div class="sheet narrow">
+        <div class="sheet-body" id="complete-body"></div>
+        <footer class="sheet-foot" id="complete-foot"></footer>
       </div>
     </section>
 
@@ -100,27 +183,64 @@
 
     <!-- pause -->
     <section id="pause" class="screen dim" hidden aria-labelledby="pause-title">
-      <div class="panel">
-        <h2 id="pause-title">Paused</h2>
-        <div class="col-buttons">
-          <button type="button" class="btn primary" id="resume-btn">Resume</button>
-          <button type="button" class="btn" id="restart-btn">Restart battle</button>
-          <button type="button" class="btn" id="quit-btn">Quit to menu</button>
+      <div class="sheet pause-sheet">
+        <div class="sheet-body">
+          <div class="pause-grid">
+            <div class="pause-main">
+              <h2 id="pause-title">Paused</h2>
+              <p class="sub" id="pause-sub"></p>
+              <div id="pause-goals" class="goals"></div>
+              <div class="col-buttons">
+                <button type="button" class="btn primary" id="resume-btn">Resume</button>
+                <button type="button" class="btn" id="restart-btn">Restart battle</button>
+                <button type="button" class="btn" id="quit-btn">Quit to menu</button>
+              </div>
+            </div>
+            <div class="pause-help" aria-label="Controls">
+              <h3>Controls</h3>
+              <dl class="keys-grid keys-desktop">
+                <dt><kbd>←</kbd><kbd>→</kbd></dt><dd>Turn the gun <small>(past straight up it turns the turret)</small></dd>
+                <dt><kbd>↑</kbd><kbd>↓</kbd></dt><dd>Power <small>(hold <kbd>Shift</kbd> for fine steps)</small></dd>
+                <dt><kbd>A</kbd><kbd>D</kbd></dt><dd>Drive left and right <small>(uses fuel)</small></dd>
+                <dt><kbd>Space</kbd></dt><dd>Fire</dd>
+                <dt><kbd>Q</kbd><kbd>E</kbd> <kbd>1</kbd>–<kbd>9</kbd></dt><dd>Choose weapon</dd>
+                <dt><kbd>Tab</kbd></dt><dd>Overview and zoom <small>(wheel zooms, right-drag pans)</small></dd>
+                <dt><kbd>Esc</kbd> <kbd>F</kbd> <kbd>M</kbd></dt><dd>Pause, full screen, sound</dd>
+              </dl>
+              <dl class="keys-grid keys-touch">
+                <dt>Drag</dt><dd>Press on the battlefield and drag: the gun points at your finger, the distance sets the power</dd>
+                <dt>+ −</dt><dd>The buttons below step the angle and power exactly</dd>
+                <dt>‹ ›</dt><dd>Drive left and right <small>(uses fuel)</small></dd>
+                <dt>Two fingers</dt><dd>Pan and pinch to zoom</dd>
+              </dl>
+            </div>
+          </div>
         </div>
-        <p class="keys">Arrows: angle and power (Shift for fine) · A/D: drive · Space: fire · Q/E or 1–9: weapon · Tab: overview · F: full screen · M: sound</p>
       </div>
     </section>
 
     <!-- result -->
-    <section id="result" class="screen dim" hidden aria-live="polite">
-      <div class="panel result-panel">
-        <h2 id="result-title">Victory</h2>
-        <p id="result-sub"></p>
-        <dl class="stats" id="result-stats"></dl>
-        <div class="row-buttons">
-          <button type="button" class="btn" id="result-menu">Menu</button>
-          <button type="button" class="btn primary" id="result-again">Again</button>
+    <section id="result" class="screen dim" hidden aria-labelledby="result-title" aria-live="polite">
+      <div class="sheet result-sheet">
+        <div class="sheet-body">
+          <header class="result-head">
+            <h2 id="result-title">Victory</h2>
+            <p id="result-sub"></p>
+            <div class="stars" id="result-stars"></div>
+            <ul class="goals" id="result-goals"></ul>
+          </header>
+          <div class="result-grid">
+            <div class="result-col">
+              <h3>Battle report</h3>
+              <dl class="stats" id="result-stats"></dl>
+            </div>
+            <div class="result-col">
+              <h3>Earnings</h3>
+              <div class="earn" id="result-earn"></div>
+            </div>
+          </div>
         </div>
+        <footer class="sheet-foot" id="result-buttons"></footer>
       </div>
     </section>
 
