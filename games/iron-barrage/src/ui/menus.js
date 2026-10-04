@@ -839,7 +839,12 @@ export class Menus {
       h('div', { class: 'earn-funds' }, h('span', { text: 'Funds' }), h('b', { text: money(this.d.money) })),
     );
     const foot = clear($('result-buttons'));
-    const btn = (label, cls, fn, auto) => h('button', { type: 'button', class: `btn ${cls}`, 'data-autofocus': auto || null, onclick: this.act(fn) }, label);
+    // a beat before the buttons answer, so a tap or Space still meant for the
+    // battle cannot skip straight past the result
+    const armedAt = performance.now() + 900;
+    const btn = (label, cls, fn, auto) => h('button', { type: 'button', class: `btn ${cls}`, 'data-autofocus': auto || null, onclick: this.act(() => {
+      if (performance.now() >= armedAt) fn();
+    }) }, label);
     const retry = () => {
       enterFullscreen();
       app.deploy(m ? C.missionSetup(m) : app.setup);

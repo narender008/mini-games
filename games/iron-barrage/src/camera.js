@@ -143,7 +143,7 @@ export class Camera {
       if (foe) this.pt(pts, foe.x, foe.y + 4);
       this.frame(pts, T, 30, 16, 12);
       // keep tanks a readable size: past this the far tank is off to the side
-      const maxW = this.aspect() < 1 ? 100 : 150;
+      const maxW = this.aspect() < 1 ? 115 : 175;
       if (this.tw > maxW) {
         this.tw = maxW;
         const dir = pts.length > 1 ? Math.sign(pts[1].x - pts[0].x) : 1;

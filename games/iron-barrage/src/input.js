@@ -93,7 +93,7 @@ export class Input {
   // Seconds-held to rate: slow at first for precision, then faster.
   rate(s, fine) {
     if (fine) return 0.25;
-    return s < 0.35 ? 0 : Math.min(4, 1 + (s - 0.35) * 3);
+    return s < 0.35 ? 0 : Math.min(2.6, 0.6 + (s - 0.35) * 1.6);
   }
 
   update(dt) {

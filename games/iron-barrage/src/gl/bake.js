@@ -632,7 +632,8 @@ vec4 paintBurnt(float u, float v, float vm) {
   float hh = hash(hid + 31.0);
   float hedgeOn = step(0.45, fbmF(u + 60.0, 1.4)) * step(0.15, hh);
   float shrubM = (1.4 + 2.2 * hh) * hedgeOn * pow(max(0.0, 1.0 - hf * hf * 4.0), 0.5) * (0.65 + 0.55 * NZ(u, vm, 4.0, 4.0).b);
-  float shrubA = cov(gM + shrubM - vm, TH) * step(0.01, shrubM);
+  // a band of shrubs standing on the field line, not a wall down to the strip's foot
+  float shrubA = cov(gM + shrubM - vm, TH) * cov(vm - gM + 0.5, TH) * step(0.01, shrubM);
   float bcu = barnCu(u, 130.0);
   float bgyN = burntTop(bcu) * uSize.y;
   float barnA = barnShape(u, vm, 130.0, 0.6, bgyN, 1.15);

@@ -554,7 +554,7 @@ void main() {
       vec2 bumpB;
       float glossB;
       vec3 alb = matAt(w, dd, dd, nz, stB, bumpB, glossB);
-      alb *= vec3(0.96, 0.84, 0.74) * (0.52 + 0.1 * nz.g);
+      alb *= vec3(0.96, 0.86, 0.76) * (0.66 + 0.1 * nz.g);
       alb *= mix(1.0, 0.72, smoothstep(1.2, 14.0, dd));
       // rim shadow: the nearer the solid ground on every side, the darker
       float ring = 0.0;
@@ -567,9 +567,9 @@ void main() {
       alb *= mix(1.0, 0.6, smoothstep(0.35, 0.95, ring));
       alb *= mix(1.0, 0.85, smoothstep(0.2, 0.8, field.b));
       float scB = clamp(dec.r * 1.1, 0.0, 1.0);
-      alb = mix(alb, alb * 0.42 + vec3(0.012, 0.01, 0.009) * (0.7 + 0.6 * nz.b), scB * 0.6);
+      alb = mix(alb, alb * 0.5 + vec3(0.012, 0.01, 0.009) * (0.7 + 0.6 * nz.b), scB * 0.35);
       vec3 nB = normalize(vec3((nz.rg - 0.5) * 0.25 + bumpB * 0.7, 1.0));
-      airCol = shade(alb, nB, w, 0.3, 1.0);
+      airCol = shade(alb, nB, w, 0.45, 1.0);
       airA = inside;
     }
     if (uGrass.w > 0.0) {
