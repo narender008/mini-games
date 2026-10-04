@@ -90,7 +90,14 @@ class App {
     else this.showMenu();
     document.body.dataset.state = 'ready';
     this.last = performance.now();
-    requestAnimationFrame((t) => this.frame(t));
+    this.schedule();
+  }
+
+  // The one frame loop. A hidden tab holds its pending callback until it is
+  // shown again, so coming back must replace it, never add a second loop.
+  schedule() {
+    cancelAnimationFrame(this.raf);
+    this.raf = requestAnimationFrame((t) => this.frame(t));
   }
 
   // Draws a few frames with a blast in them while the loader is still up,
@@ -130,7 +137,7 @@ class App {
 
   // ---- battles
   newBattle(setup) {
-    if (this.battle) this.battle.projectiles.clear();
+    if (this.battle) this.battle.dispose();
     const bf = prepare(BATTLEFIELDS[setup.battlefield] || BATTLEFIELDS.ashfield);
     const b = new Battle(this, { ...setup, battlefield: bf });
     this.battle = b;
@@ -276,6 +283,7 @@ class App {
 
   togglePause(on) {
     if (!this.battle || this.attract || this.ui.cur) return; // no pausing behind a menu screen
+    if (on !== false && this.battle.phase === 'over') return; // decided: the result screen is on its way
     this.paused = on ?? !this.paused;
     this.ui.pause(this.paused);
     if (this.paused) this.sound.suspend?.();
@@ -309,7 +317,7 @@ class App {
       this.hidden = false;
       if (!this.paused) this.sound.resume?.();
       this.last = performance.now();
-      requestAnimationFrame((t) => this.frame(t));
+      this.schedule();
     }
   }
 
@@ -330,7 +338,7 @@ class App {
     this.step(real);
     this.governor.sample(real);
     if (DEBUG) this.frameTimes.push(performance.now() - t0);
-    requestAnimationFrame((t) => this.frame(t));
+    this.schedule();
   }
 
   step(real) {
@@ -373,7 +381,7 @@ class App {
     this.fadeT += sim;
     if (this.fadeT > 0.2) {
       this.fadeT = 0;
-      R.fadeDecals(0, 0.004, 0.012, 0.05);
+      R.fadeDecals(0, 0.004, 0.012, 0.085);
     }
     R.render({
       sprites: this.spriteOrder,
