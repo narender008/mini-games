@@ -4,7 +4,7 @@
 // URL switches for testing: ?play starts straight into a quick battle;
 // ?field=<battlefield>, ?enemies=1..3, ?level=recruit|regular|veteran|elite,
 // ?tank=warden|bulwark|lynx pick it; ?mission=1..15 starts that campaign
-// mission (a locked one needs ?debug, and then nothing is saved);
+// mission (a locked one needs ?debug; with ?debug nothing is saved);
 // ?quality=high|medium|low; ?cover hides the interface; ?debug exposes
 // window.__ib (see the end of this file).
 import { QUERY, DEBUG, COVER, PREFS, WORLD, clamp, damp } from './config.js';
