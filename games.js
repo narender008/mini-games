@@ -83,4 +83,13 @@ window.MINI_GAMES = [
     imageAlt: 'Two glossy toy tanks on mossy knolls above a lake in a sunny valley, an orange ball flying from one to the other',
     tags: ['3D', 'Ages 2+', 'Touch friendly'],
   },
+  {
+    slug: 'iron-barrage',
+    name: 'Iron Barrage',
+    description: 'Turn-based tank artillery for ages 14 and up: read the wind, set angle and power, and shell computer tanks across five battlefields that every blast tears apart.',
+    path: 'games/iron-barrage/',
+    image: 'games/iron-barrage/cover.jpg',
+    imageAlt: 'A tank at dawn firing across farmland as a heavy shell bursts in a fireball short of an enemy tank',
+    tags: ['2D', 'Ages 14+', 'Touch friendly'],
+  },
 ];

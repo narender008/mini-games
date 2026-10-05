@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>Iron Barrage · Mini Games</title>
+    <meta name="description" content="Turn-based tank artillery for ages 14 and up. Set angle and power, read the wind, and shell computer tanks across ground that every blast tears apart." />
+    <meta name="theme-color" content="#14171a" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <!-- "Add to Home Screen" opens the game full screen, with no browser bars -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Iron Barrage" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body data-state="loading">
+    <canvas id="scene" aria-label="Iron Barrage battlefield"></canvas>
+
+    <div id="loader" role="progressbar" aria-label="Loading Iron Barrage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <p class="loader-title">Iron Barrage</p>
+      <div class="bar"><span id="loader-fill"></span></div>
+      <p id="loader-text">Loading…</p>
+    </div>
+
+    <!-- title screen -->
+    <section id="menu" class="screen" hidden aria-labelledby="title">
+      <a class="chip home-link" href="../../index.html" aria-label="Back to all games">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Games</span>
+      </a>
+      <div class="menu-main">
+        <div class="menu-brand">
+          <h1 id="title" class="logo"><span class="logo-a">Iron</span><span class="logo-b">Barrage</span></h1>
+          <p class="tagline">Turn-based tank artillery · Ages 14+</p>
+        </div>
+        <nav class="menu-buttons" id="menu-buttons" aria-label="Main menu">
+          <button type="button" class="btn primary menu-btn" id="menu-campaign" data-go="campaign"><span class="mb-t">Campaign</span><small class="mb-s" id="menu-campaign-sub"></small></button>
+          <button type="button" class="btn menu-btn" data-go="setup"><span class="mb-t">Quick battle</span></button>
+          <button type="button" class="btn menu-btn" data-go="armoury"><span class="mb-t">Armoury</span><small class="mb-s" id="menu-armoury-sub"></small></button>
+          <button type="button" class="btn menu-btn" data-go="records"><span class="mb-t">Records</span></button>
+          <button type="button" class="btn menu-btn" data-go="settings"><span class="mb-t">Settings</span></button>
+        </nav>
+      </div>
+      <p class="menu-foot" id="menu-foot"></p>
+    </section>
+
+    <!-- quick battle set-up -->
+    <section id="setup" class="screen page" hidden aria-labelledby="setup-title">
+      <div class="sheet narrow">
+        <header class="sheet-head">
+          <button type="button" class="btn back" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Back</span></button>
+          <h2 id="setup-title">Quick battle</h2>
+          <span class="funds" data-funds></span>
+        </header>
+        <div class="sheet-body">
+          <div class="field"><span class="label">Battlefield</span><div class="choices" id="pick-field" role="radiogroup" aria-label="Battlefield"></div></div>
+          <div class="field"><span class="label">Your tank</span><div class="choices" id="pick-tank" role="radiogroup" aria-label="Your tank"></div></div>
+          <div class="field"><span class="label">Enemy tanks</span><div class="choices" id="pick-count" role="radiogroup" aria-label="Enemy tanks"></div></div>
+          <div class="field"><span class="label">Enemy skill</span><div class="choices" id="pick-level" role="radiogroup" aria-label="Enemy skill"></div></div>
+          <p class="note" id="setup-note"></p>
+        </div>
+        <footer class="sheet-foot">
+          <button type="button" class="btn primary" id="deploy-btn">Deploy</button>
+        </footer>
+      </div>
+    </section>
+
+    <!-- campaign map -->
+    <section id="campaign" class="screen page" hidden aria-labelledby="campaign-title">
+      <div class="sheet wide">
+        <header class="sheet-head">
+          <button type="button" class="btn back" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Back</span></button>
+          <h2 id="campaign-title">Campaign</h2>
+          <span class="funds" data-funds></span>
+        </header>
+        <div class="sheet-body" id="campaign-body"></div>
+        <footer class="sheet-foot" id="campaign-foot"></footer>
+      </div>
+    </section>
+
+    <!-- mission briefing -->
+    <section id="briefing" class="screen page" hidden aria-labelledby="briefing-title">
+      <div class="sheet">
+        <header class="sheet-head">
+          <button type="button" class="btn back" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Back</span></button>
+          <h2 id="briefing-title">Briefing</h2>
+          <span class="funds" data-funds></span>
+        </header>
+        <div class="sheet-body" id="briefing-body"></div>
+        <footer class="sheet-foot" id="briefing-foot"></footer>
+      </div>
+    </section>
+
+    <!-- armoury -->
+    <section id="armoury" class="screen page" hidden aria-labelledby="armoury-title">
+      <div class="sheet wide">
+        <header class="sheet-head">
+          <button type="button" class="btn back" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Back</span></button>
+          <h2 id="armoury-title">Armoury</h2>
+          <span class="funds" data-funds></span>
+        </header>
+        <div class="tabs" id="armoury-tabs" role="tablist" aria-label="Armoury"></div>
+        <div class="sheet-body" id="armoury-body" role="tabpanel"></div>
+      </div>
+    </section>
+
+    <!-- records -->
+    <section id="records" class="screen page" hidden aria-labelledby="records-title">
+      <div class="sheet wide">
+        <header class="sheet-head">
+          <button type="button" class="btn back" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Back</span></button>
+          <h2 id="records-title">Records</h2>
+          <span class="funds" data-funds></span>
+        </header>
+        <div class="sheet-body" id="records-body"></div>
+        <footer class="sheet-foot" id="records-foot"></footer>
+      </div>
+    </section>
+
+    <!-- settings -->
+    <section id="settings" class="screen page" hidden aria-labelledby="settings-title">
+      <div class="sheet narrow">
+        <header class="sheet-head">
+          <button type="button" class="btn back" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Back</span></button>
+          <h2 id="settings-title">Settings</h2>
+        </header>
+        <div class="sheet-body" id="settings-body"></div>
+      </div>
+    </section>
+
+    <!-- campaign complete -->
+    <section id="complete" class="screen page dim" hidden aria-labelledby="complete-title">
+      <div class="sheet narrow">
+        <div class="sheet-body" id="complete-body"></div>
+        <footer class="sheet-foot" id="complete-foot"></footer>
+      </div>
+    </section>
+
+    <!-- in-battle HUD -->
+    <div id="hud" hidden>
+      <div class="hud-top">
+        <div class="hud-buttons">
+          <button type="button" class="round" id="pause-btn" aria-label="Pause"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" /></svg></button>
+          <button type="button" class="round mute" aria-pressed="false" aria-label="Sound off"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg></button>
+          <button type="button" class="round fs" aria-pressed="false" aria-label="Full screen" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path class="enter" d="M4 9.5V4h5.5M14.5 4H20v5.5M20 14.5V20h-5.5M9.5 20H4v-5.5" /><path class="exit" d="M9.5 4v5.5H4M20 9.5h-5.5V4M14.5 20v-5.5H20M4 14.5h5.5V20" /></svg></button>
+        </div>
+        <div id="wind" aria-label="Wind">
+          <span class="wind-label">Wind</span>
+          <div class="wind-bar"><i class="wind-left"></i><i class="wind-right"></i></div>
+          <span class="wind-val" id="wind-val">0.0</span>
+        </div>
+        <div id="turn" aria-live="polite"><span id="turn-who"></span></div>
+      </div>
+      <div id="tags" aria-hidden="true"></div>
+      <div id="floats" aria-hidden="true"></div>
+      <div id="feed" aria-live="polite"></div>
+
+      <div class="hud-bottom" id="controls">
+        <div class="ctl drive">
+          <button type="button" class="round hold" id="drive-l" aria-label="Drive left"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg></button>
+          <div class="fuel" aria-label="Fuel"><span class="ctl-label">Fuel</span><span class="fuel-bar"><i id="fuel-fill"></i></span></div>
+          <button type="button" class="round hold" id="drive-r" aria-label="Drive right"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg></button>
+        </div>
+        <div class="ctl dial">
+          <button type="button" class="round small hold" id="angle-dn" aria-label="Lower the gun"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" /></svg></button>
+          <div class="readout"><span class="ctl-label">Angle</span><b id="angle-val">40°</b></div>
+          <button type="button" class="round small hold" id="angle-up" aria-label="Raise the gun"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12" /></svg></button>
+        </div>
+        <div class="ctl dial">
+          <button type="button" class="round small hold" id="power-dn" aria-label="Less power"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" /></svg></button>
+          <div class="readout"><span class="ctl-label">Power</span><b id="power-val">62</b></div>
+          <button type="button" class="round small hold" id="power-up" aria-label="More power"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12" /></svg></button>
+        </div>
+        <button type="button" class="weapon-btn" id="weapon-btn" aria-haspopup="true" aria-expanded="false" aria-label="Choose weapon">
+          <span class="ctl-label">Weapon</span><b id="weapon-name">HE Shell</b><span id="weapon-ammo">∞</span>
+        </button>
+        <button type="button" class="fire" id="fire-btn" aria-label="Fire">Fire</button>
+      </div>
+      <div id="arsenal" class="panel" hidden role="listbox" aria-label="Weapons"></div>
+    </div>
+
+    <!-- pause -->
+    <section id="pause" class="screen dim" hidden aria-labelledby="pause-title">
+      <div class="sheet pause-sheet">
+        <div class="sheet-body">
+          <div class="pause-grid">
+            <div class="pause-main">
+              <h2 id="pause-title">Paused</h2>
+              <p class="sub" id="pause-sub"></p>
+              <div id="pause-goals" class="goals"></div>
+              <div class="col-buttons">
+                <button type="button" class="btn primary" id="resume-btn">Resume</button>
+                <button type="button" class="btn" id="restart-btn">Restart battle</button>
+                <button type="button" class="btn" id="quit-btn">Quit to menu</button>
+              </div>
+            </div>
+            <div class="pause-help" aria-label="Controls">
+              <h3>Controls</h3>
+              <dl class="keys-grid keys-desktop">
+                <dt><kbd>←</kbd><kbd>→</kbd></dt><dd>Turn the gun <small>(past straight up it turns the turret)</small></dd>
+                <dt><kbd>↑</kbd><kbd>↓</kbd></dt><dd>Power <small>(hold <kbd>Shift</kbd> for fine steps)</small></dd>
+                <dt><kbd>A</kbd><kbd>D</kbd></dt><dd>Drive left and right <small>(uses fuel)</small></dd>
+                <dt><kbd>Space</kbd></dt><dd>Fire</dd>
+                <dt><kbd>Q</kbd><kbd>E</kbd> <kbd>1</kbd>–<kbd>9</kbd></dt><dd>Choose weapon</dd>
+                <dt><kbd>Tab</kbd></dt><dd>Overview and zoom <small>(wheel zooms, right-drag pans)</small></dd>
+                <dt><kbd>Esc</kbd> <kbd>F</kbd> <kbd>M</kbd></dt><dd>Pause, full screen, sound</dd>
+              </dl>
+              <dl class="keys-grid keys-touch">
+                <dt>Drag</dt><dd>Press on the battlefield and drag: the gun points at your finger, the distance sets the power</dd>
+                <dt>+ −</dt><dd>The buttons below step the angle and power exactly</dd>
+                <dt>‹ ›</dt><dd>Drive left and right <small>(uses fuel)</small></dd>
+                <dt>Two fingers</dt><dd>Pan and pinch to zoom</dd>
+              </dl>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- result -->
+    <section id="result" class="screen dim" hidden aria-labelledby="result-title" aria-live="polite">
+      <div class="sheet result-sheet">
+        <div class="sheet-body">
+          <header class="result-head">
+            <h2 id="result-title">Victory</h2>
+            <p id="result-sub"></p>
+            <div class="stars" id="result-stars"></div>
+            <ul class="goals" id="result-goals"></ul>
+          </header>
+          <div class="result-grid">
+            <div class="result-col">
+              <h3>Battle report</h3>
+              <dl class="stats" id="result-stats"></dl>
+            </div>
+            <div class="result-col">
+              <h3>Earnings</h3>
+              <div class="earn" id="result-earn"></div>
+            </div>
+          </div>
+        </div>
+        <footer class="sheet-foot" id="result-buttons"></footer>
+      </div>
+    </section>
+
+    <button type="button" class="round fs menu-fs" aria-pressed="false" aria-label="Full screen" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path class="enter" d="M4 9.5V4h5.5M14.5 4H20v5.5M20 14.5V20h-5.5M9.5 20H4v-5.5" /><path class="exit" d="M9.5 4v5.5H4M20 9.5h-5.5V4M14.5 20v-5.5H20M4 14.5h5.5V20" /></svg></button>
+    <button type="button" class="round mute menu-mute" aria-pressed="false" aria-label="Sound off" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg></button>
+
+    <noscript><p class="noscript">Iron Barrage needs JavaScript to run.</p></noscript>
+    <script type="module" src="src/boot.js"></script>
+  </body>
+</html>
