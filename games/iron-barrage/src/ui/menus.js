@@ -189,11 +189,13 @@ export class Menus {
     const app = this.app;
     $('resume-btn').addEventListener('click', () => app.togglePause(false));
     $('restart-btn').addEventListener('click', this.act(() => {
+      this.forfeit();
       app.togglePause(false);
-      app.deploy(app.setup);
+      app.deploy(this.again());
     }));
     $('quit-btn').addEventListener('click', this.act(() => {
       const campaign = app.setup && app.setup.mode === 'campaign';
+      this.forfeit();
       app.togglePause(false);
       app.toMenu();
       if (campaign) this.show('campaign');
@@ -203,6 +205,7 @@ export class Menus {
 
   // ---- navigation
   hideAll() {
+    this.cancelConfirm();
     for (const id of SCREEN_IDS) $(id).hidden = true;
     for (const b of document.querySelectorAll('.menu-fs, .menu-mute')) b.hidden = true;
     this.cur = null;
@@ -210,6 +213,7 @@ export class Menus {
 
   // mode: 'push' keeps where you are as the way back, 'replace' does not, 'root' starts a new trail.
   show(name, args = null, mode = 'push') {
+    this.cancelConfirm(); // a question left open must not swallow the next Escape on another screen
     const prev = this.cur;
     if (mode === 'root') this.stack = [];
     else if (mode === 'push' && prev && prev.name !== name) this.stack.push(prev);
@@ -262,8 +266,8 @@ export class Menus {
     if (pick) pick.focus({ preventScroll: true });
   }
 
-  // Keys while a menu is open: Escape goes back, the arrows move focus, and
-  // nothing leaks through to the battle (the title sits over a live
+  // Keys while a menu is open: Escape goes back, the arrows move focus (or
+  // scroll, see below), and nothing leaks through to the battle (the title sits over a live
   // computer-versus-computer battle that would otherwise take them).
   key(e) {
     if (e.ctrlKey || e.metaKey || e.altKey || !e.code) return;
@@ -275,6 +279,7 @@ export class Menus {
       if (pauseOpen) return; // the battle's own Esc handler resumes
       e.stopImmediatePropagation();
       e.preventDefault();
+      if (e.repeat) return; // a held key must not walk back through every screen
       if (this.cancelConfirm()) return;
       if (name !== 'menu' && name !== 'result' && name !== 'complete') {
         this.sfx('click');
@@ -285,6 +290,13 @@ export class Menus {
     e.stopImmediatePropagation();
     if (e.code.startsWith('Arrow')) {
       const root = $(name);
+      // a long screen with nothing to focus in its body (records, briefing, the result): up and down scroll it
+      const body = root.querySelector('.sheet-body');
+      if ((e.code === 'ArrowUp' || e.code === 'ArrowDown') && body && body.scrollHeight > body.clientHeight && !body.querySelector(FOCUSABLE)) {
+        e.preventDefault();
+        body.scrollTop += (e.code === 'ArrowUp' ? -1 : 1) * 60;
+        return;
+      }
       const list = [...root.querySelectorAll(FOCUSABLE)].filter((x) => x.getClientRects().length);
       if (!list.length) return;
       e.preventDefault();
@@ -310,9 +322,9 @@ export class Menus {
   render_setup() {
     const d = this.d;
     const s = d.quick;
-    if (!BATTLEFIELDS[s.field]) s.field = BATTLEFIELD_IDS[0];
-    if (!TANK_TYPES[s.tank] || !P.ownsTank(s.tank)) s.tank = d.tank;
-    if (!LEVELS[s.level]) s.level = 'regular';
+    if (!Object.hasOwn(BATTLEFIELDS, s.field)) s.field = BATTLEFIELD_IDS[0]; // own keys only: a saved 'toString' is not a field
+    if (!Object.hasOwn(TANK_TYPES, s.tank) || !P.ownsTank(s.tank)) s.tank = d.tank;
+    if (!Object.hasOwn(LEVELS, s.level)) s.level = 'regular';
     const group = (id, items, key) => {
       const box = clear($(id));
       for (const it of items) {
@@ -714,8 +726,9 @@ export class Menus {
         s.music = v === 'on';
         this.music(this.track);
       }),
-      seg('Sound effects', 'Guns, blasts and interface sounds. The M key toggles this too.', this.d.muted ? 'off' : 'on', [['on', 'On'], ['off', 'Off']], (v) => {
-        if ((v === 'off') !== !!this.d.muted) this.app.toggleMute();
+      seg('Sound effects', 'Guns, blasts, ambience and interface sounds. The music has its own switch; the M key and the speaker button mute everything.', s.sfx === false ? 'off' : 'on', [['on', 'On'], ['off', 'Off']], (v) => {
+        s.sfx = v === 'on';
+        this.app.sound.setEffects?.(s.sfx);
       }),
     );
     if (canFullscreen) {
@@ -764,6 +777,7 @@ export class Menus {
     b._settled = true;
     this.noteTurn();
     const setup = app.setup;
+    const live = !setup.unsaved; // a ?debug mission battle shows its result but changes nothing that is saved
     const win = result === 'win';
     const st = b.player.stats;
     const m = setup.mode === 'campaign' ? C.mission(setup.mission) : null;
@@ -771,19 +785,21 @@ export class Menus {
     const got = C.starsFor(m, win, hp, b.round);
     const prev = m ? P.missionRecord(m.n) : null;
     let newStars = 0;
-    if (m && win) newStars = P.recordMission(m.n, got, b.round, hp, st.damage);
+    if (m && win && live) newStars = P.recordMission(m.n, got, b.round, hp, st.damage);
     // overkill does not pay: damage counts up to the enemy tanks' total hit points
     const foeHp = b.tanks.reduce((sum, t) => sum + (t.team !== 0 ? t.maxHp : 0), 0);
-    const pay = C.earnings({ win, mission: m, level: setup.enemies[0]?.level, count: setup.enemies.length, st: { ...st, damage: Math.min(st.damage, foeHp) }, firstClear: !!m && win && !prev, newStars });
+    const pay = live ? C.earnings({ win, mission: m, level: setup.enemies[0]?.level, count: setup.enemies.length, st: { ...st, damage: Math.min(st.damage, foeHp) }, firstClear: !!m && win && !prev, newStars }) : { lines: [], total: 0 };
     const d = this.d;
-    d.money += pay.total;
-    if (m) {
-      P.takeBack(b.player.inventory);
-      if (win && C.isLast(m.n)) d.campaign.done = true;
+    if (live) {
+      d.money += pay.total;
+      if (m) {
+        P.takeBack(b.player.inventory);
+        if (win && C.isLast(m.n)) d.campaign.done = true;
+      }
+      P.recordBattle(win, st, b.round, pay.total, this.shot.best);
+      if (win) d.records[m ? 'missionWins' : 'quickWins']++;
+      P.save();
     }
-    P.recordBattle(win, st, b.round, pay.total, this.shot.best);
-    if (win) d.records[m ? 'missionWins' : 'quickWins']++;
-    P.save();
     this.last = { battle: b, win, mission: m, got, newStars, pay, hp, bestShot: this.shot.best, rounds: b.round, st: { ...st }, field: b.bf.name, mode: setup.mode };
     return this.last;
   }
@@ -796,6 +812,26 @@ export class Menus {
     const dmg = b.player.stats.damage;
     this.shot.best = Math.max(this.shot.best, dmg - this.shot.last);
     this.shot.last = dmg;
+  }
+
+  // Leaving or restarting a campaign battle part-way: the ammunition already
+  // fired is gone from the stock (as settle() does), but no loss is recorded
+  // and nothing is paid.
+  forfeit() {
+    const app = this.app;
+    const b = app.battle;
+    const s = app.setup;
+    if (!b || app.attract || b._settled || !s || s.mode !== 'campaign' || s.unsaved) return;
+    P.takeBack(b.player.inventory);
+    P.save();
+  }
+
+  // The set-up of the battle just fought, for a restart or retry. A campaign
+  // mission is rebuilt, so it carries what is left in the stock.
+  again() {
+    const s = this.app.setup;
+    if (s.mode !== 'campaign') return s;
+    return { ...C.missionSetup(C.mission(s.mission)), unsaved: s.unsaved };
   }
 
   showResult() {
@@ -847,7 +883,7 @@ export class Menus {
     }) }, label);
     const retry = () => {
       enterFullscreen();
-      app.deploy(m ? C.missionSetup(m) : app.setup);
+      app.deploy(this.again());
     };
     foot.append(btn('Menu', '', () => app.toMenu()));
     if (m) {

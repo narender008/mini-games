@@ -172,7 +172,8 @@ export class Sound {
   constructor() {
     this.ctx = null;
     this.offline = false;
-    this._muted = false;
+    this._muted = false; // master: everything, the score too
+    this._fxOn = true; // false: guns, blasts, interface and the weather bed go quiet, the score plays on
     this._hidden = false;
     this._ready = false;
     this._lib = new Map(); // key -> [entry per variant]
@@ -300,9 +301,11 @@ export class Sound {
       o.start();
     }
     this.ringGain.connect(this.post);
-    // buses
+    // buses: everything but the score meets on fxBus, so the effects switch can drop it and leave the music
+    this.fxBus = node(this._fxOn ? 1 : 0);
+    this.fxBus.connect(this.mix);
     this.sfxBus = node(1);
-    this.sfxBus.connect(this.mix);
+    this.sfxBus.connect(this.fxBus);
     this.uiBus = node(1);
     this.uiBus.connect(this.sfxBus);
     this.slowLP = ctx.createBiquadFilter();
@@ -312,7 +315,7 @@ export class Sound {
     this.posBus = node(1);
     this.posBus.connect(this.slowLP).connect(this.sfxBus);
     this.ambBus = node(1);
-    this.ambBus.connect(this.mix);
+    this.ambBus.connect(this.fxBus);
     this.musicBus = node(0.11);
     this.musicBus.connect(this.mix);
     // the reverb: positioned sounds send to it through a low-pass that follows slow motion, music sends straight
@@ -325,7 +328,7 @@ export class Sound {
     this.slowLP2.type = 'lowpass';
     this.slowLP2.frequency.value = 22000;
     this.slowLP2.Q.value = 0.5;
-    this.posSend = node(1);
+    this.posSend = node(this._fxOn ? 1 : 0); // the reverb also carries the score, so the effects' send is cut on its own
     this.posSend.connect(this.slowLP2).connect(this.verbIn);
     this.musicSend = node(0.22);
     this.musicBus.connect(this.musicSend).connect(this.verbIn);
@@ -383,6 +386,18 @@ export class Sound {
     this._sync();
   }
 
+  // Effects off: new one-shots are skipped and what is sounding fades out; the
+  // score keeps playing (setMuted is the master switch).
+  setEffects(on) {
+    this._fxOn = !!on;
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    for (const g of [this.fxBus.gain, this.posSend.gain]) {
+      g.cancelScheduledValues(t);
+      g.setTargetAtTime(this._fxOn ? 1 : 0, t, 0.03);
+    }
+  }
+
   // the tab is hidden
   suspend() {
     this._hidden = true;
@@ -401,10 +416,13 @@ export class Sound {
 
   // every sound to render, nearest-needed first (priority 0..2 is the core set that makes `ready`)
   _queue() {
+    const queued = new Set();
     const add = (key, v, prio, e) => {
       let arr = this._lib.get(key);
       if (!arr) this._lib.set(key, (arr = new Array(e.variants || 1)));
-      if (arr[v]) return;
+      // not already built, and not already queued at an earlier priority
+      if (arr[v] || queued.has(`${key}#${v}`)) return;
+      queued.add(`${key}#${v}`);
       this._jobs.push({ key, v, prio, e, gen: null });
     };
     if (!this._ir && this.ctx) this._jobs.push({ key: 'ir', v: 0, prio: 0, e: null, gen: null });
@@ -616,7 +634,7 @@ export class Sound {
   // Play one rendered sound where x is. level 1 is the sound's own loudness.
   _play(key, x, level, rate, send) {
     const ctx = this.ctx;
-    if (!ctx || this._muted || this._hidden) return;
+    if (!ctx || this._muted || this._hidden || !this._fxOn) return;
     const kmax = KMAX[key];
     if (kmax && (this._kc[key] || 0) >= kmax) return;
     const e = this._pick(key);
@@ -751,7 +769,7 @@ export class Sound {
   // kind: 'click' | 'select' | 'buy' | 'deny' | 'turn' | 'alarm' | 'tick' | 'reward'
   ui(kind) {
     const ctx = this.ctx;
-    if (!ctx || this._muted || this._hidden || !UIS[kind]) return;
+    if (!ctx || this._muted || this._hidden || !this._fxOn || !UIS[kind]) return;
     const e = this._pick(`ui.${kind}`);
     if (!e) return;
     const src = ctx.createBufferSource();

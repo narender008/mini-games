@@ -27,6 +27,7 @@ export const K = {
 const HOT_KIND = [0, 0, 0, 3, 4, 5, 6, 0, 1, 7, 8];
 
 const TRAILS = 64; // trail puffs queued in one update
+const LANDS = 64; // clod landings queued in one update
 
 export class Particles {
   constructor(cap) {
@@ -62,13 +63,15 @@ export class Particles {
     this.hit = new Uint8Array(cap); // stops (and maybe stains) on the ground; sparks: bounces
     this.tq = new Float32Array(TRAILS * 8);
     this.tqn = 0;
+    this.lq = new Float32Array(LANDS * 3);
+    this.lqn = 0;
     this.lists = {
       litBack: new InstanceList(PARTICLE_STRIDE, 1024),
       lit: new InstanceList(PARTICLE_STRIDE, 2048),
       hot: new InstanceList(PARTICLE_STRIDE, 2048),
       distort: new InstanceList(PARTICLE_STRIDE, 256),
     };
-    this.onLand = null; // (kind, x, y, size, i) callback, for blood stains and dust
+    this.onLand = null; // (kind, x, y, size, i) callback, for blood stains and dust (i is -1 for clods: they land after the update)
   }
 
   // Adds one particle and returns its slot (or -1 when full: the oldest
@@ -112,6 +115,7 @@ export class Particles {
   clear() {
     this.n = 0;
     this.tqn = 0;
+    this.lqn = 0;
   }
 
   update(dt, gravity, wind, terrain) {
@@ -135,7 +139,18 @@ export class Particles {
       let y = this.y[i] + vy * dt;
       let keep = true;
       if (this.hit[i] && vy < 0 && terrain.solid(x, y)) {
-        if (this.onLand) this.onLand(k, x, y, this.size[i], i);
+        if (this.onLand) {
+          if (k === K.DIRT) {
+            // a landing clod's dust puff spawns a particle, which has to wait
+            // until the arrays are compacted (a slot made now would be lost)
+            if (this.lqn < LANDS) {
+              const o = this.lqn++ * 3;
+              this.lq[o] = x;
+              this.lq[o + 1] = y;
+              this.lq[o + 2] = this.size[i];
+            }
+          } else this.onLand(k, x, y, this.size[i], i);
+        }
         if (k === K.DIRT && Math.abs(vy) > 6 && Math.random() < 0.5) {
           // a clod bounces once and breaks up
           vy = -vy * 0.25;
@@ -184,7 +199,12 @@ export class Particles {
       w++;
     }
     this.n = w;
-    // spawn the queued trail puffs now that the arrays are settled
+    // now that the arrays are settled: clod landings (their dust puffs), then
+    // the queued trail puffs
+    if (this.onLand) {
+      for (let j = 0; j < this.lqn; j++) this.onLand(K.DIRT, this.lq[j * 3], this.lq[j * 3 + 1], this.lq[j * 3 + 2], -1);
+    }
+    this.lqn = 0;
     const q = this.tq;
     for (let j = 0; j < this.tqn; j++) {
       const o = j * 8;

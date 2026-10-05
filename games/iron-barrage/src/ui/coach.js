@@ -17,9 +17,11 @@ export class Coach {
   constructor() {
     this.seen = {};
     try {
-      this.seen = JSON.parse(localStorage.getItem(KEY)) || {};
+      // a hand-edited value that is not an object (a string, a number) would throw on the first write
+      const v = JSON.parse(localStorage.getItem(KEY));
+      if (v && typeof v === 'object' && !Array.isArray(v)) this.seen = v;
     } catch {
-      this.seen = {};
+      /* private mode or a broken value: the hints just show again */
     }
     this.el = document.createElement('div');
     this.el.className = 'coach';

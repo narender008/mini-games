@@ -10,8 +10,6 @@ export const TANK_TYPES = {
   lynx: { name: 'Lynx', hp: 80, armour: 0.06, fuel: 50, speed: 6.2, climb: 44 * DEG, blurb: 'Light tank. Thin-skinned, but quick and climbs anything.' },
 };
 
-const FALL_SAFE = 9; // landing speed (m/s) a tank takes without damage
-
 export class Tank {
   constructor(o) {
     this.id = o.id;
@@ -195,6 +193,8 @@ export class Tank {
       }
     }
     this.x = clamp(this.x, 6, WORLD.width - 6);
+    // the world's edge is a wall: a slide down a steep slope must not keep its speed against it
+    if ((this.x <= 6 && this.vx < 0) || (this.x >= WORLD.width - 6 && this.vx > 0)) this.vx = 0;
     this.setAim(this.aim);
     this.pose();
   }

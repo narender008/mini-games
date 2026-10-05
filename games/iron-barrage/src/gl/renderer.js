@@ -180,6 +180,7 @@ export class Renderer {
     };
     this.vao = gl.createVertexArray();
     this.noise = makeNoise(gl);
+    this.blackTex(); // made now: making it mid-frame would take over a bound unit
 
     // instance buffers and their vertex arrays
     this.spriteVao = this.instanceVao(SPRITE_STRIDE, this.p.sprite, ['aA', 'aB', 'aC', 'aD', 'aE']);
@@ -198,8 +199,10 @@ export class Renderer {
 
     this.scene = new Target(gl, 4, 4);
     this.distortT = gl.hdr ? new Target(gl, 4, 4, { internal: gl.RGBA16F }) : null;
+    // bloom only means something over a half-float scene (an 8-bit one clips
+    // before any threshold), so without HDR there are no bloom targets
     this.bloom = [];
-    for (let i = 0; i < 5; i++) this.bloom.push(new Target(gl, 4, 4));
+    if (gl.hdr) for (let i = 0; i < 5; i++) this.bloom.push(new Target(gl, 4, 4));
     this.lights = new LightList(64);
     this.time = 0;
     this.cam = { x: 160, y: 50, viewW: 120, roll: 0 };
@@ -288,8 +291,9 @@ export class Renderer {
     gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
     gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
     const r = WORLD.res;
-    // shadows reach about 35 m towards the sun, so redo that much around it
-    const pad = 36;
+    // the sun march in the field shader reaches 0.6 + 27 * 27 * 0.075 = 55 m,
+    // so ground that far from a change (away from the sun) needs redoing
+    const pad = 56;
     const f = this.fieldDirty;
     const box = [d.x0 / r - pad, d.y0 / r - pad, d.x1 / r + pad, d.y1 / r + 10];
     if (f) {
@@ -413,15 +417,20 @@ export class Renderer {
   }
 
   resize(cssW, cssH, dpr) {
-    const scale = Math.min(dpr, this.q.maxDpr) * (this.q.scale || 1);
-    let w = Math.round(cssW * scale);
-    let h = Math.round(cssH * scale);
+    const scale = Math.min(dpr, this.q.maxDpr);
+    let w = cssW * scale;
+    let h = cssH * scale;
+    // the pixel cap first, the governor's scale on top of it: the other way
+    // round, a big high-DPI screen stays capped and every governor step is lost
     const max = this.q.maxPixels;
     if (w * h > max) {
       const k = Math.sqrt(max / (w * h));
-      w = Math.round(w * k);
-      h = Math.round(h * k);
+      w *= k;
+      h *= k;
     }
+    const gs = this.q.scale || 1;
+    w = Math.round(w * gs);
+    h = Math.round(h * gs);
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;
       this.canvas.height = h;
@@ -511,6 +520,7 @@ export class Renderer {
   // ---- the frame
   render(s) {
     const gl = this.gl;
+    if (gl.lost) return; // context lost: gl.js is asking for a reload
     const q = this.q;
     this.stats.draws = 0;
     const bf = this.bf;
@@ -702,40 +712,43 @@ export class Renderer {
       useDistort = true;
     }
 
-    // bloom
+    // bloom (not without a half-float scene: see the constructor)
+    const bloomOn = this.bloom.length > 0;
     gl.disable(gl.BLEND);
     gl.bindVertexArray(this.vao);
-    const levels = q.bloomLevels;
-    let b = this.bloom[0];
-    b.bind();
-    p = this.p.bright;
-    gl.useProgram(p.p);
-    this.tex(p, 'uScene', this.scene.tex, 0);
-    gl.uniform2f(p.u.uTexel, 1 / this.scene.w, 1 / this.scene.h);
-    gl.uniform1f(p.u.uThreshold, bf.bloomThreshold ?? 1.1);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    p = this.p.down;
-    gl.useProgram(p.p);
-    for (let i = 1; i < levels; i++) {
-      const src = this.bloom[i - 1];
-      this.bloom[i].bind();
-      this.tex(p, 'uTex', src.tex, 0);
-      gl.uniform2f(p.u.uTexel, 1 / src.w, 1 / src.h);
+    if (bloomOn) {
+      const levels = q.bloomLevels;
+      let b = this.bloom[0];
+      b.bind();
+      p = this.p.bright;
+      gl.useProgram(p.p);
+      this.tex(p, 'uScene', this.scene.tex, 0);
+      gl.uniform2f(p.u.uTexel, 1 / this.scene.w, 1 / this.scene.h);
+      gl.uniform1f(p.u.uThreshold, bf.bloomThreshold ?? 1.1);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
+      p = this.p.down;
+      gl.useProgram(p.p);
+      for (let i = 1; i < levels; i++) {
+        const src = this.bloom[i - 1];
+        this.bloom[i].bind();
+        this.tex(p, 'uTex', src.tex, 0);
+        gl.uniform2f(p.u.uTexel, 1 / src.w, 1 / src.h);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+      p = this.p.up;
+      gl.useProgram(p.p);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      for (let i = levels - 1; i > 0; i--) {
+        const src = this.bloom[i];
+        this.bloom[i - 1].bind();
+        this.tex(p, 'uTex', src.tex, 0);
+        gl.uniform2f(p.u.uTexel, 1 / src.w, 1 / src.h);
+        gl.uniform1f(p.u.uWeight, 1);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+      gl.disable(gl.BLEND);
     }
-    p = this.p.up;
-    gl.useProgram(p.p);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE);
-    for (let i = levels - 1; i > 0; i--) {
-      const src = this.bloom[i];
-      this.bloom[i - 1].bind();
-      this.tex(p, 'uTex', src.tex, 0);
-      gl.uniform2f(p.u.uTexel, 1 / src.w, 1 / src.h);
-      gl.uniform1f(p.u.uWeight, 1);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
-    }
-    gl.disable(gl.BLEND);
 
     // final picture
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -743,10 +756,10 @@ export class Renderer {
     p = this.p.composite;
     gl.useProgram(p.p);
     this.tex(p, 'uScene', this.scene.tex, 0);
-    this.tex(p, 'uBloom', this.bloom[0].tex, 1);
+    this.tex(p, 'uBloom', bloomOn ? this.bloom[0].tex : this.blackTex(), 1);
     this.tex(p, 'uDistort', useDistort ? this.distortT.tex : this.blackTex(), 2);
     const g = bf.grade;
-    gl.uniform4f(p.u.uPost, g.exposure * (s.exposure || 1), g.bloom, 0.004 + this.chroma, q.grain ? g.grain : 0);
+    gl.uniform4f(p.u.uPost, g.exposure * (s.exposure || 1), bloomOn ? g.bloom : 0, 0.004 + this.chroma, q.grain ? g.grain : 0);
     gl.uniform4fv(p.u.uFlash, this.flash);
     gl.uniform4f(p.u.uGrade, g.saturation * (s.saturation ?? 1), g.contrast, g.vignette, g.warmth);
     gl.uniform3fv(p.u.uLift, g.lift);

@@ -106,7 +106,7 @@ export class Commander {
   constructor(battle, tank, level = 'regular') {
     this.b = battle;
     this.t = tank;
-    this.level = LEVELS[level] ? level : 'regular';
+    this.level = Object.hasOwn(LEVELS, level) ? level : 'regular';
     this.L = LEVELS[this.level];
     this.memory = new Map(); // target id -> { bias, x, shots }
     this.threat = new Map(); // foe id -> damage it has done to us lately
@@ -549,6 +549,7 @@ export class Commander {
       let hasLo = false;
       let hasHi = false;
       let pPrev = -1;
+      let pSim = p; // the last power actually simulated: what err, out and hit belong to
       let ePrev = 0;
       let prevTerr = false;
       let slope = 0;
@@ -559,6 +560,7 @@ export class Commander {
       for (let it = 0; it < 6; it++) {
         const sp = vmax * (0.12 + 0.88 * p);
         trajectory(b, t, mx, my, ca * sp, sa * sp, o.w, out);
+        pSim = p;
         yield WORK;
         const tk = out.tank;
         if (tk && tk !== tgt && tk.alive && tk.team === t.team) {
@@ -593,6 +595,7 @@ export class Commander {
         if (Math.abs(p - pPrev) < 1e-4) break;
       }
       if (bad) continue;
+      p = pSim; // a loop that ran out leaves p at the next, untested guess
       if (o.direct && !hit) ok = false;
       const safe = this.landingSafe(out.x, out.y);
       if (!safe) ok = false;

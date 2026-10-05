@@ -718,7 +718,8 @@ vec4 fireAt(float u, float vm, out vec4 flare) {
     float fr = length(fp);
     float core = exp(-fr * fr / 1.2) * fOn;
     float halo = exp(-fr * fr / (sz * sz * 1.6)) * fOn * 0.4;
-    float trail = exp(-pow(fp.x * 3.0 + fp.y * 0.05, 2.0)) * step(0.0, -fp.y) * step(-fp.y, 28.0) * exp(fp.y * 0.08) * fOn * 0.1;
+    float tx = fp.x * 3.0 + fp.y * 0.05; // squared by hand: pow() of a negative is undefined
+    float trail = exp(-tx * tx) * step(0.0, -fp.y) * step(-fp.y, 28.0) * exp(fp.y * 0.08) * fOn * 0.1;
     float fa = max(core, max(halo, trail));
     vec3 fc = mix(vec3(1.0, 0.85, 0.6), vec3(1.0, 1.0, 0.95), core);
     float f2 = fa * (1.0 - flare.a);

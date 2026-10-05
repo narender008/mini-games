@@ -82,20 +82,13 @@ export async function loadAtlas(gl, base) {
 // Plain stand-in shapes, used only if the Blender atlas is missing.
 function standInAtlas(gl) {
   const W = 1024;
-  const H = 512;
   const ppm = 48;
-  const ca = document.createElement('canvas');
-  ca.width = W;
-  ca.height = H;
-  const cn = document.createElement('canvas');
-  cn.width = W;
-  cn.height = H;
-  const A = ca.getContext('2d');
-  const Nn = cn.getContext('2d');
   const frames = {};
+  const draws = [];
   let x = 2;
   let y = 2;
   let rowH = 0;
+  // Only places the frame; drawing waits until the canvas is sized to hold them all.
   const add = (name, w, h, px, py, draw, paint) => {
     w = Math.ceil(w * ppm);
     h = Math.ceil(h * ppm);
@@ -104,16 +97,7 @@ function standInAtlas(gl) {
       y += rowH + 4;
       rowH = 0;
     }
-    A.save();
-    A.translate(x, y);
-    draw(A, w, h);
-    A.restore();
-    Nn.save();
-    Nn.translate(x, y);
-    Nn.fillStyle = paint ? 'rgba(128,128,255,1)' : 'rgba(128,128,255,0)';
-    Nn.globalCompositeOperation = 'source-over';
-    draw(Nn, w, h, true);
-    Nn.restore();
+    draws.push({ x, y, w, h, draw, paint });
     frames[name] = { x, y, w, h, px: px * ppm, py: py * ppm, ppm };
     x += w + 4;
     rowH = Math.max(rowH, h);
@@ -176,6 +160,27 @@ function standInAtlas(gl) {
     add(o, 0.8, 0.22, 0.4, 0.11, blob('#5a5a40'));
   add('jet', 16, 4, 8, 2, blob('#6a6e72'));
   add('parachute', 7, 5, 3.5, 5, blob('#56583a'));
+  const H = y + rowH + 2;
+  const ca = document.createElement('canvas');
+  ca.width = W;
+  ca.height = H;
+  const cn = document.createElement('canvas');
+  cn.width = W;
+  cn.height = H;
+  const A = ca.getContext('2d');
+  const Nn = cn.getContext('2d');
+  for (const { x, y, w, h, draw, paint } of draws) {
+    A.save();
+    A.translate(x, y);
+    draw(A, w, h);
+    A.restore();
+    Nn.save();
+    Nn.translate(x, y);
+    Nn.fillStyle = paint ? 'rgba(128,128,255,1)' : 'rgba(128,128,255,0)';
+    Nn.globalCompositeOperation = 'source-over';
+    draw(Nn, w, h, true);
+    Nn.restore();
+  }
   const meta = {
     size: [W, H],
     frames,

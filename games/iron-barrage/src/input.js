@@ -24,13 +24,12 @@ export class Input {
     this.pan = null;
     this.keys = new Set();
     this.held = new Map(); // button id -> seconds held
-    this.w = { x: 0, y: 0 };
     this.bind();
   }
 
+  // the battle, only while the player may act in it (not the title demo, not paused)
   battle() {
-    const b = this.app.battle;
-    return b && !this.app.paused && b.isPlayerTurn() ? b : null;
+    return this.app.playerTurn();
   }
 
   bind() {
@@ -61,7 +60,7 @@ export class Input {
         capture(el, e.pointerId);
         this.held.set(id, 0);
         el.classList.add('held');
-        this.nudge(id, true);
+        this.nudge(id);
       };
       const stop = () => {
         this.held.delete(id);
@@ -76,7 +75,7 @@ export class Input {
   }
 
   // a single step for a tap
-  nudge(id, first) {
+  nudge(id) {
     const b = this.battle();
     if (!b) return;
     const t = b.player;
@@ -139,7 +138,8 @@ export class Input {
 
   key(e, down) {
     const app = this.app;
-    if (down && e.repeat && (e.code === 'Space' || e.code === 'Enter')) return;
+    // Ctrl, Alt and Cmd chords belong to the browser (Ctrl+F, Cmd+1, Ctrl+Enter), never to the game
+    if (down && (e.ctrlKey || e.altKey || e.metaKey)) return;
     if (!this.keyT) this.keyT = new Map();
     if (down) {
       if (!this.keys.has(e.code)) {
@@ -152,6 +152,8 @@ export class Input {
       this.keyT.delete(e.code);
     }
     if (!down) return;
+    // a held key acts once; the arrows and A/D run off the held set in update(), and the arrows still need their preventDefault
+    if (e.repeat && !e.code.startsWith('Arrow')) return;
     const tag = e.target && e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     switch (e.code) {
@@ -218,6 +220,8 @@ export class Input {
   down(e) {
     capture(this.canvas, e.pointerId);
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY });
+    // a tap that only closes the weapon tray must not also move the gun
+    const trayOpen = !!this.app.hud && !this.app.hud.arsenal.hidden;
     this.app.hud?.toggleArsenal(false);
     this.app.sound.unlock?.();
     if (this.pointers.size === 2) {
@@ -229,7 +233,7 @@ export class Input {
       this.startPan();
       return;
     }
-    if (this.battle()) {
+    if (this.battle() && !trayOpen) {
       this.aiming = e.pointerId;
       this.aimAt(e.clientX, e.clientY);
     }

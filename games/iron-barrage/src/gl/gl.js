@@ -17,7 +17,32 @@ export function createContext(canvas) {
   gl.hdr = !!cbf;
   gl.getExtension('OES_texture_float_linear');
   gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+  watchContext(canvas, gl);
   return gl;
+}
+
+// The device can take the context away (a phone switching apps drops its big
+// textures first). Rebuilding every GPU resource is a lot for a rare event,
+// so the game says so and starts over on a tap; the renderer stops drawing
+// while `gl.lost` is set.
+function watchContext(canvas, gl) {
+  let note = null;
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault(); // without this the context is never restored
+    gl.lost = true;
+    if (note) return;
+    note = document.createElement('button');
+    note.type = 'button';
+    note.textContent = 'Graphics were reset by the device. Tap to reload.';
+    // light text on a dark plate with a light edge: readable on any backdrop
+    note.style.cssText =
+      'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2147483647;max-width:80vw;' +
+      'padding:16px 22px;border:2px solid #f2f2f2;border-radius:10px;background:#1b1b1b;color:#f2f2f2;' +
+      'font:600 16px/1.3 system-ui,sans-serif;text-align:center;cursor:pointer;touch-action:manipulation';
+    note.addEventListener('click', () => location.reload());
+    document.body.appendChild(note);
+  });
+  canvas.addEventListener('webglcontextrestored', () => location.reload());
 }
 
 function compile(gl, type, src, name) {

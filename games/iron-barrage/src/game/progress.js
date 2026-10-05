@@ -5,7 +5,7 @@
 // `data` is the live object: main.js keeps a reference to it, so anything
 // changed on it is saved by calling save(). Shape (version 1):
 //   muted, lastField, quick{field,tank,count,level}      (first release, kept)
-//   settings{quality:'auto'|'high'|'medium'|'low', calm (null = follow the OS reduced-motion setting), gore, music}
+//   settings{quality:'auto'|'high'|'medium'|'low', calm (null = follow the OS reduced-motion setting), gore, music, sfx}
 //   money                       funds
 //   tank, tanks[]               the tank you field, and the ones you own
 //   upgrades{armour,hull,engine,gun}   0..3 each, applied to whichever tank you field
@@ -17,6 +17,8 @@
 //   records{battles,wins,losses,kills,shots,hits,damage,rounds,bestShot,earned,...}
 import { WEAPONS, starterKit } from './weapons.js';
 import { TANK_TYPES } from './tank.js';
+import { LEVEL_IDS } from './ai.js';
+import { BATTLEFIELDS } from '../world/battlefields.js';
 
 export const KEY = 'iron-barrage';
 export const VERSION = 1;
@@ -44,7 +46,7 @@ function fresh() {
     muted: false,
     lastField: 'ashfield',
     quick: { field: 'ashfield', tank: 'warden', count: 1, level: 'regular' },
-    settings: { quality: 'auto', calm: null, gore: true, music: true },
+    settings: { quality: 'auto', calm: null, gore: true, music: true, sfx: true },
     money: MONEY_START,
     tank: 'warden',
     tanks: ['warden'],
@@ -63,18 +65,19 @@ function stockFromKit(kit) {
 }
 
 // Keeps what is valid in a stored blob and fills the rest from defaults, so a
-// hand-edited, old or half-written save never breaks the game.
+// hand-edited, old or half-written save never breaks the game. Ids are checked
+// as own keys: 'toString' is not a battlefield.
 function sanitize(raw) {
   const d = fresh();
   if (!raw || typeof raw !== 'object') return d;
   if (typeof raw.muted === 'boolean') d.muted = raw.muted;
-  if (typeof raw.lastField === 'string') d.lastField = raw.lastField;
+  if (typeof raw.lastField === 'string' && Object.hasOwn(BATTLEFIELDS, raw.lastField)) d.lastField = raw.lastField;
   if (raw.quick && typeof raw.quick === 'object') {
     const q = raw.quick;
-    if (typeof q.field === 'string') d.quick.field = q.field;
-    if (typeof q.tank === 'string') d.quick.tank = q.tank;
+    if (typeof q.field === 'string' && Object.hasOwn(BATTLEFIELDS, q.field)) d.quick.field = q.field;
+    if (typeof q.tank === 'string' && Object.hasOwn(TANK_TYPES, q.tank)) d.quick.tank = q.tank;
     d.quick.count = int(q.count, 1, 3, 1);
-    if (typeof q.level === 'string') d.quick.level = q.level;
+    if (LEVEL_IDS.includes(q.level)) d.quick.level = q.level;
   }
   const s = raw.settings;
   if (s && typeof s === 'object') {
@@ -82,17 +85,18 @@ function sanitize(raw) {
     if (typeof s.calm === 'boolean') d.settings.calm = s.calm;
     if (typeof s.gore === 'boolean') d.settings.gore = s.gore;
     if (typeof s.music === 'boolean') d.settings.music = s.music;
+    if (typeof s.sfx === 'boolean') d.settings.sfx = s.sfx;
   }
   if (raw.v === VERSION) {
     d.money = int(raw.money, 0, 1e9, d.money);
-    if (Array.isArray(raw.tanks)) d.tanks = [...new Set(['warden', ...raw.tanks.filter((t) => typeof t === 'string')])];
+    if (Array.isArray(raw.tanks)) d.tanks = [...new Set(['warden', ...raw.tanks.filter((t) => typeof t === 'string' && Object.hasOwn(TANK_TYPES, t))])];
     if (typeof raw.tank === 'string' && d.tanks.includes(raw.tank)) d.tank = raw.tank;
     for (const k of UPGRADE_KEYS) d.upgrades[k] = int(raw.upgrades?.[k], 0, MAX_UPGRADE, 0);
     if (raw.stock && typeof raw.stock === 'object') {
       d.stock = {};
-      for (const [id, n] of Object.entries(raw.stock)) if (id !== 'shell') d.stock[id] = int(n, 0, 99, 0);
+      for (const [id, n] of Object.entries(raw.stock)) if (id !== 'shell' && Object.hasOwn(WEAPONS, id)) d.stock[id] = int(n, 0, WEAPONS[id].limit ?? 99, 0);
     }
-    if (raw.bought && typeof raw.bought === 'object') for (const id of Object.keys(raw.bought)) if (raw.bought[id] === true) d.bought[id] = true;
+    if (raw.bought && typeof raw.bought === 'object') for (const id of Object.keys(raw.bought)) if (raw.bought[id] === true && Object.hasOwn(WEAPONS, id)) d.bought[id] = true;
     const c = raw.campaign;
     if (c && typeof c === 'object') {
       d.campaign.done = c.done === true;
@@ -153,7 +157,8 @@ export const packOf = (id) => {
   const a = WEAPONS[id]?.ammo;
   return Number.isFinite(a) && a > 0 ? a : 1;
 };
-export const stockCap = (id) => Math.max(6, packOf(id) * 3);
+// The most the armoury will sell you: a weapon's own `limit` (the Sunburst: one), else three packs.
+export const stockCap = (id) => WEAPONS[id]?.limit ?? Math.max(6, packOf(id) * 3);
 export const stockOf = (id) => data.stock[id] || 0;
 
 // What your tank carries into a campaign battle.
@@ -217,7 +222,7 @@ export function buyUpgrade(key) {
 }
 
 export function buyTank(id) {
-  if (!TANK_TYPES[id]) return { ok: false, reason: 'unavailable' };
+  if (!Object.hasOwn(TANK_TYPES, id)) return { ok: false, reason: 'unavailable' };
   if (data.tanks.includes(id)) return { ok: false, reason: 'owned' };
   const cost = tankPrice(id);
   if (data.money < cost) return { ok: false, reason: 'money', cost };

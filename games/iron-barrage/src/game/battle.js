@@ -3,7 +3,7 @@
 // A turn: drive (fuel permitting), aim, pick a weapon, fire; then the shot
 // flies, the ground and the tanks settle, the dead burn, and the next tank
 // goes. Last side with a tank standing wins.
-import { WORLD, PREFS, clamp, rand, gauss, DEG, damp } from '../config.js';
+import { WORLD, PREFS, clamp, rand, gauss, damp } from '../config.js';
 import { Terrain } from '../world/terrain.js';
 import { flatten } from '../world/battlefields.js';
 import { Tank } from './tank.js';
@@ -21,6 +21,12 @@ export const SKINS = {
 };
 
 const FALL_SAFE = 9;
+
+// A weapon limited per battle (the Sunburst: one) that this tank has fired out.
+const spent = (t, id) => {
+  const w = WEAPONS[id];
+  return !!(w && w.perBattle && (t.used?.[id] || 0) >= w.perBattle);
+};
 
 export class Battle {
   constructor(app, setup) {
@@ -42,12 +48,11 @@ export class Battle {
     this.wind = 0;
     this.windShown = 0;
     this.result = null;
-    this.events = [];
     this.round = 1;
     this.lastShot = null;
     this.focus = null;
     this.pendingDeaths = [];
-    this.settleT = 0;
+    this.slideT = 0;
     this.fired = false;
     this.build();
   }
@@ -157,7 +162,7 @@ export class Battle {
     const gust = Math.random() < 0.15 ? 0.6 : 0.25;
     this.wind = clamp(this.wind * 0.75 + gauss() * gust, -1, 1);
     if (Math.abs(this.wind) < 0.04) this.wind = 0;
-    if (!t.inventory[t.weapon]) t.weapon = 'shell';
+    if (!t.inventory[t.weapon] || spent(t, t.weapon)) t.weapon = 'shell';
     this.setPhase('aim');
     this.fired = false;
     this.app.onTurn?.(t);
@@ -178,11 +183,14 @@ export class Battle {
     const w = WEAPONS[id];
     if (!w || !(t.inventory[id] > 0)) return false;
     if (w.utility) return this.useUtility(t, id);
-    // some weapons are limited per battle (the Sunburst: one)
-    if (w.perBattle && (t.used?.[id] || 0) >= w.perBattle) return false;
+    // some weapons are limited per battle (the Sunburst: one); a spent one drops back to the shell
+    if (spent(t, id)) {
+      t.weapon = 'shell';
+      return false;
+    }
     (t.used ||= {})[id] = (t.used[id] || 0) + 1;
     if (t.inventory[id] !== Infinity) t.inventory[id]--;
-    if (!(t.inventory[t.weapon] > 0)) t.weapon = 'shell';
+    if (!(t.inventory[t.weapon] > 0) || spent(t, t.weapon)) t.weapon = 'shell';
     this.fired = true;
     t.driving = 0;
     t.pose();
@@ -246,7 +254,6 @@ export class Battle {
     this.damageArea(x, y, w, owner, hitTank);
     if (w.onBlast) w.onBlast(this, x, y, owner); // the Sunburst's shock
     this.app.props?.blast(x, y, r, w.power, this.fx);
-    this.events.push({ type: 'blast', x, y, r, power: w.power });
     this.lastBlast = { x, y, t: this.time, power: w.power };
   }
 
@@ -333,9 +340,10 @@ export class Battle {
     t.char = 1;
     t.wreckX = t.x;
     t.driving = 0;
+    t.chute = false; // a wreck never opens a parachute
+    t.chuteOpen = 0;
     if (by && by !== t) by.stats.kills++;
     this.fx.tankKill(t, dir);
-    this.events.push({ type: 'kill', t, by });
     // hit-stop, then slow motion on the kill
     this.slow = { t: 0 };
     this.focus = { x: t.x, y: t.y + 3, t: 0 };
@@ -381,6 +389,11 @@ export class Battle {
         }
       }
     }
+    // watchdog: a tank that keeps sliding for 8 s is held still, so the turn can always end
+    if (this.phase === 'flight' || this.phase === 'settle') {
+      this.slideT = this.tanks.some((t) => t.grounded && Math.abs(t.vx) > 0.4) ? this.slideT + dt : 0;
+      if (this.slideT > 8) for (const t of this.tanks) if (t.grounded) t.vx = 0;
+    } else this.slideT = 0;
     this.projectiles.update(dt);
     this.hazards.update(dt);
     this.engines(dt);
@@ -414,7 +427,6 @@ export class Battle {
       case 'over':
         break;
     }
-    this.events.length = 0;
   }
 
   // The tank whose turn it is idles its engine; driving revs it and kicks
@@ -453,7 +465,6 @@ export class Battle {
   // Anything still moving that the next turn should wait for?
   busy() {
     if (this.hazards.busy()) return true; // an airstrike on its way
-    if (this.app.waitHooks?.some((f) => f())) return true;
     for (const t of this.tanks) if (!t.grounded || Math.abs(t.vx) > 0.4) return true;
     return false;
   }
@@ -471,5 +482,3 @@ export class Battle {
     this.nextTurn();
   }
 }
-
-export { DEG };

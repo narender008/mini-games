@@ -3,9 +3,11 @@
 //
 // URL switches for testing: ?play starts straight into a quick battle;
 // ?field=<battlefield>, ?enemies=1..3, ?level=recruit|regular|veteran|elite,
-// ?tank=warden|bulwark|lynx pick it; ?quality=high|medium|low; ?cover hides
-// the interface; ?debug exposes window.__ib (see the end of this file).
-import { QUERY, DEBUG, COVER, PREFS, WORLD, clamp, rand, damp } from './config.js';
+// ?tank=warden|bulwark|lynx pick it; ?mission=1..15 starts that campaign
+// mission (a locked one needs ?debug, and then nothing is saved);
+// ?quality=high|medium|low; ?cover hides the interface; ?debug exposes
+// window.__ib (see the end of this file).
+import { QUERY, DEBUG, COVER, PREFS, WORLD, clamp, damp } from './config.js';
 import { detectQuality, FrameGovernor } from './quality.js';
 import { Renderer, InstanceList, SPRITE_STRIDE } from './gl/renderer.js';
 import { loadAtlas } from './gl/atlas.js';
@@ -14,17 +16,17 @@ import { Camera } from './camera.js';
 import { Weather } from './world/weather.js';
 import { Props } from './world/props.js';
 import { Coach } from './ui/coach.js';
-import { BATTLEFIELDS, BATTLEFIELD_IDS, prepare } from './world/battlefields.js';
+import { BATTLEFIELDS, prepare } from './world/battlefields.js';
 import { Battle } from './game/battle.js';
 import { WEAPONS, ARSENAL_ORDER, starterKit } from './game/weapons.js';
 import { TANK_TYPES } from './game/tank.js';
-import { LEVELS, LEVEL_IDS } from './game/ai.js';
+import { LEVELS } from './game/ai.js';
 import { Hud } from './ui/hud.js';
 import { Menus } from './ui/menus.js';
 import * as Progress from './game/progress.js';
 import * as Campaign from './game/campaign.js';
 import { Input } from './input.js';
-import { canFullscreen, enterFullscreen, toggleFullscreen, isFullscreen, onFullscreenChange } from './fullscreen.js';
+import { canFullscreen, toggleFullscreen, isFullscreen, onFullscreenChange } from './fullscreen.js';
 
 const $ = (id) => document.getElementById(id);
 // used if the sound module cannot start (every call does nothing, handles too)
@@ -35,8 +37,6 @@ const SILENT = new Proxy({}, { get: (t, k) => (k === 'muted' ? false : k === 're
 // game/progress.js; these keep the old names for the rest of this file.
 export const load = () => Progress.data;
 export const save = () => Progress.save();
-
-const ENEMY_NAMES = ['Viper', 'Jackal', 'Kestrel', 'Mamba', 'Wolfhound', 'Raptor', 'Sabre', 'Cobra', 'Hyena', 'Talon'];
 
 class App {
   async init(progress) {
@@ -59,6 +59,7 @@ class App {
       this.sound = SILENT;
     }
     if (this.data.muted) this.sound.setMuted(true);
+    if (this.data.settings.sfx === false) this.sound.setEffects(false);
     this.fx = new Effects(this.q, this.sound);
     this.camera = new Camera(this.renderer);
     this.weather = new Weather(this.q);
@@ -86,9 +87,10 @@ class App {
     this.startAttract();
     this.warmUp();
     progress(1, 'Ready');
-    if (QUERY.has('play') || QUERY.has('mission')) this.deploy(this.setupFromQuery());
+    if (QUERY.has('play') || this.queryMission()) this.deploy(this.setupFromQuery());
     else this.showMenu();
-    document.body.dataset.state = 'ready';
+    // showMenu() and deploy() have set their own state; this is only for a start that did neither
+    if (document.body.dataset.state === 'loading') document.body.dataset.state = 'ready';
     this.last = performance.now();
     this.schedule();
   }
@@ -113,32 +115,34 @@ class App {
     this.renderer.initTerrain(b.terrain);
   }
 
-  setupFromQuery() {
-    // ?mission=1..15 starts that campaign mission with your saved armoury
+  // ?mission=1..15: that campaign mission, with your saved armoury. The same
+  // lock as the menus applies unless ?debug is on.
+  queryMission() {
     const mn = Number(QUERY.get('mission'));
-    if (Campaign.mission(mn)) return Campaign.missionSetup(Campaign.mission(mn));
-    const field = BATTLEFIELDS[QUERY.get('field')] ? QUERY.get('field') : 'ashfield';
-    const n = clamp(Number(QUERY.get('enemies')) || 1, 1, 3);
-    const level = LEVELS[QUERY.get('level')] ? QUERY.get('level') : 'regular';
-    const tank = TANK_TYPES[QUERY.get('tank')] ? QUERY.get('tank') : 'warden';
-    return this.quickSetup(field, tank, n, level);
+    const m = Campaign.mission(mn);
+    return m && (DEBUG || Campaign.unlocked(mn)) ? m : null;
   }
 
-  quickSetup(field, tank, n, level) {
-    const names = [...ENEMY_NAMES].sort(() => Math.random() - 0.5);
-    const types = ['warden', 'lynx', 'bulwark'];
-    return {
-      mode: 'quick',
-      battlefield: field,
-      player: { type: tank, inventory: starterKit(), upgrades: {} },
-      enemies: Array.from({ length: n }, (_, i) => ({ name: names[i], type: types[(i + (level === 'elite' ? 2 : 0)) % 3], level, inventory: starterKit() })),
-    };
+  setupFromQuery() {
+    const m = this.queryMission();
+    if (m) {
+      const s = Campaign.missionSetup(m);
+      if (DEBUG) s.unsaved = true; // a mission forced open for testing never settles into the save
+      return s;
+    }
+    const own = (table, id) => Object.hasOwn(table, id);
+    const field = own(BATTLEFIELDS, QUERY.get('field')) ? QUERY.get('field') : 'ashfield';
+    const n = clamp(Number(QUERY.get('enemies')) || 1, 1, 3);
+    const level = own(LEVELS, QUERY.get('level')) ? QUERY.get('level') : 'regular';
+    const tank = own(TANK_TYPES, QUERY.get('tank')) ? QUERY.get('tank') : 'warden';
+    return Campaign.quickSetup(field, tank, n, level);
   }
 
   // ---- battles
   newBattle(setup) {
     if (this.battle) this.battle.dispose();
-    const bf = prepare(BATTLEFIELDS[setup.battlefield] || BATTLEFIELDS.ashfield);
+    // own keys only: a hand-edited save naming 'toString' must not get through
+    const bf = prepare(Object.hasOwn(BATTLEFIELDS, setup.battlefield) ? BATTLEFIELDS[setup.battlefield] : BATTLEFIELDS.ashfield);
     const b = new Battle(this, { ...setup, battlefield: bf });
     this.battle = b;
     this.fx.setWorld(b.terrain, bf, this.atlas);
@@ -158,11 +162,12 @@ class App {
   }
 
   startAttract() {
-    const s = this.quickSetup(this.data.lastField || 'ashfield', 'warden', 1, 'veteran');
+    const s = Campaign.quickSetup(this.data.lastField || 'ashfield', 'warden', 1, 'veteran');
     s.attract = true;
+    // the demo is always the plain Warden: your upgrades and bought shells stay out of it
+    s.player = { type: 'warden', name: 'Warden', inventory: starterKit(), upgrades: {} };
     const b = this.newBattle(s);
     b.player.ai = new (b.tanks[1].ai.constructor)(b, b.player, 'veteran');
-    b.player.name = 'Warden';
     this.attract = true;
   }
 
@@ -197,20 +202,36 @@ class App {
     setTimeout(() => this.showResult(result), 2600);
   }
 
-  fire() {
+  // The battle, when the player may act in it: their turn, not the title demo, not paused.
+  playerTurn() {
     const b = this.battle;
-    if (!b || this.paused || !b.isPlayerTurn()) return;
+    return b && !this.attract && !this.paused && b.isPlayerTurn() ? b : null;
+  }
+
+  fire() {
+    const b = this.playerTurn();
+    if (!b) return;
     this.sound.unlock?.();
     this.camera.release();
     const t = b.player;
-    if (!WEAPONS[t.weapon]?.utility) t.lastShot = { aim: t.aim, power: t.power, x: t.x };
-    if (b.fire(t)) this.coach.fired();
+    const utility = WEAPONS[t.weapon]?.utility;
+    const aimed = { aim: t.aim, power: t.power, x: t.x };
+    if (b.fire(t)) {
+      if (!utility) t.lastShot = aimed; // only a shot that left the gun is the last aim
+      this.coach.fired();
+    } else if (!utility) this.sound.ui('deny'); // a utility says why itself
+  }
+
+  // A once-a-battle weapon (the Sunburst) that has been fired is not a choice any more.
+  exhausted(id) {
+    const w = WEAPONS[id];
+    return !!(w && w.perBattle && (this.battle.player.used?.[id] || 0) >= w.perBattle);
   }
 
   selectWeapon(id) {
-    const b = this.battle;
-    if (!b || !b.isPlayerTurn()) return;
-    if (b.player.inventory[id] > 0) {
+    const b = this.playerTurn();
+    if (!b) return;
+    if (b.player.inventory[id] > 0 && !this.exhausted(id)) {
       if (WEAPONS[id].utility) return this.useUtility(id);
       b.player.weapon = id;
       this.sound.ui('select');
@@ -218,28 +239,27 @@ class App {
   }
 
   useUtility(id) {
-    const b = this.battle;
-    if (!b || this.paused || !b.isPlayerTurn()) return;
+    const b = this.playerTurn();
+    if (!b) return;
     this.sound.unlock?.();
     b.useUtility(b.player, id);
   }
 
   available() {
     const t = this.battle.player;
-    return ARSENAL_ORDER.filter((id) => t.inventory[id] > 0);
+    return ARSENAL_ORDER.filter((id) => t.inventory[id] > 0 && !this.exhausted(id));
   }
 
   cycleWeapon(d) {
-    const b = this.battle;
-    if (!b || !b.isPlayerTurn()) return;
+    const b = this.playerTurn();
+    if (!b) return;
     const list = this.available().filter((id) => !WEAPONS[id].utility);
     const i = list.indexOf(b.player.weapon);
     this.selectWeapon(list[(i + d + list.length) % list.length]);
   }
 
   weaponSlot(n) {
-    const b = this.battle;
-    if (!b || !b.isPlayerTurn()) return;
+    if (!this.playerTurn()) return;
     const ids = this.available();
     if (ids[n]) this.selectWeapon(ids[n]);
   }
@@ -266,10 +286,6 @@ class App {
 
   showMenu() {
     this.ui.show('menu', null, 'root');
-  }
-
-  showSetup() {
-    this.ui.show('setup');
   }
 
   toMenu() {
@@ -322,11 +338,7 @@ class App {
   }
 
   resize() {
-    const vv = window.visualViewport;
-    const w = innerWidth;
-    const h = innerHeight;
-    this.renderer.resize(w, h, devicePixelRatio || 1);
-    void vv;
+    this.renderer.resize(innerWidth, innerHeight, devicePixelRatio || 1);
   }
 
   // ---- the frame
@@ -589,5 +601,3 @@ export async function start(progress) {
   }
   return app;
 }
-
-export { rand };

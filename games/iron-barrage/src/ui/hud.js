@@ -75,12 +75,12 @@ export class Hud {
       btn.className = 'arm';
       btn.setAttribute('role', 'option');
       btn.setAttribute('aria-selected', String(t.weapon === id));
-      btn.disabled = !have;
       btn.innerHTML = `<b></b><span></span><small></small>`;
       btn.children[0].textContent = `${n}. ${w.name}`;
       btn.children[1].textContent = have === Infinity ? '∞' : String(have);
       btn.children[2].textContent = w.desc;
-      btn.disabled = !have || !!(w.utility && t.utilUsed?.[id]);
+      // out of stock, a utility already used this turn, or a once-a-battle weapon already fired
+      btn.disabled = !have || !!(w.utility && t.utilUsed?.[id]) || this.app.exhausted(id);
       if (w.utility) btn.classList.add('util');
       btn.addEventListener('click', () => {
         // utilities act at once and leave the turn going

@@ -54,6 +54,7 @@ export class Hazards {
   // Called after the canister's own small blast: the fuel runs from (x, y).
   napalm(owner, x, y, w) {
     const b = this.b;
+    x = clamp(x, 2, WORLD.width - 2); // a canister that landed off the world burns at its edge, not between two clamps
     const T = b.terrain;
     const cfg = w.burn;
     const gy = T.groundBelow(x, y + 3);

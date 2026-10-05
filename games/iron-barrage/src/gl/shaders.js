@@ -138,7 +138,8 @@ void main() {
     float vis = uStars * smoothstep(0.08, 0.5, hh);
     c += vec3(0.8, 0.86, 1.0) * star * vis * (1.3 + 3.0 * hash12(g + 1.3)) * uSkyB.y;
     // the milky way: a faint slanted band
-    float band = exp(-pow((s.y - s.x * 0.5 - 0.35) * 2.4, 2.0));
+    float bd = (s.y - s.x * 0.5 - 0.35) * 2.4; // squared by hand: pow() of a negative is undefined
+    float band = exp(-bd * bd);
     float mw = band * (0.3 + 0.9 * texture(uNoise, s * 0.7 + 0.3).g) * (0.5 + texture(uNoise, s * 1.3).r);
     c += vec3(0.5, 0.58, 0.8) * mw * 0.06 * uSkyB.z * vis;
   }
@@ -977,7 +978,7 @@ void main() {
     vec4 n2 = texture(uNoise, vP * 0.5 + vC.z * 1.3 + vec2(life * 0.12, -life * 0.3));
     float edge = r + (n1.r - 0.5) * 0.8 + (n2.g - 0.5) * 0.4 + (n2.b - 0.5) * 0.16;
     float body = smoothstep(1.0, 0.32, edge) * smoothstep(1.0, 0.8, r);
-    float cool = pow(1.0 - life, 1.4);
+    float cool = pow(max(1.0 - life, 0.0), 1.4);
     float core = clamp(1.0 - edge * 1.05, 0.0, 1.0);
     float T = vCol.r * cool * (0.3 + 0.95 * core) * (0.7 + 0.55 * n2.r);
     vec3 hot = fire(clamp(T, 0.0, 1.0));
