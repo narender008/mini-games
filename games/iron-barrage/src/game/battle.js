@@ -153,6 +153,7 @@ export class Battle {
       if (this.tanks[i].alive) break;
     }
     this.turn = i;
+    for (const o of this.tanks) o.hitBy = null;
     const t = this.current();
     t.fuel = t.maxFuel;
     t.driving = 0;
@@ -189,7 +190,7 @@ export class Battle {
       return false;
     }
     (t.used ||= {})[id] = (t.used[id] || 0) + 1;
-    if (t.inventory[id] !== Infinity) t.inventory[id]--;
+    this.spend(t, id);
     if (!(t.inventory[t.weapon] > 0) || spent(t, t.weapon)) t.weapon = 'shell';
     this.fired = true;
     t.driving = 0;
@@ -228,9 +229,16 @@ export class Battle {
       return false;
     }
     (t.utilUsed ||= {})[id] = true;
-    if (t.inventory[id] !== Infinity) t.inventory[id]--;
+    this.spend(t, id);
     if (t.weapon === id) t.weapon = 'shell';
     return true;
+  }
+
+  // One round of `id` leaves the tank's inventory; the app keeps a campaign's saved stock in step.
+  spend(t, id) {
+    if (t.inventory[id] === Infinity) return;
+    t.inventory[id]--;
+    if (t === this.player) this.app.onSpend?.(this);
   }
 
   // ---- what a blast does
@@ -266,6 +274,7 @@ export class Battle {
       const dir = Math.sign(t.x - x) || 1;
       const kick = w.power * f * (t.alive ? 3.2 : 2);
       t.vx += dir * kick;
+      t.hitBy = owner;
       if (w.power > 1.5 && f > 0.4) t.vy += kick * 0.6;
       // a thermobaric blast throws tanks (and wrecks) into the air: they come down hard
       if (w.impulse) {
@@ -308,7 +317,7 @@ export class Battle {
     // many bomblets or bombs land
     if (by && by !== t && by.team !== t.team) {
       by.stats.damage += took;
-      if (by.hitShot !== this.shotNo) {
+      if (by === this.current() && by.hitShot !== this.shotNo) {
         by.hitShot = this.shotNo;
         by.stats.hits++;
       }
@@ -326,7 +335,7 @@ export class Battle {
     if (chute) t.chute = false; // the parachute opened and is used up
     if (!chute && speed > FALL_SAFE && t.alive) {
       const dmg = (speed - FALL_SAFE) * 2.6;
-      this.hurt(t, dmg, null, 1);
+      this.hurt(t, dmg, t.hitBy, 1);
     }
   }
 

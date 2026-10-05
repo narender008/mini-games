@@ -855,7 +855,7 @@ export class Sound {
   // about 1.5 to 3 seconds, with a soft, short, quiet ring.
   shellshock(amount = 1) {
     const ctx = this.ctx;
-    if (!ctx) return;
+    if (!ctx || !this._fxOn || !this._audible()) return;
     const a = clamp(Number(amount) || 0, 0, 1);
     if (a < 0.03) return;
     const t = ctx.currentTime;

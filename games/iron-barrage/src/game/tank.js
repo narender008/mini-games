@@ -46,6 +46,7 @@ export class Tank {
     this.chute = false;
     this.chuteOpen = 0;
     this.fallFrom = this.y;
+    this.hitBy = null; // whose blast caught this tank this turn: a fall that follows is put down to them
     this.char = 0;
     this.blood = 0;
     this.turretGone = false;
@@ -131,7 +132,7 @@ export class Tank {
     this.hurt = Math.max(0, this.hurt - dt * 2);
     if (this.y > R.y + 0.06 || this.vy > 0) {
       // in the air
-      if (this.grounded) this.fallFrom = this.y;
+      if (this.grounded || this.y > this.fallFrom) this.fallFrom = this.y;
       this.grounded = false;
       const drag = this.chute && this.chuteOpen > 0.5 ? 2.2 : 0.02;
       this.vy -= g * dt;

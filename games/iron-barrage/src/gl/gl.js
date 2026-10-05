@@ -42,7 +42,6 @@ function watchContext(canvas, gl) {
     note.addEventListener('click', () => location.reload());
     document.body.appendChild(note);
   });
-  canvas.addEventListener('webglcontextrestored', () => location.reload());
 }
 
 function compile(gl, type, src, name) {

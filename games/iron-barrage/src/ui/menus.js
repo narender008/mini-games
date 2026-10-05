@@ -189,13 +189,11 @@ export class Menus {
     const app = this.app;
     $('resume-btn').addEventListener('click', () => app.togglePause(false));
     $('restart-btn').addEventListener('click', this.act(() => {
-      this.forfeit();
       app.togglePause(false);
       app.deploy(this.again());
     }));
     $('quit-btn').addEventListener('click', this.act(() => {
       const campaign = app.setup && app.setup.mode === 'campaign';
-      this.forfeit();
       app.togglePause(false);
       app.toMenu();
       if (campaign) this.show('campaign');
@@ -769,7 +767,8 @@ export class Menus {
   }
 
   // ---- battle result
-  // Called once when a battle ends: pays out, updates stock, stars and records.
+  // Called once when a battle ends: pays out, updates stars and records (the
+  // stock already follows every round spent: App.onSpend).
   settle(result) {
     const app = this.app;
     const b = app.battle;
@@ -792,10 +791,7 @@ export class Menus {
     const d = this.d;
     if (live) {
       d.money += pay.total;
-      if (m) {
-        P.takeBack(b.player.inventory);
-        if (win && C.isLast(m.n)) d.campaign.done = true;
-      }
+      if (m && win && C.isLast(m.n)) d.campaign.done = true;
       P.recordBattle(win, st, b.round, pay.total, this.shot.best);
       if (win) d.records[m ? 'missionWins' : 'quickWins']++;
       P.save();
@@ -812,18 +808,6 @@ export class Menus {
     const dmg = b.player.stats.damage;
     this.shot.best = Math.max(this.shot.best, dmg - this.shot.last);
     this.shot.last = dmg;
-  }
-
-  // Leaving or restarting a campaign battle part-way: the ammunition already
-  // fired is gone from the stock (as settle() does), but no loss is recorded
-  // and nothing is paid.
-  forfeit() {
-    const app = this.app;
-    const b = app.battle;
-    const s = app.setup;
-    if (!b || app.attract || b._settled || !s || s.mode !== 'campaign' || s.unsaved) return;
-    P.takeBack(b.player.inventory);
-    P.save();
   }
 
   // The set-up of the battle just fought, for a restart or retry. A campaign

@@ -82,6 +82,11 @@ class App {
     this.setupUI();
     addEventListener('resize', () => this.resize());
     document.addEventListener('visibilitychange', () => this.visibility());
+    // graphics taken away (gl.js asks for a reload): the game holds as it does in a hidden tab
+    this.canvas.addEventListener('webglcontextlost', () => {
+      this.lost = true;
+      this.visibility();
+    });
     progress(0.6, 'Preparing the battlefield…');
     // the title screen plays a battle between two computer tanks behind it
     this.startAttract();
@@ -205,7 +210,7 @@ class App {
   // The battle, when the player may act in it: their turn, not the title demo, not paused.
   playerTurn() {
     const b = this.battle;
-    return b && !this.attract && !this.paused && b.isPlayerTurn() ? b : null;
+    return b && !this.attract && !this.paused && !this.hidden && b.isPlayerTurn() ? b : null;
   }
 
   fire() {
@@ -220,6 +225,15 @@ class App {
       if (!utility) t.lastShot = aimed; // only a shot that left the gun is the last aim
       this.coach.fired();
     } else if (!utility) this.sound.ui('deny'); // a utility says why itself
+  }
+
+  // Campaign ammunition is gone once used: the saved stock follows the
+  // battle's at every round spent, so a reload or a closed tab gives none back.
+  onSpend(b) {
+    const s = b.setup;
+    if (s.mode !== 'campaign' || s.unsaved) return;
+    Progress.takeBack(b.player.inventory);
+    save();
   }
 
   // A once-a-battle weapon (the Sunburst) that has been fired is not a choice any more.
@@ -326,7 +340,7 @@ class App {
   }
 
   visibility() {
-    if (document.hidden) {
+    if (document.hidden || this.lost) {
       this.hidden = true;
       this.sound.suspend?.();
     } else {

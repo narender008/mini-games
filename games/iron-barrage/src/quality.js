@@ -34,15 +34,19 @@ export function detectQuality() {
   return { ...TIERS[tier], scale: 1 };
 }
 
-// Watches frame times against the display's own refresh period and lowers the
+// Watches frame times against the display's refresh period and lowers the
 // render scale when frames run clearly longer, raising it again when there is
 // room. The 75th percentile ignores the odd long frame but reacts to a steady
 // slowdown within a couple of seconds; the 10th percentile, kept as a running
-// minimum, is the refresh period (60, 90, 120 Hz...). If three steps down do
-// not shorten the frames (the screen is held at 30 Hz, or the cost is not
-// pixels) they are undone and not tried again for a while, and a raise that
-// had to be taken back makes the next one wait longer, so the scale does not
-// hunt.
+// minimum, is the refresh period, never taken below a 60 fps frame (a 90 or
+// 120 Hz screen is not chased with fewer pixels). If three steps down (or as
+// many as the floor allows) do not shorten the frames (the screen is held at
+// 30 Hz, or the cost is not pixels) they are undone and not tried again for a
+// while; frames that stay long with nothing left to lower mean the display
+// runs slower than thought. A raise that had to be taken back makes the next
+// one wait longer, so the scale does not hunt.
+const MIN_SCALE = 0.55;
+
 export class FrameGovernor {
   constructor(q, onScale) {
     this.q = q;
@@ -76,7 +80,7 @@ export class FrameGovernor {
     s.sort();
     const p10 = s[Math.floor(s.length * 0.1)];
     const p75 = s[Math.floor(s.length * 0.75)];
-    this.period = Math.max(1 / 250, Math.min(this.period, p10));
+    this.period = Math.max(1 / 60, Math.min(this.period, p10));
     const q = this.q;
     let next = q.scale;
     if (p75 <= this.period * 1.25) {
@@ -86,23 +90,24 @@ export class FrameGovernor {
         this.lastUp = true;
         this.raiseHold = 5; // see how it holds before the next step up
       }
-    } else if (this.from && p75 >= this.before * 0.95 && q.scale <= this.from - 0.25) {
-      // no shorter after three steps: pixels are not the cost, so take them back
+    } else if (this.from && p75 >= this.before * 0.95 && q.scale <= Math.max(MIN_SCALE, this.from - 0.25) + 1e-6) {
+      // no shorter after three steps (or at the floor): pixels are not the cost, so take them back
       next = this.from;
       this.from = 0;
       this.lowerHold = this.lowerBackoff;
       this.lowerBackoff = Math.min(240, this.lowerBackoff * 2);
-      // frames that stayed long at full size: the display runs slower than thought
-      if (p10 > this.period * 1.4) this.period = p10;
-    } else if (this.lowerHold <= 0 && q.scale > 0.55) {
+    } else if (this.lowerHold <= 0 && q.scale > MIN_SCALE) {
       if (!this.from || p75 < this.before * 0.95) {
         this.from = q.scale;
         this.before = p75;
       }
-      next = Math.max(0.55, q.scale - 0.1);
+      next = Math.max(MIN_SCALE, q.scale - 0.1);
       if (this.lastUp) this.raiseBackoff = Math.min(120, this.raiseBackoff * 2);
       this.lastUp = false;
       this.raiseHold = this.raiseBackoff;
+    } else if (p10 > this.period * 1.4) {
+      // frames stay long with nothing left to lower: the display runs slower than thought
+      this.period = p10;
     }
     if (next !== q.scale) {
       q.scale = next;
