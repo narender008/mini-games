@@ -332,6 +332,12 @@ export const WEAPONS = {
 
 for (const [id, w] of Object.entries(WEAPONS)) w.id = id;
 
+// A weapon limited per battle (the Sunburst: one) that this tank has fired out.
+export const spent = (t, id) => {
+  const w = WEAPONS[id];
+  return !!(w && w.perBattle && (t.used?.[id] || 0) >= w.perBattle);
+};
+
 export const WEAPON_IDS = Object.keys(WEAPONS);
 // The order of the tray and the number keys (1 is the first the tank carries).
 export const ARSENAL_ORDER = ['shell', 'heavy', 'cluster', 'napalm', 'airstrike', 'missile', 'buster', 'roller', 'sabot', 'nuke', 'shield', 'repair', 'chute'];

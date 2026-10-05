@@ -1,8 +1,7 @@
 // The battle HUD: wind, whose turn, the gunnery readouts, fuel, the weapon
 // tray, name tags with health over each tank, damage numbers and the kill
 // feed. DOM, updated only when a value changes.
-import { WEAPONS, ARSENAL_ORDER } from '../game/weapons.js';
-import { spent } from '../game/battle.js';
+import { WEAPONS, ARSENAL_ORDER, spent } from '../game/weapons.js';
 import { WORLD } from '../config.js';
 
 const $ = (id) => document.getElementById(id);

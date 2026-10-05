@@ -703,8 +703,9 @@ export class Menus {
         h('div', { class: 'seg', role: 'radiogroup', 'aria-labelledby': id, 'data-set': id }, options.map(([v, text]) => h('button', { type: 'button', role: 'radio', class: 'seg-b', 'aria-checked': String(value === v), onclick: this.act(() => {
           set(v);
           P.save();
+          this.sfx('select');
           this.refresh(`[data-set="${id}"] .seg-b[aria-checked="true"]`);
-        }, 'select') }, text))),
+        }, null) }, text))),
       );
       if (extra) row.querySelector('.set-text').append(extra);
       return row;

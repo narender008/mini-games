@@ -7,7 +7,7 @@ import { WORLD, PREFS, clamp, rand, gauss, damp } from '../config.js';
 import { Terrain } from '../world/terrain.js';
 import { flatten } from '../world/battlefields.js';
 import { Tank } from './tank.js';
-import { WEAPONS } from './weapons.js';
+import { WEAPONS, spent } from './weapons.js';
 import { Projectiles } from './projectiles.js';
 import { Hazards } from './hazards.js';
 import { Commander } from './ai.js';
@@ -21,12 +21,6 @@ export const SKINS = {
 };
 
 const FALL_SAFE = 9;
-
-// A weapon limited per battle (the Sunburst: one) that this tank has fired out.
-export const spent = (t, id) => {
-  const w = WEAPONS[id];
-  return !!(w && w.perBattle && (t.used?.[id] || 0) >= w.perBattle);
-};
 
 export class Battle {
   constructor(app, setup) {

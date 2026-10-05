@@ -17,7 +17,7 @@
 // update(dt) every frame in the 'aim' phase, then it sets tank.weapon,
 // tank.aim, tank.power (and tank.driving to drive) and calls battle.fire().
 import { WORLD, clamp, gauss, rand, DEG } from '../config.js';
-import { WEAPONS } from './weapons.js';
+import { WEAPONS, spent } from './weapons.js';
 import { trajectory } from './projectiles.js';
 
 // range: first-shot range error as a share of the distance (sigma); learn:
@@ -745,7 +745,7 @@ export class Commander {
   has(id) {
     const w = WEAPONS[id];
     if (!w || !(this.t.inventory[id] > 0)) return false;
-    if (w.perBattle && (this.t.used?.[id] || 0) >= w.perBattle) return false; // the Sunburst: one a battle
+    if (spent(this.t, id)) return false; // the Sunburst: one a battle
     return true;
   }
 
