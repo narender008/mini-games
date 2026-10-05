@@ -24,7 +24,7 @@ export class Camera {
   }
 
   aspect() {
-    return this.r.cssW / Math.max(1, this.r.cssH);
+    return this.r.cssW / this.r.cssH;
   }
 
   minW() {

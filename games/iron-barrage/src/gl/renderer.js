@@ -417,6 +417,8 @@ export class Renderer {
   }
 
   resize(cssW, cssH, dpr) {
+    cssW = Math.max(1, cssW);
+    cssH = Math.max(1, cssH);
     const scale = Math.min(dpr, this.q.maxDpr);
     let w = cssW * scale;
     let h = cssH * scale;

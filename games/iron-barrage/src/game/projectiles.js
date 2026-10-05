@@ -182,7 +182,7 @@ export const BEHAVIOURS = {
         const w = p.w;
         const mid = Math.round((w.count - 1) / 2); // this bomblet marks the owner's last impact, as the airstrike's middle bomb does
         for (let i = 0; i < w.count; i++) {
-          const s = (i / (w.count - 1) - 0.5) * 2;
+          const s = i === mid ? 0 : (i / (w.count - 1) - 0.5) * 2;
           b.projectiles.launch(p.owner, w.bomblet, p.x, p.y, p.vx * 0.7 + s * 5.5 + (Math.random() - 0.5) * 1.5, p.vy * 0.6 + Math.random() * 3, { sub: i !== mid, quiet: true });
         }
         b.fx.explode(p.x, p.y, 0.6, 0.35, { inGround: false });

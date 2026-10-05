@@ -605,9 +605,17 @@ export class Commander {
         const sl = slope > 0 ? slope : this.estSlope(p, Math.abs(o.ax - mx));
         const pn = clamp(p - off / sl, 0.05, 1);
         const sp = vmax * (0.12 + 0.88 * pn);
+        const ox = out.x;
+        const oy = out.y;
+        const ot = out.t;
         trajectory(b, t, mx, my, ca * sp, sa * sp, o.w, out);
         yield WORK;
         if (out.tank === tgt && Math.abs(out.x - o.ax) < Math.abs(off)) p = pn;
+        else {
+          out.x = ox;
+          out.y = oy;
+          out.t = ot;
+        }
       }
       const s = this.sols[this.n++];
       s.elev = e;

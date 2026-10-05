@@ -703,7 +703,6 @@ export class Menus {
         h('div', { class: 'seg', role: 'radiogroup', 'aria-labelledby': id, 'data-set': id }, options.map(([v, text]) => h('button', { type: 'button', role: 'radio', class: 'seg-b', 'aria-checked': String(value === v), onclick: this.act(() => {
           set(v);
           P.save();
-          this.sfx('select');
           this.refresh(`[data-set="${id}"] .seg-b[aria-checked="true"]`);
         }, 'select') }, text))),
       );
@@ -719,6 +718,7 @@ export class Menus {
       seg('Blood and gore', 'Off swaps blood and body parts for smoke and dust.', PREFS.gore ? 'on' : 'off', [['on', 'On'], ['off', 'Off']], (v) => {
         s.gore = v === 'on';
         applyPrefs(s);
+        if (!PREFS.gore) this.app.clearGore();
       }),
       seg('Music', 'The score on the menus and in battle.', s.music ? 'on' : 'off', [['on', 'On'], ['off', 'Off']], (v) => {
         s.music = v === 'on';

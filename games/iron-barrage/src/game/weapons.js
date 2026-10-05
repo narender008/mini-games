@@ -318,6 +318,7 @@ export const WEAPONS = {
     power: 0,
     ammo: 2,
     price: 70,
+    spentOnOpen: true,
     use(t, b) {
       if (t.chute) return false;
       t.chute = true;

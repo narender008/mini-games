@@ -17,7 +17,7 @@ import { Weather } from './world/weather.js';
 import { Props } from './world/props.js';
 import { Coach } from './ui/coach.js';
 import { BATTLEFIELDS, prepare } from './world/battlefields.js';
-import { Battle } from './game/battle.js';
+import { Battle, spent } from './game/battle.js';
 import { WEAPONS, ARSENAL_ORDER, starterKit } from './game/weapons.js';
 import { TANK_TYPES } from './game/tank.js';
 import { LEVELS } from './game/ai.js';
@@ -236,16 +236,10 @@ class App {
     save();
   }
 
-  // A once-a-battle weapon (the Sunburst) that has been fired is not a choice any more.
-  exhausted(id) {
-    const w = WEAPONS[id];
-    return !!(w && w.perBattle && (this.battle.player.used?.[id] || 0) >= w.perBattle);
-  }
-
   selectWeapon(id) {
     const b = this.playerTurn();
     if (!b) return;
-    if (b.player.inventory[id] > 0 && !this.exhausted(id)) {
+    if (b.player.inventory[id] > 0 && !spent(b.player, id)) {
       if (WEAPONS[id].utility) return this.useUtility(id);
       b.player.weapon = id;
       this.sound.ui('select');
@@ -261,7 +255,7 @@ class App {
 
   available() {
     const t = this.battle.player;
-    return ARSENAL_ORDER.filter((id) => t.inventory[id] > 0 && !this.exhausted(id));
+    return ARSENAL_ORDER.filter((id) => t.inventory[id] > 0 && !spent(t, id));
   }
 
   cycleWeapon(d) {
@@ -317,7 +311,7 @@ class App {
     this.paused = on ?? !this.paused;
     this.ui.pause(this.paused);
     if (this.paused) this.sound.suspend?.();
-    else this.sound.resume?.();
+    else if (!this.hidden) this.sound.resume?.();
   }
 
   toggleMute() {
@@ -337,6 +331,13 @@ class App {
 
   toggleFullscreen() {
     toggleFullscreen();
+  }
+
+  // Blood and gore switched off: the stains, the pieces and the bloodied wrecks go too.
+  clearGore() {
+    this.fx.clearGore();
+    this.renderer.fadeDecals(0, 1, 1, 0);
+    for (const t of this.battle?.tanks || []) t.blood = 0;
   }
 
   visibility() {

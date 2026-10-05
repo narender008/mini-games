@@ -512,6 +512,14 @@ export class Effects {
     this.sound.hit('splat', x, 1);
   }
 
+  // Blood and gore switched off: none of it stays in the scene.
+  clearGore() {
+    const P = this.p;
+    for (let i = 0; i < P.n; i++) if (P.kind[i] === K.BLOOD) P.life[i] = 0;
+    const D = this.debris;
+    for (let i = D.length - 1; i >= 0; i--) if (D[i].gore) D.splice(i, 1);
+  }
+
   // ---- debris with physics
   addDebris(frame, x, y, vx, vy, spin, o = {}) {
     const d = {

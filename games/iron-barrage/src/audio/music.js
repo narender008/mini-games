@@ -63,7 +63,7 @@ function drum(ctx, dest, noiseBuf, t, kind, vel, rate = 1) {
     n.connect(bp).connect(hp).connect(g).connect(dest);
     g.gain.setValueAtTime(0.0001, t);
     g.gain.linearRampToValueAtTime(vel * 0.7, t + 0.002);
-    g.gain.exponentialRampToValueAtTime(0.0008, t + 0.16);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0008, vel * 0.1), t + 0.045);
     // the drag: a second stroke a hair behind the first
     g.gain.setValueAtTime(vel * 0.3, t + 0.045);
     g.gain.exponentialRampToValueAtTime(0.0008, t + 0.17);

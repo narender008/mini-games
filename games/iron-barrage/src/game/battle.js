@@ -23,7 +23,7 @@ export const SKINS = {
 const FALL_SAFE = 9;
 
 // A weapon limited per battle (the Sunburst: one) that this tank has fired out.
-const spent = (t, id) => {
+export const spent = (t, id) => {
   const w = WEAPONS[id];
   return !!(w && w.perBattle && (t.used?.[id] || 0) >= w.perBattle);
 };
@@ -229,7 +229,7 @@ export class Battle {
       return false;
     }
     (t.utilUsed ||= {})[id] = true;
-    this.spend(t, id);
+    if (!w.spentOnOpen) this.spend(t, id);
     if (t.weapon === id) t.weapon = 'shell';
     return true;
   }
@@ -332,7 +332,10 @@ export class Battle {
       for (let i = 0; i < 10; i++) this.fx.smoke(t.x + rand(-4, 4), t.y + 0.3, rand(-6, 6), rand(0.5, 2), rand(0.8, 1.6), rand(1.5, 3), 0.18, 0.5);
       this.fx.shake(Math.min(0.4, speed * 0.02));
     }
-    if (chute) t.chute = false; // the parachute opened and is used up
+    if (chute) {
+      t.chute = false; // the parachute opened and is used up
+      this.spend(t, 'chute');
+    }
     if (!chute && speed > FALL_SAFE && t.alive) {
       const dmg = (speed - FALL_SAFE) * 2.6;
       this.hurt(t, dmg, t.hitBy, 1);

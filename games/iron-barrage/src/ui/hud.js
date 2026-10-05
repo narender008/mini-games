@@ -2,6 +2,7 @@
 // tray, name tags with health over each tank, damage numbers and the kill
 // feed. DOM, updated only when a value changes.
 import { WEAPONS, ARSENAL_ORDER } from '../game/weapons.js';
+import { spent } from '../game/battle.js';
 import { WORLD } from '../config.js';
 
 const $ = (id) => document.getElementById(id);
@@ -80,7 +81,7 @@ export class Hud {
       btn.children[1].textContent = have === Infinity ? '∞' : String(have);
       btn.children[2].textContent = w.desc;
       // out of stock, a utility already used this turn, or a once-a-battle weapon already fired
-      btn.disabled = !have || !!(w.utility && t.utilUsed?.[id]) || this.app.exhausted(id);
+      btn.disabled = !have || !!(w.utility && t.utilUsed?.[id]) || spent(t, id);
       if (w.utility) btn.classList.add('util');
       btn.addEventListener('click', () => {
         // utilities act at once and leave the turn going
