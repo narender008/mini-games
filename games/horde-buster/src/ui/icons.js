@@ -27,6 +27,9 @@ const GRADS = {
   brown: ['#d89a5c', '#7b4421'],
   white: ['#ffffff', '#c9d4ea'],
   cloud: ['#8e9ad0', '#454d86'],
+  olive: ['#a9bf6c', '#4d6a2b'],
+  cyan: ['#7af0ff', '#0a84e6'],
+  bone: ['#fffdf2', '#d9d2b8'],
 };
 
 function star(cx, cy, ro, ri, n = 5, rot = -90) {
@@ -79,6 +82,23 @@ function bomb(fill, spark) {
     `<path d="M51 16c2-4 6-3 8-8" fill="none" stroke="#a37838" stroke-width="3" stroke-linecap="round"/>` +
     `<polygon points="${star(58, 8, 6.5, 3, 4, -90)}" fill="${spark}" ${S2}/>`
   );
+}
+
+// a teardrop flame pointing up: round base (bottom at y = by), tip leaning by `lean`
+function flame(cx, by, w, h, fill = G('orange'), lean = 0, sw = S2) {
+  const r = w / 2;
+  const cy = by - r;
+  const ty = by - h;
+  return (
+    `<path d="M${n1(cx - r)} ${n1(cy)}A${n1(r)} ${n1(r)} 0 0 0 ${n1(cx + r)} ${n1(cy)}C${n1(cx + r)} ${n1(cy - h * 0.34)} ${n1(cx + lean * 0.4 + r * 0.3)} ${n1(ty + h * 0.34)} ${n1(cx + lean)} ${n1(ty)}` +
+    `C${n1(cx + lean * 0.4 - r * 0.2)} ${n1(ty + h * 0.34)} ${n1(cx - r)} ${n1(cy - h * 0.3)} ${n1(cx - r)} ${n1(cy)}z" fill="${fill}" ${sw}/>`
+  );
+}
+
+// arc of a circle between two angles (degrees, clockwise from +x, as SVG does)
+function arc(cx, cy, r, a0, a1) {
+  const p = (a) => `${n1(cx + r * Math.cos((a * Math.PI) / 180))} ${n1(cy + r * Math.sin((a * Math.PI) / 180))}`;
+  return `M${p(a0)}A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${p(a1)}`;
 }
 
 // a weapon is drawn lying flat, then tilted so it fills the square
@@ -258,7 +278,76 @@ const ICONS = {
   barrel:
     `<path d="M17 10h30c3 7 3 37 0 44H17c-3-7-3-37 0-44z" fill="${G('red')}" ${S}/>` +
       `<path d="M15.5 22h33M15.5 42h33" stroke="${O}" stroke-width="3"/>` +
-      `<path d="M32 25c5 5 6 8 6 10a6 6 0 0 1-12 0c0-3 2-5 3-6 0 2 1 3 2 3 0-3 0-5 1-7z" fill="${G('gold')}" ${S2}/>`
+      `<path d="M32 25c5 5 6 8 6 10a6 6 0 0 1-12 0c0-3 2-5 3-6 0 2 1 3 2 3 0-3 0-5 1-7z" fill="${G('gold')}" ${S2}/>`,
+
+  // flame thrower: fuel tank, hose, wand, nozzle and a flame tongue (drawn like the other weapons)
+  flamer: gun(
+    `<g transform="translate(41 32) rotate(90)"><path d="M-10 -1A10 10 0 0 0 10 -1C11.5 -8 11.5 -13 8 -20C6.5 -17.5 4.5 -16 3 -14.5C3 -19 1 -24 -1 -28C-3 -22 -4 -19 -5 -15.5C-6 -18 -8 -20 -9.5 -22C-11.5 -15 -11 -8 -10 -1z" fill="${G('orange')}" ${S2}/>` +
+      `${flame(0, 3, 11, 19, G('gold'), -1, '')}<ellipse cx="0" cy="-5" rx="2.2" ry="4.2" fill="#fff"/></g>` +
+      `<path d="M10 45C10 57 30 58 31 48" fill="none" stroke="${O}" stroke-width="6.5" stroke-linecap="round"/><path d="M10 45C10 57 30 58 31 48" fill="none" stroke="#5a6aa8" stroke-width="2.6" stroke-linecap="round"/>` +
+      `<rect x="1" y="19" width="18" height="27" rx="8" fill="${G('red')}" ${S}/>` +
+      `<path d="M1.5 27.5h17M1.5 37.5h17" stroke="${O}" stroke-width="2.5"/>` +
+      `<path d="M5.5 24v16" stroke="#fff" stroke-opacity=".6" stroke-width="3" stroke-linecap="round"/>` +
+      `<rect x="5.5" y="13" width="9" height="8" rx="2.5" fill="${G('steel')}" ${S2}/>` +
+      `<path d="M26 36h8v11c0 2-1 3-3 3h-2c-2 0-3-1-3-3z" fill="${G('dark')}" ${S}/>` +
+      `<rect x="17" y="27" width="9" height="11" rx="2.5" fill="${G('dark')}" ${S2}/>` +
+      `<rect x="24" y="28" width="15" height="8" rx="2.5" fill="${G('steel')}" ${S}/>` +
+      `<rect x="36" y="25" width="7" height="14" rx="2.5" fill="${G('dark')}" ${S}/>`
+  ),
+  // weapon crate: olive box, hazard lid, steel corners, a gold star
+  crate:
+    `<rect x="5" y="12" width="54" height="45" rx="5" fill="${G('olive')}" ${S}/>` +
+      `<clipPath id="hb-clip-crate"><path d="M5 23V17a5 5 0 0 1 5-5h44a5 5 0 0 1 5 5v6z"/></clipPath>` +
+      `<g clip-path="url(#hb-clip-crate)"><rect x="5" y="12" width="54" height="11" fill="#ffd21f"/>` +
+      `<path d="${[0, 1, 2, 3, 4, 5, 6].map((i) => `M${4 + i * 10} 24l11-13h5l-11 13z`).join('')}" fill="${O}"/></g>` +
+      `<path d="M5 23V17a5 5 0 0 1 5-5h44a5 5 0 0 1 5 5v6z" fill="none" ${S2}/>` +
+      `<path d="M5.5 23h53" stroke="${O}" stroke-width="3"/>` +
+      `<path d="M10 28v13" stroke="#fff" stroke-opacity=".35" stroke-width="3" stroke-linecap="round"/>` +
+      `<polygon points="${star(32, 41, 11.5, 5.2)}" fill="${G('gold')}" ${S2}/>` +
+      `<rect x="3.5" y="44" width="11" height="14" rx="3" fill="${G('steel')}" ${S2}/><rect x="49.5" y="44" width="11" height="14" rx="3" fill="${G('steel')}" ${S2}/>` +
+      `<circle cx="9" cy="51" r="1.8" fill="${O}"/><circle cx="55" cy="51" r="1.8" fill="${O}"/>`,
+  // double fire rate: dial pinned in the red, flames on the rim
+  overdrive:
+    `<g transform="rotate(34 44 22)">${flame(44, 26, 15, 27, G('orange'), 2)}</g>` +
+      `<g transform="rotate(-6 36 14)">${flame(36, 18, 12, 21, G('gold'), -1)}</g>` +
+      `<circle cx="30" cy="38" r="25" fill="${G('orange')}" ${S}/>` +
+      `<circle cx="30" cy="38" r="18.5" fill="#fff6d6" ${S2}/>` +
+      `<path d="${arc(30, 38, 13.5, 135, 235)}" fill="none" stroke="#ffc21f" stroke-width="5"/>` +
+      `<path d="${arc(30, 38, 13.5, 235, 315)}" fill="none" stroke="#f26a10" stroke-width="5"/>` +
+      `<path d="${arc(30, 38, 13.5, 315, 405)}" fill="none" stroke="#d9142c" stroke-width="5"/>` +
+      `<path d="M46.2 42.4L29 34.8 28 41.2z" fill="${O}" stroke="${O}" stroke-width="2" stroke-linejoin="round"/>` +
+      `<circle cx="30" cy="38" r="4.6" fill="${G('steel')}" ${S2}/>` +
+      `<path d="M10 28a21 21 0 0 1 9-9" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="3.2" stroke-linecap="round"/>`,
+  // triple shot: three energy bolts fanned from one point
+  triple: [-31, 31, 0]
+    .map(
+      (a) =>
+        `<g transform="rotate(${a} 32 59)"><path d="M32 5L43 21H36.8V43L32 57L27.2 43V21H21z" fill="${G('cyan')}" ${S}/>` +
+        `<path d="M32 12L34.4 20V40L32 47L29.6 40V20z" fill="#fff" fill-opacity=".92"/></g>`
+    )
+    .join('') +
+    `<circle cx="32" cy="58" r="4.2" fill="#fff" ${S2}/>`,
+  // rage: piercing, exploding shots (a horned skull with a flame crown)
+  rage:
+    [0, 1]
+      .map(
+        (m) =>
+          `<g${m ? ' transform="matrix(-1 0 0 1 64 0)"' : ''}><path d="M15 35C2 36 0 18 6 4C8 15 14 21 23 24z" fill="${G('bone')}" ${S}/><path d="M9 26c-2-6-2-11-1-15" fill="none" stroke="#c9bf9a" stroke-width="2" stroke-linecap="round"/></g>`
+      )
+      .join('') +
+    `<g transform="rotate(-40 32 30)">${flame(32, 30, 12, 24, G('orange'), -2)}</g><g transform="rotate(40 32 30)">${flame(32, 30, 12, 24, G('orange'), 2)}</g>` +
+    flame(32, 30, 17, 28, G('orange'), 0) + flame(32, 29, 8.5, 15, G('gold'), 0, '') +
+    `<path d="M32 19C20 19 12 26 12 35c0 7 3 11 8 14v6c0 3 2 5 5 5h14c3 0 5-2 5-5v-6c5-3 8-7 8-14C52 26 44 19 32 19z" fill="${G('red')}" ${S}/>` +
+    `<path d="M17 31c1-4 5-8 11-9" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="3.2" stroke-linecap="round"/>` +
+    [0, 1]
+      .map(
+        (m) =>
+          `<g${m ? ' transform="matrix(-1 0 0 1 64 0)"' : ''}><path d="M15 33L28 39V46.5H21C17 46.5 15 43 15 39z" fill="#1a1530"/>` +
+          `<path d="M19 37.5L26.5 41V44H22.5C20.5 44 19 43 19 41z" fill="${G('orange')}"/><circle cx="23.5" cy="42" r="2.1" fill="#fff6b0"/></g>`
+      )
+      .join('') +
+    `<path d="M32 44l-3 6h6z" fill="#1a1530"/>` +
+    `<rect x="23" y="51" width="18" height="7.5" rx="2.5" fill="${G('bone')}" ${S2}/><path d="M29 51.5v6.5M35 51.5v6.5" stroke="${O}" stroke-width="2"/>`
 };
 
 // ids that reuse another picture

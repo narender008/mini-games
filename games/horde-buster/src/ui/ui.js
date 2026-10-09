@@ -151,10 +151,11 @@ export class UI {
     st.setProperty('--at', `${r.top.toFixed(1)}px`);
     st.setProperty('--aw', `${r.width.toFixed(1)}px`);
     st.setProperty('--ah', `${r.height.toFixed(1)}px`);
-    st.setProperty('--u', Math.max(0.5, r.width / 400).toFixed(3));
+    // the interface is sized for a portrait column; on a wide screen it keeps that size and sits in the corners
+    st.setProperty('--u', Math.max(0.5, Math.min(r.width, r.height * 0.6) / 400).toFixed(3));
     this.root.dataset.narrow = r.width < 340 ? '1' : '0';
-    // room beside the road (wide screens) for callouts that should stay off it
-    this.root.dataset.wide = r.left > 240 ? '1' : '0';
+    // a wide field: the status cluster moves to the corner
+    this.root.dataset.wide = r.width > r.height * 1.25 ? '1' : '0';
   }
 
   // ------------------------------------------------------------ sound and full screen

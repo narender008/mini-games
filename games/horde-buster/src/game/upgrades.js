@@ -1,21 +1,27 @@
 // Weapons, level-up upgrades and evolutions.
 //
-// Weapons all fire on their own; upgrades change shared stats, so every gun
-// gets stronger together. An evolution card appears once two named upgrades
-// are both maxed (and the weapon it changes is owned), e.g. Multishot III +
+// The hero holds one gun, which fires on its own. Weapon crates swap it on the
+// spot, or level it up (to 3 stars) when the crate holds the same gun; each
+// gun keeps its own stars. Upgrades change shared stats, so whatever gun is
+// held gets stronger. An evolution card appears once two named upgrades are
+// both maxed (and the weapon it changes has been found), e.g. Multishot III +
 // Piercing III turns the Blaster into the Railgun.
 import { rnd } from '../config.js';
 
 // stars: a weapon found again levels up (more damage, faster)
 export const WEAPONS = {
   blaster: { name: 'Blaster', icon: 'blaster', interval: 0.12, dmg: 11, speed: 1500, pellets: 1, spread: 0, gap: 16, life: 1.1, kb: 26, size: 11, color: [0.35, 0.75, 1.6], sound: 'blaster' },
-  scatter: { name: 'Scatter Gun', icon: 'scatter', interval: 0.6, dmg: 9, speed: 1150, pellets: 7, spread: 0.5, gap: 0, life: 0.45, kb: 150, size: 6, color: [1.6, 0.9, 0.3], sound: 'scatter', perShot: 2 },
+  scatter: { name: 'Scatter Gun', icon: 'scatter', interval: 0.55, dmg: 13, speed: 1250, pellets: 8, spread: 0.46, gap: 0, life: 0.5, kb: 150, size: 6, color: [1.6, 0.9, 0.3], sound: 'scatter', perShot: 2 },
   rocket: { name: 'Rocket Pod', icon: 'rocket', interval: 0.95, dmg: 40, speed: 330, accel: 1500, pellets: 1, spread: 0.12, gap: 22, life: 1.6, kb: 60, size: 10, blast: 78, blastDmg: 38, color: [1.6, 0.7, 0.25], sound: 'rocket' },
+  // the flamethrower: a short cone that hits everything in it every tick and sets it alight
+  flamer: { name: 'Flamethrower', icon: 'flamer', interval: 0.06, dmg: 7.5, range: 300, cone: 0.34, burn: 2.2, burnDps: 16, kb: 6, size: 0, color: [2.4, 1.0, 0.25], sound: 'flamer' },
   railgun: { name: 'Railgun', icon: 'railgun', interval: 0.32, dmg: 34, beam: true, pellets: 1, gap: 18, kb: 90, size: 9, color: [0.4, 1.2, 2.2], sound: 'railgun' },
 };
 
 export const STAR_DMG = [1, 1, 1.3, 1.65];
 export const STAR_RATE = [1, 1, 1.12, 1.25];
+// each star also adds bolts (blaster lanes, scatter pellets, rockets) and a bigger look
+export const STAR_SIZE = [1, 1, 1.2, 1.4];
 
 // Upgrades: max level, card colour, what one level does (`apply`), the card text for the NEXT level.
 export const UPGRADES = [
@@ -58,7 +64,7 @@ export function drawCards(run, n = 3) {
   const cards = [];
   for (const e of EVOLUTIONS) {
     if (run.evolved[e.id]) continue;
-    if (e.weapon && !run.weapons.some((w) => w.id === e.weapon)) continue;
+    if (e.weapon && !(run.arms[e.weapon] > 0)) continue;
     if (e.needs.every((id) => (lv[id] || 0) >= UP[id].max)) {
       cards.push({ id: e.id, name: e.name, text: e.text, icon: e.icon, color: 'gold', level: 1, max: 1, evolution: true, weapon: !!e.weapon });
       break;

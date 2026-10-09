@@ -5,7 +5,7 @@
 //   slam    - at the end of a charge it raises both fists and smashes the
 //             ground: a marked circle around the impact hurts, then it walks back
 // Below 60% health it speeds up; below 30% it is enraged and calls in more dead.
-import { ARENA, BAND, clamp, rand, rnd, chance, TAU } from '../config.js';
+import { ARENA, BAND, FIELD, clamp, rand, rnd, chance, TAU } from '../config.js';
 import { HOT, UNDER, RING, BEAM, GLOW } from '../fx/particles.js';
 
 const HOME_Y = 600;
@@ -85,7 +85,7 @@ export class Ogre {
       }
       case 'idle': {
         const tx = clamp(hero.x, 180, ARENA.w - 180);
-        E.x[i] += clamp(tx - x, -1, 1) * Math.min(Math.abs(tx - x), 110 * fast * dt);
+        E.x[i] += clamp(tx - x, -1, 1) * Math.min(Math.abs(tx - x), 110 * fast * FIELD.s * dt);
         E.y[i] += clamp(HOME_Y - y, -1, 1) * Math.min(Math.abs(HOME_Y - y), 120 * dt);
         if (Math.floor(this.anim * 5) !== Math.floor((this.anim - dt) * 5) && Math.floor(this.anim * 5) % 2 === 0) this.stomp(0.08);
         if (ph === 3) {
@@ -132,7 +132,7 @@ export class Ogre {
       case 'charge_wind': {
         // follows the hero for a moment, then locks the lane
         if (this.t > 0.35) this.lockX = clamp(hero.x, 110, ARENA.w - 110);
-        E.x[i] += clamp(this.lockX - x, -1, 1) * Math.min(Math.abs(this.lockX - x), 260 * dt);
+        E.x[i] += clamp(this.lockX - x, -1, 1) * Math.min(Math.abs(this.lockX - x), 260 * FIELD.s * dt);
         E.x[i] += Math.sin(this.anim * 60) * 1.2;
         // the marked lane pulses red on the road
         if (Math.floor(this.anim * 12) !== Math.floor((this.anim - dt) * 12)) {
@@ -219,7 +219,8 @@ export class Ogre {
       this.run.sound.bossRoar();
     } else {
       this.state = 'charge_wind';
-      this.t = 1.0;
+      // on a wide field it may have further to go to line up
+      this.t = 1.0 + Math.min(0.6, Math.abs(this.run.hero.x - this.run.enemies.x[this.i]) / (1400 * FIELD.s));
       this.lockX = this.run.hero.x;
     }
   }

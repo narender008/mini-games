@@ -22,6 +22,7 @@ export const RETICLE = 12;
 export const CHIP = 13;
 export const PICK = 14;
 export const SHARD = 15;
+export const ARC = 16; // countdown ring (life = fraction left)
 
 // draw layers
 export const UNDER = 0;
@@ -39,6 +40,7 @@ const G = 1500; // gravity for droplets and chips, u/s^2 (cartoon: fast and snap
 
 export class Particles {
   constructor(cap) {
+    this.boom = 0;
     this.cap = cap;
     const F = () => new Float32Array(cap);
     this.x = F();
@@ -137,6 +139,7 @@ export class Particles {
   }
 
   update(dt) {
+    this.boom = Math.max(0, (this.boom || 0) - dt * 14); // recent explosions, for thinning out barrages
     const { x, y, z, vx, vy, vz, life, max, flags } = this;
     let n = this.n;
     for (let i = 0; i < n; i++) {
@@ -275,19 +278,22 @@ export class Particles {
 
   // a fireball: billowing fire, smoke, sparks, a flash, a shock ring, a light and a scorch mark
   explosion(x, y, radius, big = 1) {
-    const n = Math.round(6 + radius / 14);
+    // many blasts at once (rocket barrages, rage): each one thins out so the screen stays readable and the GPU keeps up
+    const busy = Math.min(1, Math.max(0.22, 1 - (this.boom - 8) / 24));
+    this.boom += 1;
+    const n = Math.round((6 + radius / 14) * busy);
     for (let k = 0; k < n; k++) {
       const a = rnd() * TAU;
       const d = rnd() * radius * 0.45;
       const s = rand(40, 160) * big;
       this.add(FIRE, HOT, x + Math.cos(a) * d, y + Math.sin(a) * d * 0.7, rand(5, 30), Math.cos(a) * s, Math.sin(a) * s * 0.6, rand(30, 120), rand(0.35, 0.7), radius * rand(0.25, 0.4), radius * rand(0.5, 0.8), 1, 1, 1, 1, 0, 3);
     }
-    for (let k = 0; k < n * 0.7; k++) {
+    for (let k = 0; k < n * 0.7 * busy; k++) {
       const a = rnd() * TAU;
       this.add(SMOKE, ALPHA, x + Math.cos(a) * radius * 0.3, y + Math.sin(a) * radius * 0.2, rand(10, 40), Math.cos(a) * 60, Math.sin(a) * 40, rand(40, 90), rand(0.9, 1.6), radius * 0.3, radius * 0.9, 0.16, 0.14, 0.13, 0.75, 0, 1.5);
     }
-    this.sparks(x, y, 20, Math.round(10 + radius / 6), 3, 1.6, 0.5, 700 * big, 0, -1, TAU);
-    for (let k = 0; k < 6; k++) {
+    this.sparks(x, y, 20, Math.round((10 + radius / 6) * busy), 3, 1.6, 0.5, 700 * big, 0, -1, TAU);
+    for (let k = 0; k < 6 * busy; k++) {
       const a = rnd() * TAU;
       const s = rand(150, 420);
       this.add(CHIP, ALPHA, x, y, 10, Math.cos(a) * s, Math.sin(a) * s, rand(200, 500), 1.5, rand(2, 4), 1, 0.12, 0.11, 0.1, 1, GRAV | SPIN, 0.5);

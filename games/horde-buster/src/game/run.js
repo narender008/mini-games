@@ -1,12 +1,14 @@
-// One run through a chapter: the hero, the horde, every bullet, gem, pickup
-// and barrel, the waves, levelling up and the rewards. Stepped at a fixed
-// 60 Hz by main.js; everything lives in typed-array pools so a road full of
-// 500+ creatures and 1500+ bullets and particles allocates nothing per frame.
-import { ARENA, BAND, STEP, clamp, rnd, rand, randi, chance, TAU } from '../config.js';
+// One run through a chapter: the hero, the horde, every bullet, gem, pickup,
+// crate and barrel, the waves, levelling up and the rewards. Stepped at a
+// fixed 60 Hz by main.js; everything lives in typed-array pools so a field of
+// 1500 creatures and thousands of bullets and particles allocates nothing per
+// frame. The field's width follows the screen (config.js setField): spawn
+// counts, hero speed, weapon reach and drops scale with it (FIELD.s, c, r).
+import { ARENA, BAND, FIELD, STEP, clamp, rnd, rand, randi, chance, TAU } from '../config.js';
 import { Enemies, TYPES, T, WALK, HEADLESS, BOSS } from './enemies.js';
 import { Grid } from './grid.js';
-import { Bullets, Shots, Bombs, Gems, Pickups, Barrels, PICKUPS, PICKUP_COL } from './pools.js';
-import { WEAPONS, STAR_DMG, STAR_RATE, baseStats, drawCards, applyCard } from './upgrades.js';
+import { Bullets, Shots, Bombs, Gems, Pickups, Barrels, PICKUPS, PICKUP_COL, CRATE, SURGES, CRATE_GUNS } from './pools.js';
+import { WEAPONS, STAR_DMG, STAR_RATE, STAR_SIZE, baseStats, drawCards, applyCard } from './upgrades.js';
 import { CHAPTERS, waveReward } from './chapters.js';
 import { Ogre } from './boss.js';
 import { Particles, HOT, UNDER, BOLT, SPARK, SMOKE, FIRE, GLOW } from '../fx/particles.js';
@@ -19,8 +21,15 @@ const PROC = 2; // may trigger on-hit effects (explode, chain, freeze)
 const BLAST = 4; // came from an explosion
 const SHOCK = 8; // lightning
 const ICE = 16;
+const QUIET = 32; // no number, sound or big spurt (flame ticks)
+const BURN = 64; // fire: the kill burns the body up
+
+const SURGE_TIME = 8; // seconds a power surge lasts
+const RAGE_COL = [2.4, 0.55, 0.2]; // rage shots burn red-orange
+const CRATE_LIFE = 9; // an unwanted crate fades out at the end of this
 
 const HERO_R = 22;
+// kill streaks (counts scale with the field; tiers from 2 up drop a power-surge orb)
 const STREAKS = [
   [15, 'MASSACRE!'],
   [35, 'BLOODBATH!'],
@@ -43,14 +52,19 @@ export class Run {
     this.sound = app.sound;
     this.atlas = app.atlas;
     this.events = app.events;
-    this.enemies = new Enemies(1600);
-    this.grid = new Grid(-80, -700, ARENA.w + 80, ARENA.h + 120, 48, 1600);
-    this.bullets = new Bullets(3000);
-    this.shots = new Shots(700);
+    this.enemies = new Enemies(2400);
+    this.grid = new Grid(-80, -700, FIELD.max + 80, ARENA.h + 120, 48, 2400);
+    this.bullets = new Bullets(6000);
+    this.shots = new Shots(900);
     this.bombs = new Bombs(16);
-    this.gems = new Gems(2000);
-    this.pickups = new Pickups(24);
-    this.barrels = new Barrels(48);
+    this.gems = new Gems(4000);
+    this.pickups = new Pickups(48);
+    this.barrels = new Barrels(64);
+    this.obstacles = null; // wrecks in play: boxes of centre x, y, half width, half depth (main.js)
+    this.arms = { blaster: 1, scatter: 0, rocket: 0, flamer: 0 };
+    this.held = 'blaster';
+    this.evo = {};
+    this.surge = { overdrive: 0, triple: 0, rage: 0 };
     this.fx = new Particles(app.q.particles);
     this.gore = new Gore(app.q.gibs, this.fx, app.atlas);
     this.numbers = new Numbers(app.q.numbers);
@@ -69,6 +83,22 @@ export class Run {
 
   pan(x) {
     return clamp((x - ARENA.w / 2) / (ARENA.w / 2), -1, 1);
+  }
+
+  setObstacles(ob) {
+    this.obstacles = ob && ob.length ? ob : null;
+  }
+
+  // the gun a crate slot fires now (the Blaster may have evolved into the Railgun)
+  gun(id = this.held) {
+    return this.evo[id] || id;
+  }
+
+  // the HUD's weapon list: the held gun first, then the others found this run
+  get weapons() {
+    const out = [{ id: this.gun(), stars: this.arms[this.held] }];
+    for (const id of CRATE_GUNS) if (id !== this.held && this.arms[id] > 0) out.push({ id: this.gun(id), stars: this.arms[id] });
+    return out;
   }
 
   // ---------------------------------------------------------------- start
@@ -104,13 +134,26 @@ export class Run {
     this.headlessCount = 0;
     this.hitsTaken = 0;
     this.god = false;
-    const start = meta.startWeapon && WEAPONS[meta.startWeapon] ? meta.startWeapon : 'blaster';
-    this.weapons = [{ id: start, stars: 1, timer: 0.2 }];
+    const start = meta.startWeapon && CRATE_GUNS.includes(meta.startWeapon) ? meta.startWeapon : 'blaster';
+    // one gun in hand; every gun keeps its own stars (0 = not found yet)
+    this.arms = { blaster: 0, scatter: 0, rocket: 0, flamer: 0 };
+    this.arms[start] = 1;
+    this.held = start;
+    this.evo = {};
+    this.wTimer = 0.2;
+    this.flameT = 0;
+    this.flameLv = 0;
+    this.flameTick = 0;
+    this.burning = 0;
+    this.burnDps = 0;
+    this.surge = { overdrive: 0, triple: 0, rage: 0 };
+    this.blastBudget = 0;
+    this.stepN = 0;
     this.abil = {};
     for (const [k, a] of Object.entries(ABILITIES)) this.abil[k] = { charges: a.max, max: a.max, cd: 0, period: a.period, recharge: 0, active: 0 };
     if (meta.bombs) this.abil.bomb.max += meta.bombs;
     const h = this.hero;
-    h.x = h.px = 360;
+    h.x = h.px = ARENA.w / 2;
     h.y = h.py = 1120;
     h.vx = h.vy = 0;
     h.hp = this.stats.maxHp;
@@ -139,6 +182,7 @@ export class Run {
     this.waveKills = 0;
     this.phase = 'intro';
     this.phaseT = 1.6;
+    this.mopUp = false;
     // later waves are tougher and quicker
     this.hpMul = (1 + 0.4 * w + 0.2 * w * w) * (1 + 0.6 * this.chapterIndex);
     this.spdMul = 1 + 0.05 * w;
@@ -168,8 +212,9 @@ export class Run {
       const span = Math.min(60, s.until - s.from);
       const k = clamp((t - s.from) / span, 0, 1);
       const every = Array.isArray(s.every) ? s.every[0] + (s.every[1] - s.every[0]) * k : s.every;
-      s.next = t + every * rand(0.7, 1.3);
-      this.spawnGroup(s.type, s.n, s.n > 1 ? 'swarm' : 'random');
+      // a wider field streams in more often
+      s.next = t + (every / FIELD.c) * rand(0.7, 1.3);
+      this.spawnGroup(s.type, s.n, s.n > 1 ? 'swarm' : 'random', 0, false);
     }
   }
 
@@ -178,54 +223,62 @@ export class Run {
     return Math.min(0, this.app.viewTop ?? 0) - 40;
   }
 
-  spawnGroup(type, n, pattern = 'random', elite = 0) {
+  // n is for the old 720-wide road; a wider field gets proportionally more (scale = false: as given)
+  spawnGroup(type, n, pattern = 'random', elite = 0, scale = true) {
     const t = typeof type === 'string' ? T[type] : type;
     const top = this.top();
-    const cx = rand(120, ARENA.w - 120);
+    const W = ARENA.w;
+    const R = FIELD.r;
+    if (scale) n = Math.max(1, Math.round(n * FIELD.c));
+    const cx = rand(120 * R, W - 120 * R);
+    const per = Math.round(12 * FIELD.s);
     for (let k = 0; k < n; k++) {
       let x;
       let y = top - rand(0, 60);
       switch (pattern) {
         case 'line':
-          x = ((k + 0.5) / n) * (ARENA.w - 60) + 30 + rand(-15, 15);
+          x = ((k + 0.5) / n) * (W - 60) + 30 + rand(-15, 15);
           break;
         case 'wall':
-          x = ((k % 12) + 0.5) * (ARENA.w / 12) + rand(-12, 12);
-          y = top - Math.floor(k / 12) * 42 - rand(0, 20);
+          x = ((k % per) + 0.5) * (W / per) + rand(-12, 12);
+          y = top - Math.floor(k / per) * 42 - rand(0, 20);
           break;
         case 'cluster':
-          x = cx + (rnd() + rnd() - 1) * 90;
+          x = cx + (rnd() + rnd() - 1) * 90 * R;
           y = top - rand(0, 140);
           break;
         case 'flank':
-          x = k % 2 ? rand(20, 150) : rand(ARENA.w - 150, ARENA.w - 20);
+          x = k % 2 ? rand(20, 150) : rand(W - 150, W - 20);
           y = top - rand(0, 160);
           break;
         case 'center':
-          x = ARENA.w / 2 + rand(-60, 60);
+          x = W / 2 + rand(-60, 60) * R;
           break;
         case 'swarm':
-          x = cx + (rnd() - 0.5) * 420;
+          x = cx + (rnd() - 0.5) * 420 * R;
           y = top - rand(0, 220);
           break;
         default:
-          x = rand(30, ARENA.w - 30);
+          x = rand(30, W - 30);
           y = top - rand(0, 100);
       }
-      this.enemies.spawn(t, clamp(x, 16, ARENA.w - 16), y, this.hpMul, elite && k === 0 ? 1 : 0, this.spdMul);
+      this.enemies.spawn(t, clamp(x, 16, W - 16), y, this.hpMul, elite && k === 0 ? 1 : 0, this.spdMul);
     }
   }
 
   spawnBoss(key) {
-    const i = this.enemies.spawn(T[key], ARENA.w / 2, this.top() - 120, 1 + 0.6 * this.chapterIndex);
+    // a wide field makes the guns stronger but spreads their fire; the boss is one target, so it gains less
+    const i = this.enemies.spawn(T[key], ARENA.w / 2, this.top() - 120, (1 + 0.6 * this.chapterIndex) * FIELD.r ** 0.75);
     if (i < 0) return;
     this.boss = new Ogre(this, i);
+    this.bossChunk = 0.8; // a weapon crate each time it loses a fifth of its health
     this.sound.bossRoar();
     this.shake(0.4);
   }
 
   placeBarrels(n, initial) {
     const B = this.barrels;
+    n = Math.round(n * FIELD.c);
     for (let k = 0; k < n; k++) {
       const i = B.take();
       if (i < 0) return;
@@ -243,6 +296,8 @@ export class Run {
   // ---------------------------------------------------------------- the step
   step(dt) {
     this.time += dt;
+    this.stepN++;
+    this.blastBudget = 14; // rage and explosive rounds: at most this many extra blasts a step
     const W = this.chapter.waves[this.wave];
     // wave flow
     if (this.phase === 'intro') {
@@ -250,6 +305,8 @@ export class Run {
       if (this.phaseT <= 0) this.phase = 'fight';
     } else if (this.phase === 'fight') {
       this.runScript(dt);
+      // once the script has run, the last few stragglers rush the hero (no hunting them across a wide field)
+      this.mopUp = !W.boss && this.scriptDone() && this.enemies.n <= Math.round(10 * FIELD.c);
       const bossDead = W.boss && this.boss && !this.enemies.alive[this.boss.i];
       if ((!W.boss && this.scriptDone() && this.enemies.n === 0) || bossDead) {
         this.phase = 'clear';
@@ -260,24 +317,16 @@ export class Run {
       this.phaseT -= dt;
       if (this.phaseT <= 0 && this.gems.n === 0) {
         this.phase = 'reward';
-        const rw = waveReward(this.chapter, this.wave, this.waveKills);
+        const rw = waveReward(this.chapter, this.wave, this.waveKills, FIELD.c);
         this.coins += rw.coins;
         let weapon = null;
-        if (rw.weapon) {
-          const owned = this.weapons.find((w) => w.id === rw.weapon || (rw.weapon === 'blaster' && w.id === 'railgun'));
-          if (owned) {
-            owned.stars = Math.min(3, owned.stars + 1);
-            weapon = { id: owned.id, name: WEAPONS[owned.id].name, stars: owned.stars, isNew: false };
-          } else {
-            this.weapons.push({ id: rw.weapon, stars: 1, timer: 0.3 });
-            weapon = { id: rw.weapon, name: WEAPONS[rw.weapon].name, stars: 1, isNew: true };
-          }
-        } else if (this.wave === 2 && this.weapons.length) {
-          // the middle wave levels up the starting gun
-          const w0 = this.weapons[0];
-          if (w0.stars < 3) {
-            w0.stars++;
-            weapon = { id: w0.id, name: WEAPONS[w0.id].name, stars: w0.stars, isNew: false };
+        if (rw.star) {
+          // a star for the gun in hand, or the best gun below three stars
+          let id = this.held;
+          if (this.arms[id] >= 3) id = CRATE_GUNS.filter((g) => this.arms[g] > 0 && this.arms[g] < 3).sort((a, b) => this.arms[b] - this.arms[a])[0];
+          if (id) {
+            this.arms[id]++;
+            weapon = { id: this.gun(id), name: WEAPONS[this.gun(id)].name, stars: this.arms[id], isNew: false };
           }
         }
         this.reward = { wave: this.wave + 1, waves: this.chapter.waves.length, coins: rw.coins, xp: rw.xp, weapon, chest: false, last: this.wave === this.chapter.waves.length - 1 };
@@ -300,6 +349,9 @@ export class Run {
     E.update(dt, this);
     if (this.boss) this.boss.update(dt);
     this.updateHeadless(dt);
+    this.updateBurn(dt);
+    this.updateSurges(dt);
+    this.flameLv = 0;
     if (this.hero.alive) this.fireWeapons(dt);
     this.updateBullets(dt);
     this.updateShots(dt);
@@ -323,8 +375,9 @@ export class Run {
     if (this.magnetAll > 0) this.magnetAll -= dt;
     if (this.freezeAllT > 0) this.freezeAllT -= dt;
     this.trauma = Math.max(0, this.trauma - dt * 1.6);
-    // the sound follows how full the road is
-    this.sound.setIntensity(clamp(E.n / 220, 0, 1));
+    // the sound follows how full the field is
+    this.sound.setIntensity(clamp(E.n / (220 * FIELD.c), 0, 1));
+    if (!this.demo) this.sound.flame?.(this.flameLv);
   }
 
   // ---------------------------------------------------------------- hero
@@ -351,7 +404,8 @@ export class Run {
     const ty = clamp(this.target.y, BAND.y0, BAND.y1);
     const dx = tx - h.x;
     const dy = ty - h.y;
-    const maxSp = 930 * s.move;
+    // crossing the field takes about as long on any screen
+    const maxSp = 930 * s.move * FIELD.s;
     let wx = dx * 24;
     let wy = dy * 24;
     const wl = Math.hypot(wx, wy);
@@ -359,7 +413,7 @@ export class Run {
       wx = (wx / wl) * maxSp;
       wy = (wy / wl) * maxSp;
     }
-    const acc = 14000 * s.move * dt;
+    const acc = 14000 * s.move * FIELD.s * dt;
     const ax = wx - h.vx;
     const ay = wy - h.vy;
     const al = Math.hypot(ax, ay);
@@ -505,11 +559,12 @@ export class Run {
     this.sound.lightning();
     this.app.flash?.(0.7, 0.85, 1, 0.35);
     this.shake(0.5);
-    this.blast(x, y, 150, 140, 400, 'shock');
-    if (best >= 0 && E.alive[best]) this.chain(best, 10, 90);
+    this.blast(x, y, 150 * FIELD.r, 140, 400, 'shock');
+    const jumps = Math.round(10 * FIELD.c);
+    if (best >= 0 && E.alive[best]) this.chain(best, jumps, 90);
     else {
-      const near = this.nearest(x, y, 300, -1);
-      if (near >= 0) this.chain(near, 10, 90);
+      const near = this.nearest(x, y, 300 * FIELD.r, -1);
+      if (near >= 0) this.chain(near, jumps, 90);
     }
   }
 
@@ -570,7 +625,7 @@ export class Run {
     let x = E.x[i];
     let y = E.y[i] - TYPES[E.type[i]].hitY;
     for (let k = 0; k < jumps; k++) {
-      const j = this.nearest(x, y + TYPES[E.type[i]].hitY * 0.5, 190, i);
+      const j = this.nearest(x, y + TYPES[E.type[i]].hitY * 0.5, 190 * FIELD.r, i);
       if (j < 0) break;
       this.chainMark[j] = this.chainId;
       const jx = E.x[j];
@@ -623,14 +678,19 @@ export class Run {
       mx = h.x + Math.cos(this.aim) * 34;
       my = h.y - 50 + Math.sin(this.aim) * 34;
     }
-    for (const w of this.weapons) {
-      const def = WEAPONS[w.id];
-      w.timer -= dt * s.rate * STAR_RATE[w.stars];
-      let guard = 0;
-      while (w.timer <= 0 && guard++ < 4) {
-        w.timer += def.interval;
-        this.fire(w, def, mx, my);
-      }
+    const gun = this.gun();
+    const def = WEAPONS[gun];
+    const stars = this.arms[this.held];
+    const od = this.surge.overdrive > 0 ? 2 : 1;
+    if (def.range) {
+      this.flame(def, stars, mx, my, dt * s.rate * STAR_RATE[stars] * od);
+      return;
+    }
+    this.wTimer -= dt * s.rate * STAR_RATE[stars] * od;
+    let guard = 0;
+    while (this.wTimer <= 0 && guard++ < 4) {
+      this.wTimer += def.interval;
+      this.fire(gun, def, stars, mx, my);
     }
   }
 
@@ -665,61 +725,182 @@ export class Run {
     return best;
   }
 
-  fire(w, def, mx, my) {
+  // One trigger pull. A wide field fires proportionally more bolts (FIELD.r)
+  // at a little less damage each, so the gun's power grows with the horde
+  // (FIELD.c); surges add a three-way spread (Triple Shot) or piercing,
+  // exploding shots (Rage).
+  fire(gun, def, stars, mx, my) {
     const s = this.stats;
-    const dmg = def.dmg * s.dmg * STAR_DMG[w.stars];
     const h = this.hero;
     h.fireT = 0.06;
+    const triple = this.surge.triple > 0;
+    const rage = this.surge.rage > 0;
+    const look = STAR_SIZE[stars] * (rage ? 1.25 : 1);
+    const col = rage ? RAGE_COL : def.color;
+    const base = def.dmg * s.dmg * STAR_DMG[stars] * (rage ? 1.2 : 1);
     if (def.beam && this.aimDown) {
       // the rail swung down: heavy piercing bolts at the close threat
       const sp = 2200;
-      this.bullet(mx, my, Math.cos(this.aim) * sp, Math.sin(this.aim) * sp, dmg, 3, 0, def);
+      this.bullet(mx, my, Math.cos(this.aim) * sp, Math.sin(this.aim) * sp, base * FIELD.c, 3 + (rage ? 3 : 0), 0, def, look, col, rage);
       this.sound.shot('railgun', this.pan(mx));
       return;
     }
     if (def.beam) {
-      const n = 1 + s.multi;
-      for (let k = 0; k < n; k++) this.rail(mx + (k - (n - 1) / 2) * def.gap, my, dmg, def);
-      this.fx.flash(mx, my, 0, 46, def.color[0], def.color[1], def.color[2], 0.1);
+      const n0 = 1 + s.multi + (stars - 1);
+      const n = Math.max(n0, Math.round(n0 * FIELD.r)) * (triple ? 3 : 1);
+      const dmg = (base * FIELD.c * n0 * (triple ? 3 : 1)) / n;
+      const gap = def.gap * (triple ? 2.2 : 1) * FIELD.r;
+      for (let k = 0; k < n; k++) this.rail(mx + (k - (n - 1) / 2) * gap, my, dmg, def, rage, look);
+      this.fx.flash(mx, my, 0, 46 * look, col[0], col[1], col[2], 0.1);
       this.fx.light(mx, my - 40, 50, 330, 0.8, 2, 3, 0.12);
       this.sound.shot('railgun', this.pan(mx));
       return;
     }
-    const pierce = w.id === 'scatter' ? Math.floor(s.pierce / 2) : w.id === 'rocket' ? 0 : s.pierce;
-    let n = def.pellets;
-    if (w.id === 'blaster') n += s.multi;
-    else if (w.id === 'scatter') n += 2 * s.multi;
-    else if (w.id === 'rocket') n += Math.floor(s.multi / 1.5);
-    const base = this.aim;
-    // lanes sit side by side across the aim
-    const px = -Math.sin(base);
-    const py = Math.cos(base);
-    for (let k = 0; k < n; k++) {
-      let ang;
-      let ox = 0;
-      if (w.id === 'scatter') ang = base + (rnd() - 0.5) * def.spread * 2;
-      else if (w.id === 'rocket') {
-        ang = base + (k - (n - 1) / 2) * def.spread;
-        ox = (k - (n - 1) / 2) * def.gap;
-      } else {
-        // blaster: parallel lanes, fanning out a little past three
-        ox = (k - (n - 1) / 2) * def.gap;
-        ang = base + (n > 3 ? (k - (n - 1) / 2) * 0.05 : 0);
+    const pierce = (gun === 'scatter' ? Math.floor(s.pierce / 2) : gun === 'rocket' ? 0 : s.pierce) + (rage && gun !== 'rocket' ? 3 : 0);
+    let n0 = def.pellets;
+    if (gun === 'blaster') n0 += s.multi + (stars - 1);
+    else if (gun === 'scatter') n0 += 2 * s.multi + 2 * (stars - 1);
+    else if (gun === 'rocket') n0 += Math.floor(s.multi / 1.5) + (stars - 1);
+    const n = Math.max(n0, Math.round(n0 * FIELD.r));
+    const dmg = (base * FIELD.c * n0) / n;
+    const fan = triple ? 3 : 1;
+    for (let f = 0; f < fan; f++) {
+      const aim = this.aim + (f - (fan - 1) / 2) * 0.26 * Math.sqrt(FIELD.r);
+      // lanes sit side by side across the aim
+      const px = -Math.sin(aim);
+      const py = Math.cos(aim);
+      for (let k = 0; k < n; k++) {
+        let ang;
+        let ox = 0;
+        const c = k - (n - 1) / 2;
+        if (gun === 'scatter') ang = aim + (rnd() - 0.5) * def.spread * 2 * Math.min(1.7, FIELD.r);
+        else if (gun === 'rocket') {
+          ang = aim + c * def.spread * FIELD.r;
+          ox = c * def.gap;
+        } else {
+          // blaster: parallel lanes, fanning out a little past three (wider on a wide field)
+          ox = c * def.gap * look;
+          ang = aim + (n > 3 ? c * 0.05 * FIELD.r : 0);
+        }
+        const sp = def.speed * (gun === 'scatter' ? rand(0.85, 1.15) : 1);
+        this.bullet(mx + px * ox, my + py * ox, Math.cos(ang) * sp, Math.sin(ang) * sp, dmg, pierce, gun === 'blaster' ? 0 : gun === 'scatter' ? 1 : 2, def, look, col, rage);
       }
-      const sp = def.speed * (w.id === 'scatter' ? rand(0.85, 1.15) : 1);
-      this.bullet(mx + px * ox, my + py * ox, Math.cos(ang) * sp, Math.sin(ang) * sp, dmg, pierce, w.id === 'blaster' ? 0 : w.id === 'scatter' ? 1 : 2, def);
     }
-    const c = def.color;
-    this.fx.flash(mx, my, 0, w.id === 'scatter' ? 60 : 34, c[0], c[1], c[2], 0.07);
-    this.fx.light(mx, my - 20, 50, w.id === 'scatter' ? 300 : 220, c[0] * 0.8, c[1] * 0.8, c[2] * 0.8, 0.08);
-    if (w.id === 'scatter') this.fx.smoke(mx, my, 0, 18, 1, 0.4);
+    this.fx.flash(mx, my, 0, (gun === 'scatter' ? 60 : 34) * look, col[0], col[1], col[2], 0.07);
+    this.fx.light(mx, my - 20, 50, gun === 'scatter' ? 300 : 220, col[0] * 0.8, col[1] * 0.8, col[2] * 0.8, 0.08);
+    if (gun === 'scatter') this.fx.smoke(mx, my, 0, 18, 1, 0.4);
     this.sound.shot(def.sound, this.pan(mx));
   }
 
-  bullet(x, y, vx, vy, dmg, pierce, kind, def) {
+  // The flamethrower: a short cone in front of the gun. Every tick it burns
+  // whatever is inside (the boss and barrels too) and sets it alight.
+  flame(def, stars, mx, my, dt) {
+    const s = this.stats;
+    const h = this.hero;
+    h.fireT = 0.06;
+    this.flameLv = 1;
+    const rage = this.surge.rage > 0;
+    const look = STAR_SIZE[stars];
+    const range = def.range * (1 + 0.22 * (stars - 1)) * (1 + 0.08 * s.pierce);
+    const cone0 = def.cone * (1 + 0.25 * (stars - 1)) + 0.05 * s.multi;
+    const wide = Math.sqrt(FIELD.r);
+    const cone = Math.min(1.15, cone0 * wide * (this.surge.triple > 0 ? 1.8 : 1));
+    const ax = Math.cos(this.aim);
+    const ay = Math.sin(this.aim);
+    // the jet: hot puffs thrown along the cone, smoke off the end
+    const fx = this.fx;
+    for (let k = 0; k < 4; k++) {
+      const a = this.aim + (rnd() - 0.5) * cone * 1.6;
+      const sp = range * rand(2.4, 3.2);
+      fx.add(FIRE, HOT, mx + ax * 8, my + ay * 8, 0, Math.cos(a) * sp, Math.sin(a) * sp, 0, rand(0.26, 0.36), 9 * look, rand(40, 62) * look * (0.6 + cone), 1, rage ? 0.6 : 1, rage ? 0.6 : 1, 1, 0, 2.2);
+    }
+    if (rnd() < 0.3) fx.smoke(mx + ax * range * 0.9, my + ay * range * 0.9, 0, 26, 1, 0.25);
+    fx.light(mx + ax * range * 0.45, my + ay * range * 0.45, 40, range * 1.3, 2.2, 1.0, 0.25, 0.05);
+    this.flameT -= dt;
+    if (this.flameT > 0) return;
+    this.flameT += def.interval;
+    const tick = ++this.flameTick;
+    // the flame's power grows with the field as the guns' does (FIELD.c), shared over its wider cone
+    const dmg = (def.dmg * s.dmg * STAR_DMG[stars] * FIELD.c * (rage ? 1.3 : 1)) / wide;
+    this.burnDps = (def.burnDps * s.dmg * STAR_DMG[stars] * FIELD.c * (rage ? 2 : 1)) / wide;
+    const flags = QUIET | BURN | (tick % 4 === 0 ? PROC : 0) | (tick % 3 === 0 ? CRIT : 0);
+    const E = this.enemies;
+    const G = this.grid;
+    const tc = Math.tan(cone);
+    const c0 = G.cx(mx - range - 60);
+    const c1 = G.cx(mx + range + 60);
+    const r0 = G.cy(my - range - 20);
+    const r1 = G.cy(my + range + 160);
+    for (let rr = r0; rr <= r1; rr++)
+      for (let c = c0; c <= c1; c++) {
+        const cc = rr * G.cols + c;
+        for (let m = G.start[cc]; m < G.start[cc + 1]; m++) {
+          const j = G.items[m];
+          if (!E.alive[j] || E.dying[j]) continue;
+          const T0 = TYPES[E.type[j]];
+          if (T0.boss) continue;
+          const hr = T0.hr * E.scale[j];
+          if (this.inCone(E.x[j] - mx, E.y[j] - T0.hitY * E.scale[j] * 0.5 - my, ax, ay, range, tc, hr)) this.scorch(j, dmg, ax, ay, def.kb, flags, def.burn);
+        }
+      }
+    const b = this.boss && E.alive[this.boss.i] ? this.boss.i : -1;
+    if (b >= 0) {
+      const T0 = TYPES[E.type[b]];
+      if (this.inCone(E.x[b] - mx, E.y[b] - T0.hitY * 0.5 - my, ax, ay, range, tc, T0.hr * 0.8)) this.scorch(b, dmg, ax, ay, 0, flags, def.burn * 0.5);
+    }
+    const R = this.barrels;
+    for (let k = 0; k < R.n; k++) if (this.inCone(R.x[k] - mx, R.y[k] - 22 - my, ax, ay, range, tc, 22)) R.hp[k] -= dmg * 2;
+  }
+
+  inCone(vx, vy, ax, ay, range, tc, hr) {
+    const along = vx * ax + vy * ay;
+    if (along < -hr || along > range + hr) return false;
+    const side = Math.abs(vx * ay - vy * ax);
+    return side < Math.max(0, along) * tc + hr + 10;
+  }
+
+  scorch(j, dmg, ax, ay, kb, flags, burn) {
+    const E = this.enemies;
+    if (E.burn[j] <= 0) {
+      E.burnT[j] = 0.25;
+      this.burning++;
+    }
+    E.burn[j] = Math.max(E.burn[j], burn);
+    this.hurt(j, dmg, ax, ay, kb, flags);
+  }
+
+  // burning creatures smoulder, drip fire and take damage until it goes out
+  updateBurn(dt) {
+    if (!this.burning) return;
+    const E = this.enemies;
+    let n = 0;
+    const tick = this.burnDps * 0.25;
+    for (let k = E.n - 1; k >= 0; k--) {
+      if (k >= E.n) continue;
+      const i = E.list[k];
+      if (E.burn[i] <= 0) continue;
+      E.burn[i] -= dt;
+      E.burnT[i] -= dt;
+      n++;
+      if (rnd() < dt * 7) {
+        const T0 = TYPES[E.type[i]];
+        const h = T0.hitY * E.scale[i];
+        this.fx.add(FIRE, HOT, E.x[i] + rand(-0.4, 0.4) * T0.hr, E.y[i] - h * rand(0.2, 1.0), 0, rand(-15, 15), -50, 0, rand(0.25, 0.42), 10, T0.hr * 0.9, 1, 1, 1, 1, 0, 0);
+      }
+      if (E.burnT[i] <= 0 && !E.dying[i] && E.burn[i] > 0) {
+        E.burnT[i] += 0.25;
+        this.hurt(i, tick, 0, 0, 0, QUIET | BURN);
+      }
+    }
+    this.burning = n;
+  }
+
+  bullet(x, y, vx, vy, dmg, pierce, kind, def, look = 1, col = def.color, rage = false) {
     const B = this.bullets;
     const i = B.take();
     if (i < 0) return;
+    B.rage[i] = rage ? 1 : 0;
+    B.home[i] = 0;
     B.x[i] = B.px[i] = x;
     B.y[i] = B.py[i] = y;
     B.vx[i] = vx;
@@ -727,19 +908,19 @@ export class Run {
     B.dmg[i] = dmg;
     B.life[i] = def.life;
     B.kb[i] = def.kb;
-    B.size[i] = def.size;
+    B.size[i] = def.size * look;
     B.accel[i] = def.accel || 0;
-    B.blast[i] = def.blast || 0;
+    B.blast[i] = (def.blast || 0) * (rage ? 1.45 : 1) * (kind === 2 ? Math.sqrt(look) : 1);
     B.pierce[i] = pierce;
     B.kind[i] = kind;
     B.hitN[i] = 0;
-    B.r[i] = def.color[0];
-    B.g[i] = def.color[1];
-    B.b[i] = def.color[2];
+    B.r[i] = col[0];
+    B.g[i] = col[1];
+    B.b[i] = col[2];
   }
 
   // a rail beam: everything in its lane up the road takes the hit
-  rail(lx, my, dmg, def) {
+  rail(lx, my, dmg, def, rage = false, look = 1) {
     const E = this.enemies;
     const G = this.grid;
     const c0 = G.cx(lx - 50);
@@ -756,7 +937,13 @@ export class Run {
           if (T0.boss) continue; // tested below with its own big circle
           const cy = E.y[j] - T0.hitY * E.scale[j];
           if (cy > my || cy < top - 40) continue;
-          if (Math.abs(E.x[j] - lx) < T0.hr * E.scale[j] + 8) this.hurt(j, dmg, 0, -1, def.kb, CRIT | PROC);
+          if (Math.abs(E.x[j] - lx) < T0.hr * E.scale[j] + 8 * look) {
+            this.hurt(j, dmg, 0, -1, def.kb, CRIT | PROC);
+            if (rage && this.blastBudget > 0 && rnd() < 0.35) {
+              this.blastBudget--;
+              this.explode(E.x[j], cy + 10, 60, dmg * 0.6, 300, 'round');
+            }
+          }
         }
       }
     if (this.boss && E.alive[this.boss.i]) {
@@ -764,7 +951,8 @@ export class Run {
       if (Math.abs(E.x[b] - lx) < TYPES[E.type[b]].hr) this.hurt(b, dmg, 0, -1, 0, CRIT | PROC);
     }
     this.hitBarrelsLine(lx, my, dmg);
-    this.fx.beam(lx, my, lx, top - 60, 10, def.color[0], def.color[1], def.color[2], 0.14, 0);
+    const c = rage ? RAGE_COL : def.color;
+    this.fx.beam(lx, my, lx, top - 60, 10 * look, c[0], c[1], c[2], 0.14, 0);
   }
 
   updateBullets(dt) {
@@ -776,6 +964,34 @@ export class Run {
     for (let i = 0; i < B.n; i++) {
       B.px[i] = B.x[i];
       B.py[i] = B.y[i];
+      if (B.kind[i] === 2) {
+        // rockets home on the boss when it is near, else the nearest creature ahead (picked a few times a second)
+        if ((this.stepN + i) % 5 === 0) {
+          let j = -1;
+          if (boss >= 0) {
+            const bdx = E.x[boss] - B.x[i];
+            const bdy = E.y[boss] - TYPES[E.type[boss]].hitY - B.y[i];
+            if (bdx * bdx + bdy * bdy < 560 * 560 * FIELD.r) j = boss;
+          }
+          if (j < 0) j = this.nearest(B.x[i] + B.vx[i] * 0.15, B.y[i] + B.vy[i] * 0.15 - 60, 360 * FIELD.r, -1);
+          if (j >= 0) {
+            B.home[i] = 1;
+            B.tx[i] = E.x[j];
+            B.ty[i] = E.y[j] - TYPES[E.type[j]].hitY * E.scale[j] * 0.6;
+          }
+        }
+        if (B.home[i]) {
+          const sp = Math.hypot(B.vx[i], B.vy[i]) || 1;
+          const want = Math.atan2(B.ty[i] - B.y[i], B.tx[i] - B.x[i]);
+          let a = Math.atan2(B.vy[i], B.vx[i]);
+          let da = want - a;
+          while (da > Math.PI) da -= TAU;
+          while (da < -Math.PI) da += TAU;
+          a += clamp(da, -7 * dt, 7 * dt);
+          B.vx[i] = Math.cos(a) * sp;
+          B.vy[i] = Math.sin(a) * sp;
+        }
+      }
       if (B.accel[i]) {
         // rockets speed up as they climb and leave smoke
         const sp = Math.hypot(B.vx[i], B.vy[i]) || 1;
@@ -866,6 +1082,11 @@ export class Run {
     }
     this.hurt(j, B.dmg[i], dx, dy, B.kb[i], CRIT | PROC);
     this.fx.sparks(B.x[i], B.y[i], 0, 2, B.r[i], B.g[i], B.b[i], 260, -dx, -dy, 1.6);
+    if (B.rage[i] && this.blastBudget > 0) {
+      // rage: every hit bursts
+      this.blastBudget--;
+      this.explode(B.x[i], B.y[i], 58, B.dmg[i] * 0.6, 280, 'round');
+    }
     if (B.pierce[i] > 0) {
       B.pierce[i]--;
       B.hits[i * 4 + (B.hitN[i] & 3)] = j * 4096 + (this.enemies.gen[j] & 4095);
@@ -901,22 +1122,35 @@ export class Run {
     E.kx[j] += dx * k;
     E.ky[j] += dy * k * 0.8;
     const hy = E.y[j] - T0.hitY * E.scale[j];
-    if (dmg >= 1) this.numbers.add(E.x[j], hy - T0.hr * 0.7, dmg, crit ? 1 : 0);
-    // a spurt of blood out of the back, more on a crit
-    this.fx.blood(E.x[j], E.y[j], T0.hitY * E.scale[j], dx || 0, dy || -1, crit ? 6 : 2, crit ? 340 : 230, T0.blood, 0.7);
-    if (crit) this.fx.mist(E.x[j], E.y[j], T0.hitY, T0.blood, 14, 1);
-    this.sound.hit(this.pan(E.x[j]), crit);
+    if (flags & QUIET) {
+      // flame ticks: an occasional sizzle of blood, crits still show
+      if (crit) this.numbers.add(E.x[j], hy - T0.hr * 0.7, dmg, 1);
+      if (rnd() < 0.2) this.fx.blood(E.x[j], E.y[j], T0.hitY * E.scale[j], dx || 0, dy || -1, 1, 200, T0.blood, 0.7);
+    } else {
+      if (dmg >= 1) this.numbers.add(E.x[j], hy - T0.hr * 0.7, dmg, crit ? 1 : 0);
+      // a spurt of blood out of the back, more on a crit
+      this.fx.blood(E.x[j], E.y[j], T0.hitY * E.scale[j], dx || 0, dy || -1, crit ? 6 : 2, crit ? 340 : 230, T0.blood, 0.7);
+      if (crit) this.fx.mist(E.x[j], E.y[j], T0.hitY, T0.blood, 14, 1);
+      this.sound.hit(this.pan(E.x[j]), crit);
+    }
+    // the boss sheds a weapon crate (and maybe a surge) each fifth of its health
+    if (T0.boss && this.bossChunk > 0 && E.hp[j] < E.maxHp[j] * this.bossChunk) {
+      this.bossChunk -= 0.2;
+      this.dropCrate(E.x[j] + rand(-80, 80), E.y[j] - 60, true);
+      if (rnd() < 0.5) this.dropPickup(SURGES[randi(0, 2)], E.x[j] + rand(-120, 120), E.y[j] - 40);
+    }
     // on-hit effects
     if (flags & PROC) {
       if (s.freezer && rnd() < [0, 0.06, 0.1, 0.14][s.freezer] && !T0.boss) {
         E.frozen[j] = 2;
       }
       if (s.chain && (rnd() < [0, 0.1, 0.16, 0.22][s.chain] || (s.storm && crit))) this.chain(j, s.chain + 1 + (s.storm ? 3 : 0), dmg * 0.6);
-      if (s.carpet || (s.explosive && rnd() < [0, 0.12, 0.2, 0.28][s.explosive])) {
+      if ((s.carpet || (s.explosive && rnd() < [0, 0.12, 0.2, 0.28][s.explosive])) && this.blastBudget > 0) {
+        this.blastBudget--;
         this.explode(E.x[j], hy + 10, (s.carpet ? 85 : 55) + 8 * s.explosive, dmg * 0.7, 300, 'round');
       }
     }
-    if (E.hp[j] <= 0) this.kill(j, flags & BLAST ? 'blast' : E.frozen[j] > 0 ? 'ice' : flags & SHOCK ? 'shock' : crit ? 'crit' : 'hit', dx, dy);
+    if (E.hp[j] <= 0) this.kill(j, flags & BLAST ? 'blast' : E.frozen[j] > 0 ? 'ice' : flags & SHOCK ? 'shock' : flags & BURN || E.burn[j] > 0 ? 'fire' : crit ? 'crit' : 'hit', dx, dy);
   }
 
   kill(j, cause, dx, dy) {
@@ -928,10 +1162,20 @@ export class Run {
     const elite = E.elite[j];
     this.kills++;
     this.waveKills++;
-    this.addStreak();
-    this.dropGems(x, y - 6, T0.xp * (elite ? 6 : 1), T0.boss ? 40 : elite ? 6 : T0.xp >= 10 ? 3 : 1);
-    if (elite) this.dropPickup('chest', x, y - 20);
-    else if (!T0.boss && rnd() < 0.006) this.dropPickup(PICKUPS[randi(0, 5)], x, y - 20);
+    if (E.burn[j] > 0) this.burning = Math.max(0, this.burning - 1);
+    E.burn[j] = 0;
+    this.addStreak(x, y);
+    // a wide field has more creatures, each worth a little less, so levels come at the same pace
+    this.dropGems(x, y - 6, (T0.xp * (elite ? 6 : 1)) / FIELD.c, T0.boss ? 40 : elite ? 6 : T0.xp >= 10 ? 3 : 1);
+    const fewer = Math.sqrt(FIELD.c);
+    if (elite) {
+      this.dropPickup('chest', x, y - 20);
+      this.dropCrate(x + rand(-30, 30), y - 40);
+      if (rnd() < 0.5) this.dropPickup(SURGES[randi(0, 2)], x + rand(-40, 40), y - 30);
+    } else if (T0.key === 'brute') {
+      if (rnd() < 0.3 / fewer) this.dropCrate(x, y - 40);
+      else if (rnd() < 0.14 / fewer) this.dropPickup(SURGES[randi(0, 2)], x, y - 30);
+    } else if (!T0.boss && rnd() < 0.006 / FIELD.c) this.dropPickup(PICKUPS[randi(0, 5)], x, y - 20);
     const pan = this.pan(x);
     if (T0.boss) {
       this.bossDeath(j);
@@ -949,7 +1193,7 @@ export class Run {
       return;
     }
     if (cause === 'ice') this.sound.shatter(pan);
-    else this.sound.kill(pan, !!T0.big || !!elite);
+    else if (cause !== 'fire' || rnd() < 0.35) this.sound.kill(pan, !!T0.big || !!elite);
     this.gore.death(E.type[j], x, y, sc * (elite ? 1.3 : 1), cause, dx, dy, false);
     if (T0.big || elite) {
       this.hitstop(elite ? 0.07 : 0.04);
@@ -982,14 +1226,16 @@ export class Run {
     }
   }
 
-  addStreak() {
+  addStreak(x, y) {
     this.streak++;
     this.streakT = 1.6;
     const next = STREAKS[this.streakTier];
-    if (next && this.streak >= next[0]) {
+    if (next && this.streak >= Math.round(next[0] * FIELD.c)) {
       this.streakTier++;
       this.events.streak?.(next[1], this.streakTier);
       this.sound.streak(this.streakTier);
+      // a long streak earns a power surge where it peaked
+      if (this.streakTier >= 2 && !this.demo) this.dropPickup(SURGES[randi(0, 2)], clamp(x, 60, ARENA.w - 60), Math.min(y - 30, BAND.y0 - 120));
     }
   }
 
@@ -1094,7 +1340,8 @@ export class Run {
         continue;
       }
       this.gore.death(E.type[i], E.x[i], E.y[i], E.scale[i], 'blast', E.x[i] - x, E.y[i] - y, false);
-      this.dropGems(E.x[i], E.y[i], TYPES[E.type[i]].xp, 1);
+      this.dropGems(E.x[i], E.y[i], TYPES[E.type[i]].xp / FIELD.c, 1);
+      E.burn[i] = 0;
       E.remove(i);
     }
     this.events.bossKilled?.();
@@ -1262,7 +1509,7 @@ export class Run {
   updateGems(dt) {
     const G = this.gems;
     const h = this.hero;
-    const pr = 125 * this.stats.magnet;
+    const pr = 125 * this.stats.magnet * FIELD.r;
     const pr2 = pr * pr;
     const all = this.magnetAll > 0;
     for (let i = 0; i < G.n; i++) {
@@ -1313,17 +1560,40 @@ export class Run {
   }
 
   // ---------------------------------------------------------------- pickups
-  dropPickup(kind, x, y) {
+  // w: for a crate, the gun inside (index into CRATE_GUNS)
+  dropPickup(kind, x, y, w = 0) {
     const P = this.pickups;
     const i = P.take();
-    if (i < 0) return;
-    P.x[i] = P.px[i] = x;
+    if (i < 0) return -1;
+    const k = PICKUPS.indexOf(kind);
+    P.x[i] = P.px[i] = clamp(x, 40, ARENA.w - 40);
     P.y[i] = P.py[i] = y;
-    P.vy[i] = kind === 'chest' ? 0 : 65;
+    P.vx[i] = 0;
+    P.vy[i] = kind === 'chest' ? 0 : k === CRATE ? 40 : 65;
     P.t[i] = 0;
-    P.kind[i] = PICKUPS.indexOf(kind);
+    P.kind[i] = k;
+    P.w[i] = w;
     P.seed[i] = rnd();
-    this.events.dropped?.(kind);
+    this.events.dropped?.(k === CRATE ? `crate_${CRATE_GUNS[w]}` : kind);
+    if (k === CRATE) this.sound.crate?.();
+    return i;
+  }
+
+  // A weapon crate: what is inside leans toward a star for the gun in hand
+  // until it has three, otherwise another gun (ones not found yet first).
+  // (the boss's own crates hold guns that reach it: never the flamethrower)
+  dropCrate(x, y, long = false) {
+    const P = this.pickups;
+    let crates = 0;
+    for (let k = 0; k < P.n; k++) if (P.kind[k] === CRATE) crates++;
+    if (crates >= 3 || this.demo) return;
+    let id = this.held;
+    if (this.arms[id] >= 3 || rnd() < 0.55 || (long && id === 'flamer')) {
+      const others = CRATE_GUNS.filter((g) => g !== this.held && !(long && g === 'flamer'));
+      const fresh = others.filter((g) => !this.arms[g]);
+      id = fresh.length && rnd() < 0.6 ? fresh[randi(0, fresh.length - 1)] : others[randi(0, others.length - 1)];
+    }
+    this.dropPickup('crate', x, y, CRATE_GUNS.indexOf(id));
   }
 
   updatePickups(dt) {
@@ -1333,16 +1603,33 @@ export class Run {
       P.px[i] = P.x[i];
       P.py[i] = P.y[i];
       P.t[i] += dt;
-      if (P.kind[i] === 6) {
+      const kind = P.kind[i];
+      if (kind === 6) {
         // a chest: drifts down slowly, glowing
         P.y[i] += 40 * dt;
+      } else if (kind === CRATE) {
+        // a crate floats down to the hero and drifts gently after him, slow enough to dodge
+        const ty = h.y - 30;
+        P.vy[i] += (clamp((ty - P.y[i]) * 1.2, -60, 110) - P.vy[i]) * Math.min(1, 2.5 * dt);
+        const dx = h.x - P.x[i];
+        const want = clamp(dx * 0.7, -100 * FIELD.s, 100 * FIELD.s);
+        P.vx[i] += (want - P.vx[i]) * Math.min(1, 1.5 * dt);
+        P.x[i] = clamp(P.x[i] + P.vx[i] * dt, 40, ARENA.w - 40);
+        P.y[i] += P.vy[i] * dt;
+        if (P.t[i] > CRATE_LIFE) {
+          this.fx.ring(P.x[i], P.y[i], 10, 50, 0.4, 1.2, 1.1, 0.25);
+          P.kill(i);
+          i--;
+          continue;
+        }
       } else {
         P.y[i] += P.vy[i] * dt;
         P.x[i] += Math.sin(P.t[i] * 2 + P.seed[i] * 6) * 30 * dt;
       }
       const dx = P.x[i] - h.x;
       const dy = P.y[i] - (h.y - 30);
-      if (h.alive && dx * dx + dy * dy < 46 * 46) {
+      const rr = kind === CRATE ? 54 : 46;
+      if (h.alive && !this.calm() && dx * dx + dy * dy < rr * rr) {
         this.collect(i);
         i--;
         continue;
@@ -1358,6 +1645,7 @@ export class Run {
     const B = this.bullets;
     const P = this.pickups;
     for (let k = 0; k < P.n; k++) {
+      if (P.kind[k] === CRATE) continue; // crates are a choice: only touching one swaps the gun
       const dx = B.x[i] - P.x[k];
       const dy = B.y[i] - P.y[k];
       if (dx * dx + dy * dy < 30 * 30) {
@@ -1372,15 +1660,16 @@ export class Run {
     const kind = PICKUPS[P.kind[i]];
     const x = P.x[i];
     const y = P.y[i];
+    const w = P.w[i];
     P.kill(i);
     const h = this.hero;
-    const c = PICKUP_COL[kind];
+    const c = kind === 'crate' ? WEAPONS[CRATE_GUNS[w]].color : PICKUP_COL[kind];
     this.fx.ring(x, y, 10, 70, c[0], c[1], c[2], 0.25);
     // the grab shows on the hero, in the pickup's colour
     this.fx.ring(h.x, h.y - 30, 16, 120, c[0], c[1], c[2], 0.4);
     this.fx.flash(h.x, h.y - 40, 0, 110, c[0], c[1], c[2], 0.2);
     this.fx.light(h.x, h.y - 30, 60, 300, c[0] * 1.5, c[1] * 1.5, c[2] * 1.5, 0.35);
-    this.sound.pickup(kind);
+    if (kind !== 'crate' && !SURGES.includes(kind)) this.sound.pickup(kind);
     this.events.pickup?.(kind);
     switch (kind) {
       case 'magnet':
@@ -1409,6 +1698,58 @@ export class Run {
         this.pendingChests++;
         this.coins += 60;
         break;
+      case 'crate':
+        this.grabCrate(CRATE_GUNS[w]);
+        break;
+      case 'overdrive':
+      case 'triple':
+      case 'rage':
+        if (this.surge[kind] <= 0) this.sound.surge?.(kind);
+        else this.sound.pickup('bomb');
+        this.surge[kind] = SURGE_TIME;
+        this.fx.ring(h.x, h.y - 30, 30, 220, c[0], c[1], c[2], 0.5);
+        this.app.bloomKick?.(0.6);
+        break;
+    }
+  }
+
+  // the same gun levels up (to three stars); another one swaps in on the spot, keeping its own stars
+  grabCrate(id) {
+    const h = this.hero;
+    if (id === this.held) {
+      if (this.arms[id] < 3) {
+        this.arms[id]++;
+        this.sound.weaponUp?.(this.arms[id]);
+        this.fx.sparks(h.x, h.y - 60, 0, 24, 2.4, 1.8, 0.5, 520, 0, -1, 2.4);
+      } else {
+        // already maxed: a pinch of health and coins
+        this.heal(12);
+        this.coins += 25;
+        this.sound.weaponUp?.(3);
+      }
+      this.events.weapon?.(id, false);
+      return;
+    }
+    const isNew = !this.arms[id];
+    // a gun found late in a run comes in one star below the one in hand, so a swap is never a big step down
+    if (isNew) this.arms[id] = Math.max(1, this.arms[this.held] - 1);
+    this.held = id;
+    this.wTimer = 0.05;
+    this.flameT = 0;
+    this.sound.weaponSwap?.(this.gun(id));
+    this.events.weapon?.(id, isNew);
+  }
+
+  updateSurges(dt) {
+    const S = this.surge;
+    for (const k of SURGES) {
+      if (S[k] <= 0) continue;
+      if (this.calm()) continue; // the clock stops between waves
+      S[k] -= dt;
+      if (S[k] <= 0) {
+        S[k] = 0;
+        this.sound.surgeEnd?.();
+      }
     }
   }
 
@@ -1432,8 +1773,7 @@ export class Run {
   }
 
   evolveWeapon(from, to) {
-    const w = this.weapons.find((x) => x.id === from);
-    if (w) w.id = to;
+    this.evo[from] = to;
   }
 
   // the wave's reward is taken: its XP may bank more level-ups, picked in the break

@@ -3,8 +3,9 @@
 // motion from the 60 Hz simulation). Allocation free: the lists are reused.
 import { InstanceList, SpriteList, PARTICLE_STRIDE, SHADOW_STRIDE } from './gl/renderer.js';
 import { TYPES, WIND, RECOVER, HEADLESS, SPIT, HOLD } from './game/enemies.js';
-import { PICKUPS, PICKUP_COL as PICK_COL } from './game/pools.js';
-import { HOT, ALPHA, UNDER, BOLT, ORB, GLOW, HERO_RING, BUBBLE, RETICLE, PICK, SPARK, FIRE } from './fx/particles.js';
+import { PICKUPS, PICKUP_COL as PICK_COL, CRATE, SURGES, CRATE_GUNS } from './game/pools.js';
+import { WEAPONS } from './game/upgrades.js';
+import { HOT, ALPHA, UNDER, BOLT, ORB, GLOW, HERO_RING, BUBBLE, RETICLE, PICK, SPARK, FIRE, ARC } from './fx/particles.js';
 import { TAU } from './config.js';
 
 
@@ -42,7 +43,10 @@ export class Draw {
     this.barrel = A.get('barrel');
     this.gemSmall = A.get('xp_small');
     this.gemBig = A.get('xp_big', 'xp_small');
-    this.pickIcons = PICKUPS.map((k) => A.get(k === 'chest' ? 'chest_closed' : `pickup_${k}`));
+    this.pickIcons = PICKUPS.map((k) => A.get(k === 'chest' ? 'chest_closed' : k === 'crate' ? 'crate_weapon' : SURGES.includes(k) ? `surge_${k}` : `pickup_${k}`));
+    this.gunIcons = CRATE_GUNS.map((g) => A.get(`weapon_${g}`));
+    this.surgeIcons = SURGES.map((k) => A.get(`surge_${k}`));
+    this.crateGlow = A.anchor('glow', 'crate_weapon', [0, -49]);
     this.bomb = A.get('bomb_thrown', 'pickup_bomb');
     this.iceBomb = A.get('ice_bomb', 'pickup_freeze');
   }
@@ -114,7 +118,34 @@ export class Draw {
       const k = P.kind[i];
       const c = PICK_COL[PICKUPS[k]];
       const bob = Math.sin(t * 3 + P.seed[i] * 6) * 5;
-      if (k === 6) {
+      if (k === CRATE) {
+        // a weapon crate: the gun inside floats above the open lid in its own colour, with the stars it would bring;
+        // it blinks, then fades, near the end of its time
+        const left = 9 - P.t[i];
+        const fade = Math.min(1, Math.max(0, left / 1.2)) * (left < 3 && Math.floor(left * 6) % 2 === 0 ? 0.55 : 1);
+        const g = P.w[i];
+        const gc = WEAPONS[CRATE_GUNS[g]].color;
+        const cy = y + bob * 0.6;
+        this.under.p(x, cy + 14, 70, 0, gc[0] * 0.5, gc[1] * 0.5, gc[2] * 0.5, 0.8 * fade, GLOW, 0, 0, 0);
+        this.overSprites.put(this.pickIcons[k], x, cy + 26, y, 1.05, 0, 1, 0, 0, fade);
+        const gy = cy + 26 + this.crateGlow[1] - 26 + Math.sin(t * 4 + P.seed[i] * 6) * 4;
+        this.hot.p(x, gy, 46, 0, gc[0] * 0.6, gc[1] * 0.6, gc[2] * 0.6, 0.9 * fade, GLOW, 0, 0, 0);
+        this.overSprites.put(this.gunIcons[g], x, gy, y + 1, 1.35, Math.sin(t * 2 + P.seed[i]) * 0.12, 1, 0, 0, fade);
+        // the stars this crate would bring: one more for the gun in hand, else that gun's own (a new gun: a white ring)
+        const id = CRATE_GUNS[g];
+        const have = run.arms[id] || 0;
+        const stars = id === run.held ? Math.min(3, have + 1) : Math.max(1, have);
+        for (let s2 = 0; s2 < stars; s2++) this.hot.p(x + (s2 - (stars - 1) / 2) * 17, gy - 34, 13, 0, 2.6, 1.9, 0.4, fade, GLOW, 0, 0, 0);
+        if (!have) this.hot.p(x, gy, 62 + Math.sin(t * 6) * 4, 0, 1.6, 1.6, 1.6, 0.7 * fade, HERO_RING, 0, 0, 0);
+        lights.add(x, gy, 40, 200, gc[0] * fade, gc[1] * fade, gc[2] * fade);
+      } else if (k > CRATE) {
+        // a power-surge orb: its icon in a bright bubble that pulses
+        const pulse = 1 + Math.sin(t * 8 + P.seed[i] * 6) * 0.08;
+        this.overSprites.put(this.pickIcons[k], x, y + bob, y, 1.25 * pulse, Math.sin(t * 2 + P.seed[i]) * 0.1);
+        this.hot.p(x, y + bob, 38 * pulse, 0, c[0], c[1], c[2], 1, PICK, 0, P.seed[i], 0);
+        this.under.p(x, y + bob, 64, 0, c[0] * 0.6, c[1] * 0.6, c[2] * 0.6, 0.8, GLOW, 0, 0, 0);
+        lights.add(x, y, 40, 180, c[0], c[1], c[2]);
+      } else if (k === 6) {
         // the chest sits in a beam of gold light
         this.under.p(x, y + 10, 90, 0, c[0], c[1], c[2], 0.6, GLOW, 0, 0, 0);
         this.hot.p(x, y - 120, 46, Math.PI / 2, c[0] * 0.5, c[1] * 0.5, c[2] * 0.5, 0.7, GLOW, 0, 0, 3);
@@ -173,8 +204,24 @@ export class Draw {
       this.shadow(x, y, 32, 0.5);
       this.under.p(x, y + 2, 54, 0, 0.3, 0.8, 2.2, 1, HERO_RING, 0, 0, 0);
       const muzzle = run.anchor('muzzle', 'hero', [8, -96]);
-      if (hero.fireT > 0) lights.add(x + muzzle[0], y + muzzle[1], 50, 240, 0.8, 1.6, 2.6);
+      const gc = WEAPONS[run.gun()].color;
+      if (hero.fireT > 0) lights.add(x + muzzle[0], y + muzzle[1], 50, 240, gc[0] * 0.6, gc[1] * 0.6, gc[2] * 0.6);
       lights.add(x, y - 10, 40, 160, 0.25, 0.6, 1.4);
+      // power surges: a countdown ring each round the hero, its icon riding the end of the arc
+      let ring = 0;
+      for (let k = 0; k < SURGES.length; k++) {
+        const left = run.surge[SURGES[k]];
+        if (left <= 0) continue;
+        const f = Math.min(1, left / 8);
+        const c = PICK_COL[SURGES[k]];
+        const rad = 74 + ring * 15;
+        const warn = left < 2 && Math.floor(left * 8) % 2 === 0 ? 0.5 : 1;
+        this.hot.p(x, y - 44, rad, 0, c[0], c[1], c[2], warn, ARC, f, 0, 0);
+        const ang = f * Math.PI * 2;
+        this.overSprites.put(this.surgeIcons[k], x + Math.sin(ang) * rad * 0.86, y - 44 - Math.cos(ang) * rad * 0.86, y + 2, 0.5, 0);
+        lights.add(x, y - 40, 50, 200, c[0] * 0.5, c[1] * 0.5, c[2] * 0.5);
+        ring++;
+      }
       if (hero.shield > 0) {
         const k = Math.min(1, hero.shield * 2);
         this.hot.p(x, y - 44, 92, 0, 0.28, 0.66, 1.45, k, BUBBLE, 0, 0, 0);

@@ -407,6 +407,10 @@ a.chip:hover {
   display: flex;
   flex-direction: column;
   gap: 0.4em;
+  /* a portrait column's width: on a wide field it sits top centre and the corners stay clear */
+  width: 100%;
+  max-width: 26em;
+  margin: 0 auto;
 }
 .row {
   display: grid;
@@ -951,17 +955,9 @@ a.chip:hover {
   color: #ff6af2;
   animation: hue 1.2s linear infinite;
 }
-/* with street on both sides, the callout sits out there, beside the road */
-#ui[data-wide='1'] .pops {
-  overflow: visible;
-}
-#ui[data-wide='1'] .streak {
-  left: auto;
-  right: calc(100% + 0.8em);
-  top: 38%;
-  font-size: calc(1.45em * var(--tk));
-  text-align: right;
-  transform-origin: 100% 50%;
+/* on a wide field the status cluster keeps to the top-left corner, clear of the middle where the fight is */
+#ui[data-wide='1'] .top {
+  margin: 0;
 }
 .toasts {
   position: absolute;
@@ -1215,6 +1211,9 @@ a.chip:hover {
   align-items: stretch;
   gap: 0.6em;
   width: 100%;
+  /* on a wide field the cards keep a portrait column's proportions */
+  max-width: 34em;
+  margin: 0 auto;
   padding-top: 0.8em;
 }
 .card {
@@ -2395,4 +2394,16 @@ a.chip:hover {
 body.cover #ui,
 body.cover #loader {
   display: none !important;
+}
+
+/* a wide field: the pause panel spreads its guide over three columns */
+#ui[data-wide='1'] .pause .panel:not(.tall) {
+  width: min(100%, 33em);
+}
+#ui[data-wide='1'] .pause .ggrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+#ui[data-wide='1'] .pause .panel .stack {
+  margin-left: auto;
+  margin-right: auto;
 }

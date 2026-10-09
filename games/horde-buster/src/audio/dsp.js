@@ -327,6 +327,19 @@ export function removeDC(buf) {
   return buf;
 }
 
+// Make a seamless loop of the first n samples of buf (which holds n + x samples): the extra x samples are
+// what would come after the end, so they are faded in over the head while the head fades out (equal power,
+// for noise). The last sample then runs straight on into the first as if the stream had never stopped.
+export function foldLoop(buf, n) {
+  const x = buf.length - n;
+  const out = buf.slice(0, n);
+  for (let i = 0; i < x; i++) {
+    const th = (i / x) * Math.PI * 0.5;
+    out[i] = buf[i] * Math.sin(th) + buf[n + i] * Math.cos(th);
+  }
+  return out;
+}
+
 // Ease the first `head` and last `tail` samples with a raised cosine, so a
 // sound starts and ends on exact zero (no clicks).
 export function fadeEnds(buf, head, tail) {

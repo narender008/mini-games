@@ -54,6 +54,17 @@ const PICKUPS = [
   ['barrel', 'Barrel', 'Shoot it: boom'],
   ['xp', 'XP gems', 'Cards come after the wave'],
 ];
+// weapon crates (big kills) and power surges (big kills, long streaks)
+const LOOT = [
+  ['crate', 'Weapon crate', 'Touch: take that gun. Same gun: +1 star'],
+  ['blaster', 'Blaster', 'Steady bolts, long reach'],
+  ['scatter', 'Scatter Gun', 'Wide blast of pellets'],
+  ['rocket', 'Rocket Pod', 'Homing rockets that explode'],
+  ['flamer', 'Flamethrower', 'Short range, burns crowds'],
+  ['overdrive', 'Overdrive', '8 s of double fire rate'],
+  ['triple', 'Triple Shot', '8 s of three-way fire'],
+  ['rage', 'Rage', '8 s: shots pierce and explode'],
+];
 
 function guide() {
   const grid = (rows) => h('div', { class: 'ggrid' }, ...rows.map(([ic, name, text]) => h('div', { class: 'gitem' }, h('span', { class: 'gico', html: icon(ic) }), h('span', { class: 'gtx' }, h('b', { text: name }), h('span', { text })))));
@@ -63,7 +74,9 @@ function guide() {
     h('p', { class: 'ghead', text: 'Powers' }),
     grid(POWERS),
     h('p', { class: 'ghead', text: 'Pickups: touch or shoot them' }),
-    grid(PICKUPS)
+    grid(PICKUPS),
+    h('p', { class: 'ghead', text: 'Crates and surges: a ring round you counts a surge down' }),
+    grid(LOOT)
   );
 }
 

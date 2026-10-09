@@ -103,6 +103,8 @@ uniform sampler2D uNoise;
 uniform int uKind;
 uniform vec4 uRoad;     // road x0, x1, kerb width, sidewalk width
 uniform vec4 uVerge;    // verge width, plaza start, seed, lane dash
+uniform float uLanes;   // lanes across the road (an even count gets a double yellow centre line)
+uniform vec4 uCross;    // crosswalk: y0, y1, stripe period, on
 uniform vec3 uAsphalt;
 uniform vec3 uAsphalt2;
 uniform vec3 uKerb;
@@ -148,17 +150,32 @@ void main() {
     float pr = hash12(pc + seed * 3.0);
     vec2 pf = fract(w / vec2(170.0, 230.0));
     if (pr > 0.78 && pf.x > 0.12 && pf.x < 0.88 && pf.y > 0.1 && pf.y < 0.75) { col *= 0.78; h += 0.03; }
-    // lane lines: dashed centre and two faded lane dividers
-    float lanes = 3.0;
-    for (int i = 1; i < 3; i++) {
+    // lane lines: worn dashed dividers; on a wide boulevard a solid double yellow down the middle
+    float lanes = max(uLanes, 2.0);
+    for (int i = 1; i < 16; i++) {
+      if (float(i) >= lanes) break;
       float lx = x0 + (x1 - x0) * float(i) / lanes;
       float d = abs(w.x - lx);
-      float dash = step(0.42, fract(w.y / uVerge.w));
       float wear = smoothstep(0.25, 0.6, n2(w / 90.0 + float(i)));
-      float m = (1.0 - smoothstep(5.0, 7.0, d)) * dash * wear;
-      col = mix(col, uLine, m * 0.8);
-      h += m * 0.05;
+      if (lanes >= 4.0 && abs(float(i) * 2.0 - lanes) < 0.5) {
+        float m = (1.0 - smoothstep(3.0, 4.5, abs(d - 7.0))) * (0.55 + 0.45 * wear);
+        col = mix(col, vec3(0.85, 0.62, 0.12), m * 0.85);
+        h += m * 0.05;
+      } else {
+        float dash = step(0.42, fract(w.y / uVerge.w));
+        float m = (1.0 - smoothstep(5.0, 7.0, d)) * dash * wear;
+        col = mix(col, uLine, m * 0.8);
+        h += m * 0.05;
+      }
     }
+    // a zebra crossing and stop line where the horde comes in
+    if (uCross.w > 0.5 && w.y > uCross.x && w.y < uCross.y) {
+      float sx2 = fract((w.x - x0) / uCross.z);
+      float m = step(0.45, sx2) * smoothstep(0.2, 0.5, n2(w / 70.0 + 3.0)) * step(x0 + 30.0, w.x) * step(w.x, x1 - 30.0);
+      col = mix(col, uLine, m * 0.75);
+      h += m * 0.04;
+    }
+    if (uCross.w > 0.5 && abs(w.y - (uCross.y + 26.0)) < 6.0 && w.x > x0 + 30.0 && w.x < x1 - 30.0) col = mix(col, uLine, 0.6 * smoothstep(0.2, 0.5, n1(w / 60.0)));
     // edge lines
     float de = min(abs(w.x - (x0 + 22.0)), abs(w.x - (x1 - 22.0)));
     float em = (1.0 - smoothstep(3.5, 5.5, de)) * smoothstep(0.3, 0.55, n2(w / 120.0 + 7.0));
@@ -620,6 +637,13 @@ void main() {
     float spec = exp(-dot(vP - vec2(-0.35, 0.4), vP - vec2(-0.35, 0.4)) * 30.0);
     c = (vCol.rgb * (0.25 + rim * 1.2) + vec3(1.5) * spec) * vCol.a;
     cover = (0.18 + rim * 0.4) * vCol.a;
+  } else if (kind == 16) {
+    // countdown ring round the hero: the lit arc is the time left (life = 0..1), running clockwise from the top
+    float a01 = fract(atan(vP.x, -vP.y) / 6.2831853 + 1.0);
+    float ring = exp(-pow((r - 0.86) / 0.06, 2.0));
+    float on = step(a01, life);
+    c = vCol.rgb * ring * (0.22 + 1.5 * on) * vCol.a;
+    cover = ring * 0.3 * vCol.a;
   } else {
     // ice shard: pale glint
     if (r > 1.0) discard;

@@ -88,8 +88,8 @@ export class SpriteList {
       nk.set(this.keys);
       this.keys = nk;
     }
-    // depth in the high part, index in the low 14 bits: one typed sort orders them
-    this.keys[i] = Math.floor((clamp(depth, -4000, 12000) + 4000) * 4) * 16384 + i;
+    // depth in the high part, index in the low 15 bits: one typed sort orders them
+    this.keys[i] = Math.floor((clamp(depth, -4000, 12000) + 4000) * 4) * 32768 + i;
   }
   sort() {
     const n = this.raw.count;
@@ -102,8 +102,9 @@ export class SpriteList {
     out.count = n;
     const dst = out.data;
     for (let j = 0; j < n; j++) {
-      const i = keys[j] % 16384;
-      dst.set(src.subarray(i * SPRITE_STRIDE, i * SPRITE_STRIDE + SPRITE_STRIDE), j * SPRITE_STRIDE);
+      const a = (keys[j] % 32768) * SPRITE_STRIDE;
+      const b = j * SPRITE_STRIDE;
+      for (let k = 0; k < SPRITE_STRIDE; k++) dst[b + k] = src[a + k];
     }
     return out;
   }
@@ -338,6 +339,8 @@ export class Renderer {
     gl.uniform1i(p.u.uKind, theme.kind || 0);
     gl.uniform4fv(p.u.uRoad, theme.road);
     gl.uniform4fv(p.u.uVerge, theme.verge);
+    if (p.u.uLanes) gl.uniform1f(p.u.uLanes, theme.lanes || 3);
+    if (p.u.uCross) gl.uniform4fv(p.u.uCross, theme.cross || [0, 0, 1, 0]);
     for (const k of ['asphalt', 'asphalt2', 'kerb', 'walk', 'grass', 'dirt', 'plaza', 'line']) {
       const u = p.u['u' + k[0].toUpperCase() + k.slice(1)];
       if (u) gl.uniform3fv(u, theme.colors[k]);
@@ -356,7 +359,8 @@ export class Renderer {
   // ---- the paint layer: blood and gore that stays on the road
   initPaint(rect) {
     const gl = this.gl;
-    const res = this.q.paintRes;
+    // the blood layer keeps its detail but stays under ~9 MP on a wide field
+    const res = Math.min(this.q.paintRes, Math.sqrt(9e6 / (rect.w * rect.h)));
     const w = Math.round(rect.w * res);
     const h = Math.round(rect.h * res);
     if (!this.paintT) this.paintT = new Target(gl, w, h, { internal: gl.SRGB8_ALPHA8, type: gl.UNSIGNED_BYTE });

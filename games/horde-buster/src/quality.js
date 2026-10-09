@@ -6,7 +6,7 @@
 import { QUERY } from './config.js';
 
 const TIERS = {
-  high: { tier: 'high', maxDpr: 2, maxPixels: 5.2e6, lights: 32, bloomLevels: 5, particles: 9000, gibs: 700, paintRes: 1.5, groundRes: 1, numbers: 220 },
+  high: { tier: 'high', maxDpr: 2, maxPixels: 3.6e6, lights: 32, bloomLevels: 5, particles: 9000, gibs: 700, paintRes: 1.5, groundRes: 1, numbers: 220 },
   medium: { tier: 'medium', maxDpr: 1.5, maxPixels: 2.8e6, lights: 20, bloomLevels: 4, particles: 6000, gibs: 450, paintRes: 1.25, groundRes: 0.8, numbers: 160 },
   low: { tier: 'low', maxDpr: 1.15, maxPixels: 1.4e6, lights: 10, bloomLevels: 3, particles: 3500, gibs: 260, paintRes: 1, groundRes: 0.6, numbers: 100 },
 };

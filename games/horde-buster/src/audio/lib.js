@@ -24,7 +24,7 @@ const hash = (s) => {
 
 // what plays first: gameplay sounds, then the rest, music last by need
 const FIRST = /^(shot\.blaster|hit|kill|gem\.|ui\.|explode\.s)/;
-const SECOND = /^(shot\.|hit\.|kill\.|headPop|gib|explode|pickup|coin|shatter|zap|shield|bombThrow|levelUp|card)/;
+const SECOND = /^(shot\.|hit\.|kill\.|headPop|gib|explode|pickup|coin|shatter|zap|shield|bombThrow|levelUp|card|flame|swap\.|weaponUp|crate|surge)/;
 
 export class Library {
   constructor() {

@@ -34,11 +34,12 @@ const F = Float32Array;
 const U8 = Uint8Array;
 const I16 = Int16Array;
 
-// kinds: 0 bolt, 1 pellet, 2 rocket. `hits` remembers the last 4 creatures a
+// kinds: 0 bolt, 1 pellet, 2 rocket (homes on tx, ty when home is set; rage
+// shots blow up on every hit). `hits` remembers the last 4 creatures a
 // piercing shot went through (slot * 4096 + generation), so it hits each once.
 export class Bullets extends Pool {
   constructor(cap) {
-    super(cap, { x: F, y: F, px: F, py: F, vx: F, vy: F, dmg: F, life: F, kb: F, size: F, accel: F, blast: F, pierce: I16, kind: U8, hitN: U8, r: F, g: F, b: F });
+    super(cap, { x: F, y: F, px: F, py: F, vx: F, vy: F, dmg: F, life: F, kb: F, size: F, accel: F, blast: F, pierce: I16, kind: U8, hitN: U8, rage: U8, home: U8, tx: F, ty: F, r: F, g: F, b: F });
     this.hits = new Int32Array(cap * 4);
   }
   kill(i) {
@@ -69,8 +70,12 @@ export class Gems extends Pool {
   }
 }
 
-// power-ups floating down in bubbles. kinds below
-export const PICKUPS = ['magnet', 'freeze', 'shield', 'bomb', 'heart', 'lightning', 'chest'];
+// power-ups floating down in bubbles, weapon crates (w = the gun inside, as
+// an index into CRATE_GUNS) and power-surge orbs. kinds below
+export const PICKUPS = ['magnet', 'freeze', 'shield', 'bomb', 'heart', 'lightning', 'chest', 'crate', 'overdrive', 'triple', 'rage'];
+export const CRATE = 7;
+export const SURGES = ['overdrive', 'triple', 'rage'];
+export const CRATE_GUNS = ['blaster', 'scatter', 'rocket', 'flamer'];
 // each pickup's colour: its bubble, the burst on the hero when grabbed
 export const PICKUP_COL = {
   magnet: [1.6, 0.35, 0.3],
@@ -80,10 +85,14 @@ export const PICKUP_COL = {
   heart: [1.9, 0.3, 0.45],
   lightning: [1.9, 1.5, 0.3],
   chest: [2.0, 1.5, 0.4],
+  crate: [0.5, 1.6, 1.4],
+  overdrive: [2.0, 1.0, 0.2],
+  triple: [0.3, 1.5, 2.0],
+  rage: [2.2, 0.25, 0.15],
 };
 export class Pickups extends Pool {
   constructor(cap) {
-    super(cap, { x: F, y: F, px: F, py: F, vy: F, t: F, kind: U8, seed: F });
+    super(cap, { x: F, y: F, px: F, py: F, vx: F, vy: F, t: F, kind: U8, w: U8, seed: F });
   }
 }
 

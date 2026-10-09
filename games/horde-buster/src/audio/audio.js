@@ -20,6 +20,10 @@
 //    is the loops' playback rate plus a low-pass. Tracks crossfade in about 1 s;
 //  - one master chain: a bus compressor, a limiter and a soft ceiling, so a
 //    hundred hits a second never clip and never turn to mush.
+//  - the flamethrower is the one sound that is not a one-shot: flame(level) runs two looping buffers (a roar
+//    through a low-pass, a crackle) whose gains and brightness follow the level, from a single pair of sources
+//    that start when the level rises from 0 and are stopped on the audio clock a little after it falls to 0.
+//    It is held out of the 48 voices as one of them.
 // Every method is safe to call before unlock() and when muted: it does nothing
 // until the context is running; what is asked for early (music, intensity,
 // slow motion, the heartbeat) is remembered and applied.
@@ -40,10 +44,16 @@ const PICKUP = {
 const STREAK = [null, 'streak.1', 'streak.2', 'streak.3', 'streak.4', 'streak.5'];
 const UI = { hover: 'ui.hover', click: 'ui.click', card: 'ui.card', claim: 'claim', coin: 'coin' };
 const GEM = ['gem.0', 'gem.1', 'gem.2'];
+const SWAP = { blaster: 'swap.blaster', scatter: 'swap.scatter', rocket: 'swap.rocket', flamer: 'swap.flamer', railgun: 'swap.railgun' };
+const SURGE = { overdrive: 'surge.overdrive', triple: 'surge.triple', rage: 'surge.rage' };
+// the flamethrower loop: time constants (s) of the gain and brightness as the level rises / falls (about 40 ms / 150 ms to
+// 90 %), and how long after the level falls to 0 the loop is stopped (the gain is down by 70 dB by then)
+const FLAME = { att: 0.018, rel: 0.065, idle: 0.55 };
+const flameCutoff = (lv) => (lv > 0 ? 700 + 9500 * Math.pow(lv, 1.4) : 500);
 const MAJOR = [0, 2, 4, 5, 7, 9, 11]; // the gem steps climb the G major scale
 
 // sounds with a pitch of their own are not detuned at random (they would clash with the score)
-const jitterOf = (key) => (/^(gem|levelUp|card|evolve|waveComplete|claim|streak|pickup|ui)/.test(key) ? 0 : key === 'coin' ? 0.02 : 0.045);
+const jitterOf = (key) => (/^(gem|levelUp|card|evolve|waveComplete|claim|streak|pickup|ui|weaponUp|surge\.triple)/.test(key) ? 0 : key === 'coin' ? 0.02 : 0.045);
 
 // a soft ceiling: untouched up to 0.8, eased towards 0.985 which it never passes
 function softCeiling() {
@@ -89,6 +99,7 @@ export class Sound {
     this._want = { music: undefined, intensity: 0, lowHp: false };
     this._m = { cur: null, old: [], pending: null, started: undefined, int: 0 };
     this._hb = null;
+    this._fl = null; // the flamethrower loop: { a, b, lp, ga, gb, lv, dying, stopAt }
     this._pumpT = 0;
     this._pumpIdle = false;
     this._sleepT = 0;
@@ -370,7 +381,8 @@ export class Sound {
       const v = this._oldest(key, -1);
       if (v) this._steal(v, now);
     }
-    if (this._voices.length >= MAX_VOICES) {
+    const cap = this._fl ? MAX_VOICES - 1 : MAX_VOICES; // the flamethrower's loop is one of the voices
+    while (this._voices.length >= cap) {
       const v = this._oldest(null, def.pri);
       if (!v) return;
       this._steal(v, now);
@@ -592,6 +604,179 @@ export class Sound {
   ui(name) {
     const key = UI[name];
     if (key) this._play(key, 0, 1, 1, 1);
+  }
+
+  // the hero grabs another weapon: 'blaster' | 'scatter' | 'rocket' | 'flamer' | 'railgun'
+  weaponSwap(id) {
+    this._play(SWAP[id] || SWAP.blaster, 0, 1, 1, 0);
+  }
+
+  // a weapon gained a star: stars 2 or 3 (3 is bigger); a G major run up that lands on a chord
+  weaponUp(stars = 2) {
+    this._play((stars | 0) >= 3 ? 'weaponUp.3' : 'weaponUp.2', 0, 1, 1, 0);
+  }
+
+  // a weapon crate lands (rate-limited)
+  crate() {
+    this._play('crate', 0, 1, 1, 0);
+  }
+
+  // a power surge orb grabbed: 'overdrive' | 'triple' | 'rage' (ducks the score a little)
+  surge(kind) {
+    this._play(SURGE[kind] || SURGE.overdrive, 0, 1, 1, 0);
+  }
+
+  // a surge ran out
+  surgeEnd() {
+    this._play('surgeEnd', 0, 1, 1, 0);
+  }
+
+  // ------------------------------------------------------------ the flamethrower
+
+  // Call every frame while the Flamethrower is held, with level 0..1 (0: not firing, also fine to call once or never).
+  // The roar and crackle follow the level: gain and brightness glide (90 % in about 40 ms rising, 150 ms falling), so
+  // it never clicks. Level 0 fades to silence and, 0.55 s later, the loop is stopped (no CPU while idle); a level
+  // above 0 starts it again, or takes it back if it is still running. Calls that change nothing do no work (the level
+  // is rounded to steps of 0.02). Muted, hidden, locked or before the sounds are built: nothing plays and a loop that
+  // is running is let go like at 0. If the calls stop for 0.4 s while it is on (a pause, a forgotten flame(0)) it is
+  // let go the same way. Slow motion drops its pitch and dulls it like the other effects.
+  flame(level = 0) {
+    let lv = level > 0 ? (level < 1 ? Math.round(level * 50) / 50 : 1) : 0;
+    if (!this._ok()) lv = 0;
+    const f = this._fl;
+    if (!f) {
+      if (lv > 0 && this._lib) this._flameStart(lv);
+      return;
+    }
+    const t = this._now();
+    if (lv > 0) f.seen = t;
+    if (lv === f.lv) return;
+    if (f.dying) {
+      // back before the loop was stopped: a later stop() replaces the earlier one. If that is not possible, start afresh.
+      let kept = t < f.stopAt - 0.06;
+      if (kept) {
+        try {
+          f.a.stop(t + 86400);
+          if (f.b) f.b.stop(t + 86400);
+        } catch {
+          kept = false;
+        }
+      }
+      if (!kept) {
+        this._flameStart(lv);
+        return;
+      }
+      f.dying = false;
+      this._flameWatch(f);
+    }
+    this._flameSet(f, lv, t, 0);
+  }
+
+  _flameStart(lv) {
+    const ea = this._lib.pick('flame');
+    if (!ea) return; // not built yet: the game calls again next frame
+    const eb = this._lib.pick('flame.crackle');
+    const ctx = this.ctx;
+    const t = this._now();
+    const lane = this._lanes[4]; // the centre: through the slow-motion low-pass like every effect
+    const a = ctx.createBufferSource();
+    a.buffer = this._buffer(ea);
+    a.loop = true;
+    a.playbackRate.value = this._rateF;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 0.7;
+    lp.frequency.value = flameCutoff(lv);
+    const ga = ctx.createGain();
+    ga.gain.value = 0;
+    a.connect(lp);
+    lp.connect(ga);
+    ga.connect(lane);
+    let b = null;
+    let gb = null;
+    if (eb) {
+      b = ctx.createBufferSource();
+      b.buffer = this._buffer(eb);
+      b.loop = true;
+      b.playbackRate.value = this._rateF;
+      gb = ctx.createGain();
+      gb.gain.value = 0;
+      b.connect(gb);
+      gb.connect(lane);
+    }
+    const f = { a, b, lp, ga, gb, lv: 0, dying: false, stopAt: 0, seen: t, timer: 0 };
+    a.onended = () => this._flameEnd(f);
+    // from a different place in the loops each time
+    const when = this.offline ? t : 0;
+    a.start(when, Math.random() * a.buffer.duration);
+    if (b) b.start(when, Math.random() * b.buffer.duration);
+    this._fl = f;
+    this._flameWatch(f);
+    this._flameSet(f, lv, t, 0);
+  }
+
+  // a loop whose calls have stopped (the game paused, or never said 0) is let go; checked four times a second
+  // while it is on, on the real clock (a test with a fake clock calls _flameCheck itself)
+  _flameWatch(f) {
+    if (this.offline || f.timer) return;
+    f.timer = setTimeout(() => {
+      f.timer = 0;
+      if (this._flameCheck(f)) this._flameWatch(f);
+    }, 250);
+  }
+
+  // true while the loop is on and still being called
+  _flameCheck(f) {
+    if (this._fl !== f || f.dying) return false;
+    const t = this._now();
+    if (t - f.seen <= 0.4) return true;
+    this._flameSet(f, 0, t, 0);
+    return false;
+  }
+
+  // glide the loop to a level (tc: a time constant, or 0 for the usual attack / release)
+  _flameSet(f, lv, t, tc) {
+    const k = tc || (lv > f.lv ? FLAME.att : FLAME.rel);
+    f.lv = lv;
+    const ga = f.ga.gain;
+    ga.cancelScheduledValues(t);
+    ga.setTargetAtTime(lv > 0 ? 0.2 + 0.8 * lv : 0, t, k);
+    if (f.gb) {
+      f.gb.gain.cancelScheduledValues(t);
+      f.gb.gain.setTargetAtTime(lv * lv, t, k);
+    }
+    f.lp.frequency.cancelScheduledValues(t);
+    f.lp.frequency.setTargetAtTime(flameCutoff(lv), t, k);
+    if (lv === 0 && !f.dying) {
+      f.dying = true;
+      if (f.timer) clearTimeout(f.timer);
+      f.timer = 0;
+      f.stopAt = t + FLAME.idle;
+      try {
+        f.a.stop(f.stopAt);
+        if (f.b) f.b.stop(f.stopAt);
+      } catch {
+        /* already over */
+      }
+    }
+  }
+
+  _flameEnd(f) {
+    if (this._fl === f) this._fl = null;
+    if (f.timer) clearTimeout(f.timer);
+    f.timer = 0;
+    f.a.onended = null;
+    try {
+      f.a.disconnect();
+      f.lp.disconnect();
+      f.ga.disconnect();
+      if (f.b) {
+        f.b.disconnect();
+        f.gb.disconnect();
+      }
+    } catch {
+      /* fine */
+    }
   }
 
   // ------------------------------------------------------------ the heartbeat
@@ -817,6 +1002,11 @@ export class Sound {
     if (v === 1 || Math.abs(v - this._slowVoices) >= 0.03) {
       this._slowVoices = v;
       for (const x of this._voices) if (!x.ui) x.src.playbackRate.setTargetAtTime(x.rate * this._rateF, t, 0.06);
+      const f = this._fl;
+      if (f) {
+        f.a.playbackRate.setTargetAtTime(this._rateF, t, 0.06);
+        if (f.b) f.b.playbackRate.setTargetAtTime(this._rateF, t, 0.06);
+      }
     }
   }
 
@@ -827,6 +1017,7 @@ export class Sound {
     if (!this.ctx) return;
     const now = this._now();
     for (const v of this._voices.slice()) this._steal(v, now);
+    if (this._fl && !this._fl.dying) this._flameSet(this._fl, 0, now, 0.02);
     this._heart(false);
     this._startMusic(null, true);
     this.slowmo(1);
@@ -865,7 +1056,17 @@ export async function selfTest({ music = true, graph = true } = {}) {
         return;
       }
       rendered.push(name);
-      levels.push({ name, dur: +e.dur.toFixed(3), peak: +e.peak.toFixed(3), rms: +e.rms.toFixed(4), loud: +e.loud.toFixed(1) });
+      const lv = { name, dur: +e.dur.toFixed(3), peak: +e.peak.toFixed(3), rms: +e.rms.toFixed(4), loud: +e.loud.toFixed(1) };
+      levels.push(lv);
+      if (SFX[key].loop) {
+        // a loop must run on from its last sample to its first like any two neighbours: the step across the seam
+        // against the typical step
+        const d = e.data;
+        let ds = 0;
+        for (let i = 1; i < d.length; i++) ds += (d[i] - d[i - 1]) * (d[i] - d[i - 1]);
+        lv.seam = +(Math.abs(d[0] - d[d.length - 1]) / (Math.sqrt(ds / d.length) + 1e-9)).toFixed(2);
+        if (lv.seam > 6) errors.push(`${name}: the loop has a seam (${lv.seam}x the typical step)`);
+      }
       if (bad(e.data)) errors.push(`${name}: not a number or out of range`);
       if (e.peak < 0.02) errors.push(`${name}: silent (peak ${e.peak.toFixed(4)})`);
       if (e.peak > 1.0001) errors.push(`${name}: clips (peak ${e.peak.toFixed(3)})`);
@@ -904,6 +1105,14 @@ export async function selfTest({ music = true, graph = true } = {}) {
     dry.streak(3);
     dry.pickup('heart');
     dry.ui('click');
+    for (const level of [1, 0.5, 0, NaN, undefined]) dry.flame(level);
+    for (const id of ['blaster', 'scatter', 'rocket', 'flamer', 'railgun', 'nope']) dry.weaponSwap(id);
+    dry.weaponUp(2);
+    dry.weaponUp(3);
+    dry.crate();
+    for (const kind of ['overdrive', 'triple', 'rage']) dry.surge(kind);
+    dry.surgeEnd();
+    if (dry._fl) errors.push('flame: a locked Sound started a loop');
     for (const m of ['headPop', 'gib', 'freeze', 'shatter', 'zap', 'spit', 'enemyShot', 'levelUp', 'card', 'evolve', 'waveStart', 'waveComplete', 'coin', 'claim', 'shieldUp', 'shieldHit', 'shieldDown', 'bombThrow', 'lightning', 'hurt', 'death', 'bossRoar', 'bossSlam', 'bossCharge', 'bossDeath', 'stopAll']) dry[m](0);
   } catch (err) {
     errors.push(`api before unlock: ${err && err.message ? err.message : err}`);
@@ -947,15 +1156,26 @@ async function graphTest(lib, withMusic) {
     s.gib(pan);
     calls += 6;
   }
-  for (const [t, fn] of [
+  // the flamethrower is held through all of it, a call a frame (1/60 s): up, full, flickering down, let go, a tap while the
+  // loop is still running, held again, let go for good, and started afresh after the loop was stopped
+  const lvAt = (t) => (t < 0.5 ? 0 : t < 0.7 ? (t - 0.5) / 0.2 : t < 1.8 ? 1 : t < 2.2 ? 0.35 + 0.1 * Math.sin(t * 40) : t < 2.4 ? 0 : t < 3.2 ? 0.8 + 0.2 * Math.sin(t * 9) : t < 4.4 ? 0 : t < 5.4 ? 0.7 : 0);
+  const timeline = [
     [1.0, () => s.explode(0, 1)], [1.05, () => s.bossSlam()], [1.1, () => s.levelUp()], [1.5, () => s.lightning()],
     [1.6, () => s.explode(-0.5, 0.7)], [1.7, () => s.bossRoar()], [2.0, () => s.freeze()], [2.1, () => s.shatter(0.3)],
     [2.5, () => s.slowmo(0.3)], [2.6, () => s.streak(5)], [2.7, () => s.bossDeath()], [3.0, () => s.slowmo(1)],
     [3.1, () => s.evolve()], [3.4, () => s.waveComplete()], [3.6, () => s.lowHp(true)],
-  ]) {
+    [0.9, () => s.weaponSwap('flamer')], [1.2, () => s.crate()], [1.4, () => s.weaponUp(2)], [1.9, () => s.surge('overdrive')],
+    [2.2, () => s.surge('triple')], [2.9, () => s.weaponUp(3)], [3.3, () => s.surge('rage')], [3.9, () => s.surgeEnd()],
+    [4.2, () => s.weaponSwap('blaster')], [4.4, () => s.weaponSwap('scatter')], [4.6, () => s.weaponSwap('rocket')], [4.8, () => s.weaponSwap('railgun')],
+  ];
+  for (let t = 0.4; t < 5.95; t += 1 / 60) timeline.push([t, () => s.flame(lvAt(t)), true]);
+  timeline.sort((x, y) => x[0] - y[0]); // in time order, as the game would call them
+  let flames = 0;
+  for (const [t, fn, frame] of timeline) {
     s._clock = t;
     fn();
-    calls++;
+    if (frame) flames++;
+    else calls++;
   }
   for (const name of ['shot', 'zap', 'spit', 'enemyShot', 'hurt', 'death', 'claim', 'card', 'waveStart', 'shieldUp', 'shieldHit', 'shieldDown', 'bombThrow', 'bossCharge', 'headPop']) {
     s._clock = 4 + calls * 0.001;
@@ -992,7 +1212,7 @@ async function graphTest(lib, withMusic) {
       rms[sec] = Math.max(rms[sec] || 0, +Math.sqrt(ss / sr).toFixed(4));
     }
   }
-  const out = { ok: true, peak: +peak.toFixed(4), clipped, nan, rms, voicesAtStart: started, voicesLeft: s._voices.length, renderMs: +(performance.now() - t1).toFixed(0), calls };
+  const out = { ok: true, peak: +peak.toFixed(4), clipped, nan, rms, voicesAtStart: started, voicesLeft: s._voices.length, renderMs: +(performance.now() - t1).toFixed(0), calls, flames };
   if (nan) {
     out.ok = false;
     out.why = `${nan} NaN samples`;

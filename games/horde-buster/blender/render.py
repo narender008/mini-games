@@ -27,7 +27,7 @@ def opt(name, default=None):
 
 
 # groups in build order; each is a module in this folder with build(ctx)
-MODULES = ['hero', 'zombies', 'runner', 'brute', 'spider', 'spitter', 'ogre', 'gibs', 'props', 'pickups']
+MODULES = ['hero', 'zombies', 'runner', 'brute', 'spider', 'spitter', 'ogre', 'gibs', 'props', 'pickups', 'loot']
 
 OUT = opt('--out', os.path.join(bl.TMP, 'frames'))
 ONLY = opt('--only')

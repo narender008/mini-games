@@ -41,6 +41,8 @@ export class Gore {
     this.arrays = [this.x, this.y, this.z, this.px, this.py, this.pz, this.vx, this.vy, this.vz, this.rot, this.vrot, this.prot, this.scale, this.t, this.age, this.bleed, this.ice, this.flip, this.frame, this.blood];
     this.chunks = ['gib_meat_0', 'gib_meat_1', 'gib_meat_2', 'gib_meat_3'];
     this.bones = ['gib_bone_0', 'gib_bone_1', 'gib_bone_2'];
+    // charred meat from the flamethrower (falls back to plain meat until those frames exist)
+    this.char = ['gib_char_0', 'gib_char_1', 'gib_char_2'].map((n, k) => (atlas.frames[n] ? n : this.chunks[k]));
   }
 
   reset() {
@@ -222,7 +224,7 @@ export class Gore {
 
   // ---------------------------------------------------------------- deaths
 
-  // How a creature dies. cause: 'hit' | 'crit' | 'blast' | 'ice' | 'shock' | 'collapse'.
+  // How a creature dies. cause: 'hit' | 'crit' | 'blast' | 'ice' | 'shock' | 'fire' | 'collapse'.
   // (x, y) its feet, scale its size; dx, dy the direction of the killing blow.
   death(type, x, y, scale, cause, dx, dy, headless) {
     const T0 = TYPES[type];
@@ -236,6 +238,22 @@ export class Gore {
       const parts = [`${g}_head`, `${g}_arm`, `${g}_leg`, 'ice_chunk_0', 'ice_chunk_1', 'ice_chunk_2', 'ice_chunk_3'];
       this.burst(parts, x, y, h, 330 * Math.sqrt(big), col, dx, dy, 1);
       fx.ice(x, y, h, 22 * big);
+      return;
+    }
+    if (cause === 'fire') {
+      // burnt up: charred chunks and smoking limbs burst out of a fireball, blood boils onto the road
+      const busy = this.n > this.cap * 0.6;
+      const parts = [`${g}_torso`];
+      if (!headless) parts.push(`${g}_head`);
+      if (!T0.small) parts.push(`${g}_arm`, rnd() < 0.5 ? `${g}_leg` : `${g}_arm`);
+      for (let k = 0; k < (busy ? 1 : 3) * big; k++) parts.push(this.char[(k + Math.floor(rnd() * 3)) % 3]);
+      this.burst(parts, x, y, h, 300 * Math.sqrt(big), col, dx * 0.4, dy * 0.4 - 0.3);
+      fx.blood(x, y, h, dx, dy, 12 * big, 300, col, 1.6);
+      fx.mist(x, y, h, col, 16 * big, 2);
+      for (let k = 0; k < 3 * big; k++) fx.add(3, 2, x + rand(-14, 14) * big, y + rand(-8, 8), h * rand(0.3, 1), rand(-40, 40), rand(-30, 10), rand(40, 120), rand(0.35, 0.7), 18 * big, 34 * big, 1, 1, 1, 1, 0, rnd());
+      fx.smoke(x, y, h, 26 * Math.sqrt(big), busy ? 1 : 2, 0.12);
+      fx.splat(x, y, 26 * big * scale, 0.05, 0.025, 0.02, 0.9, 0);
+      fx.splat(x + rand(-8, 8), y + rand(-6, 6), 16 * big * scale, col[0] * 0.7, col[1] * 0.7, col[2] * 0.7, 0.9, 0);
       return;
     }
     const blast = cause === 'blast';

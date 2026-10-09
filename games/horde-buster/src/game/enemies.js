@@ -58,6 +58,8 @@ export class Enemies {
     this.flash = F();
     this.frozen = F();
     this.slow = F();
+    this.burn = F(); // seconds left on fire (the flamethrower)
+    this.burnT = F(); // time to the next burn tick
     this.holdY = F();
     this.seed = F();
     this.scale = F();
@@ -97,6 +99,8 @@ export class Enemies {
     this.flash[i] = 0;
     this.frozen[i] = 0;
     this.slow[i] = 0;
+    this.burn[i] = 0;
+    this.burnT[i] = 0;
     this.seed[i] = rnd();
     this.scale[i] = (elite ? 1.3 : 1) * (0.93 + rnd() * 0.14);
     this.spd[i] = (0.88 + rnd() * 0.24) * spdMul;
@@ -173,13 +177,14 @@ export class Enemies {
             run.collapse(i);
             continue;
           }
-        } else if (T0.ranged && y[i] >= this.holdY[i] && hy - y[i] > 220) {
+        } else if (T0.ranged && !run.mopUp && y[i] >= this.holdY[i] && hy - y[i] > 220) {
           state[i] = HOLD;
           t[i] = rand(0.6, 1.6);
         } else {
           // head down the road; home in on the hero more the closer they get
-          const near = clamp((y[i] - 200) / 700, 0, 1);
+          const near = run.mopUp ? 1 : clamp((y[i] - 200) / 700, 0, 1);
           const home = type[i] === 1 ? 0.25 + near : type[i] === 3 ? 0.35 + near * 0.8 : 0.08 + near * 0.9;
+          if (run.mopUp) sp *= 1.6;
           mx = (dx / d) * home;
           my = Math.max(dy / d, 0.15) * (1 - home * 0.3) + 0.2;
           if (type[i] === 3) mx += Math.sin(run.time * 6 + this.seed[i] * TAU) * 0.8; // spiders zig-zag
@@ -208,7 +213,7 @@ export class Enemies {
           state[i] = SPIT;
           t[i] = T0.wind;
         }
-        if (hy - y[i] < 160) state[i] = WALK;
+        if (hy - y[i] < 160 || run.mopUp) state[i] = WALK;
       } else if (st === SPIT) {
         if (t[i] <= 0) {
           run.spit(i);
@@ -262,6 +267,27 @@ export class Enemies {
         const hd = Math.sqrt(h2);
         x[i] += (hdx / hd) * (hr - hd);
         y[i] += (hdy / hd) * (hr - hd);
+      }
+      // wrecks and barriers in play: pushed out of the footprint; one that meets it
+      // head on slides along it toward the nearer end, so the horde flows round
+      const ob = run.obstacles;
+      if (ob) {
+        const pad = ri * 0.6;
+        for (let o = 0; o < ob.length; o += 4) {
+          const odx = x[i] - ob[o];
+          const ody = y[i] - ob[o + 1];
+          const ex = ob[o + 2] + pad;
+          const ey = ob[o + 3] + pad;
+          if (odx >= ex || odx <= -ex || ody >= ey || ody <= -ey) continue;
+          const sx = odx > 0 || (odx === 0 && this.seed[i] > 0.5) ? 1 : -1;
+          const px = ex - Math.abs(odx);
+          const py = ey - Math.abs(ody);
+          if (px < py) x[i] += sx * px;
+          else {
+            y[i] += (ody > 0 ? 1 : -1) * py;
+            x[i] += sx * Math.min(px, 110 * dt);
+          }
+        }
       }
       x[i] = clamp(x[i], 8, ARENA.w - 8);
       if (y[i] > BAND.y1 + 20) y[i] = BAND.y1 + 20;

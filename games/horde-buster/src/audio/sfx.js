@@ -7,10 +7,11 @@
 //   max       how many may sound at once (the oldest of the kind is cut for a new one)
 //   pri       0..3: when all voices are busy a new sound may cut the oldest voice of its own priority or lower
 //   duck      optional [amount, seconds]: dip the music when it plays
+//   loop      true for a loop that Sound.flame() runs by hand (flame, flame.crackle): the buffer wraps without a seam
 // The key is `group.name` for sounds with a kind (shot.blaster, pickup.heart, ui.click).
 // Music in G major / E minor (the stings are in G major, the relative major of the battle theme).
-import { seeded, removeDC, fadeEnds, saturate } from './dsp.js';
-import { runLayers } from './layers.js';
+import { seeded, removeDC, fadeEnds, saturate, modulate, addTo, foldLoop } from './dsp.js';
+import { runLayers, colored, crackleLoop } from './layers.js';
 
 const LO = 24000;
 const HI = 32000;
@@ -568,6 +569,201 @@ const uiCard = recipe(0.28, [
 ], {});
 
 // ----------------------------------------------------------------------------
+// the flamethrower: two loops that Sound.flame() runs together, the roar (a seamless loop of 1.9 s)
+// and the crackle (3.4 s, so the two never fall into step). The game's level is their gain; the roar also
+// goes through a low-pass that opens with it.
+
+// a gas flame's roar: broad noise with a surging flutter, a deep rumble under it, a flickering hiss on top
+// and the puffing of the burner
+function* flameRoar(sr, seed) {
+  const r = seeded(seed);
+  const N = Math.round(1.9 * sr);
+  const X = Math.round(0.25 * sr); // rendered past the end, to be folded onto the start
+  const buf = new Float32Array(N + X);
+  const layer = function* (chain, mods, amp) {
+    const a = yield* colored(N + X, sr, r, chain);
+    for (const [fc, depth] of mods) yield* modulate(a, sr, r, fc, depth);
+    yield* addTo(buf, a, amp, 0);
+  };
+  yield* layer([['highpass', 140, 0.7], ['lowpass', 1900, 0.8], ['lowpass', 3200, 0.7]], [[11, 0.5], [3, 0.35]], 1);
+  yield* layer([['lowpass', 150, 1.1], ['lowpass', 260, 0.7]], [[5, 0.45]], 0.8);
+  yield* layer([['highpass', 2800, 0.7], ['lowpass', 9500, 0.7]], [[45, 0.8], [8, 0.4]], 0.3);
+  yield* layer([['lowpass', 700, 0.9]], [[17, 1.1]], 0.55);
+  yield;
+  const out = foldLoop(buf, N);
+  removeDC(out);
+  return out;
+}
+
+// the fire's crackle: ticks, pings and the odd woody snap
+function* flameCrackle(sr, seed) {
+  const r = seeded(seed);
+  const out = new Float32Array(Math.round(3.4 * sr));
+  yield* crackleLoop(out, sr, r, { rate: 34, amp: 1, snap: 0.16 });
+  removeDC(out);
+  saturate(out, 1.6);
+  return out;
+}
+
+// ----------------------------------------------------------------------------
+// the hero grabs another weapon: a chunky clack, then a charge in the flavour of the weapon (~0.45 s)
+
+// a hard mechanical clack: a snap, a thud and a ring of metal at pitch f
+const clack = (at, f, amp = 1) => [
+  { k: 'crack', at, amp: 0.8 * amp, dur: 0.006, hp: 900, snap: 0.6, snapFc: 2200, snapTau: 0.015 },
+  { k: 'body', at, f0: 190, f1: 80, tp: 0.02, tau: 0.045, amp: 0.8 * amp, drive: 1.5, dur: 0.14 },
+  { k: 'modal', at, amp: 0.45 * amp, partials: [[f, 1, 0.05], [f * 1.7, 0.6, 0.035], [f * 2.9, 0.35, 0.02], [f * 4.3, 0.2, 0.012]] },
+];
+
+// blaster: an electric charge-up, sparks, a ready ping
+const swapBlaster = recipe(0.46, [
+  ...clack(0, 1250, 0.9),
+  { k: 'tone', at: 0.06, wave: 'saw', f0: 260, f1: 2700, dur: 0.26, att: 0.02, tau: Infinity, rel: 0.03, amp: 0.4, det: 18, lp: [700, 7000, 0.14], q: 1.2, drive: 1.3, jit: 0 },
+  { k: 'tone', at: 0.06, wave: 'sine', f0: 520, f1: 5400, dur: 0.26, att: 0.02, tau: Infinity, rel: 0.03, amp: 0.25, jit: 0 },
+  { k: 'tone', at: 0.06, wave: 'saw', f0: 90, f1: 70, dur: 0.3, att: 0.03, tau: Infinity, rel: 0.04, amp: 0.25, am: [48, 0.7], lp: [700, 1400, 0.1], jit: 0 },
+  { k: 'debris', at: 0.05, n: 22, t0: 0, t1: 0.3, lam: 0.2, amp: 0.3, fLo: 4000, fHi: 11000, grit: 0.7, gritLen: 0.6 },
+  { k: 'tone', at: 0.33, wave: 'sine', f0: 2349, f1: 2349, dur: 0.14, att: 0.002, tau: 0.04, amp: 0.4, jit: 0 },
+  { k: 'crack', at: 0.33, amp: 0.4, dur: 0.004, hp: 3000, snap: 0 },
+], { sat: 1.3 });
+
+// scatter: the pump racked, back and then forward, and a spent shell tinkling on the floor
+const swapScatter = recipe(0.46, [
+  ...clack(0, 760, 1),
+  { k: 'whoosh', at: 0.02, dur: 0.14, f0: 900, f1: 2200, q: 1.4, amp: 0.25, env: [[0, 0], [0.03, 1], [0.14, 0]] },
+  ...clack(0.17, 1050, 1.15),
+  { k: 'body', at: 0.17, f0: 140, f1: 55, tp: 0.03, tau: 0.09, amp: 0.7, drive: 1.8 },
+  ...tick(0.31, 3100, 0.18),
+  { k: 'modal', at: 0.31, amp: 0.2, partials: [[3800, 0.4, 0.03], [5200, 0.3, 0.02]] },
+]);
+
+// rocket: a heavy latch, then a servo whining up and settling
+const swapRocket = recipe(0.5, [
+  { k: 'body', f0: 100, f1: 40, tp: 0.05, tau: 0.16, amp: 1, drive: 2, dur: 0.35 },
+  { k: 'crack', amp: 0.8, dur: 0.01, hp: 500, snap: 0.7, snapFc: 1600, snapTau: 0.03 },
+  { k: 'modal', amp: 0.5, partials: [[250, 1, 0.14], [560, 0.7, 0.1], [1040, 0.45, 0.07], [1760, 0.25, 0.05]] },
+  { k: 'tone', at: 0.1, wave: 'saw', f0: 180, f1: 780, dur: 0.2, att: 0.02, tau: Infinity, rel: 0.04, amp: 0.35, lp: [400, 2600, 0.1], am: [34, 0.35], drive: 1.4, jit: 0 },
+  { k: 'tone', at: 0.3, wave: 'saw', f0: 760, f1: 300, dur: 0.09, att: 0.008, tau: Infinity, rel: 0.03, amp: 0.25, lp: [2400, 800, 0.05], jit: 0 },
+  ...clack(0.38, 640, 0.8),
+  { k: 'rumble', at: 0.02, dur: 0.35, amp: 0.35, fc: 120, att: 0.01, tau: 0.18 },
+]);
+
+// flamer: a gas hiss, two clicks of the igniter, a whump
+const swapFlamer = recipe(0.52, [
+  ...clack(0, 900, 0.7),
+  { k: 'roar', dur: 0.26, amp: 0.5, fA: 9000, fB: 4500, tauF: 0.25, hp: 3500, q: 0.7, env: [[0, 0], [0.05, 1], [0.22, 0.8], [0.26, 0]] },
+  { k: 'crack', at: 0.2, amp: 0.7, dur: 0.003, hp: 3500, snap: 0 },
+  { k: 'crack', at: 0.235, amp: 0.5, dur: 0.003, hp: 3500, snap: 0 },
+  { k: 'body', at: 0.27, f0: 80, f1: 34, tp: 0.08, tau: 0.2, amp: 1.1, drive: 2.2 },
+  { k: 'roar', at: 0.27, dur: 0.2, amp: 0.7, fA: 3500, fB: 250, tauF: 0.08, q: 0.8, hp: 100, modFc: 30, modDepth: 0.5 },
+  { k: 'rumble', at: 0.27, dur: 0.22, amp: 0.5, fc: 150, att: 0.01, tau: 0.12 },
+]);
+
+// railgun: a magnetic clunk, a capacitor whining up, a hum, a click as it locks
+const swapRailgun = recipe(0.46, [
+  ...clack(0, 1500, 0.8),
+  { k: 'body', at: 0, f0: 120, f1: 50, tp: 0.03, tau: 0.08, amp: 0.5, drive: 1.6 },
+  { k: 'tone', at: 0.06, wave: 'sine', f0: 400, f1: 4200, dur: 0.3, att: 0.02, tau: Infinity, rel: 0.04, amp: 0.35, fm: [2, 1.2, 0.3], jit: 0 },
+  { k: 'tone', at: 0.06, wave: 'square', f0: 200, f1: 1800, dur: 0.3, att: 0.02, tau: Infinity, rel: 0.04, amp: 0.15, lp: [600, 5000, 0.15], jit: 0 },
+  { k: 'tone', at: 0.04, wave: 'saw', f0: 55, f1: 55, dur: 0.36, att: 0.03, tau: Infinity, rel: 0.05, amp: 0.2, lp: [500, 500, 1], jit: 0 },
+  { k: 'crack', at: 0.38, amp: 0.7, dur: 0.006, hp: 3000, snap: 0.5, snapFc: 4000 },
+  { k: 'modal', at: 0.38, amp: 0.3, partials: [[1850, 0.6, 0.12], [2790, 0.4, 0.09]] },
+  { k: 'body', at: 0.38, f0: 120, f1: 50, tp: 0.03, tau: 0.07, amp: 0.6, drive: 1.5 },
+  sparkle(0.33, 8, 0.12, 0.15, 5000, 12500),
+], { sat: 1.3 });
+
+// ----------------------------------------------------------------------------
+// a weapon gains a star: a bright run up the G major scale (G5 B5 D6 G6 ...) that lands on a chord
+
+const weaponUp2 = recipe(0.62, [
+  ...[784, 987.8, 1174.7, 1568].map((f, i) => bell(i * 0.065, f, i === 3 ? 0.24 : 0.12, 0.45, 1.4)),
+  ...[392, 493.9, 587.3].map((f, i) => brass(i * 0.065, f, 0.12, 0.16, { att: 0.008, tau: 0.1, rel: 0.05, lp0: 1200, lp1: 5000 })),
+  { k: 'whoosh', dur: 0.25, f0: 800, f1: 6500, q: 1.1, amp: 0.3, env: [[0, 0], [0.2, 1], [0.25, 0]] },
+  { k: 'body', at: 0.195, f0: 130, f1: 60, tp: 0.03, tau: 0.1, amp: 0.55, drive: 1.4 },
+  brass(0.195, 392, 0.4, 0.2, { tau: 0.3, rel: 0.15, lp0: 1300, lp1: 5000 }),
+  brass(0.195, 587.3, 0.4, 0.16, { tau: 0.3, rel: 0.15, lp0: 1300, lp1: 5000 }),
+  sparkle(0.195, 14, 0.4, 0.16),
+], { sat: 1.1 });
+
+const weaponUp3 = recipe(0.85, [
+  ...[784, 987.8, 1174.7, 1568, 1975.5, 2349].map((f, i) => bell(i * 0.06, f, i === 5 ? 0.24 : 0.12, 0.42, 1.4)),
+  ...[392, 493.9, 587.3, 784].map((f, i) => brass(i * 0.06, f, 0.12, 0.16, { att: 0.008, tau: 0.1, rel: 0.05, lp0: 1200, lp1: 5200 })),
+  { k: 'whoosh', dur: 0.36, f0: 800, f1: 8000, q: 1.1, amp: 0.35, env: [[0, 0], [0.3, 1], [0.36, 0]] },
+  { k: 'body', at: 0.36, f0: 105, f1: 44, tp: 0.04, tau: 0.22, amp: 0.85, drive: 1.6 },
+  { k: 'crack', at: 0.36, amp: 0.4, dur: 0.008, hp: 1800, snap: 0.3 },
+  ...[196, 293.7, 392, 493.9, 587.3].map((f) => brass(0.36, f, 0.5, 0.2, { tau: 0.4, rel: 0.2, lp0: 1400, lp1: 5400, tc: 0.15 })),
+  bell(0.36, 1568, 0.35, 0.3),
+  bell(0.36, 3136, 0.3, 0.14),
+  { k: 'roar', at: 0.36, dur: 0.45, amp: 0.2, fA: 14000, fB: 6500, tauF: 0.2, hp: 5000, env: [[0, 0], [0.01, 1], [0.45, 0]] },
+  sparkle(0.36, 26, 0.5, 0.18),
+], { sat: 1.2 });
+
+// ----------------------------------------------------------------------------
+// a weapon crate lands: a wooden thud, a clang of metal, a shimmer
+
+const crate = recipe(0.56, [
+  { k: 'body', f0: 115, f1: 48, tp: 0.04, tau: 0.1, amp: 1, drive: 1.6, dur: 0.3 },
+  { k: 'crack', amp: 0.7, dur: 0.01, hp: 500, snap: 0.6, snapFc: 1500, snapTau: 0.03 },
+  { k: 'debris', n: 8, t0: 0.01, t1: 0.12, lam: 0.05, amp: 0.3, fLo: 500, fHi: 2200, grit: 0.7 },
+  { k: 'modal', at: 0.008, amp: 0.5, partials: [[640, 0.8, 0.18], [1120, 0.6, 0.14], [1730, 0.4, 0.12], [2490, 0.3, 0.1], [3400, 0.2, 0.07]] },
+  { k: 'tone', at: 0.04, wave: 'sine', f0: 1320, f1: 1320, dur: 0.42, att: 0.01, tau: 0.16, amp: 0.2, fm: [3.1, 2, 0.3], jit: 0 },
+  sparkle(0.05, 22, 0.42, 0.2, 3000, 10000),
+  { k: 'whoosh', dur: 0.16, f0: 2400, f1: 500, q: 1.2, amp: 0.2, env: [[0, 0], [0.04, 1], [0.16, 0]] },
+]);
+
+// ----------------------------------------------------------------------------
+// power surges (the orb grabbed), one per kind (~0.8 s), and the power running out
+
+// overdrive: an engine revving up and up, a pop and a ping at the top
+const surgeOverdrive = recipe(0.85, [
+  { k: 'rev', f0: 60, f1: 330, dur: 0.66, att: 0.02, rel: 0.04, amp: 0.8, pulse: 0.7, ratio: 3, lp: [350, 3800], drive: 2.2 },
+  { k: 'rev', f0: 120, f1: 660, dur: 0.66, att: 0.02, rel: 0.04, amp: 0.3, pulse: 0.5, ratio: 4, lp: [600, 5200], drive: 1.6 },
+  { k: 'whoosh', dur: 0.66, f0: 300, f1: 4500, q: 1, amp: 0.4, env: [[0, 0], [0.6, 1], [0.66, 0]] },
+  { k: 'rumble', dur: 0.7, amp: 0.4, fc: 110, att: 0.05, tau: 1.2 },
+  { k: 'body', at: 0.66, f0: 130, f1: 52, tp: 0.03, tau: 0.12, amp: 0.9, drive: 1.6 },
+  { k: 'crack', at: 0.66, amp: 0.5, dur: 0.008, hp: 1500, snap: 0.3 },
+  bell(0.66, 1568, 0.35, 0.4),
+  sparkle(0.66, 14, 0.18, 0.16),
+], { sat: 1.5 });
+
+// triple: three bright zaps climbing the G major triad (G5 B5 D6), then a shimmer
+const pew = (at, f, amp) => [
+  { k: 'tone', at, wave: 'saw', f0: f * 3.2, f1: f, tp: 0.035, dur: 0.16, att: 0.001, tau: 0.05, amp, det: 10, drive: 1.5, lp: [9000, 2500, 0.06], jit: 0 },
+  { k: 'tone', at, wave: 'sine', f0: f * 2, f1: f * 2, dur: 0.12, att: 0.001, tau: 0.04, amp: amp * 0.5, fm: [2, 1.2, 0.03], jit: 0 },
+  { k: 'crack', at, amp: amp * 0.7, dur: 0.004, hp: 3500, snap: 0 },
+];
+const surgeTriple = recipe(0.82, [
+  ...pew(0, 784, 0.5),
+  ...pew(0.12, 987.8, 0.55),
+  ...pew(0.24, 1174.7, 0.6),
+  { k: 'body', at: 0.38, f0: 130, f1: 58, tp: 0.03, tau: 0.1, amp: 0.7, drive: 1.5 },
+  bell(0.38, 1568, 0.4, 0.4),
+  bell(0.38, 2349, 0.3, 0.25),
+  sparkle(0.38, 20, 0.4, 0.18),
+  { k: 'whoosh', at: 0.3, dur: 0.3, f0: 1500, f1: 7000, q: 1.2, amp: 0.2, env: [[0, 0], [0.2, 1], [0.3, 0]] },
+], { sat: 1.3 });
+
+// rage: a distorted roar over a low boom
+const surgeRage = recipe(0.85, [
+  { k: 'body', f0: 110, f1: 28, tp: 0.1, tau: 0.4, amp: 1.2, drive: 2.8 },
+  { k: 'crack', amp: 0.8, dur: 0.012, hp: 500, snap: 0.7, snapFc: 1800, snapTau: 0.04 },
+  {
+    k: 'growl', dur: 0.72, f0: 90, f1: 52, jit: 0.08, vib: [6, 0.02], pulse: [30, 0.7], breath: 0.3, drive: 3.2, amp: 1, formants: ROAR_F,
+    env: [[0, 0], [0.04, 1], [0.5, 0.85], [0.72, 0]],
+  },
+  { k: 'tone', wave: 'saw', f0: 55, f1: 38, dur: 0.75, att: 0.01, tau: 0.5, amp: 0.5, drive: 4, lp: [900, 250, 0.3], jit: 0 },
+  { k: 'roar', dur: 0.5, amp: 0.5, fA: 3500, fB: 250, tauF: 0.25, q: 0.8, modFc: 40, modDepth: 0.8 },
+  { k: 'rumble', dur: 0.8, amp: 0.5, fc: 110, att: 0.01, tau: 0.4 },
+], { sat: 2.4, tail: 40 });
+
+// a surge running out: a soft fall in pitch and brightness
+const surgeEnd = recipe(0.42, [
+  { k: 'tone', wave: 'sine', f0: 700, f1: 120, tp: 0.12, dur: 0.38, att: 0.004, tau: 0.16, amp: 0.5 },
+  { k: 'tone', wave: 'saw', f0: 350, f1: 70, tp: 0.12, dur: 0.38, att: 0.004, tau: 0.16, amp: 0.25, lp: [2500, 300, 0.12], drive: 1.2 },
+  { k: 'whoosh', dur: 0.34, f0: 2500, f1: 400, q: 0.9, amp: 0.3, env: [[0, 0], [0.05, 1], [0.34, 0]] },
+  { k: 'body', at: 0.25, f0: 90, f1: 50, tp: 0.04, tau: 0.08, amp: 0.25, drive: 1.1, dur: 0.14 },
+], { sat: 1.2 });
+
+// ----------------------------------------------------------------------------
 
 const def = (sr, variants, render, tgt, gap, max, pri, extra = {}) => ({ sr, variants, render, tgt, gap, max, pri, ...extra });
 
@@ -627,4 +823,19 @@ export const SFX = {
   'ui.hover': def(HI, 1, uiHover, -37, 30, 2, 3),
   'ui.click': def(HI, 1, uiClick, -30, 30, 3, 3),
   'ui.card': def(HI, 1, uiCard, -29, 30, 3, 3),
+  // the flamethrower's loops (run by Sound.flame, not played as one-shots)
+  'flame': def(HI, 1, flameRoar, -27, 0, 1, 2, { loop: true }),
+  'flame.crackle': def(LO, 1, flameCrackle, -28, 0, 1, 2, { loop: true }),
+  'swap.blaster': def(HI, 1, swapBlaster, -24, 120, 1, 2),
+  'swap.scatter': def(HI, 1, swapScatter, -23, 120, 1, 2),
+  'swap.rocket': def(LO, 1, swapRocket, -22, 120, 1, 2),
+  'swap.flamer': def(HI, 1, swapFlamer, -23, 120, 1, 2),
+  'swap.railgun': def(HI, 1, swapRailgun, -23, 120, 1, 2),
+  'weaponUp.2': def(HI, 1, weaponUp2, -20, 250, 1, 3),
+  'weaponUp.3': def(HI, 1, weaponUp3, -18, 250, 1, 3, { duck: [0.3, 0.9] }),
+  'crate': def(HI, 2, crate, -23, 350, 2, 2),
+  'surge.overdrive': def(HI, 1, surgeOverdrive, -17, 400, 1, 3, { duck: [0.3, 0.9] }),
+  'surge.triple': def(HI, 1, surgeTriple, -17, 400, 1, 3, { duck: [0.3, 0.9] }),
+  'surge.rage': def(LO, 1, surgeRage, -15, 400, 1, 3, { duck: [0.4, 1.0] }),
+  'surgeEnd': def(LO, 1, surgeEnd, -27, 400, 1, 2),
 };

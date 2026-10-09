@@ -1,14 +1,32 @@
 // Shared constants and small helpers. World units ("u"): x to the right, y DOWN
-// the screen, the road arena is 720 x 1280 u (one Blender metre of the sprite
-// art is 40 u). Times are seconds.
+// the screen. The field is 1280 u tall and as wide as the screen's shape asks
+// (720 u on a portrait phone, about 2050 u on a 16:10 laptop; see setField).
+// One Blender metre of the sprite art is 54 u. Times are seconds.
 export const QUERY = new URLSearchParams(location.search);
 export const DEBUG = QUERY.has('debug');
 export const COVER = QUERY.has('cover');
 export const REDUCED_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export const ARENA = { w: 720, h: 1280 };
-// the hero's band at the bottom of the road
+// the hero's band at the bottom of the field
 export const BAND = { x0: 34, x1: 686, y0: 960, y1: 1226 };
+
+// The field fills the screen with a fixed camera: its height is fixed and its
+// width follows the screen's aspect, clamped. Everything that should feel the
+// same on a bigger stage scales from the old 720 u portrait road:
+//   s  width scale (hero speed, spawn lanes, weapon spread)
+//   c  creature count scale, a little under s (about 2.5x on 16:10)
+//   r  reach scale for ranges (magnet, chains, blasts), the square root of s
+export const FIELD = { base: 720, min: 720, max: 2400, s: 1, c: 1, r: 1 };
+export function setField(w) {
+  w = Math.round(Math.min(FIELD.max, Math.max(FIELD.min, w)));
+  ARENA.w = w;
+  BAND.x1 = w - 34;
+  FIELD.s = w / FIELD.base;
+  FIELD.c = FIELD.s ** 0.9;
+  FIELD.r = Math.sqrt(FIELD.s);
+  return w;
+}
 export const STEP = 1 / 60; // fixed simulation step
 export const MAX_STEPS = 5; // per frame, so a stall does not spiral
 

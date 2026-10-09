@@ -1,5 +1,8 @@
 // Horde Buster: start-up, the frame loop, and the glue between the run, the
-// renderer, the effects, the sound and the interface.
+// renderer, the effects, the sound and the interface. The fixed camera shows
+// the whole field, whose width follows the window's shape (config.js
+// setField): resizing lays the ground, the scenery and the obstacles in play
+// out again for the new width.
 //
 // URL switches for testing:
 //   ?play            start straight into chapter 1 (skips the title)
@@ -14,16 +17,20 @@
 //     boss()                   bring on the Ogre now
 //     god(on = true)           the hero takes no damage
 //     level(n)                 gain n levels now (banked; their cards come in the break after the wave)
-//     pickup(kind)             drop magnet | freeze | shield | bomb | heart | lightning | chest
+//     pickup(kind)             drop magnet | freeze | shield | bomb | heart | lightning | chest | overdrive | triple | rage
+//     crate(gun)               drop a weapon crate: blaster | scatter | rocket | flamer (default: what the game would pick)
+//     surge(kind, s = 8)       start a power surge now: overdrive | triple | rage
+//     gun(id, stars)           hold that gun now at that many stars
 //     kill()                   kill everything on the road
-//     bench(ms = 5000, n = 0)  measure frames for ms; with n > 0 first fills the road with n creatures (god mode on,
-//                              spawning topped up); resolves {interval:{mean,p50,p95,p99,max}, work:{...}, fps,
-//                              counts:{enemies, bullets, particles, gibs, gems}, size, tier, scale}
+//     bench(ms = 5000, n = 0, gun = 'scatter')  measure frames for ms; with n > 0 first fills the field with n creatures
+//                              (god mode on, spawning topped up, a strong build holding that gun with all three surges);
+//                              resolves {interval:{mean,p50,p95,p99,max}, work:{...}, fps, counts:{enemies, bullets,
+//                              particles, gibs, gems}, size, field, tier, scale}
 //     sim(seconds, skill, wave) plays the chapter with the test pilot (src/bot.js) flat out, no drawing; resolves a log per wave
 //     auto(on = true)          the test pilot plays in real time
 //     state()                  a summary of the run
 //     run, app                 the live objects
-import { QUERY, DEBUG, COVER, PREFS, ARENA, STEP, MAX_STEPS, clamp, rand, reseed } from './config.js';
+import { QUERY, DEBUG, COVER, PREFS, ARENA, STEP, MAX_STEPS, setField, clamp, rand, reseed } from './config.js';
 import { detectQuality, FrameGovernor, tierSettings } from './quality.js';
 import { Renderer } from './gl/renderer.js';
 import { loadAtlas } from './gl/atlas.js';
@@ -32,7 +39,7 @@ import { Run } from './game/run.js';
 import { CHAPTERS } from './game/chapters.js';
 import { WEAPONS } from './game/upgrades.js';
 import { T } from './game/enemies.js';
-import { PICKUPS } from './game/pools.js';
+import { PICKUPS, CRATE_GUNS, SURGES } from './game/pools.js';
 import { Input } from './input.js';
 import { UI } from './ui/ui.js';
 import * as Save from './save.js';
@@ -49,6 +56,13 @@ const HINTS = {
   lightning: 'Lightning: strikes the moment you grab it',
   heart: 'Heart: heals 35',
   chest: 'Treasure: an extra card after the wave',
+  crate_blaster: 'Weapon crate: touch to take the Blaster  ·  the same gun gains a star',
+  crate_scatter: 'Weapon crate: touch to take the Scatter Gun  ·  the same gun gains a star',
+  crate_rocket: 'Weapon crate: touch to take the homing Rocket Pod  ·  the same gun gains a star',
+  crate_flamer: 'Weapon crate: touch to take the Flamethrower  ·  short range, burns the horde',
+  overdrive: 'Overdrive surge: double fire rate for 8 s',
+  triple: 'Triple Shot surge: three-way fire for 8 s',
+  rage: 'Rage surge: shots pierce and explode for 8 s',
 };
 const HANDLE = { update() {}, stop() {} };
 // used if the sound module cannot start (every call does nothing)
@@ -124,10 +138,46 @@ class App {
     const ch = CHAPTERS[i];
     this.chapter = ch;
     this.renderer.look = ch.look;
-    this.renderer.bakeGround(ch.ground);
-    this.renderer.initPaint({ x: -260, y: -200, w: 1240, h: 1560 });
-    this.props = ch.scenery().map((p) => ({ ...p, f: this.atlas.get(p.name) }));
-    this.fireBarrels = this.props.filter((p) => p.name === 'fire_barrel');
+    this.layoutField(true);
+  }
+
+  // The field fills the screen: its width follows the screen's shape (see
+  // setField). When it changes, the ground is rebaked, the blood layer
+  // resized and the scenery laid out again for the new width.
+  layoutField(force = false) {
+    const W = setField((ARENA.h * window.innerWidth) / Math.max(1, window.innerHeight));
+    if (!force && W === this.fieldW) return;
+    this.fieldW = W;
+    const ch = this.chapter;
+    this.renderer.bakeGround(ch.ground(W));
+    this.renderer.initPaint({ x: -200, y: -520, w: W + 400, h: 2040 });
+    this.props = ch.scenery(W).map((p) => ({ ...p, f: this.atlas.get(p.name) }));
+    this.fireBarrels = this.props.filter((p) => p.name === 'fire_barrel').slice(0, 8);
+    // wrecks and barriers in play turn the horde aside: a footprint box per prop (centre x, y, half width, half depth)
+    const ob = [];
+    for (const p of this.props) {
+      if (!p.block || !p.f) continue;
+      const hw = p.f.w * p.scale * 0.42;
+      const hh = Math.max(16, Math.min(p.f.h * p.scale * 0.24, 46));
+      ob.push(p.x, p.y - hh * 0.8, hw, hh);
+    }
+    // props side by side (a pair of sandbags or barriers) become one box, so nothing gets caught in the seam
+    for (let merged = true; merged; ) {
+      merged = false;
+      for (let a = 0; a < ob.length && !merged; a += 4)
+        for (let b = a + 4; b < ob.length && !merged; b += 4) {
+          if (Math.abs(ob[a + 1] - ob[b + 1]) > Math.max(ob[a + 3], ob[b + 3]) || Math.abs(ob[a] - ob[b]) > ob[a + 2] + ob[b + 2] + 40) continue;
+          const x0 = Math.min(ob[a] - ob[a + 2], ob[b] - ob[b + 2]);
+          const x1 = Math.max(ob[a] + ob[a + 2], ob[b] + ob[b + 2]);
+          const y0 = Math.min(ob[a + 1] - ob[a + 3], ob[b + 1] - ob[b + 3]);
+          const y1 = Math.max(ob[a + 1] + ob[a + 3], ob[b + 1] + ob[b + 3]);
+          ob.splice(b, 4);
+          ob.splice(a, 4, (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2);
+          merged = true;
+        }
+    }
+    this.obstacles = new Float32Array(ob);
+    this.run?.setObstacles(this.obstacles);
   }
 
   // ---------------------------------------------------------------- layout
@@ -136,20 +186,17 @@ class App {
     const h = window.innerHeight;
     const r = this.renderer;
     r.resize(w, h, window.devicePixelRatio || 1);
-    // fit the road: full height on wide screens (the street goes on at the sides), full width on tall ones (more road above)
+    if (this.chapter) this.layoutField();
+    // a fixed camera on the whole field: full height on wide screens, full width on tall ones (more road above)
     const cam = r.cam;
-    const fitH = h / ARENA.h;
-    const fitW = w / ARENA.w;
-    cam.zoom = Math.min(fitH, fitW);
+    cam.zoom = Math.min(h / ARENA.h, w / ARENA.w);
     this.baseX = ARENA.w / 2;
     const viewH = h / cam.zoom;
     this.baseY = ARENA.h - viewH / 2 + (viewH > ARENA.h ? 20 : 0);
     this.viewTop = this.baseY - viewH / 2;
     cam.x = this.baseX;
     cam.y = this.baseY;
-    // the HUD sits on the road's column, from the top of the screen to the bottom
-    const left = (0 - cam.x) * cam.zoom + w / 2;
-    this.ui?.layout({ left: Math.round(left), top: 0, width: Math.round(ARENA.w * cam.zoom), height: h });
+    this.ui?.layout({ left: 0, top: 0, width: w, height: h });
   }
 
   toggleFullscreen() {
@@ -278,13 +325,13 @@ class App {
         const l = this.data.armoury[a.id] || 0;
         return { id: a.id, name: a.name, text: a.text(Math.min(l, a.max - 1)), icon: a.icon, level: l, max: a.max, cost: Save.cost(a) };
       }),
-      weapons: ['blaster', 'scatter', 'rocket'].map((id) => ({
+      weapons: CRATE_GUNS.map((id) => ({
         id,
         name: WEAPONS[id].name,
         icon: WEAPONS[id].icon,
         unlocked: this.data.unlocked.includes(id),
         selected: this.data.startWeapon === id,
-        hint: this.data.unlocked.includes(id) ? 'Starting weapon' : id === 'scatter' ? 'Found in wave 2' : 'Found in wave 4',
+        hint: this.data.unlocked.includes(id) ? 'Starting weapon' : 'Find it in a weapon crate',
       })),
     };
   }
@@ -297,6 +344,14 @@ class App {
       pickup: (kind) => this.state === 'play' && this.ui.pulse(kind),
       // the first time each kind of pickup ever drops, one short line says what it does
       dropped: (kind) => this.firstHint(kind),
+      // a crate grabbed: a gun found for the first time becomes a starting weapon in the armoury
+      weapon: (id, isNew) => {
+        if (this.state === 'play') this.ui.pulse('weapon');
+        if (isNew && !this.run.demo && !this.data.unlocked.includes(id)) {
+          this.data.unlocked.push(id);
+          if (this.persist) Save.save();
+        }
+      },
       waveComplete: (info) => {
         if (this.run.demo) {
           this.run.claimReward();
@@ -307,7 +362,6 @@ class App {
         document.body.dataset.state = 'wave';
         this.canvas.style.cursor = '';
         this.sound.waveComplete();
-        if (info.weapon && !this.data.unlocked.includes(info.weapon.id) && WEAPONS[info.weapon.id] && info.weapon.id !== 'railgun') this.data.unlocked.push(info.weapon.id);
         this.data.coins += info.coins;
         if (this.persist) Save.save();
         this.ui.showWaveComplete(info, () => {
@@ -519,8 +573,10 @@ class App {
     s.wave = run.wave + 1;
     s.waves = run.chapter.waves.length;
     s.chapter = run.chapter.name;
+    // the held gun first, then the others found this run
     s.weapons.length = 0;
-    for (const w of run.weapons) s.weapons.push(this.weaponInfo(w));
+    s.weapons.push(this.weaponInfo(run.held, run));
+    for (const id of CRATE_GUNS) if (id !== run.held && run.arms[id] > 0) s.weapons.push(this.weaponInfo(id, run));
     s.abilities = run.abil;
     if (run.boss && run.enemies.alive[run.boss.i] && run.boss.state !== 'enter') {
       this.bossHud.name = run.boss.name;
@@ -541,12 +597,12 @@ class App {
     }
   }
 
-  weaponInfo(w) {
-    // reused per weapon slot so the HUD state allocates nothing each frame
+  weaponInfo(slot, run) {
+    // reused per gun so the HUD state allocates nothing each frame
     this.wInfo = this.wInfo || {};
-    const o = this.wInfo[w.id] || (this.wInfo[w.id] = { id: w.id, name: WEAPONS[w.id].name, stars: 1, evolved: false });
-    o.stars = w.stars;
-    o.evolved = w.id === 'railgun';
+    const id = run.gun(slot);
+    const o = this.wInfo[id] || (this.wInfo[id] = { id, name: WEAPONS[id].name, stars: 1, evolved: id === 'railgun' });
+    o.stars = run.arms[slot];
     return o;
   }
 
@@ -554,7 +610,7 @@ class App {
   demoPilot(dt) {
     const run = this.run;
     this.demoT = (this.demoT || 0) + dt;
-    run.target.x = 360 + Math.sin(this.demoT * 0.6) * 240;
+    run.target.x = ARENA.w / 2 + Math.sin(this.demoT * 0.6) * ARENA.w * 0.33;
     run.target.y = 1110 + Math.sin(this.demoT * 0.9) * 50;
   }
 
@@ -605,7 +661,21 @@ class App {
         for (let k = 0; k < n; k++) run().gainXp(run().xpNext - run().xp);
       },
       pickup(kind = 'magnet') {
-        if (PICKUPS.includes(kind)) run().dropPickup(kind, rand(120, 600), 700);
+        if (PICKUPS.includes(kind) && kind !== 'crate') run().dropPickup(kind, rand(120, ARENA.w - 120), 700);
+      },
+      crate(gun) {
+        const r = run();
+        if (CRATE_GUNS.includes(gun)) r.dropPickup('crate', rand(120, ARENA.w - 120), 300, CRATE_GUNS.indexOf(gun));
+        else r.dropCrate(rand(120, ARENA.w - 120), 300);
+      },
+      surge(kind = 'overdrive', secs = 8) {
+        if (SURGES.includes(kind)) run().surge[kind] = secs;
+      },
+      gun(id = 'flamer', stars = 1) {
+        const r = run();
+        if (!CRATE_GUNS.includes(id)) return;
+        r.arms[id] = clamp(stars, 1, 3);
+        r.held = id;
       },
       kill() {
         const E = run().enemies;
@@ -619,6 +689,7 @@ class App {
         const { sim } = await import('./bot.js');
         app.startRun(wave - 1);
         app.frozen = true;
+        app.simPeak = 0;
         const r = sim(app, seconds, skill);
         app.frozen = false;
         app.last = performance.now();
@@ -631,9 +702,9 @@ class App {
       },
       state() {
         const r = run();
-        return { state: app.state, phase: r.phase, wave: r.wave + 1, level: r.level, xp: r.xp, hp: r.hero.hp, enemies: r.enemies.n, bullets: r.bullets.n, particles: r.fx.n, gibs: r.gore.n, gems: r.gems.n, kills: r.kills, weapons: r.weapons.map((w) => `${w.id}*${w.stars}`), upgrades: { ...r.levels }, evolved: Object.keys(r.evolved), missingFrames: [...app.atlas.missing] };
+        return { state: app.state, phase: r.phase, wave: r.wave + 1, level: r.level, xp: r.xp, hp: r.hero.hp, field: ARENA.w, enemies: r.enemies.n, bullets: r.bullets.n, particles: r.fx.n, gibs: r.gore.n, gems: r.gems.n, pickups: r.pickups.n, kills: r.kills, weapons: r.weapons.map((w) => `${w.id}*${w.stars}`), surges: { ...r.surge }, upgrades: { ...r.levels }, evolved: Object.keys(r.evolved), missingFrames: [...app.atlas.missing] };
       },
-      bench(ms = 5000, n = 0) {
+      bench(ms = 5000, n = 0, gun = 'scatter') {
         const r = run();
         if (n > 0) {
           if (app.state !== 'play') app.startRun(2);
@@ -644,14 +715,18 @@ class App {
           r.scriptI = 0;
           r.streams = [];
           const types = ['shambler', 'runner', 'spider', 'spider', 'brute', 'spitter'];
-          for (let k = 0; k < n; k++) r.enemies.spawn(T[types[k % types.length]], rand(20, 700), rand(-600, 900), 6);
+          for (let k = 0; k < n; k++) r.enemies.spawn(T[types[k % types.length]], rand(20, ARENA.w - 20), rand(-600, 900), 6);
           // a strong build so the screen fills with bullets and gore
           r.stats.multi = 3;
           r.stats.rate = 3;
           r.stats.pierce = 3;
           r.stats.explosive = 1;
           r.stats.chain = 1;
-          if (!r.weapons.some((w) => w.id === 'scatter')) r.weapons.push({ id: 'scatter', stars: 2, timer: 0 });
+          if (CRATE_GUNS.includes(gun)) {
+            r.arms[gun] = 3;
+            r.held = gun;
+          }
+          for (const k of SURGES) r.surge[k] = 1e9;
           app.benchFill = n;
         }
         return new Promise((resolve) => {
@@ -672,12 +747,13 @@ class App {
             counts.frames++;
             if (app.benchFill && rr.enemies.n < app.benchFill * 0.9) {
               const types = ['shambler', 'spider', 'runner', 'spider'];
-              for (let k = rr.enemies.n; k < app.benchFill; k++) rr.enemies.spawn(T[types[k & 3]], rand(20, 700), rand(-500, -40), 6);
+              for (let k = rr.enemies.n; k < app.benchFill; k++) rr.enemies.spawn(T[types[k & 3]], rand(20, ARENA.w - 20), rand(-500, -40), 6);
             }
             rr.pendingLevels = 0;
             if (t - t0 < ms) requestAnimationFrame(tick);
             else {
               app.benchFill = 0;
+              for (const k of SURGES) rr.surge[k] = 0;
               const st = (a) => {
                 const s = a.slice().sort((x, y) => x - y);
                 const q = (k) => s[Math.min(s.length - 1, Math.floor(s.length * k))];
@@ -685,7 +761,7 @@ class App {
               };
               const iv = st(gaps.slice(2));
               for (const k of Object.keys(counts)) if (k !== 'frames') counts[k] = Math.round(counts[k] / counts.frames);
-              resolve({ interval: iv, work: st(app.frameTimes.slice()), fps: +(1000 / iv.mean).toFixed(1), counts, size: [app.renderer.w, app.renderer.h], tier: app.q.tier, scale: app.q.scale, draws: app.renderer.stats.draws });
+              resolve({ interval: iv, work: st(app.frameTimes.slice()), fps: +(1000 / iv.mean).toFixed(1), counts, size: [app.renderer.w, app.renderer.h], field: ARENA.w, tier: app.q.tier, scale: app.q.scale, draws: app.renderer.stats.draws });
             }
           };
           requestAnimationFrame(tick);

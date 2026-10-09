@@ -12,7 +12,7 @@ const KEYS = ['bomb', 'shield'];
 const MOUSE = { bomb: 'mouseL', shield: 'mouseR' };
 const LABEL = { bomb: 'Bomb (left click)', shield: 'Shield (right click)' };
 const MAX_WEAPONS = 6;
-const PULSE = { heart: '#ff5a78', bomb: '#ff7a3a', shield: '#5fc4ff', magnet: '#ff5a4a', chest: '#ffd23c' };
+const PULSE = { heart: '#ff5a78', bomb: '#ff7a3a', shield: '#5fc4ff', magnet: '#ff5a4a', chest: '#ffd23c', weapon: '#7fe8ff' };
 const POINTER_EVENTS = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'dblclick'];
 
 // Keep a HUD control's mouse and touch events away from the game canvas, and
@@ -306,7 +306,7 @@ export class Hud {
 
   // a pickup was grabbed: its HUD icon pulses in its colour
   pulse(kind) {
-    const el = { heart: this.hpEl, bomb: this.ab.bomb.el, shield: this.ab.shield.el, magnet: this.xpEl, chest: this.coinEl }[kind];
+    const el = { heart: this.hpEl, bomb: this.ab.bomb.el, shield: this.ab.shield.el, magnet: this.xpEl, chest: this.coinEl, weapon: this.weapons }[kind];
     if (!el || reduced()) return;
     const col = PULSE[kind];
     el.animate([{ transform: 'scale(1)', filter: 'brightness(1)' }, { transform: 'scale(1.18)', filter: `brightness(1.6) drop-shadow(0 0 .5em ${col})`, offset: 0.3 }, { transform: 'scale(1)', filter: 'brightness(1)' }], { duration: 520, easing: 'ease-out' });

@@ -16,6 +16,8 @@
 //   growl    a pulsing saw through moving formant filters: a roar, a grunt
 //   bubbles  rising chirps like bubbles in blood
 //   tinkle   a spray of ringing glass pings
+//   rev      an engine revving: a saw that climbs in pitch, its level pulsing once per firing stroke
+// (crackleLoop, a loop of fire crackle, is not a layer: it writes round the end of its buffer, see sfx.js)
 // `runLayers` takes a list of plain descriptions of these, so each sound is a
 // short recipe (see sfx.js).
 import {
@@ -25,7 +27,7 @@ import {
 const E = Math.exp;
 
 // noise shaped by a chain of filters [[type, f, q], ...], peak 1
-function* colored(n, sr, r, chain) {
+export function* colored(n, sr, r, chain) {
   const a = yield* noise(n, r);
   for (const [t, f, q] of chain) yield* filter(a, sr, t, f, q);
   yield* normalise(a, 1);
@@ -351,6 +353,97 @@ export function* tinkle(out, sr, r, o) {
   }
 }
 
+// rev: { f0, f1, dur, amp, pulse, ratio, lp: [fc0, fc1], q, drive, att, rel }
+//   a saw whose pitch climbs f0 -> f1 (a musical glide) with a little wobble, its level pulsing once every `ratio`
+//   cycles (depth `pulse`, 0..1): the firing strokes, which come quicker as it revs. It runs through a low-pass
+//   that opens from fc0 to fc1 and a tanh drive.
+export function* rev(out, sr, r, at, o) {
+  const len = Math.min(out.length - at, Math.ceil(o.dur * sr));
+  if (len <= 0) return;
+  const kr = Math.pow(o.f1 / o.f0, 1 / len);
+  const pulse = o.pulse ?? 0.6;
+  const ratio = o.ratio ?? 3;
+  const lp = o.lp ?? [400, 3500];
+  const q = o.q ?? 1.1;
+  const bq = new Biquad('lowpass', lp[0], q, sr);
+  const drive = o.drive ?? 2;
+  const norm = 1 / Math.tanh(drive);
+  const att = Math.max(2, Math.round((o.att ?? 0.02) * sr));
+  const endLen = Math.max(2, Math.min(len >> 1, Math.round((o.rel ?? 0.04) * sr)));
+  const nz = whiteSync(4096, r);
+  let f = o.f0;
+  let ph = r();
+  let pp = 0;
+  let wob = 0;
+  for (let b = 0; b < len; b += BLOCK) {
+    const e = Math.min(len, b + BLOCK);
+    for (let i = b; i < e; i++) {
+      f *= kr;
+      wob += 0.004 * (nz[i & 4095] - wob);
+      const dp = (f * (1 + 0.5 * wob)) / sr;
+      ph += dp;
+      if (ph >= 1) ph -= 1;
+      pp += dp / ratio;
+      if (pp >= 1) pp -= 1;
+      const u = i / len;
+      let s = sawBL(ph, dp) * (1 - pulse + pulse * 1.5 * E(-4 * pp));
+      if ((i & 31) === 0) bq.set('lowpass', lp[0] + (lp[1] - lp[0]) * u * u, q, sr);
+      s = Math.tanh(drive * bq.run(s)) * norm;
+      let g = 0.55 + 0.45 * u;
+      if (i < att) g *= 0.5 - 0.5 * Math.cos((Math.PI * i) / att);
+      if (i > len - endLen) g *= (len - i) / endLen;
+      out[at + i] += (o.amp ?? 1) * g * s;
+    }
+    yield;
+  }
+}
+
+// crackleLoop: { rate, amp, snap }  fire crackle for a loop: about `rate` ticks a second at random times, some in
+// little clusters (a tick and its pings), and a share `snap` of woody cracks. Everything is written round the end of
+// the buffer (it wraps), so the loop has no seam.
+export function* crackleLoop(out, sr, r, o) {
+  const n = out.length;
+  const tab = whiteSync(8192, r);
+  const sc = new Float32Array(Math.round(0.07 * sr));
+  const events = Math.round(((o.rate ?? 34) * n) / sr);
+  for (let k = 0; k < events; k++) {
+    let at = (r() * n) | 0;
+    const more = r() < 0.35 ? 1 + ((r() * 3) | 0) : 0;
+    for (let j = 0; j <= more; j++) {
+      const a = (o.amp ?? 1) * (0.2 + 0.8 * r() * r());
+      let m;
+      sc.fill(0);
+      if (r() < (o.snap ?? 0.16)) {
+        // a woody crack: a few ms of low-passed grit and a low ping
+        m = Math.round((0.004 + 0.006 * r()) * sr);
+        const off = (r() * 8000) | 0;
+        let y = 0;
+        for (let i = 0; i < m; i++) {
+          y += 0.35 * (tab[(off + i) & 8191] - y);
+          sc[i] = 2.2 * a * y * E((-i * 4) / m) * (i < 6 ? i / 6 : 1);
+        }
+        damped(sc, sr, 0, 600 + 1100 * r(), 0.7 * a, 0.003 + 0.004 * r(), r() * 6.28);
+        m = Math.round(0.05 * sr);
+      } else {
+        // a tick: a few samples of grit and a bright ping
+        m = Math.round((0.0015 + 0.0035 * r()) * sr);
+        const off = (r() * 8000) | 0;
+        let prev = 0;
+        for (let i = 0; i < m; i++) {
+          const x = tab[(off + i) & 8191];
+          sc[i] = 0.9 * a * (x - prev) * E((-i * 4) / m);
+          prev = x;
+        }
+        damped(sc, sr, 0, 2500 + 5500 * r(), 0.55 * a, 0.0004 + 0.0012 * r(), r() * 6.28);
+        m = Math.round(0.012 * sr);
+      }
+      for (let i = 0; i < m; i++) out[(at + i) % n] += sc[i];
+      at += Math.round((0.004 + 0.03 * r()) * sr);
+    }
+    if ((k & 15) === 15) yield;
+  }
+}
+
 // Little jitter on a recipe's numbers so no two variants are alike (jit: 0 on a layer keeps it exact).
 const JIT = ['f0', 'f1', 'fA', 'fB', 'fc', 'tau', 'tauF', 'tp', 'dur', 'hp', 'base', 'snapFc', 'fLo', 'fHi'];
 export function jitter(L, r, k0 = 0.1) {
@@ -407,6 +500,9 @@ export function* runLayers(layers, out, sr, r, jit = 0.1) {
         break;
       case 'tinkle':
         yield* tinkle(out, sr, r, { ...L, t0: L.t0 + off, t1: L.t1 + off });
+        break;
+      case 'rev':
+        yield* rev(out, sr, r, at, L);
         break;
       default:
         throw new Error(`no layer ${L.k}`);

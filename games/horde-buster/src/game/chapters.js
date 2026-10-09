@@ -13,71 +13,110 @@ const lin = (hex) => {
   return c.map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
 };
 
-// Side scenery: props laid out along both sides of the road, mirrored with
-// variety. Every prop is a sprite name from the atlas; x, y are its ground point.
-function cityScenery(seed) {
+// The battlefield, laid out for a field W units wide: a city boulevard
+// edge to edge with sidewalks down both screen edges, a broken barricade
+// across the top the horde pours through, wrecked cars and barriers in play
+// that it has to go around (`block`), and the old street beyond the edges
+// for very wide screens. Every prop is an atlas sprite; x, y its ground point.
+function cityField(seed, W) {
   const r = rng(seed);
   const props = [];
-  const add = (name, x, y, scale = 1, flip = 1) => props.push({ name, x, y, scale, flip });
-  for (const side of [-1, 1]) {
-    const edge = side < 0 ? 0 : 720;
-    const out = (d) => edge + side * d; // d units away from the road edge
-    // jersey barriers and cones along the kerb, with gaps
-    for (let y = -300; y < 1700; y += 150 + r() * 120) {
-      const k = r();
-      if (k < 0.35) add('barrier', out(10 + r() * 14), y, 1, side);
-      else if (k < 0.55) add('cone', out(6 + r() * 20), y, 1, side);
-      else if (k < 0.65) add('sawhorse', out(14), y, 1, side);
-    }
-    // wrecked cars half on the kerb
-    for (let y = -200 + r() * 200; y < 1700; y += 420 + r() * 380) add(['car_0', 'car_1', 'car_2', 'police_car'][Math.floor(r() * 4)], out(70 + r() * 40), y, 1, r() < 0.5 ? 1 : -1);
-    // the sidewalk: lamps, hydrants, benches, bins, a bus stop, fire barrels
-    for (let y = -250 + r() * 100; y < 1700; y += 330 + r() * 60) add('lamp_post', out(165), y, 1, side);
-    for (let y = -100 + r() * 300; y < 1700; y += 260 + r() * 260) {
-      const k = r();
-      add(k < 0.25 ? 'hydrant' : k < 0.45 ? 'bench' : k < 0.65 ? 'trash_bags' : k < 0.8 ? 'tyre' : k < 0.9 ? 'fire_barrel' : 'crate', out(105 + r() * 60), y, 1, side);
-    }
-    add('bus_stop', out(150), 380 + r() * 500, 1, side);
-    // the verge: chunky trees and bushes
-    for (let y = -300 + r() * 120; y < 1750; y += 170 + r() * 90) add(r() < 0.75 ? `tree_${Math.floor(r() * 3)}` : `bush_${Math.floor(r() * 2)}`, out(240 + r() * 120), y, 0.9 + r() * 0.3, r() < 0.5 ? 1 : -1);
-    // the plaza: dumpsters, rubble, sandbags, a fence, parked wrecks
-    for (let y = -200 + r() * 200; y < 1700; y += 300 + r() * 200) {
-      const k = r();
-      add(k < 0.25 ? 'dumpster' : k < 0.45 ? 'rubble_0' : k < 0.6 ? 'rubble_1' : k < 0.75 ? 'sandbags' : k < 0.88 ? 'fence' : 'rubble_2', out(470 + r() * 160), y, 1, r() < 0.5 ? 1 : -1);
-    }
-    for (let y = 0 + r() * 300; y < 1700; y += 520 + r() * 300) add(`car_${Math.floor(r() * 3)}`, out(560 + r() * 120), y, 1, r() < 0.5 ? 1 : -1);
-    add('bus', out(430), 900 + r() * 300, 1, side);
-    // buildings shoulder to shoulder on the far sides
-    let y = -420;
-    while (y < 1800) {
-      const b = Math.floor(r() * 4);
-      add(`building_${b}`, out(820 + r() * 60), y, 1, r() < 0.5 ? 1 : -1);
-      y += 300 + r() * 80;
+  const add = (name, x, y, scale = 1, flip = 1, block = false) => props.push({ name, x, y, scale, flip, block });
+  const flip = () => (r() < 0.5 ? 1 : -1);
+  const wreck = () => ['car_0', 'car_2', 'police_car', 'car_1'][Math.floor(r() * 4)];
+  // the barricade across the top, with gaps
+  for (let x = 30 + r() * 60; x < W - 30; x += 110 + r() * 150) {
+    const k = r();
+    const y = 46 + r() * 64;
+    if (k < 0.2) add('sandbags', x, y, 1, flip());
+    else if (k < 0.36) add('barrier', x, y, 1, flip());
+    else if (k < 0.46) add('fire_barrel', x, y);
+    else if (k < 0.56) add('cone', x, y);
+    else if (k < 0.66) add('sawhorse', x, y, 1, flip());
+    else if (k < 0.74) add('tyre', x, y);
+    else if (k < 0.82) add('crate', x, y);
+    else {
+      add(wreck(), x, y - 10, 0.92, flip());
+      x += 90;
     }
   }
+  // further up the road (phones show more of it): rubble and wrecks
+  for (let x = 60 + r() * 120; x < W - 60; x += 260 + r() * 220) {
+    const k = r();
+    add(k < 0.4 ? wreck() : k < 0.7 ? `rubble_${Math.floor(r() * 3)}` : 'dumpster', x, -120 - r() * 360, 1, flip());
+  }
+  // the sidewalks down both screen edges
+  for (const side of [0, 1]) {
+    const at = (d) => (side ? W - d : d);
+    for (let y = 170 + r() * 80; y < 900; y += 300 + r() * 80) add('lamp_post', at(36), y, 1, side ? -1 : 1);
+    for (let y = 240 + r() * 120; y < 900; y += 210 + r() * 160) {
+      const k = r();
+      add(k < 0.3 ? 'hydrant' : k < 0.5 ? 'trash_bags' : k < 0.7 ? 'bench' : k < 0.85 ? 'tyre' : 'fire_barrel', at(30 + r() * 28), y, 1, side ? -1 : 1);
+    }
+    for (let y = 120 + r() * 200; y < 1300; y += 330 + r() * 220) add(`tree_${Math.floor(r() * 3)}`, at(-70 - r() * 30), y, 0.95 + r() * 0.2, flip());
+  }
+  // in play: wrecks and barrier runs the horde must go round
+  const n = Math.round(2 + (1.7 * W) / 720);
+  const spots = [];
+  for (let tries = 0; spots.length < n && tries < 200; tries++) {
+    const x = 170 + r() * (W - 340);
+    const y = 300 + r() * 470;
+    if (spots.some((p) => (p.x - x) ** 2 + ((p.y - y) * 1.6) ** 2 < 300 * 300)) continue;
+    spots.push({ x, y });
+    const k = r();
+    if (k < 0.55) add(wreck(), x, y, 1, flip(), true);
+    else if (k < 0.8) {
+      add('barrier', x - 70, y, 1, 1, true);
+      add('barrier', x + 70, y + 6, 1, -1, true);
+    } else if (k < 0.9) add('dumpster', x, y, 1, flip(), true);
+    else {
+      add('sandbags', x - 60, y, 1, 1, true);
+      add('sandbags', x + 60, y - 4, 1, -1, true);
+    }
+  }
+  // beyond the edges, only seen on very wide screens: verge, plaza, buildings
+  for (const side of [-1, 1]) {
+    const out = (d) => (side < 0 ? -d : W + d);
+    for (let y = -300 + r() * 120; y < 1500; y += 170 + r() * 90) add(r() < 0.75 ? `tree_${Math.floor(r() * 3)}` : `bush_${Math.floor(r() * 2)}`, out(190 + r() * 120), y, 0.9 + r() * 0.3, flip());
+    for (let y = -200 + r() * 200; y < 1500; y += 300 + r() * 200) {
+      const k = r();
+      add(k < 0.3 ? 'dumpster' : k < 0.55 ? 'rubble_0' : k < 0.75 ? 'sandbags' : 'fence', out(420 + r() * 140), y, 1, flip());
+    }
+    add('bus', out(380), 700 + r() * 300, 1, side);
+    for (let y = -420; y < 1600; y += 300 + r() * 80) add(`building_${Math.floor(r() * 4)}`, out(760 + r() * 60), y, 1, flip());
+  }
   return props;
+}
+
+// The ground for a field W wide: asphalt edge to edge but for a sidewalk at each screen edge.
+function cityGround(W) {
+  const x0 = 96;
+  const x1 = W - 96;
+  return {
+    kind: 0,
+    rect: { x: -1000, y: -820, w: W + 2000, h: 2400 },
+    road: [x0, x1, 18, 150], // road x0, x1, kerb width, sidewalk width
+    verge: [220, 260, 1.7, 96], // verge width, parking-bay offset into the plaza, seed, lane dash length
+    lanes: Math.max(3, Math.round((x1 - x0) / 230)),
+    cross: [150, 236, 46, 1], // a zebra crossing near the top: y0, y1, stripe period, on
+    colors: {
+      asphalt: lin('#3c424c'),
+      asphalt2: lin('#4a515b'),
+      kerb: lin('#b8b3a8'),
+      walk: lin('#8f8c86'),
+      grass: lin('#4f9a2c'),
+      dirt: lin('#6e5638'),
+      plaza: lin('#77746f'),
+      line: lin('#ece6d4'),
+    },
+  };
 }
 
 export const CHAPTERS = [
   {
     id: 'city',
     name: 'City Road',
-    ground: {
-      kind: 0,
-      rect: { x: -1700, y: -480, w: 4120, h: 2240 },
-      road: [0, 720, 22, 160], // road x0, x1, kerb width, sidewalk width
-      verge: [220, 260, 1.7, 96], // verge width, parking-bay offset into the plaza, seed, lane dash length
-      colors: {
-        asphalt: lin('#3c424c'),
-        asphalt2: lin('#4a515b'),
-        kerb: lin('#b8b3a8'),
-        walk: lin('#8f8c86'),
-        grass: lin('#4f9a2c'),
-        dirt: lin('#6e5638'),
-        plaza: lin('#77746f'),
-        line: lin('#ece6d4'),
-      },
-    },
+    ground: cityGround,
     look: {
       key: [-0.36, 0.56, 0.75, 0],
       keyCol: [1.0, 0.95, 0.86, 0],
@@ -87,7 +126,7 @@ export const CHAPTERS = [
       fog: [0.32, 0.38, 0.48, 0.0],
       bloomThreshold: 1.05,
     },
-    scenery: () => cityScenery(7),
+    scenery: (W) => cityField(7, W),
     boss: 'ogre',
     waves: [
       {
@@ -193,10 +232,12 @@ export const CHAPTERS = [
   },
 ];
 
-// what clearing each wave gives: coins and bonus XP, and sometimes a weapon
-export function waveReward(chapter, wave, kills) {
-  const coins = 60 + 45 * (wave + 1) + Math.floor(kills * 0.6) + (chapter.waves[wave].boss ? 250 : 0);
+// What clearing each wave gives: coins, bonus XP, and on waves 2 and 4 a
+// star for the gun in hand. c is the field's creature-count scale (a wide
+// field has more creatures: coins per kill keep the same pace).
+export function waveReward(chapter, wave, kills, c = 1) {
+  const coins = 60 + 45 * (wave + 1) + Math.floor((kills / c) * 0.6) + (chapter.waves[wave].boss ? 250 : 0);
   const xp = 40 * (wave + 1);
-  const weapon = wave === 1 ? 'scatter' : wave === 3 ? 'rocket' : null;
-  return { coins, xp, weapon };
+  const star = wave === 1 || wave === 3;
+  return { coins, xp, star };
 }
