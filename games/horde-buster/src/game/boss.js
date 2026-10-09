@@ -101,7 +101,7 @@ export class Ogre {
         break;
       }
       case 'barrage': {
-        if (this.t <= this.next) {
+        if (this.volleys > 0 && this.t <= this.next) {
           this.next -= 0.55 / fast;
           this.volleys--;
           const mx = x + mouth[0];
@@ -213,8 +213,8 @@ export class Ogre {
     this.lastAttack = next;
     if (next === 'barrage') {
       this.state = 'barrage';
-      this.volleys = ph === 1 ? 3 : ph === 2 ? 4 : 5;
-      this.t = this.volleys * 0.55 + 0.4;
+      this.volleys = ph === 1 ? 4 : ph === 2 ? 6 : 8;
+      this.t = ((this.volleys - 1) * 0.55) / (ph === 1 ? 1 : ph === 2 ? 1.25 : 1.5) + 0.4;
       this.next = this.t - 0.25;
       this.run.sound.bossRoar();
     } else {

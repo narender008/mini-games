@@ -497,8 +497,7 @@ export class Run {
       this.runScript(dt);
       // once the script has run, the last few stragglers rush the hero (no hunting them across a wide field)
       this.mopUp = !W.boss && this.scriptDone() && this.enemies.n <= Math.round(10 * FIELD.c);
-      const bossDead = W.boss && this.boss && !this.enemies.alive[this.boss.i];
-      if ((!W.boss && this.scriptDone() && this.enemies.n === 0) || bossDead) {
+      if ((!W.boss && this.scriptDone() && this.enemies.n === 0) || this.bossDown()) {
         this.phase = 'clear';
         this.phaseT = W.boss ? 3.2 : 1.6;
         this.magnetAll = 3;
@@ -1471,6 +1470,21 @@ export class Run {
     this.app.flash?.(1, 0.95, 0.85, 0.6);
     this.app.bloomKick?.(1.5);
     E.remove(j);
+    if (this.boss?.i === j) this.boss.i = -1;
+    // every shot and pool still out goes pop with it: nothing left can take the win away
+    const S = this.shots;
+    for (let i = 0; i < S.n; i++) {
+      const c = SHOT_KINDS[S.kind[i]].col;
+      this.fx.flash(S.x[i], S.y[i], 0, 40, c[0], c[1], c[2], 0.12);
+      this.fx.sparks(S.x[i], S.y[i], 0, 4, c[0], c[1], c[2], 260, 0, -1, TAU);
+    }
+    S.reset();
+    const H = this.hazards;
+    for (let i = 0; i < H.n; i++) {
+      const c = HAZARD_LIST[H.kind[i]].col;
+      this.fx.ring(H.x[i], H.y[i], H.r[i] * 0.3, H.r[i], c[0], c[1], c[2], 0.35, UNDER);
+    }
+    H.reset();
     // the rest of the horde bursts with it
     for (let k = E.n - 1; k >= 0; k--) {
       const i = E.list[k];
@@ -1865,7 +1879,7 @@ export class Run {
         break;
       case 'chest':
         this.pendingChests++;
-        this.coins += 60;
+        this.bank(60);
         break;
       case 'crate':
         this.grabCrate(CRATE_GUNS[w]);
@@ -1882,6 +1896,12 @@ export class Run {
     }
   }
 
+  // coins found mid-wave reach the armoury at once (the wave's own reward is banked when the wave ends)
+  bank(n) {
+    this.coins += n;
+    this.events.coins?.(n);
+  }
+
   // the same gun levels up (to three stars); another one swaps in on the spot, keeping its own stars
   grabCrate(id) {
     const h = this.hero;
@@ -1893,7 +1913,7 @@ export class Run {
       } else {
         // already maxed: a pinch of health and coins
         this.heal(12);
-        this.coins += 25;
+        this.bank(25);
         this.sound.weaponUp?.(3);
       }
       this.events.weapon?.(id, false);
@@ -1964,9 +1984,14 @@ export class Run {
     this.beginWave(this.wave + 1);
   }
 
-  // between waves nothing fires and nothing hurts
+  // between waves nothing fires and nothing hurts, nor once the boss is down
   calm() {
-    return this.phase === 'reward' || this.phase === 'break' || this.phase === 'victory';
+    return this.phase === 'reward' || this.phase === 'break' || this.phase === 'victory' || this.bossDown();
+  }
+
+  // this boss wave's boss is dead (bossDeath gives up its slot, so a creature reusing it never counts)
+  bossDown() {
+    return !!this.boss && !!this.W.boss && !this.enemies.alive[this.boss.i];
   }
 }
 

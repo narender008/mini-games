@@ -135,7 +135,7 @@ export class Screens {
     const kids = [
       h('div', { class: 'rays' }),
       h('div', { class: 'wv-ribbon' }, h('span', { class: 'gtext', text: 'WAVE COMPLETE!' })),
-      h('p', { class: 'wv-sub', text: `Wave ${info.wave} of ${info.waves}` }),
+      h('p', { class: 'wv-sub', text: info.waves > 0 ? `Wave ${info.wave} of ${info.waves}` : `Wave ${info.wave}` }),
       tiles,
     ];
     const w = info.weapon;

@@ -706,8 +706,9 @@ function rip(run, j, dmg, nx, ny, kb) {
   const y = E.y[j];
   const h = T0.hitY * E.scale[j];
   const col = T0.blood;
-  const lethal = E.hp[j] <= dmg;
-  run.hurt(j, lethal ? Math.max(0, E.hp[j] - 0.01) : dmg, nx, ny, kb, CRIT | PROC | QUIET);
+  const tough = E.hp[j] + E.armor[j];
+  const lethal = tough <= dmg;
+  run.hurt(j, lethal ? Math.max(0, tough - 0.01) : dmg, nx, ny, kb, CRIT | PROC | QUIET);
   const fx = run.fx;
   if (lethal) {
     if (E.alive[j] && !E.dying[j]) run.kill(j, 'crit', nx, ny);

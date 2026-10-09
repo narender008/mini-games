@@ -387,7 +387,7 @@ class App {
       this.sound.setMuted(value);
       this.ui.setMuted(value);
     } else if (name === 'quality') {
-      const t = value === 'auto' ? detectQuality() : tierSettings(value);
+      const t = value === 'auto' ? detectQuality(null) : tierSettings(value);
       if (t) {
         Object.assign(this.q, t, { scale: 1 });
         this.resize();
@@ -431,6 +431,11 @@ class App {
           this.data.unlocked.push(id);
           if (this.persist) Save.save();
         }
+      },
+      coins: (n) => {
+        if (this.run.demo) return;
+        this.data.coins += n;
+        if (this.persist) Save.save();
       },
       waveComplete: (info) => {
         if (this.run.demo) {
@@ -510,16 +515,18 @@ class App {
     };
   }
 
+  // endless keeps its own record (endlessBest)
   recordBest(cleared = false) {
     const r = this.run;
+    if (r.endless) return false;
     const b = this.data.best;
-    const mine = { wave: r.wave + 1 + (cleared ? 1 : 0), chapter: r.chapterIndex + 1, kills: r.kills };
+    const mine = { wave: r.wave + 1, chapter: r.chapterIndex + 1, kills: r.kills, cleared };
     // the furthest wave reached in each chapter, for its card on the title screen
-    if (!r.endless) {
-      const bw = (this.data.bestWave ||= {});
-      bw[r.chapter.id] = Math.max(bw[r.chapter.id] || 0, r.wave + 1);
-    }
-    const better = !b || mine.chapter > b.chapter || (mine.chapter === b.chapter && (mine.wave > b.wave || (mine.wave === b.wave && mine.kills > b.kills)));
+    const bw = (this.data.bestWave ||= {});
+    bw[r.chapter.id] = Math.max(bw[r.chapter.id] || 0, r.wave + 1);
+    // clearing the last wave goes further than dying on it
+    const reach = (x) => x.wave + (x.cleared ? 1 : 0);
+    const better = !b || mine.chapter > b.chapter || (mine.chapter === b.chapter && (reach(mine) > reach(b) || (reach(mine) === reach(b) && mine.kills > b.kills)));
     if (better) this.data.best = mine;
     if (this.persist) Save.save();
     return better;
@@ -716,7 +723,7 @@ class App {
     // reused per gun so the HUD state allocates nothing each frame
     this.wInfo = this.wInfo || {};
     const id = run.gun(slot);
-    const o = this.wInfo[id] || (this.wInfo[id] = { id, name: WEAPONS[id].name, stars: 1, evolved: id === 'railgun' });
+    const o = this.wInfo[id] || (this.wInfo[id] = { id, name: WEAPONS[id].name, stars: 1, evolved: id !== slot });
     o.stars = run.arms[slot];
     return o;
   }
@@ -822,7 +829,7 @@ class App {
       },
       state() {
         const r = run();
-        return { state: app.state, phase: r.phase, chapter: r.chapter.id, endless: !!r.endless, wave: r.wave + 1, hazards: r.hazards.n, boss: r.boss ? { key: TYPES[r.enemies.type[r.boss.i]].key, state: r.boss.state, hp: Math.round(r.enemies.hp[r.boss.i]) } : null, level: r.level, xp: r.xp, hp: r.hero.hp, field: ARENA.w, enemies: r.enemies.n, bullets: r.bullets.n, particles: r.fx.n, gibs: r.gore.n, gems: r.gems.n, pickups: r.pickups.n, kills: r.kills, weapons: r.weapons.map((w) => `${w.id}*${w.stars}`), surges: { ...r.surge }, upgrades: { ...r.levels }, evolved: Object.keys(r.evolved), missingFrames: [...app.atlas.missing] };
+        return { state: app.state, phase: r.phase, chapter: r.chapter.id, endless: !!r.endless, wave: r.wave + 1, hazards: r.hazards.n, boss: r.boss && r.boss.i >= 0 ? { key: TYPES[r.enemies.type[r.boss.i]].key, state: r.boss.state, hp: Math.round(r.enemies.hp[r.boss.i]) } : null, level: r.level, xp: r.xp, hp: r.hero.hp, field: ARENA.w, enemies: r.enemies.n, bullets: r.bullets.n, particles: r.fx.n, gibs: r.gore.n, gems: r.gems.n, pickups: r.pickups.n, kills: r.kills, weapons: r.weapons.map((w) => `${w.id}*${w.stars}`), surges: { ...r.surge }, upgrades: { ...r.levels }, evolved: Object.keys(r.evolved), missingFrames: [...app.atlas.missing] };
       },
       bench(ms = 5000, n = 0, gun = 'scatter', chapter = null, boss = false) {
         let r = run();

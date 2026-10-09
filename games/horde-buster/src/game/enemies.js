@@ -185,11 +185,11 @@ export class Enemies {
       y[i] += ky[i] * dt;
       kx[i] *= kd;
       ky[i] *= kd;
+      if (T0.boss) continue; // boss.js moves (and thaws) the boss
       if (frozen[i] > 0) {
         frozen[i] -= dt;
         continue;
       }
-      if (T0.boss) continue; // boss.js moves the boss
       const sl = this.slow[i] > 0 ? 0.45 : 1;
       if (this.slow[i] > 0) this.slow[i] -= dt;
       const st = state[i];

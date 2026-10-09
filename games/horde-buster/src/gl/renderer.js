@@ -528,7 +528,11 @@ export class Renderer {
 
   render(s) {
     const gl = this.gl;
-    if (gl.lost || !this.base) return;
+    if (gl.lost || !this.base) {
+      s.splats.clear();
+      s.stamps.clear();
+      return;
+    }
     this.frameNo = (this.frameNo || 0) + 1;
     this.gpuBegin();
     const q = this.q;

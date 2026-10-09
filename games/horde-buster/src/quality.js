@@ -20,8 +20,8 @@ export function savedQuality() {
   }
 }
 
-export function detectQuality() {
-  const forced = QUERY.get('quality') || savedQuality();
+export function detectQuality(saved = savedQuality()) {
+  const forced = QUERY.get('quality') || saved;
   if (forced && TIERS[forced]) return { ...TIERS[forced], scale: 1, forced: true };
   const coarse = matchMedia('(pointer: coarse)').matches;
   const mobile = coarse || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
