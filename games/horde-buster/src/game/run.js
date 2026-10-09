@@ -415,8 +415,9 @@ export class Run {
   }
 
   updatePending(dt) {
-    const P = this.pend;
     for (let n = 0; n < this.pendN; n++) {
+      // read each time: a burst below may grow the queue into a new array
+      const P = this.pend;
       const k = n * 6;
       P[k + 4] -= dt;
       if (P[k + 4] > 0) continue;
