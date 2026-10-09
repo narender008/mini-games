@@ -1,5 +1,5 @@
 // The in-game HUD and the little popups over the arena (banner, kill-streak,
-// toasts). The HUD is built once; hud(s) runs every frame and only touches the
+// hint line). The HUD is built once; hud(s) runs every frame and only touches the
 // DOM when a rounded value really changed, so a steady frame writes nothing
 // and allocates nothing. Popups use the Web Animations API, started on events
 // only.
@@ -7,11 +7,12 @@ import { h, clamp, fmt, reduced } from './dom.js';
 import { icon, iconEl } from './icons.js';
 import { canFullscreen } from '../fullscreen.js';
 
-// display order is the 2x2 cluster, row by row
-const KEYS = ['shield', 'lightning', 'bomb', 'freeze'];
-const HINT = { bomb: 'LMB', shield: 'RMB', lightning: 'SPACE', freeze: 'E' };
-const LABEL = { bomb: 'Bomb', shield: 'Shield', lightning: 'Lightning', freeze: 'Freeze bomb' };
+// the two powers, side by side like the mouse buttons that fire them
+const KEYS = ['bomb', 'shield'];
+const MOUSE = { bomb: 'mouseL', shield: 'mouseR' };
+const LABEL = { bomb: 'Bomb (left click)', shield: 'Shield (right click)' };
 const MAX_WEAPONS = 6;
+const PULSE = { heart: '#ff5a78', bomb: '#ff7a3a', shield: '#5fc4ff', magnet: '#ff5a4a', chest: '#ffd23c' };
 const POINTER_EVENTS = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'dblclick'];
 
 // Keep a HUD control's mouse and touch events away from the game canvas, and
@@ -37,7 +38,7 @@ export class Hud {
     this.el = h('div', { class: 'hud', hidden: true });
 
     // cached values, compared every frame
-    this.c = { hp: -1, mhp: -1, hq: -1, lv: -1, wave: -1, waves: -1, xp: -1, xn: -1, xq: -1, boss: false, bname: null, bq: -1, coins: -1, kills: -1, muted: null, touch: null, low: null };
+    this.c = { hp: -1, mhp: -1, hq: -1, lv: -1, bank: -1, wave: -1, waves: -1, xp: -1, xn: -1, xq: -1, boss: false, bname: null, bq: -1, coins: -1, kills: -1, muted: null, touch: null, low: null };
     this.wc = { n: -1, id: new Array(MAX_WEAPONS).fill(''), st: new Array(MAX_WEAPONS).fill(0), ev: new Array(MAX_WEAPONS).fill(false) };
 
     // ---- top row: HP, level, wave
@@ -46,11 +47,14 @@ export class Hud {
     this.hpText = document.createTextNode('');
     this.lvText = document.createTextNode('');
     this.waveText = document.createTextNode('');
-    this.lvEl = h('div', { class: 'pill lv' }, h('span', { class: 'num' }, this.lvText));
+    // level-ups banked during a wave stack up here as a glowing +N, picked in the break
+    this.bankText = document.createTextNode('');
+    this.bankEl = h('span', { class: 'bank', hidden: true }, this.bankText);
+    this.lvEl = h('div', { class: 'pill lv' }, h('span', { class: 'num' }, this.lvText), this.bankEl);
     const row = h(
       'div',
       { class: 'row' },
-      h('div', { class: 'pill hp' }, h('span', { class: 'ico', html: icon('heart') }), h('div', { class: 'tw' }, hp.track, h('span', { class: 'num' }, this.hpText))),
+      (this.hpEl = h('div', { class: 'pill hp' }, h('span', { class: 'ico', html: icon('heart') }), h('div', { class: 'tw' }, hp.track, h('span', { class: 'num' }, this.hpText)))),
       this.lvEl,
       h('div', { class: 'pill wave' }, h('span', { class: 'ico', html: icon('skull') }), h('span', { class: 'num' }, this.waveText))
     );
@@ -60,6 +64,7 @@ export class Hud {
     this.xpBar = xp;
     this.xpText = document.createTextNode('');
     const xpRow = h('div', { class: 'xpbar' }, h('div', { class: 'tw' }, xp.track, h('span', { class: 'num' }, this.xpText)));
+    this.xpEl = xpRow;
 
     // ---- boss bar
     const bb = bar('boss');
@@ -79,7 +84,7 @@ export class Hud {
     const tools = h(
       'div',
       { class: 'tools' },
-      h('div', { class: 'chips' }, h('span', { class: 'chip' }, h('span', { class: 'ico', html: icon('coin') }), this.coinText), h('span', { class: 'chip' }, h('span', { class: 'ico', html: icon('skull') }), this.killText)),
+      h('div', { class: 'chips' }, (this.coinEl = h('span', { class: 'chip' }, h('span', { class: 'ico', html: icon('coin') }), this.coinText)), h('span', { class: 'chip' }, h('span', { class: 'ico', html: icon('skull') }), this.killText)),
       h('div', { class: 'btns' }, this.pauseBtn, this.soundBtn, this.fsBtn)
     );
 
@@ -94,7 +99,7 @@ export class Hud {
         { type: 'button', class: `ab ab-${key} full`, tabindex: '-1', 'aria-label': LABEL[key] },
         h('span', { class: 'face', html: icon(key) }),
         h('span', { class: 'cnt' }, cnt),
-        h('span', { class: 'key' }, HINT[key])
+        h('span', { class: 'key mouse', html: icon(MOUSE[key]) })
       );
       isolate(btn);
       // fire on press, not release: in a fight every frame counts
@@ -163,6 +168,13 @@ export class Hud {
       if (c.lv >= 0) this.pop(this.lvEl);
       c.lv = lv;
       this.lvText.data = `Lv. ${lv}`;
+    }
+    const bank = s.banked | 0;
+    if (bank !== c.bank) {
+      if (bank > c.bank && c.bank >= 0) this.pop(this.bankEl);
+      c.bank = bank;
+      this.bankEl.hidden = bank <= 0;
+      this.bankText.data = `+${bank}`;
     }
     if (s.wave !== c.wave || s.waves !== c.waves) {
       c.wave = s.wave;
@@ -246,7 +258,7 @@ export class Hud {
 
     // abilities
     const abs = s.abilities;
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < KEYS.length; i++) {
       const key = KEYS[i];
       const a = abs[key];
       if (!a) continue;
@@ -292,6 +304,14 @@ export class Hud {
     el.firstChild.animate([{ boxShadow: '0 0 0 0 rgba(255,255,255,.95)' }, { boxShadow: '0 0 0 .9em rgba(255,255,255,0)' }], { duration: 620, easing: 'ease-out' });
   }
 
+  // a pickup was grabbed: its HUD icon pulses in its colour
+  pulse(kind) {
+    const el = { heart: this.hpEl, bomb: this.ab.bomb.el, shield: this.ab.shield.el, magnet: this.xpEl, chest: this.coinEl }[kind];
+    if (!el || reduced()) return;
+    const col = PULSE[kind];
+    el.animate([{ transform: 'scale(1)', filter: 'brightness(1)' }, { transform: 'scale(1.18)', filter: `brightness(1.6) drop-shadow(0 0 .5em ${col})`, offset: 0.3 }, { transform: 'scale(1)', filter: 'brightness(1)' }], { duration: 520, easing: 'ease-out' });
+  }
+
   // Rebuilt only when the weapon list changes: the main card (weapons[0]) and
   // a small badge for each extra weapon.
   renderWeapons(ws, n) {
@@ -334,7 +354,7 @@ export class Hud {
   // forget the cache so the next hud() call redraws everything (new run)
   reset() {
     const c = this.c;
-    c.hp = c.mhp = c.hq = c.lv = c.wave = c.waves = c.xp = c.xn = c.xq = c.bq = c.coins = c.kills = -1;
+    c.hp = c.mhp = c.hq = c.lv = c.bank = c.wave = c.waves = c.xp = c.xn = c.xq = c.bq = c.coins = c.kills = -1;
     c.boss = false;
     c.bname = null;
     c.muted = c.touch = c.low = null;
@@ -347,7 +367,7 @@ export class Hud {
   }
 }
 
-// ---- banner, kill streak, toasts ----------------------------------------
+// ---- banner, kill streak, hint line -------------------------------------
 export class Popups {
   constructor(ui) {
     this.ui = ui;
@@ -364,7 +384,7 @@ export class Popups {
     this.sAnim = null;
   }
 
-  banner(title, sub = '', ms = 1800) {
+  banner(title, sub = '', ms = 1150) {
     this.bt.textContent = title;
     this.bs.textContent = sub;
     this.bs.hidden = !sub;
@@ -374,12 +394,11 @@ export class Popups {
       ? this.bIn.animate([{ opacity: 0 }, { opacity: 1, offset: 0.12 }, { opacity: 1, offset: 0.86 }, { opacity: 0 }], { duration: ms })
       : this.bIn.animate(
           [
-            { opacity: 0, transform: 'scale(2.6)', offset: 0 },
-            { opacity: 1, transform: 'scale(0.9)', offset: 0.09 },
-            { opacity: 1, transform: 'scale(1.05)', offset: 0.15 },
-            { opacity: 1, transform: 'scale(1)', offset: 0.2 },
-            { opacity: 1, transform: 'scale(1)', offset: 0.84 },
-            { opacity: 0, transform: 'scale(1.18)', offset: 1 },
+            { opacity: 0, transform: 'scale(1.5)', offset: 0 },
+            { opacity: 1, transform: 'scale(0.96)', offset: 0.1 },
+            { opacity: 1, transform: 'scale(1)', offset: 0.16 },
+            { opacity: 1, transform: 'scale(1)', offset: 0.8 },
+            { opacity: 0, transform: 'scale(1.06)', offset: 1 },
           ],
           { duration: ms, easing: 'ease-out' }
         );
@@ -416,23 +435,21 @@ export class Popups {
     this.sAnim = a;
   }
 
-  toast(text) {
+  // one short line that never stops play (first-time pickup hints); the newest replaces the last
+  hint(text) {
     const t = this.toasts;
-    while (t.children.length >= 3) t.firstChild.remove();
+    t.textContent = '';
     const el = h('div', { class: 'toast', text });
     t.appendChild(el);
-    const a = reduced()
-      ? el.animate([{ opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }], { duration: 2400 })
-      : el.animate(
-          [
-            { opacity: 0, transform: 'translateY(-.8em) scale(.8)', offset: 0 },
-            { opacity: 1, transform: 'translateY(0) scale(1.06)', offset: 0.09 },
-            { opacity: 1, transform: 'translateY(0) scale(1)', offset: 0.14 },
-            { opacity: 1, transform: 'translateY(0) scale(1)', offset: 0.84 },
-            { opacity: 0, transform: 'translateY(-.4em) scale(.96)', offset: 1 },
-          ],
-          { duration: 2400, easing: 'ease-out' }
-        );
+    const a = el.animate(
+      [
+        { opacity: 0, transform: 'translateY(.4em)', offset: 0 },
+        { opacity: 1, transform: 'translateY(0)', offset: 0.1 },
+        { opacity: 1, transform: 'translateY(0)', offset: 0.85 },
+        { opacity: 0, transform: 'translateY(0)', offset: 1 },
+      ],
+      { duration: 2200, easing: 'ease-out' }
+    );
     a.onfinish = () => el.remove();
   }
 

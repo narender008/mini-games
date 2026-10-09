@@ -13,7 +13,7 @@
 //     wave(n)                  jump to wave n (1-based) of the chapter
 //     boss()                   bring on the Ogre now
 //     god(on = true)           the hero takes no damage
-//     level(n)                 give n level-ups (the cards appear)
+//     level(n)                 gain n levels now (banked; their cards come in the break after the wave)
 //     pickup(kind)             drop magnet | freeze | shield | bomb | heart | lightning | chest
 //     kill()                   kill everything on the road
 //     bench(ms = 5000, n = 0)  measure frames for ms; with n > 0 first fills the road with n creatures (god mode on,
@@ -39,6 +39,17 @@ import * as Save from './save.js';
 import { canFullscreen, enterFullscreen, toggleFullscreen, isFullscreen } from './fullscreen.js';
 
 const $ = (id) => document.getElementById(id);
+// one short line the first time each pickup ever drops (and for the two powers at the first start)
+const HINTS = {
+  powers: 'Left-click: Bomb  ·  Right-click: Shield',
+  bomb: 'Left-click: Bomb  ·  grab for +2',
+  shield: 'Right-click: Shield  ·  grab for one now',
+  magnet: 'Magnet: pulls in every XP gem',
+  freeze: 'Freeze: stops the horde cold',
+  lightning: 'Lightning: strikes the moment you grab it',
+  heart: 'Heart: heals 35',
+  chest: 'Treasure: an extra card after the wave',
+};
 const HANDLE = { update() {}, stop() {} };
 // used if the sound module cannot start (every call does nothing)
 const SILENT = new Proxy({}, { get: (t, k) => (k === 'muted' ? false : k === 'ready' ? false : () => HANDLE) });
@@ -79,7 +90,7 @@ class App {
     this.input = new Input(this);
     this.governor = new FrameGovernor(this.q, () => this.resize());
     this.run = new Run(this);
-    this.hudState = { hp: 100, maxHp: 100, level: 1, xp: 0, xpNext: 1, wave: 1, waves: 5, chapter: '', weapons: [], abilities: null, boss: null, coins: 0, kills: 0, muted: false, lowHp: false, touch: false };
+    this.hudState = { hp: 100, maxHp: 100, level: 1, xp: 0, xpNext: 1, wave: 1, waves: 5, chapter: '', weapons: [], abilities: null, boss: null, coins: 0, kills: 0, muted: false, lowHp: false, touch: false, banked: 0 };
     this.bossHud = { name: '', hp: 1 };
     this.setChapter(0);
     this.resize();
@@ -171,6 +182,8 @@ class App {
     document.body.dataset.state = 'play';
     this.ui.resetHud();
     this.ui.showHud();
+    // the two powers, said once ever, a moment into the first run
+    setTimeout(() => this.firstHint('powers'), 2600);
     this.canvas.style.cursor = 'none';
     this.data.runs++;
     if (this.persist) Save.save();
@@ -280,10 +293,14 @@ class App {
     return {
       banner: (title, sub) => this.state === 'play' && this.ui.banner(title, sub),
       streak: (text, tier) => this.state === 'play' && this.ui.streak(text, tier),
-      toast: (text) => this.state === 'play' && this.ui.toast(text),
+      // a grab shows as a pulse on its HUD icon (and a burst on the hero, drawn by the run)
+      pickup: (kind) => this.state === 'play' && this.ui.pulse(kind),
+      // the first time each kind of pickup ever drops, one short line says what it does
+      dropped: (kind) => this.firstHint(kind),
       waveComplete: (info) => {
         if (this.run.demo) {
           this.run.claimReward();
+          this.run.nextWave();
           return;
         }
         this.state = 'wave';
@@ -295,10 +312,14 @@ class App {
         if (this.persist) Save.save();
         this.ui.showWaveComplete(info, () => {
           this.sound.claim();
-          this.state = 'play';
-          document.body.dataset.state = 'play';
-          this.canvas.style.cursor = 'none';
-          this.run.claimReward();
+          const rw = this.run.claimReward();
+          // after the boss the chapter is won; otherwise the banked level-ups are picked now
+          if (rw?.last) this.endBreak();
+          else {
+            this.breakN = this.run.pendingLevels + this.run.pendingChests;
+            this.breakI = 0;
+            this.breakCards();
+          }
         });
       },
       death: () => {
@@ -335,37 +356,65 @@ class App {
     return better;
   }
 
-  // level-ups and chests pause the road for a choice of cards
-  checkCards() {
+  // Level-ups and treasure never stop the road: they are banked during a
+  // wave and picked here, one card screen each, in the break after it.
+  breakCards() {
     const run = this.run;
-    if (this.state !== 'play' || run.demo || !run.hero.alive) return;
-    if (!run.pendingLevels && !run.pendingChests) return;
-    const chest = !run.pendingLevels && run.pendingChests > 0;
+    if (!run.pendingLevels && !run.pendingChests) {
+      this.endBreak();
+      return;
+    }
+    const chest = !run.pendingLevels;
     const cards = run.cards();
     if (!cards.length) {
       run.pendingLevels = 0;
       run.pendingChests = 0;
+      this.endBreak();
       return;
     }
-    if (this.autoPilot) {
-      run.pick(cards[this.autoPilot.pickCard(cards)]);
+    const done = () => {
       if (chest) run.pendingChests--;
       else run.pendingLevels--;
+    };
+    if (this.autoPilot) {
+      run.pick(cards[this.autoPilot.pickCard(cards)]);
+      done();
+      this.breakCards();
       return;
     }
     this.state = 'levelup';
     document.body.dataset.state = 'levelup';
     this.canvas.style.cursor = '';
     this.sound.levelUp();
-    this.ui.showLevelUp(chest ? 'TREASURE' : run.level, cards, (k) => {
+    // the level this pick belongs to (the bar has moved on while they were banked)
+    const lv = run.level - run.pendingLevels + 1;
+    this.breakI++;
+    const of = this.breakN > 1 ? `  ·  ${this.breakI} of ${this.breakN}` : '';
+    this.ui.showLevelUp(`${chest ? 'Treasure' : `Level ${lv}`}${of}`, cards, (k) => {
       run.pick(cards[k]);
-      if (chest) run.pendingChests--;
-      else run.pendingLevels--;
-      this.state = 'play';
-      document.body.dataset.state = 'play';
-      this.canvas.style.cursor = 'none';
-      this.last = performance.now();
+      done();
+      // let the picked screen leave before the next one comes in
+      setTimeout(() => this.breakCards(), 420);
     });
+  }
+
+  endBreak() {
+    if (this.state === 'over') return;
+    this.state = 'play';
+    document.body.dataset.state = 'play';
+    this.canvas.style.cursor = 'none';
+    this.last = performance.now();
+    this.run.nextWave();
+  }
+
+  firstHint(kind) {
+    if (this.run.demo || this.state !== 'play') return;
+    const seen = this.data.hints || (this.data.hints = {});
+    if (seen[kind]) return;
+    seen[kind] = 1;
+    if (this.persist) Save.save();
+    const text = HINTS[kind];
+    if (text) this.ui.hint(text);
   }
 
   // ---------------------------------------------------------------- feel
@@ -422,7 +471,6 @@ class App {
       }
       if (steps === MAX_STEPS) this.acc = 0;
       if (run.demo) this.demoTopUp();
-      this.checkCards();
     }
     this.render(dt, simulate ? this.acc / STEP : 1);
     this.updateHud();
@@ -484,6 +532,7 @@ class App {
     s.muted = this.data.settings.muted;
     s.lowHp = h.hp < run.stats.maxHp * 0.3;
     s.touch = this.input.usedTouch;
+    s.banked = run.pendingLevels + run.pendingChests;
     this.ui.hud(s);
     const low = this.state === 'play' && h.alive && s.lowHp;
     if (low !== this.lowSound) {
@@ -551,8 +600,9 @@ class App {
       god(on = true) {
         run().god = on;
       },
+      // gain n levels now (banked, picked in the next break)
       level(n = 1) {
-        run().pendingLevels += n;
+        for (let k = 0; k < n; k++) run().gainXp(run().xpNext - run().xp);
       },
       pickup(kind = 'magnet') {
         if (PICKUPS.includes(kind)) run().dropPickup(kind, rand(120, 600), 700);

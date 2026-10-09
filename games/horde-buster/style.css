@@ -457,6 +457,71 @@ a.chip:hover {
 .pill.lv .num {
   color: var(--gold);
 }
+.pill.lv {
+  position: relative;
+}
+.pill.lv .bank {
+  position: absolute;
+  top: -0.6em;
+  right: -0.45em;
+  padding: 0.12em 0.42em;
+  border: 0.12em solid var(--ol);
+  border-radius: 1em;
+  background: linear-gradient(180deg, #fff6b0, #f2a10a);
+  color: #3a1d00;
+  font-size: 0.68em;
+  line-height: 1;
+  box-shadow: 0 0 0.7em #ffd23c;
+  animation: bankglow 1.1s ease-in-out infinite alternate;
+}
+@keyframes bankglow {
+  to {
+    box-shadow: 0 0 1.3em #ffe36a, 0 0 0.3em #fff;
+  }
+}
+/* every power and pickup at a glance, on the pause screen */
+.guide {
+  margin: 0.2em 0 0.7em;
+  font-family: var(--font-body);
+}
+.ghead {
+  margin: 0.35em 0 0.3em;
+  color: var(--gold);
+  font-family: var(--font-display);
+  font-size: 0.62em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.ggrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.3em 0.6em;
+}
+.gitem {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  min-width: 0;
+  font-size: 0.66em;
+  line-height: 1.15;
+}
+.gico .ic {
+  display: block;
+  width: 2.4em;
+  height: 2.4em;
+}
+.gtx {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.gtx b {
+  font-family: var(--font-display);
+  letter-spacing: 0.03em;
+}
+.gtx span {
+  color: #c9d8ff;
+}
 .pill.wave {
   padding-left: 0.4em;
 }
@@ -710,8 +775,8 @@ a.chip:hover {
 .abil {
   display: grid;
   grid-template-columns: repeat(2, var(--abs));
-  gap: 0.95em 0.55em;
-  padding-bottom: 0.7em;
+  gap: 0.95em 0.7em;
+  padding-bottom: 1.3em;
 }
 .ab {
   --col: #4aa8ff;
@@ -800,6 +865,20 @@ a.chip:hover {
   transform: translateX(-50%);
   white-space: nowrap;
 }
+.ab .key.mouse {
+  bottom: -1.25em;
+  display: grid;
+  place-items: center;
+  width: 2.3em;
+  height: 2.3em;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 1em;
+}
+.ab .key.mouse .ic {
+  width: 2em;
+  height: 2em;
+}
 .hud[data-touch='1'] .key {
   display: none;
 }
@@ -812,7 +891,7 @@ a.chip:hover {
   position: absolute;
   left: 0;
   right: 0;
-  top: 25%;
+  top: 19%;
   display: flex;
   justify-content: center;
 }
@@ -822,70 +901,86 @@ a.chip:hover {
 }
 .banner .bt {
   --tg: linear-gradient(180deg, #ffffff 0%, #ffe36a 45%, #ff8f1a 100%);
-  font-size: 3.4em;
+  font-size: 2.2em;
   line-height: 1;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 .banner .bs {
-  margin-top: 0.35em;
+  margin-top: 0.3em;
   color: #ffe9a8;
-  font-size: 1.1em;
+  font-size: 0.8em;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   text-shadow: var(--tsh-s);
 }
 .streak {
+  /* off to the side, clear of the hero and the horde */
+  --tk: 1;
   position: absolute;
-  left: 0;
-  right: 0;
-  top: 17em;
+  left: 0.5em;
+  top: 44%;
   --glow: transparent;
   color: #fff;
-  font-size: 1.7em;
+  font-size: calc(1.05em * var(--tk));
   letter-spacing: 0.05em;
-  text-align: center;
+  text-align: left;
   text-transform: uppercase;
+  white-space: nowrap;
+  transform-origin: 0 50%;
   text-shadow: var(--tsh-s), 0 0 0.6em var(--glow);
 }
 .streak.t2 {
   --glow: #ffd23c;
+  --tk: 1.1;
   color: #ffd23c;
-  font-size: 1.95em;
 }
 .streak.t3 {
   --glow: #ff8a1a;
+  --tk: 1.2;
   color: #ff9a2e;
-  font-size: 2.2em;
 }
 .streak.t4 {
   --glow: #ff3b3b;
+  --tk: 1.3;
   color: #ff4a4a;
-  font-size: 2.5em;
 }
 .streak.t5 {
   --glow: #ff4df0;
+  --tk: 1.4;
   color: #ff6af2;
-  font-size: 2.8em;
   animation: hue 1.2s linear infinite;
+}
+/* with street on both sides, the callout sits out there, beside the road */
+#ui[data-wide='1'] .pops {
+  overflow: visible;
+}
+#ui[data-wide='1'] .streak {
+  left: auto;
+  right: calc(100% + 0.8em);
+  top: 38%;
+  font-size: calc(1.45em * var(--tk));
+  text-align: right;
+  transform-origin: 100% 50%;
 }
 .toasts {
   position: absolute;
   left: 0;
   right: 0;
-  top: 11.2em;
+  top: 11.6em;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.35em;
 }
 .toast {
-  padding: 0.45em 1.1em;
-  border: 0.13em solid var(--gold);
-  border-radius: 1.2em;
-  background: linear-gradient(180deg, rgba(30, 44, 110, 0.95), rgba(8, 13, 42, 0.95));
-  box-shadow: 0 0.2em 0 var(--ol), 0 0.4em 0.8em rgba(0, 0, 0, 0.4);
-  font-size: 0.9em;
+  /* a first-time hint: one quiet line that never stops play */
+  padding: 0.3em 0.9em;
+  border: 0.1em solid rgba(255, 255, 255, 0.35);
+  border-radius: 1em;
+  background: rgba(8, 13, 42, 0.78);
+  font-size: 0.72em;
+  white-space: nowrap;
   letter-spacing: 0.04em;
   text-shadow: var(--tsh-s);
 }

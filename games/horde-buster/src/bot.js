@@ -1,8 +1,10 @@
 // A stand-in player for testing and balancing (?debug only): steers toward
 // the thickest column of the horde while keeping clear of claws and shots,
-// throws bombs into crowds, raises the shield when cornered, picks upgrade
-// cards by a simple priority and claims rewards. `sim` runs a whole chapter
-// as fast as the CPU allows (no drawing) and reports how it went.
+// throws bombs into crowds, raises the shield when cornered or under a
+// barrage, picks upgrade cards by a simple priority in the break after each
+// wave and claims rewards. skill < 1 is a weaker player: it rethinks its lane
+// less often (a human's reaction time), weighs danger less and wanders. `sim`
+// runs a whole chapter as fast as the CPU allows (no drawing).
 import { ARENA, BAND, STEP, clamp } from './config.js';
 import { TYPES } from './game/enemies.js';
 
@@ -12,6 +14,13 @@ export function pilot(run, skill = 1) {
   const h = run.hero;
   const E = run.enemies;
   if (!h.alive) return;
+  // a weaker player decides less often and less precisely
+  run.botT = (run.botT || 0) - 1 / 60;
+  if (run.botT > 0) {
+    abilities(run, h, E);
+    return;
+  }
+  run.botT = skill >= 1 ? 0 : 0.12 + (1 - skill) * 0.9;
   // score each lane by how many creatures are up the road in it, minus danger close by
   let bestX = h.x;
   let best = -1e9;
@@ -45,9 +54,13 @@ export function pilot(run, skill = 1) {
     if (b.state === 'charge_wind' || b.state === 'charge') bestX = Math.abs(h.x - b.lockX) < 160 ? (b.lockX > ARENA.w / 2 ? b.lockX - 260 : b.lockX + 260) : bestX;
     if (b.state === 'slam_wind') bestX = b.slamX > ARENA.w / 2 ? 70 : ARENA.w - 70;
   }
+  if (skill < 1) bestX += (Math.random() - 0.5) * 160 * (1 - skill);
   run.target.x = clamp(bestX, BAND.x0, BAND.x1);
   run.target.y = BAND.y1 - 30;
-  // abilities
+  abilities(run, h, E);
+}
+
+function abilities(run, h, E) {
   let near = 0;
   let cx = 0;
   let cy = 0;
@@ -72,8 +85,6 @@ export function pilot(run, skill = 1) {
     if (d < 260 && (dx * S.vx[k] + dy * S.vy[k]) / (d || 1) > 150) incoming++;
   }
   if ((h.hp < run.stats.maxHp * 0.45 && near >= 4) || near >= 25 || incoming >= 4) run.useAbility('shield');
-  if (E.n > 40 && run.abil.lightning.charges > 0) run.useAbility('lightning');
-  if (near >= 18 && run.abil.freeze.charges > 0) run.useAbility('freeze', cx / near, cy / near);
 }
 
 export function pickCard(cards) {
@@ -104,18 +115,20 @@ export function sim(app, maxSeconds = 900, skill = 1) {
     run.step(STEP);
     t += STEP;
     minHp = Math.min(minHp, run.hero.hp);
-    while (run.pendingLevels > 0 || run.pendingChests > 0) {
-      const cards = run.cards();
-      if (!cards.length) break;
-      run.pick(cards[pickCard(cards)]);
-      if (run.pendingLevels > 0) run.pendingLevels--;
-      else run.pendingChests--;
-    }
     if (run.phase === 'reward') {
       log.push({ wave: run.wave + 1, secs: +(run.time - waveStart).toFixed(1), level: run.level, hp: Math.round(run.hero.hp), minHp: Math.round(minHp), hits: run.hitsTaken, kills: run.kills, peak: app.simPeak || 0, weapons: run.weapons.map((w) => `${w.id}*${w.stars}`).join(' ') });
       minHp = run.hero.hp;
       app.simPeak = 0;
       run.claimReward();
+      // the banked level-ups are picked in the break, as a player does
+      while (run.pendingLevels > 0 || run.pendingChests > 0) {
+        const cards = run.cards();
+        if (!cards.length) break;
+        run.pick(cards[pickCard(cards)]);
+        if (run.pendingLevels > 0) run.pendingLevels--;
+        else run.pendingChests--;
+      }
+      run.nextWave();
       waveStart = run.time;
       if (run.phase === 'victory') break;
     }

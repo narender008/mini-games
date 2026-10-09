@@ -244,6 +244,21 @@ const ICONS = {
       `<path d="M18 39h9v11c0 2-1 3-3 3h-3c-2 0-3-1-3-3z" fill="${G('dark')}" ${S}/>` +
       `<rect x="18" y="28" width="16" height="5" rx="2.5" fill="#7fe8ff"/>`
   ),
+  // mouse buttons: the lit side is the button for that power
+  mouseL:
+    `<rect x="15" y="5" width="34" height="54" rx="17" fill="${G('white')}" ${S}/>` +
+      `<path d="M32 5a17 17 0 0 0-17 17v9h17z" fill="${G('orange')}" ${S2}/>` +
+      `<path d="M32 5a17 17 0 0 1 17 17v9H32z" fill="${G('dark')}" ${S2}/>` +
+      `<rect x="29.5" y="12" width="5" height="10" rx="2.5" fill="#ffffff" ${S2}/>`,
+  mouseR:
+    `<rect x="15" y="5" width="34" height="54" rx="17" fill="${G('white')}" ${S}/>` +
+      `<path d="M32 5a17 17 0 0 0-17 17v9h17z" fill="${G('dark')}" ${S2}/>` +
+      `<path d="M32 5a17 17 0 0 1 17 17v9H32z" fill="${G('blue')}" ${S2}/>` +
+      `<rect x="29.5" y="12" width="5" height="10" rx="2.5" fill="#ffffff" ${S2}/>`,
+  barrel:
+    `<path d="M17 10h30c3 7 3 37 0 44H17c-3-7-3-37 0-44z" fill="${G('red')}" ${S}/>` +
+      `<path d="M15.5 22h33M15.5 42h33" stroke="${O}" stroke-width="3"/>` +
+      `<path d="M32 25c5 5 6 8 6 10a6 6 0 0 1-12 0c0-3 2-5 3-6 0 2 1 3 2 3 0-3 0-5 1-7z" fill="${G('gold')}" ${S2}/>`
 };
 
 // ids that reuse another picture

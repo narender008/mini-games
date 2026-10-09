@@ -30,7 +30,7 @@ export const UPGRADES = [
   { id: 'explosive', name: 'Explosive Rounds', icon: 'explosive', color: 'red', max: 3, text: (l) => `${[12, 20, 28][l]}% of hits explode`, apply: (s) => (s.explosive += 1) },
   { id: 'chain', name: 'Chain Lightning', icon: 'chain', color: 'gold', max: 3, text: (l) => `${[10, 16, 22][l]}% of hits arc to ${l + 2} foes`, apply: (s) => (s.chain += 1) },
   { id: 'magnet', name: 'Magnet', icon: 'magnet', color: 'blue', max: 3, text: () => '+45% XP pickup range', apply: (s) => (s.magnet *= 1.45) },
-  { id: 'cooldown', name: 'Quick Hands', icon: 'cooldown', color: 'green', max: 3, text: () => 'Abilities recharge 20% faster', apply: (s) => (s.cooldown *= 0.8) },
+  { id: 'cooldown', name: 'Quick Hands', icon: 'cooldown', color: 'green', max: 3, text: () => 'Bombs and shields recharge 20% faster', apply: (s) => (s.cooldown *= 0.8) },
   { id: 'regen', name: 'Regeneration', icon: 'regen', color: 'green', max: 3, text: () => '+0.8 HP per second', apply: (s) => (s.regen += 0.8) },
   { id: 'freezer', name: 'Frost Rounds', icon: 'freezer', color: 'blue', max: 3, text: (l) => `${[6, 10, 14][l]}% of hits freeze for 2 s`, apply: (s) => (s.freezer += 1) },
   { id: 'bombup', name: 'Demolition', icon: 'bombup', color: 'red', max: 2, text: () => '+1 Bomb, +25% blast size', apply: (s, run) => { s.bombR *= 1.25; run.abil.bomb.max += 1; run.abil.bomb.charges += 1; } },

@@ -3,19 +3,10 @@
 // motion from the 60 Hz simulation). Allocation free: the lists are reused.
 import { InstanceList, SpriteList, PARTICLE_STRIDE, SHADOW_STRIDE } from './gl/renderer.js';
 import { TYPES, WIND, RECOVER, HEADLESS, SPIT, HOLD } from './game/enemies.js';
-import { PICKUPS } from './game/pools.js';
+import { PICKUPS, PICKUP_COL as PICK_COL } from './game/pools.js';
 import { HOT, ALPHA, UNDER, BOLT, ORB, GLOW, HERO_RING, BUBBLE, RETICLE, PICK, SPARK, FIRE } from './fx/particles.js';
 import { TAU } from './config.js';
 
-const PICK_COL = {
-  magnet: [1.6, 0.35, 0.3],
-  freeze: [0.5, 1.1, 2.0],
-  shield: [0.4, 0.9, 2.0],
-  bomb: [1.8, 0.5, 0.2],
-  heart: [1.9, 0.3, 0.45],
-  lightning: [1.9, 1.5, 0.3],
-  chest: [2.0, 1.5, 0.4],
-};
 
 export class Draw {
   constructor(atlas) {

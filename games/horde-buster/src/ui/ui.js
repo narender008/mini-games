@@ -153,6 +153,8 @@ export class UI {
     st.setProperty('--ah', `${r.height.toFixed(1)}px`);
     st.setProperty('--u', Math.max(0.5, r.width / 400).toFixed(3));
     this.root.dataset.narrow = r.width < 340 ? '1' : '0';
+    // room beside the road (wide screens) for callouts that should stay off it
+    this.root.dataset.wide = r.left > 240 ? '1' : '0';
   }
 
   // ------------------------------------------------------------ sound and full screen
@@ -258,8 +260,11 @@ export class UI {
   streak(text, tier) {
     this.popups.streak(text, tier);
   }
-  toast(text) {
-    this.popups.toast(text);
+  hint(text) {
+    this.popups.hint(text);
+  }
+  pulse(kind) {
+    this.hudView.pulse(kind);
   }
 
   isBlocking() {
@@ -353,8 +358,8 @@ export function demo(ui, only) {
       later(2600, () => ui.streak('DOUBLE KILL', 1));
       later(3300, () => ui.streak('MASSACRE!', 3));
       later(4100, () => ui.streak('UNSTOPPABLE!', 5));
-      later(4600, () => ui.toast('Railgun evolved!'));
-      later(5000, () => ui.toast('Magnet!'));
+      later(4600, () => ui.hint('Right-click: Shield  ·  grab for one now'));
+      later(5000, () => ui.pulse('heart'));
       later(5600, () => ui.banner('BOSS', 'OGRE WARLORD', 2200));
     },
     pause: () => ui.showPause({ volume: 0.8, muted: false }),

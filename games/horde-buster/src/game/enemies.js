@@ -15,13 +15,13 @@ export const TYPES = [
   { key: 'shambler', hp: 32, speed: 43, r: 20, hitY: 40, hr: 26, mass: 1, dmg: 12, reach: 29, wind: 0.42, cool: 0.9, xp: 3,
     anim: 'shambler_walk', fps: 7, headless: 'shambler_nohead', attack: 'shambler_attack', gib: 'shambler', blood: RED, shadow: 30 },
   // 1
-  { key: 'runner', hp: 20, speed: 150, r: 18, hitY: 35, hr: 22, mass: 0.8, dmg: 9, reach: 23, wind: 0.22, cool: 0.7, xp: 3,
+  { key: 'runner', hp: 20, speed: 112, r: 18, hitY: 35, hr: 22, mass: 0.8, dmg: 9, reach: 23, wind: 0.22, cool: 0.7, xp: 3,
     anim: 'runner_walk', fps: 13, headless: 'runner_nohead', attack: 'runner_attack', gib: 'runner', blood: RED, shadow: 26, fallback: 'shambler' },
   // 2
   { key: 'brute', hp: 240, speed: 36, r: 35, hitY: 59, hr: 43, mass: 4, dmg: 20, reach: 39, wind: 0.6, cool: 1.2, xp: 16,
     anim: 'brute_walk', fps: 6, headless: 'brute_nohead', attack: 'brute_attack', gib: 'brute', blood: DARK, shadow: 49, fallback: 'shambler', big: true },
   // 3
-  { key: 'spider', hp: 8, speed: 106, r: 15, hitY: 14, hr: 18, mass: 0.35, dmg: 5, reach: 18, wind: 0.18, cool: 0.6, xp: 1,
+  { key: 'spider', hp: 8, speed: 80, r: 15, hitY: 14, hr: 18, mass: 0.35, dmg: 5, reach: 18, wind: 0.18, cool: 0.6, xp: 1,
     anim: 'spider_walk', fps: 16, gib: 'spider', blood: PURPLE, shadow: 22, fallback: 'shambler', small: true },
   // 4
   { key: 'spitter', hp: 60, speed: 36, r: 23, hitY: 38, hr: 28, mass: 1.4, dmg: 10, reach: 26, wind: 0.5, cool: 1.0, xp: 7,
@@ -91,7 +91,7 @@ export class Enemies {
     this.x[i] = this.px[i] = x;
     this.y[i] = this.py[i] = y;
     this.kx[i] = this.ky[i] = 0;
-    this.maxHp[i] = this.hp[i] = T0.hp * hpMul * (elite ? 5 : 1);
+    this.maxHp[i] = this.hp[i] = T0.hp * hpMul * (elite ? 4 : 1);
     this.t[i] = 0;
     this.anim[i] = rnd() * 8;
     this.flash[i] = 0;

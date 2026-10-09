@@ -7,7 +7,7 @@ const KEY = 'horde-buster';
 export const ARMOURY = [
   { id: 'vitality', name: 'Vitality', icon: 'maxhp', max: 5, cost: 120, text: (l) => `+${10 * (l + 1)} max HP` },
   { id: 'firepower', name: 'Firepower', icon: 'damage', max: 5, cost: 150, text: (l) => `+${8 * (l + 1)}% damage` },
-  { id: 'hands', name: 'Quick Hands', icon: 'cooldown', max: 4, cost: 140, text: (l) => `Abilities recharge ${8 * (l + 1)}% faster` },
+  { id: 'hands', name: 'Quick Hands', icon: 'cooldown', max: 4, cost: 140, text: (l) => `Bombs and shields recharge ${8 * (l + 1)}% faster` },
   { id: 'magnetism', name: 'Magnetism', icon: 'magnet', max: 3, cost: 100, text: (l) => `+${20 * (l + 1)}% XP pickup range` },
   { id: 'lucky', name: 'Lucky Shot', icon: 'crit', max: 3, cost: 160, text: (l) => `+${3 * (l + 1)}% crit chance` },
   { id: 'bombs', name: 'Bandolier', icon: 'bombup', max: 2, cost: 300, text: (l) => `+${l + 1} bomb${l ? 's' : ''}` },
@@ -22,6 +22,7 @@ const fresh = () => ({
   best: null,
   cleared: {},
   runs: 0,
+  hints: {},
   settings: { volume: 0.8, music: 0.6, muted: false, quality: 'auto', shake: 'full', numbers: true, gore: 'max' },
 });
 

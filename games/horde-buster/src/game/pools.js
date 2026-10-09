@@ -71,6 +71,16 @@ export class Gems extends Pool {
 
 // power-ups floating down in bubbles. kinds below
 export const PICKUPS = ['magnet', 'freeze', 'shield', 'bomb', 'heart', 'lightning', 'chest'];
+// each pickup's colour: its bubble, the burst on the hero when grabbed
+export const PICKUP_COL = {
+  magnet: [1.6, 0.35, 0.3],
+  freeze: [0.5, 1.1, 2.0],
+  shield: [0.4, 0.9, 2.0],
+  bomb: [1.8, 0.5, 0.2],
+  heart: [1.9, 0.3, 0.45],
+  lightning: [1.9, 1.5, 0.3],
+  chest: [2.0, 1.5, 0.4],
+};
 export class Pickups extends Pool {
   constructor(cap) {
     super(cap, { x: F, y: F, px: F, py: F, vy: F, t: F, kind: U8, seed: F });

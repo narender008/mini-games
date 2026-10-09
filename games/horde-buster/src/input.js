@@ -1,8 +1,9 @@
 // Mouse first: the hero glides toward the cursor, left click throws a bomb at
-// it, right click raises the shield (no context menu). Space calls lightning,
-// E throws an ice bomb, P or Esc pauses, F toggles full screen. Arrow keys or
-// WASD steer too. Touch: drag anywhere to steer (relative, like a trackpad,
-// so the finger never hides the hero); the HUD buttons fire the abilities.
+// it, right click raises the shield (no context menu). Those are the only two
+// powers; lightning and freeze are pickups that fire when grabbed. P or Esc
+// pauses, F toggles full screen, arrow keys or WASD steer too. Touch: drag
+// anywhere to steer (relative, like a trackpad, so the finger never hides the
+// hero); the two HUD buttons fire the powers.
 export class Input {
   constructor(app) {
     this.app = app;
@@ -67,7 +68,6 @@ export class Input {
     this.move(e);
     if (e.button === 0) app.ability('bomb', this.world.x, this.world.y);
     else if (e.button === 2) app.ability('shield');
-    else if (e.button === 1) app.ability('lightning');
   }
 
   up(e) {
@@ -95,13 +95,6 @@ export class Input {
       else if (app.state === 'paused') app.resume();
       return;
     }
-    if (app.state !== 'play') return;
-    if (k === ' ') {
-      e.preventDefault();
-      app.ability('lightning');
-    } else if (k === 'e' || k === 'q') app.ability('freeze', this.world.x, this.world.y);
-    else if (k === 'b') app.ability('bomb', this.world.x, this.world.y);
-    else if (k === 'r') app.ability('shield');
   }
 
   // keyboard steering: nudges the target each frame

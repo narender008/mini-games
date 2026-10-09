@@ -38,6 +38,35 @@ export function splatPath(cx, cy, r) {
   return `M${pts.map((p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join('L')}z`;
 }
 
+// Every power and pickup at a glance, for the pause screen.
+const POWERS = [
+  ['mouseL', 'Bomb', 'Left-click: blast where you aim'],
+  ['mouseR', 'Shield', 'Right-click: briefly untouchable'],
+];
+const PICKUPS = [
+  ['magnet', 'Magnet', 'Pulls in all XP'],
+  ['snowflake', 'Freeze', 'Freezes the horde'],
+  ['lightning', 'Lightning', 'Strikes the crowd'],
+  ['heart', 'Heart', 'Heals 35'],
+  ['bomb', 'Bombs', '+2 bombs'],
+  ['shield', 'Shield orb', '+1 shield, up now'],
+  ['chest', 'Treasure', 'Extra card after the wave'],
+  ['barrel', 'Barrel', 'Shoot it: boom'],
+  ['xp', 'XP gems', 'Cards come after the wave'],
+];
+
+function guide() {
+  const grid = (rows) => h('div', { class: 'ggrid' }, ...rows.map(([ic, name, text]) => h('div', { class: 'gitem' }, h('span', { class: 'gico', html: icon(ic) }), h('span', { class: 'gtx' }, h('b', { text: name }), h('span', { text })))));
+  return h(
+    'div',
+    { class: 'guide' },
+    h('p', { class: 'ghead', text: 'Powers' }),
+    grid(POWERS),
+    h('p', { class: 'ghead', text: 'Pickups: touch or shoot them' }),
+    grid(PICKUPS)
+  );
+}
+
 export class Menus {
   constructor(ui) {
     this.ui = ui;
@@ -140,7 +169,7 @@ export class Menus {
         ),
         this.titleBest,
         h('p', { class: 'keys' },
-          h('span', { class: 'kb' }, 'Mouse to move, auto-fire  ·  LMB bomb  ·  RMB shield  ·  Space lightning  ·  E freeze'),
+          h('span', { class: 'kb' }, 'Mouse to move, fire is automatic  ·  Left-click: Bomb  ·  Right-click: Shield'),
           h('span', { class: 'tc' }, 'Drag to move, auto-fire  ·  tap the round buttons for powers')
         )
       )
@@ -172,6 +201,7 @@ export class Menus {
       'Paused',
       h('div', { class: 'panel' },
         h('h2', { class: 'ptitle gtext', text: 'PAUSED' }),
+        guide(),
         h('div', { class: 'set-row' }, h('span', { class: 'lab' }, h('span', { class: 'ico', html: icon('speaker') }), 'Volume'), this.pauseVol.el),
         h('div', { class: 'set-row' }, h('span', { class: 'lab' }, h('span', { class: 'ico', html: icon('mute') }), 'Mute'), this.pauseMute),
         h('div', { class: 'stack' },

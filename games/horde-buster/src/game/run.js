@@ -5,11 +5,11 @@
 import { ARENA, BAND, STEP, clamp, rnd, rand, randi, chance, TAU } from '../config.js';
 import { Enemies, TYPES, T, WALK, HEADLESS, BOSS } from './enemies.js';
 import { Grid } from './grid.js';
-import { Bullets, Shots, Bombs, Gems, Pickups, Barrels, PICKUPS } from './pools.js';
+import { Bullets, Shots, Bombs, Gems, Pickups, Barrels, PICKUPS, PICKUP_COL } from './pools.js';
 import { WEAPONS, STAR_DMG, STAR_RATE, baseStats, drawCards, applyCard } from './upgrades.js';
 import { CHAPTERS, waveReward } from './chapters.js';
 import { Ogre } from './boss.js';
-import { Particles, HOT, ALPHA, UNDER, BOLT, SPARK, SMOKE, FIRE, GLOW } from '../fx/particles.js';
+import { Particles, HOT, UNDER, BOLT, SPARK, SMOKE, FIRE, GLOW } from '../fx/particles.js';
 import { Gore } from '../fx/gore.js';
 import { Numbers } from '../fx/numbers.js';
 
@@ -28,11 +28,10 @@ const STREAKS = [
   [120, 'UNSTOPPABLE!'],
   [200, 'GODLIKE!'],
 ];
+// the two powers, both on the mouse: left click a bomb, right click a shield
 const ABILITIES = {
   bomb: { max: 3, period: 7 },
   shield: { max: 2, period: 16 },
-  lightning: { max: 1, period: 24 },
-  freeze: { max: 1, period: 28 },
 };
 
 export const xpNext = (level) => Math.round(40 + 26 * level + 2.5 * level * level);
@@ -108,7 +107,7 @@ export class Run {
     const start = meta.startWeapon && WEAPONS[meta.startWeapon] ? meta.startWeapon : 'blaster';
     this.weapons = [{ id: start, stars: 1, timer: 0.2 }];
     this.abil = {};
-    for (const [k, a] of Object.entries(ABILITIES)) this.abil[k] = { charges: k === 'lightning' || k === 'freeze' ? 0 : a.max, max: a.max, cd: 0, period: a.period, recharge: 0, active: 0 };
+    for (const [k, a] of Object.entries(ABILITIES)) this.abil[k] = { charges: a.max, max: a.max, cd: 0, period: a.period, recharge: 0, active: 0 };
     if (meta.bombs) this.abil.bomb.max += meta.bombs;
     const h = this.hero;
     h.x = h.px = 360;
@@ -142,7 +141,7 @@ export class Run {
     this.phaseT = 1.6;
     // later waves are tougher and quicker
     this.hpMul = (1 + 0.4 * w + 0.2 * w * w) * (1 + 0.6 * this.chapterIndex);
-    this.spdMul = 1 + 0.07 * w;
+    this.spdMul = 1 + 0.05 * w;
     this.events.banner?.(`WAVE ${w + 1}`, W.name);
     this.sound.waveStart(w + 1);
     this.sound.music(W.boss ? 'boss' : 'battle');
@@ -259,7 +258,7 @@ export class Run {
       }
     } else if (this.phase === 'clear') {
       this.phaseT -= dt;
-      if (this.phaseT <= 0 && this.gems.n === 0 && !this.pendingLevels) {
+      if (this.phaseT <= 0 && this.gems.n === 0) {
         this.phase = 'reward';
         const rw = waveReward(this.chapter, this.wave, this.waveKills);
         this.coins += rw.coins;
@@ -352,15 +351,15 @@ export class Run {
     const ty = clamp(this.target.y, BAND.y0, BAND.y1);
     const dx = tx - h.x;
     const dy = ty - h.y;
-    const maxSp = 580 * s.move;
-    let wx = dx * 9;
-    let wy = dy * 9;
+    const maxSp = 930 * s.move;
+    let wx = dx * 24;
+    let wy = dy * 24;
     const wl = Math.hypot(wx, wy);
     if (wl > maxSp) {
       wx = (wx / wl) * maxSp;
       wy = (wy / wl) * maxSp;
     }
-    const acc = 4200 * s.move * dt;
+    const acc = 14000 * s.move * dt;
     const ax = wx - h.vx;
     const ay = wy - h.vy;
     const al = Math.hypot(ax, ay);
@@ -382,7 +381,7 @@ export class Run {
 
   hitHero(dmg, sx, sy) {
     const h = this.hero;
-    if (!h.alive || this.phase === 'reward') return;
+    if (!h.alive || this.calm()) return;
     if (h.shield > 0) {
       this.sound.shieldHit();
       this.fx.flash(h.x, h.y - 30, 30, 60, 0.6, 1.2, 2.4, 0.1);
@@ -453,11 +452,11 @@ export class Run {
   useAbility(key, tx, ty) {
     const a = this.abil[key];
     const h = this.hero;
-    if (!a || !h.alive || this.phase === 'reward' || this.phase === 'dead') return false;
+    if (!a || !h.alive || this.calm() || this.phase === 'dead') return false;
     if (a.charges <= 0) return false;
     if (key === 'shield' && h.shield > 0) return false;
     a.charges--;
-    if (key === 'bomb' || key === 'freeze') {
+    if (key === 'bomb') {
       const B = this.bombs;
       const i = B.take();
       if (i < 0) return false;
@@ -468,7 +467,7 @@ export class Run {
       B.y1[i] = clamp(ty, this.top() + 60, BAND.y1);
       B.t[i] = 0;
       B.dur[i] = 0.32 + Math.hypot(B.x1[i] - B.x0[i], B.y1[i] - B.y0[i]) / 2600;
-      B.kind[i] = key === 'freeze' ? 1 : 0;
+      B.kind[i] = 0;
       h.throwT = 0.3;
       this.sound.bombThrow();
     } else if (key === 'shield') {
@@ -477,8 +476,6 @@ export class Run {
       this.sound.shieldUp();
       this.blast(h.x, h.y - 20, 170, 30, 900, 'shield');
       this.fx.ring(h.x, h.y - 20, 30, 170, 0.6, 1.4, 3, 0.35);
-    } else if (key === 'lightning') {
-      this.lightningStrike();
     }
     return true;
   }
@@ -603,7 +600,7 @@ export class Run {
 
   // ---------------------------------------------------------------- weapons
   fireWeapons(dt) {
-    if (this.phase === 'reward' || this.phase === 'dead') return;
+    if (this.calm() || this.phase === 'dead') return;
     const h = this.hero;
     const s = this.stats;
     const muzzle = this.anchor('muzzle', 'hero', [8, -96]);
@@ -1177,27 +1174,11 @@ export class Run {
       if (B.t[i] >= B.dur[i]) {
         const x = B.x1[i];
         const y = B.y1[i];
-        if (B.kind[i] === 1) this.freezeBlast(x, y, 230);
-        else this.explode(x, y, 150 * this.stats.bombR, 170, 900, 'bomb');
+        this.explode(x, y, 150 * this.stats.bombR, 170, 900, 'bomb');
         B.kill(i);
         i--;
       }
     }
-  }
-
-  freezeBlast(x, y, r) {
-    const E = this.enemies;
-    for (let k = 0; k < E.n; k++) {
-      const i = E.list[k];
-      const dx = E.x[i] - x;
-      const dy = E.y[i] - y;
-      if (dx * dx + dy * dy < r * r) E.frozen[i] = TYPES[E.type[i]].boss ? 2 : 5 + rnd();
-    }
-    this.fx.ring(x, y, 30, r, 0.8, 1.4, 2.6, 0.4);
-    this.fx.flash(x, y, 20, r, 0.6, 1.2, 2.4, 0.2);
-    this.fx.splat(x, y, r * 0.8, 0.6, 0.8, 0.95, 0.55, 3);
-    for (let k = 0; k < 16; k++) this.fx.add(15, ALPHA, x + rand(-r, r) * 0.5, y + rand(-r, r) * 0.4, 10, rand(-200, 200), rand(-150, 150), rand(150, 400), 1, rand(3, 6), 1, 0.75, 0.92, 1.1, 1, 1 | 4, 0.4);
-    this.sound.freeze();
   }
 
   // ---------------------------------------------------------------- barrels
@@ -1342,6 +1323,7 @@ export class Run {
     P.t[i] = 0;
     P.kind[i] = PICKUPS.indexOf(kind);
     P.seed[i] = rnd();
+    this.events.dropped?.(kind);
   }
 
   updatePickups(dt) {
@@ -1392,17 +1374,23 @@ export class Run {
     const y = P.y[i];
     P.kill(i);
     const h = this.hero;
-    this.fx.ring(x, y, 10, 90, 1.5, 1.5, 1.5, 0.3);
-    this.fx.flash(x, y, 0, 80, 1.6, 1.6, 1.6, 0.15);
+    const c = PICKUP_COL[kind];
+    this.fx.ring(x, y, 10, 70, c[0], c[1], c[2], 0.25);
+    // the grab shows on the hero, in the pickup's colour
+    this.fx.ring(h.x, h.y - 30, 16, 120, c[0], c[1], c[2], 0.4);
+    this.fx.flash(h.x, h.y - 40, 0, 110, c[0], c[1], c[2], 0.2);
+    this.fx.light(h.x, h.y - 30, 60, 300, c[0] * 1.5, c[1] * 1.5, c[2] * 1.5, 0.35);
     this.sound.pickup(kind);
+    this.events.pickup?.(kind);
     switch (kind) {
       case 'magnet':
         this.magnetAll = 2.5;
-        this.events.toast?.('Magnet!');
         break;
       case 'freeze':
         this.freezeAll(4.5);
-        this.events.toast?.('Freeze!');
+        break;
+      case 'lightning':
+        this.lightningStrike();
         break;
       case 'shield':
         this.abil.shield.charges = Math.min(this.abil.shield.max + 1, this.abil.shield.charges + 1);
@@ -1410,25 +1398,16 @@ export class Run {
           h.shield = this.stats.shieldTime;
           this.sound.shieldUp();
         }
-        this.events.toast?.('Shield!');
         break;
       case 'bomb':
         this.abil.bomb.charges = Math.min(this.abil.bomb.max + 2, this.abil.bomb.charges + 2);
-        this.abil.freeze.charges = Math.min(this.abil.freeze.max + 1, this.abil.freeze.charges + 1);
-        this.events.toast?.('+2 Bombs, +1 Ice bomb');
         break;
       case 'heart':
         this.heal(35);
-        this.events.toast?.('+35 HP');
-        break;
-      case 'lightning':
-        this.abil.lightning.charges = Math.min(this.abil.lightning.max + 2, this.abil.lightning.charges + 1);
-        this.events.toast?.('+1 Lightning');
         break;
       case 'chest':
         this.pendingChests++;
         this.coins += 60;
-        this.events.toast?.('Treasure!');
         break;
     }
   }
@@ -1447,10 +1426,8 @@ export class Run {
   }
   pick(card) {
     const r = applyCard(this, card);
-    if (card.evolution) {
-      this.sound.evolve();
-      this.events.toast?.(`${card.name}!`);
-    } else this.sound.card();
+    if (card.evolution) this.sound.evolve();
+    else this.sound.card();
     return r;
   }
 
@@ -1459,16 +1436,28 @@ export class Run {
     if (w) w.id = to;
   }
 
+  // the wave's reward is taken: its XP may bank more level-ups, picked in the break
   claimReward() {
     const rw = this.reward;
     this.reward = null;
     if (rw) this.gainXp(rw.xp);
-    if (rw?.last) {
+    this.phase = 'break';
+    return rw;
+  }
+
+  // after the break's card picks: on to the next wave, or the chapter is won
+  nextWave() {
+    if (this.wave >= this.chapter.waves.length - 1) {
       this.phase = 'victory';
       this.events.victory?.();
       return;
     }
     this.beginWave(this.wave + 1);
+  }
+
+  // between waves nothing fires and nothing hurts
+  calm() {
+    return this.phase === 'reward' || this.phase === 'break' || this.phase === 'victory';
   }
 }
 

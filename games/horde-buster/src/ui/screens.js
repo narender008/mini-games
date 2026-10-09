@@ -84,7 +84,7 @@ export class Screens {
       'div',
       { class: 'lu-banner' },
       h('span', { class: 'wing-l', html: WING }),
-      h('div', { class: 'lu-title' }, h('span', { class: 'gtext lu-big', text: 'LEVEL UP!' }), h('span', { class: 'lu-lv', text: `Level ${level}` })),
+      h('div', { class: 'lu-title' }, h('span', { class: 'gtext lu-big', text: 'LEVEL UP!' }), h('span', { class: 'lu-lv', text: typeof level === 'number' ? `Level ${level}` : String(level) })),
       h('span', { class: 'wing-r', html: WING })
     );
     const el = ui.dyn('levelup', 'levelup dim', 'Level up', h('div', { class: 'lu' }, banner, list, h('p', { class: 'hint kb', text: cards.length > 1 ? `Press 1 to ${cards.length}, or click a card` : 'Press 1, or click the card' })));
