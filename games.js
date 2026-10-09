@@ -92,4 +92,13 @@ window.MINI_GAMES = [
     imageAlt: 'A tank at dawn firing across farmland as a heavy shell bursts in a fireball short of an enemy tank',
     tags: ['2D', 'Ages 14+', 'Touch friendly'],
   },
+  {
+    slug: 'horde-buster',
+    name: 'Horde Buster',
+    description: 'A gory horde shooter for grown-ups: hold the road, dodge with the mouse and blast waves of the dead into chunks while upgrades stack up, until the Ogre Warlord comes.',
+    path: 'games/horde-buster/',
+    image: 'games/horde-buster/cover.jpg',
+    imageAlt: 'A blue-armoured hero at the bottom of a city road firing glowing bolts into a horde of green zombies, red brutes and purple spiders amid splattered blood',
+    tags: ['2D', 'Ages 18+', 'Mouse first'],
+  },
 ];
