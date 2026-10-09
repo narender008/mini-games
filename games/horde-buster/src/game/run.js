@@ -1163,10 +1163,11 @@ export class Run {
     if (!E.alive[j] || E.dying[j]) return;
     if (E.burn[j] <= 0) {
       E.burnT[j] = 0.25;
+      E.burnDps[j] = 0;
       this.burning++;
     }
     E.burn[j] = Math.max(E.burn[j], seconds);
-    E.burnDps[j] = Math.max(E.burn[j] > 0 ? E.burnDps[j] : 0, dps);
+    E.burnDps[j] = Math.max(E.burnDps[j], dps);
   }
 
   rocketBlast(i) {
