@@ -30,6 +30,14 @@ const GRADS = {
   olive: ['#a9bf6c', '#4d6a2b'],
   cyan: ['#7af0ff', '#0a84e6'],
   bone: ['#fffdf2', '#d9d2b8'],
+  bluefire: ['#ffffff', '#2f8cff'],
+  blood: ['#ff6a7a', '#8f0a22'],
+  copper: ['#ffcf94', '#b4561a'],
+  stone: ['#b8c2dc', '#525d84'],
+  dusk: ['#3d6ae0', '#ffb468'],
+  night: ['#171866', '#6f56c8'],
+  hellsky: ['#32040f', '#ff6418'],
+  storm: ['#7580bc', '#2b3166'],
 };
 
 function star(cx, cy, ro, ri, n = 5, rot = -90) {
@@ -103,6 +111,64 @@ function arc(cx, cy, r, a0, a1) {
 
 // a weapon is drawn lying flat, then tilted so it fills the square
 const gun = (inner) => `<g transform="rotate(-28 32 32)">${inner}</g>`;
+// the same, scaled about the centre for guns that carry more at the muzzle (arcs, flames)
+const gunS = (inner, k) => `<g transform="translate(32 32) scale(${k}) rotate(-28) translate(-32 -32)">${inner}</g>`;
+
+// a round saw blade: sawtooth teeth on a disc, with a ring, a hub and a bolt
+function sawblade(cx, cy, r, n, fill, hub = G('dark'), rot = 0, depth = 0.2) {
+  const ri = r * (1 - depth);
+  const step = (Math.PI * 2) / n;
+  const p = (rad, a) => `${n1(cx + Math.cos(a) * rad)} ${n1(cy + Math.sin(a) * rad)}`;
+  let d = '';
+  for (let i = 0; i < n; i++) {
+    const a = (rot * Math.PI) / 180 + i * step;
+    d += `${i ? 'L' : 'M'}${p(ri, a)}L${p(r, a + step * 0.8)}`;
+  }
+  return (
+    `<path d="${d}z" fill="${fill}" ${S}/>` +
+    `<circle cx="${cx}" cy="${cy}" r="${n1(r * 0.62)}" fill="none" stroke="${O}" stroke-width="2" stroke-opacity=".5"/>` +
+    `<circle cx="${cx}" cy="${cy}" r="${n1(r * 0.3)}" fill="${hub}" ${S2}/>` +
+    `<circle cx="${cx}" cy="${cy}" r="${n1(r * 0.1)}" fill="#fff"/>`
+  );
+}
+
+// a small rocket pointing up: red nose, steel body, fins and a flame under it
+function miniRocket(cx, top, w, h) {
+  const l = n1(cx - w / 2);
+  const r = n1(cx + w / 2);
+  const nose = h * 0.36;
+  const b = n1(top + h);
+  const bt = n1(top + nose);
+  return (
+    `<path d="M${l} ${b}Q${cx} ${n1(top + h * 1.7)} ${r} ${b}z" fill="${G('orange')}" ${S2}/>` +
+    `<path d="M${l} ${n1(b - h * 0.34)}L${n1(l - w * 0.4)} ${b}H${l}z" fill="${G('red')}" ${S2}/>` +
+    `<path d="M${r} ${n1(b - h * 0.34)}L${n1(r + w * 0.4)} ${b}H${r}z" fill="${G('red')}" ${S2}/>` +
+    `<rect x="${l}" y="${bt}" width="${w}" height="${n1(h - nose)}" rx="1.5" fill="${G('steel')}" ${S2}/>` +
+    `<path d="M${l} ${bt}Q${l} ${n1(top + nose * 0.3)} ${cx} ${top}Q${r} ${n1(top + nose * 0.3)} ${r} ${bt}z" fill="${G('red')}" ${S2}/>`
+  );
+}
+
+// a cut gem, flat on top, point down; g is a gradient name
+function gem(cx, cy, w, h, g) {
+  const l = n1(cx - w / 2);
+  const r = n1(cx + w / 2);
+  const t = n1(cy - h / 2);
+  const b = n1(cy + h / 2);
+  const k = n1(t + h * 0.36);
+  const i = w * 0.22;
+  return (
+    `<path d="M${n1(l + i)} ${t}H${n1(r - i)}L${r} ${k}L${cx} ${b}L${l} ${k}z" fill="${G(g)}" ${S2}/>` +
+    `<path d="M${l} ${k}H${r}M${n1(l + i)} ${t}L${n1(cx - w * 0.14)} ${k}L${cx} ${b}M${n1(r - i)} ${t}L${n1(cx + w * 0.14)} ${k}L${cx} ${b}" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1.5" stroke-linejoin="round"/>`
+  );
+}
+
+// a round badge for the chapter emblems: a scene clipped to a disc
+const badge = (id, sky, scene) =>
+  `<clipPath id="hb-clip-${id}"><circle cx="32" cy="32" r="28"/></clipPath>` +
+  `<circle cx="32" cy="32" r="28" fill="${sky}"/>` +
+  `<g clip-path="url(#hb-clip-${id})">${scene}</g>` +
+  `<circle cx="32" cy="32" r="28" fill="none" ${S}/>` +
+  `<path d="M12 18a24 24 0 0 1 12-9" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="3" stroke-linecap="round"/>`;
 
 const ICONS = {
   // ---- interface and pickups
@@ -347,7 +413,238 @@ const ICONS = {
       )
       .join('') +
     `<path d="M32 44l-3 6h6z" fill="#1a1530"/>` +
-    `<rect x="23" y="51" width="18" height="7.5" rx="2.5" fill="${G('bone')}" ${S2}/><path d="M29 51.5v6.5M35 51.5v6.5" stroke="${O}" stroke-width="2"/>`
+    `<rect x="23" y="51" width="18" height="7.5" rx="2.5" fill="${G('bone')}" ${S2}/><path d="M29 51.5v6.5M35 51.5v6.5" stroke="${O}" stroke-width="2"/>`,
+
+  // ---- stage 2 upgrades
+  // a bullet on fire
+  incendiary:
+    `<g transform="rotate(30 32 30)">` +
+    `<g transform="rotate(152 32 28)">${flame(32, 28, 15, 32, G('orange'), 0, S2)}</g><g transform="rotate(208 32 28)">${flame(32, 28, 15, 32, G('orange'), 0, S2)}</g>` +
+    `<g transform="rotate(180 32 28)">${flame(32, 28, 28, 38, G('orange'), 1)}${flame(32, 27, 15, 24, G('gold'), 0, '')}</g>` +
+    bullet(32, 1, 19, 34) +
+    `<path d="M26.5 10c-1 4-1.200 8-1 12" stroke="#fff" stroke-opacity=".7" stroke-width="3" stroke-linecap="round" fill="none"/>` +
+    `</g>`,
+  // an eye with the crosshair in it
+  deadeye:
+    `<path d="M2 32Q32 4 62 32Q32 60 2 32z" fill="${G('white')}" ${S}/>` +
+    `<circle cx="32" cy="32" r="14.5" fill="${G('red')}" ${S}/>` +
+    `<circle cx="32" cy="32" r="6" fill="${O}"/>` +
+    `<path d="M32 6v12M32 46v12M6 32h12M46 32h12" stroke="${O}" stroke-width="7" stroke-linecap="round"/><path d="M32 6v12M32 46v12M6 32h12M46 32h12" stroke="#fff" stroke-width="3" stroke-linecap="round"/>` +
+    `<circle cx="27" cy="26.5" r="3" fill="#fff"/>`,
+  // a breastplate
+  armour:
+    `<path d="M17 6Q32 17 47 6L60 15L55 32Q51 45 46 58H18Q13 45 9 32L4 15z" fill="${G('steel')}" ${S}/>` +
+    `<path d="M32 15V58M11 30Q32 40 53 30" fill="none" stroke="${O}" stroke-width="3" stroke-linecap="round"/>` +
+    `<path d="M17 6Q32 17 47 6" fill="none" stroke="#f0b52a" stroke-width="3.5" stroke-linecap="round"/>` +
+    `<path d="M12 18L15 30M22 22V34" stroke="#fff" stroke-opacity=".7" stroke-width="3" stroke-linecap="round"/>` +
+    `<circle cx="32" cy="35" r="5" fill="${G('gold')}" ${S2}/>` +
+    `<circle cx="10" cy="17" r="1.8" fill="${O}"/><circle cx="54" cy="17" r="1.8" fill="${O}"/>`,
+  // a drop of blood with fangs
+  bloodthirst:
+    `<path d="M32 3C26 15 10 28 10 41C10 53 20 61 32 61C44 61 54 53 54 41C54 28 38 15 32 3z" fill="${G('blood')}" ${S}/>` +
+    `<path d="M17 38C17 31 22 25 26 21" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="3.5" stroke-linecap="round"/>` +
+    `<path d="M19 40Q32 49 45 40Q32 36 19 40z" fill="#3a0510" ${S2}/>` +
+    `<path d="M23.5 41.4L29.5 42.4L26 51.5zM40.5 41.4L34.5 42.4L38 51.5z" fill="#fff" ${S2}/>`,
+  // a heap of gems and coins
+  greed:
+    gem(32, 21, 28, 26, 'blue') +
+    gem(15.5, 38, 22, 20, 'red') +
+    gem(48.5, 38, 22, 20, 'green') +
+    `<circle cx="20" cy="54" r="8" fill="${G('gold')}" ${S2}/><circle cx="20" cy="54" r="4.6" fill="none" stroke="#c97a00" stroke-width="1.8"/>` +
+    `<circle cx="44" cy="54" r="8" fill="${G('gold')}" ${S2}/><circle cx="44" cy="54" r="4.6" fill="none" stroke="#c97a00" stroke-width="1.8"/>` +
+    `<circle cx="32" cy="49" r="9" fill="${G('gold')}" ${S}/><circle cx="32" cy="49" r="5.6" fill="none" stroke="#c97a00" stroke-width="2"/><polygon points="${star(32, 49.5, 3.6, 1.6)}" fill="#fff4b0"/>` +
+    `<polygon points="${star(55, 9, 6, 2.4, 4)}" fill="#fff" ${S2}/>`,
+  // a four-leaf clover
+  lucky:
+    `<path d="M32 34C36 46 40 52 48 60" fill="none" stroke="${O}" stroke-width="8" stroke-linecap="round"/><path d="M32 34C36 46 40 52 48 60" fill="none" stroke="#1f9a3e" stroke-width="4" stroke-linecap="round"/>` +
+    [0, 90, 180, 270]
+      .map(
+        (a) =>
+          `<g transform="translate(32 32) rotate(${a})"><path d="M0 0C-4-4-13-9-13-17C-13-23-9-27.5-4.5-27C-2-26.6 0-24 0-21C0-24 2-26.6 4.5-27C9-27.5 13-23 13-17C13-9 4-4 0 0z" fill="${G('green')}" ${S}/>` +
+          `<path d="M0 -3V-21M-7 -20Q-8 -14 -3 -10M-9 -17" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="2" stroke-linecap="round"/></g>`
+      )
+      .join('') +
+    `<circle cx="32" cy="32" r="3" fill="${G('gold')}" ${S2}/>`,
+  // a syringe and a heartbeat
+  adrenaline:
+    `<g transform="rotate(42 36 34)">` +
+    `<rect x="30" y="1" width="12" height="5" rx="2" fill="${G('steel')}" ${S2}/><rect x="34" y="5" width="4" height="12" fill="${G('steel')}" ${S2}/>` +
+    `<rect x="29" y="15" width="14" height="30" rx="3" fill="${G('white')}" ${S}/>` +
+    `<rect x="31.5" y="27" width="9" height="16" rx="1.5" fill="#ff3b5e"/><path d="M31.5 33h4M31.5 38h4" stroke="${O}" stroke-width="1.6"/>` +
+    `<rect x="24" y="14" width="24" height="4.5" rx="2" fill="${G('steel')}" ${S2}/>` +
+    `<rect x="32.5" y="45" width="7" height="5" fill="${G('steel')}" ${S2}/>` +
+    `<path d="M36 50V63" stroke="${O}" stroke-width="4.5" stroke-linecap="round"/><path d="M36 50V63" stroke="#dbe6ff" stroke-width="1.8" stroke-linecap="round"/>` +
+    `</g>` +
+    `<path d="M2 21C-2 14 4 6 11 8C14 9 15 12 15 12C15 12 16 9 19 8C26 6 31 14 27 21C24 26 15 31 15 31C15 31 6 26 2 21z" transform="translate(1 2)" fill="${G('red')}" ${S2}/>` +
+    `<path d="M4 18H10L12.5 12L16 25L18.5 18H27" transform="translate(1 2)" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`,
+  // one huge bullet
+  bigshot:
+    `<path d="M32 2C42 6 50 20 50 34V58H14V34C14 20 22 6 32 2z" fill="${G('gold')}" ${S}/>` +
+    `<path d="M14 45H50V58H14z" fill="#c9791a" stroke="${O}" stroke-width="3.5" stroke-linejoin="round"/>` +
+    `<path d="M14 36H50" stroke="${O}" stroke-width="3.5"/>` +
+    `<path d="M23 12C19 20 19 28 20 34" stroke="#fff" stroke-opacity=".8" stroke-width="4.5" stroke-linecap="round" fill="none"/>` +
+    `<path d="M26 51H38" stroke="${O}" stroke-width="2.4" stroke-linecap="round" stroke-opacity=".5"/>` +
+    `<polygon points="${star(56, 10, 6, 2.4, 4)}" fill="#fff" ${S2}/><polygon points="${star(8, 20, 4.5, 1.8, 4)}" fill="#fff" ${S2}/>`,
+  // an axe over a skull
+  executioner:
+    `<g transform="rotate(32 32 32)">` +
+    `<rect x="29" y="5" width="7" height="56" rx="3" fill="${G('brown')}" ${S}/>` +
+    `<path d="M36 7L47 4Q64 20 47 43L36 33z" fill="${G('steel')}" ${S}/>` +
+    `<path d="M42 11Q54 18 48 33" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="3" stroke-linecap="round"/>` +
+    `<rect x="27" y="26" width="11" height="4" rx="1.5" fill="${G('gold')}" ${S2}/>` +
+    `</g>` +
+    `<use href="#hb-skull" x="1" y="29" width="34" height="34"/>`,
+  // a skull that goes bang
+  corpsebomb:
+    `<polygon points="${star(32, 32, 31, 19, 11, -90)}" fill="${G('orange')}" ${S}/>` +
+    `<polygon points="${star(32, 32, 24, 15, 11, -75)}" fill="${G('gold')}" ${S2}/>` +
+    `<use href="#hb-skull" x="14" y="13" width="36" height="36"/>` +
+    `<path d="M40 11C43 6 47 5 50 2" fill="none" stroke="${O}" stroke-width="5" stroke-linecap="round"/><polygon points="${star(51, 3, 5, 2.2, 4)}" fill="#fff" ${S2}/>`,
+  // a bullet that ricochets
+  bounce:
+    `<rect x="2" y="54" width="60" height="8" rx="2.5" fill="${G('steel')}" ${S2}/>` +
+    `<path d="M8 8L24 48" fill="none" stroke="${O}" stroke-width="7" stroke-linecap="round" stroke-dasharray="1 10"/><path d="M8 8L24 48" fill="none" stroke="#9fe8ff" stroke-width="3.4" stroke-linecap="round" stroke-dasharray="1 10"/>` +
+    `<path d="M26 48L42 24" fill="none" stroke="${O}" stroke-width="7" stroke-linecap="round"/><path d="M26 48L42 24" fill="none" stroke="#9fe8ff" stroke-width="3.4" stroke-linecap="round"/>` +
+    `<polygon points="${star(25, 51, 8, 3.6, 8)}" fill="#fff" ${S2}/>` +
+    `<g transform="rotate(34 48 18)">${bullet(48, 2, 15, 32)}</g>`,
+
+  // ---- chapter emblems: round badges
+  ch_city: badge(
+    'city',
+    G('dusk'),
+    `<circle cx="44" cy="22" r="10" fill="#ffe27a"/><circle cx="44" cy="22" r="14" fill="#ffd23c" fill-opacity=".28"/>` +
+      [
+        [3, 36, 12, 30],
+        [14, 24, 12, 42],
+        [25, 31, 10, 35],
+        [34, 16, 13, 50],
+        [46, 29, 11, 37],
+        [56, 22, 10, 44],
+      ]
+        .map(([x, y, w, h]) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#222c6e" stroke="${O}" stroke-width="2.5" stroke-linejoin="round"/>`)
+        .join('') +
+      `<path d="M40.5 16V8M38 11h5" stroke="${O}" stroke-width="2.4" stroke-linecap="round"/>` +
+      [
+        [6, 40], [6, 47], [17, 29], [17, 36], [17, 43], [28, 36], [28, 44], [37, 22], [37, 29], [37, 36], [37, 43], [43, 22], [43, 29], [49, 34], [49, 42], [59, 28], [59, 36], [59, 44],
+      ]
+        .map(([x, y]) => `<rect x="${x}" y="${y}" width="3.2" height="3.6" rx=".6" fill="#ffd84a"/>`)
+        .join('') +
+      `<rect x="0" y="54" width="64" height="12" fill="#10163c" stroke="${O}" stroke-width="2.5"/><path d="M6 59.5h9M25 59.5h9M44 59.5h9" stroke="#ffd23c" stroke-width="2" stroke-linecap="round"/>`
+  ),
+  ch_graveyard: badge(
+    'grave',
+    G('night'),
+    `<circle cx="44" cy="19" r="11" fill="#fff4c4" stroke="${O}" stroke-width="2.5"/><circle cx="40.5" cy="16" r="2.3" fill="#e5d79a"/><circle cx="48" cy="23" r="1.8" fill="#e5d79a"/>` +
+      `<path d="M4 14q5-5 11-2q4-5 10 0q-2 3-8 2q-6 3-13 0z" fill="#3a3590" fill-opacity=".8"/>` +
+      `<path d="M0 46Q16 38 32 44T64 42V64H0z" fill="#1d3b3a" stroke="${O}" stroke-width="2.5"/>` +
+      `<path d="M50 50V22M50 34l-8-8M50 29l7-8M50 40l7-5" stroke="${O}" stroke-width="6" stroke-linecap="round"/><path d="M50 50V22M50 34l-8-8M50 29l7-8M50 40l7-5" stroke="#3a2f55" stroke-width="2.6" stroke-linecap="round"/>` +
+      `<path d="M7 51V40a6 6 0 0 1 12 0V51z" fill="${G('stone')}" stroke="${O}" stroke-width="2.5" stroke-linejoin="round"/>` +
+      `<path d="M20 58V32a11 11 0 0 1 22 0V58z" fill="${G('stone')}" stroke="${O}" stroke-width="3" stroke-linejoin="round"/>` +
+      `<path d="M31 25v14M25 31h12" stroke="#3a4468" stroke-width="3.2" stroke-linecap="round"/>` +
+      `<path d="M24 38v14" stroke="#fff" stroke-opacity=".5" stroke-width="2.4" stroke-linecap="round"/>`
+  ),
+  ch_hell: badge(
+    'hell',
+    G('hellsky'),
+    `<circle cx="32" cy="38" r="18" fill="#ffb020" fill-opacity=".55"/><circle cx="32" cy="42" r="10" fill="#fff0a0"/>` +
+      `<path d="M2 52Q8 42 14 52Q20 40 26 52Q32 38 38 52Q44 40 50 52Q56 42 62 52V64H2z" fill="${G('orange')}" stroke="${O}" stroke-width="2.4" stroke-linejoin="round"/>` +
+      `<path d="M8 20Q8 8 32 8Q56 8 56 20V64H46V24Q46 18 32 18Q18 18 18 24V64H8z" fill="#2a1830" stroke="${O}" stroke-width="3" stroke-linejoin="round"/>` +
+      `<path d="M29 16Q22 15 19 7Q28 8 32 14zM35 16Q42 15 45 7Q36 8 32 14z" fill="${G('bone')}" ${S2}/>` +
+      `<path d="M8 24L13 12L18 24M46 24L51 12L56 24" fill="#3a2440" stroke="${O}" stroke-width="2.4" stroke-linejoin="round"/>` +
+      `<path d="M13 28V60M51 28V60" stroke="#6a3a58" stroke-width="2" stroke-linecap="round"/>` +
+      `<circle cx="32" cy="14" r="3.4" fill="#ff6a1a" stroke="${O}" stroke-width="2"/>` +
+      `<path d="M24 62Q28 54 32 60Q36 52 40 62z" fill="${G('gold')}" stroke="${O}" stroke-width="2.2" stroke-linejoin="round"/>`
+  ),
+  // endless mode: the infinity loop with a skull in the middle
+  endless:
+    `<path d="M32 32C24 17 5 16 5 32C5 48 24 47 32 32C40 17 59 16 59 32C59 48 40 47 32 32z" fill="none" stroke="${O}" stroke-width="13" stroke-linejoin="round"/>` +
+    `<path d="M32 32C24 17 5 16 5 32C5 48 24 47 32 32C40 17 59 16 59 32C59 48 40 47 32 32z" fill="none" stroke="${G('gold')}" stroke-width="7" stroke-linejoin="round"/>` +
+    `<path d="M10 26C14 21 20 21 25 26" fill="none" stroke="#fff" stroke-opacity=".75" stroke-width="2.4" stroke-linecap="round"/>` +
+    `<use href="#hb-skull" x="14" y="12" width="36" height="36"/>`,
+  // ---- stage 2 weapons: a coil gun with blue arcs
+  tesla: gunS(
+    `<path d="M1 26h12l2 16H5c-3 0-4-2-4-4z" fill="${G('dark')}" ${S}/>` +
+      `<rect x="11" y="23" width="21" height="17" rx="4.5" fill="${G('steel')}" ${S}/>` +
+      `<rect x="15" y="28" width="13" height="5" rx="2" fill="#6fe4ff"/>` +
+      `<path d="M17 40h9v10c0 2-1 3-3 3h-3c-2 0-3-1-3-3z" fill="${G('dark')}" ${S}/>` +
+      `<rect x="30" y="28" width="22" height="8" rx="2" fill="${G('steel')}" ${S2}/>` +
+      [34, 39, 44, 49].map((x) => `<rect x="${x}" y="23" width="3.6" height="18" rx="1.6" fill="${G('copper')}" ${S2}/>`).join('') +
+      `<circle cx="55" cy="32" r="5.2" fill="${G('cyan')}" ${S2}/><circle cx="53.5" cy="30.5" r="1.7" fill="#fff"/>` +
+      [`M56 26L59 21L56 19.5L60 13`, `M60 31L63.5 28.5L61 27`, `M57 38L60 41L58 43.5L61 47`]
+        .map((d) => `<path d="${d}" fill="none" stroke="${O}" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="#7ff0ff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`)
+        .join(''),
+    0.88
+  ),
+  // a launcher that fires round blades
+  saw: gun(
+    `<path d="M1 28h12l2 16H5c-3 0-4-2-4-4z" fill="${G('brown')}" ${S}/>` +
+      `<rect x="11" y="24" width="27" height="19" rx="5" fill="${G('orange')}" ${S}/>` +
+      `<rect x="17" y="29" width="14" height="5" rx="2" fill="${G('dark')}"/>` +
+      `<path d="M20 43h9v9c0 2-1 3-3 3h-3c-2 0-3-1-3-3z" fill="${G('dark')}" ${S}/>` +
+      `<rect x="35" y="27" width="9" height="12" rx="2" fill="${G('dark')}" ${S2}/>` +
+      sawblade(47, 31, 15.5, 10, G('steel'), G('red'), 8)
+  ),
+
+  // ---- evolutions
+  // flame cannon with a blue-white fire
+  inferno: gunS(
+    `<path d="M1 28h11l2 15H4c-3 0-3-2-3-4z" fill="${G('dark')}" ${S}/>` +
+      `<rect x="10" y="22" width="29" height="20" rx="6" fill="${G('dark')}" ${S}/>` +
+      [15, 21, 27].map((x) => `<rect x="${x}" y="26.5" width="3.4" height="11" rx="1.7" fill="#8ff2ff"/>`).join('') +
+      `<path d="M19 42h9v9c0 2-1 3-3 3h-3c-2 0-3-1-3-3z" fill="${G('steel')}" ${S}/>` +
+      `<rect x="37" y="24.5" width="7" height="15" rx="2.5" fill="${G('steel')}" ${S}/>` +
+      `<g transform="translate(44 23) rotate(62)">${flame(0, 4, 9, 20, G('bluefire'), 1, S2)}</g><g transform="translate(44 41) rotate(118)">${flame(0, 4, 9, 20, G('bluefire'), -1, S2)}</g>` +
+      `<g transform="translate(43 32) rotate(90)">${flame(0, 10, 23, 38, G('bluefire'), 1)}${flame(0, 9, 12, 22, '#ffffff', 1, '')}</g>`,
+    0.86
+  ),
+  // a volley of small rockets
+  swarm: [
+    [9, 26, -13],
+    [55, 26, 13],
+    [20.5, 30, -7],
+    [43.5, 30, 7],
+    [32, 36, 0],
+  ]
+    .map(([x, h, a]) => `<g transform="rotate(${a} ${x} 46)">${miniRocket(x, 46 - h, h > 33 ? 11 : 9, h)}</g>`)
+    .join(''),
+  // a shotgun whose muzzle is a dragon head breathing fire
+  dragon: gunS(
+    `<path d="M1 30h8l2 13H3c-2 0-2-2-2-4z" fill="${G('brown')}" ${S}/>` +
+      `<rect x="8" y="26" width="12" height="15" rx="3.5" fill="${G('dark')}" ${S}/>` +
+      `<rect x="18" y="27" width="14" height="5" rx="2" fill="${G('steel')}" ${S2}/><rect x="18" y="33" width="14" height="5" rx="2" fill="${G('steel')}" ${S2}/>` +
+      `<rect x="13" y="41" width="10" height="6" rx="3" fill="${G('brown')}" ${S2}/>` +
+      `<path d="M30 31h33v5H30z" fill="#4a0a18"/>` +
+      `<path d="M30 28L35 13Q50 8 63 20L62 31H30z" fill="${G('green')}" ${S}/>` +
+      `<path d="M31 36H62Q60 48 46 49Q35 49 31 42z" fill="${G('green')}" ${S}/>` +
+      `<path d="M38 31l3 6 3-6zM49 31l3 6 3-6z" fill="#fff" ${S2}/>` +
+      `<path d="M36 15Q31 3 20 0Q27 9 28 22z" fill="${G('bone')}" ${S2}/><path d="M47 11Q49 2 42 -3Q43 5 41 12z" fill="${G('bone')}" ${S2}/>` +
+      `<circle cx="46" cy="20" r="3.8" fill="#ffe34a" ${S2}/><path d="M46.4 17.6v4.8" stroke="${O}" stroke-width="1.9" stroke-linecap="round"/>` +
+      `<circle cx="58" cy="22.5" r="1.5" fill="${O}"/>` +
+      `<g transform="translate(62 33.5) rotate(90)">${flame(0, 8, 15, 22, G('orange'), 1)}${flame(0, 7, 7.5, 12, G('gold'), 0, '')}</g>`,
+    0.78
+  ),
+  // a lightning gun under a storm cloud
+  thunder:
+    `<g fill="${O}" stroke="${O}" stroke-width="7" stroke-linejoin="round"><circle cx="16" cy="18" r="10"/><circle cx="31" cy="12" r="12"/><circle cx="46" cy="19" r="9"/><rect x="8" y="17" width="46" height="11" rx="5.5"/></g>` +
+    `<g fill="${G('storm')}"><circle cx="16" cy="18" r="10"/><circle cx="31" cy="12" r="12"/><circle cx="46" cy="19" r="9"/><rect x="8" y="17" width="46" height="11" rx="5.5"/></g>` +
+    `<g transform="translate(1 25) scale(.78) rotate(-8 32 32)">` +
+    `<path d="M1 27h12l2 15H5c-3 0-4-2-4-4z" fill="${G('dark')}" ${S}/>` +
+    `<rect x="11" y="23" width="22" height="17" rx="4.5" fill="${G('steel')}" ${S}/><rect x="15" y="28" width="13" height="5" rx="2" fill="#6fe4ff"/>` +
+    `<path d="M17 40h9v10c0 2-1 3-3 3h-3c-2 0-3-1-3-3z" fill="${G('dark')}" ${S}/>` +
+    `<rect x="31" y="28" width="26" height="8" rx="2" fill="${G('steel')}" ${S2}/>` +
+    `<rect x="46" y="22" width="4" height="20" rx="2" fill="${G('cyan')}" ${S2}/><rect x="55" y="22" width="4" height="20" rx="2" fill="${G('cyan')}" ${S2}/>` +
+    `</g>` +
+    `<path d="M40 25L28 40h9l-5 14 17-21h-9z" fill="${G('gold')}" ${S}/>` +
+    `<path d="M39 29L32 38" stroke="#fff" stroke-opacity=".8" stroke-width="2.4" fill="none" stroke-linecap="round"/>`,
+  // a huge bloody sawblade
+  bloodmill:
+    sawblade(32, 31, 28.5, 12, G('steel'), G('blood'), 0, 0.2) +
+    `<path d="M10 23C8 33 13 40 22 40C28 40 28 33 24 29C21 26 21 22 17 20C14 19 11 20 10 23z" fill="#b0102a" fill-opacity=".92"/>` +
+    `<path d="M42 11C50 12 56 20 54 27C52 32 46 31 44 27C42 23 45 20 42 17C41 15 40 12 42 11z" fill="#b0102a" fill-opacity=".92"/>` +
+    `<path d="M33 42C39 42 46 46 45 52C44 56 39 55 37 52C35 57 28 57 28 52C28 48 28 42 33 42z" fill="#b0102a" fill-opacity=".92"/>` +
+    `<path d="M16 53V59M49 55V60" stroke="${O}" stroke-width="7" stroke-linecap="round"/><path d="M16 53V59M49 55V60" stroke="#b0102a" stroke-width="3.4" stroke-linecap="round"/>` +
+    `<circle cx="32" cy="31" r="7" fill="${G('blood')}" ${S2}/><circle cx="32" cy="31" r="2.6" fill="${O}"/>` +
+    `<path d="M17 14a20 20 0 0 1 11-7" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="3" stroke-linecap="round"/>`,
 };
 
 // ids that reuse another picture

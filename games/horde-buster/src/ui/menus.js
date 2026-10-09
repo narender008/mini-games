@@ -61,6 +61,8 @@ const LOOT = [
   ['scatter', 'Scatter Gun', 'Wide blast of pellets'],
   ['rocket', 'Rocket Pod', 'Homing rockets that explode'],
   ['flamer', 'Flamethrower', 'Short range, burns crowds'],
+  ['tesla', 'Tesla Gun', 'Lightning arcs between foes'],
+  ['saw', 'Saw Launcher', 'Blades rip through lines of foes'],
   ['overdrive', 'Overdrive', '8 s of double fire rate'],
   ['triple', 'Triple Shot', '8 s of three-way fire'],
   ['rage', 'Rage', '8 s: shots pierce and explode'],
@@ -167,6 +169,11 @@ export class Menus {
     fs.hidden = !canFullscreen;
     ui.wire(fs, () => ui.fullscreen());
 
+    // the chapter cards: filled in by renderChapters() each time the title shows
+    this.chSel = h('div', { class: 'chsel', role: 'group', 'aria-label': 'Choose a chapter', hidden: true });
+    this.chCards = [];
+    this.sel = null;
+
     const el = ui.mk(
       'title',
       'title',
@@ -175,10 +182,13 @@ export class Menus {
         h('div', { class: 'logo-wrap', html: LOGO }),
         h('p', { class: 'tagline' }, 'Blast the horde. ', h('span', { class: 'age' }, 'Ages 18+')),
         this.titleChapter,
+        this.chSel,
         h('div', { class: 'stack' },
           ui.btn('Play', 'xl yellow shine', () => ui.call('onPlay'), 'play'),
-          ui.btn('Armoury', 'blue', () => ui.call('onArmoury'), 'armoury'),
-          ui.btn('Settings', 'navy', () => ui.call('onSettings'), 'gear')
+          h('div', { class: 'duo' },
+            ui.btn('Armoury', 'blue', () => ui.call('onArmoury'), 'armoury'),
+            ui.btn('Settings', 'navy', () => ui.call('onSettings'), 'gear')
+          )
         ),
         this.titleBest,
         h('p', { class: 'keys' },
@@ -191,13 +201,108 @@ export class Menus {
     el.append(h('div', { class: 'corner left' }, home), h('div', { class: 'corner right' }, this.coinChip(this.titleCoins), this.titleSnd, fs));
   }
 
+  // info = { coins, best, chapterName, chapters: [{ id, name, sub, icon, unlocked, cleared, best }],
+  //          endless: { unlocked, best }, selected: index | 'endless' }
   showTitle(info = {}) {
     this.titleCoins.data = fmt(info.coins || 0);
-    this.titleChapter.textContent = info.chapterName ? `Chapter: ${info.chapterName}` : '';
-    this.titleChapter.hidden = !info.chapterName;
+    const chapters = Array.isArray(info.chapters) && info.chapters.length ? info.chapters : null;
+    // with the chapter cards up, the chosen card says which chapter this is
+    this.titleChapter.textContent = info.chapterName && !chapters ? `Chapter: ${info.chapterName}` : '';
+    this.titleChapter.hidden = !info.chapterName || !!chapters;
     const b = info.best;
     this.titleBest.textContent = b ? `Best: wave ${b.wave} · chapter ${b.chapter} · ${fmt(b.kills)} kills` : 'No runs yet. Go and make some.';
+    this.renderChapters(info, chapters);
     this.ui.show('title');
+  }
+
+  // what the title has selected: a chapter index, 'endless', or null without chapter cards
+  selection() {
+    return this.sel;
+  }
+
+  renderChapters(info, chapters) {
+    const box = clear(this.chSel);
+    this.chCards = [];
+    if (!chapters) {
+      box.hidden = true;
+      this.sel = null;
+      return;
+    }
+    box.hidden = false;
+    const endless = info.endless || null;
+    // a selection the lead names wins; otherwise keep ours while it is still playable, else the first open chapter
+    const playable = (v) => (v === 'endless' ? !!endless?.unlocked : Number.isInteger(v) && !!chapters[v] && chapters[v].unlocked !== false);
+    let sel = info.selected;
+    if (!playable(sel)) sel = playable(this.sel) ? this.sel : Math.max(0, chapters.findIndex((c) => c.unlocked !== false));
+    this.sel = sel;
+
+    const add = (key, cls, o) => {
+      const locked = !!o.locked;
+      const on = key === sel;
+      const card = h(
+        'button',
+        {
+          type: 'button',
+          class: `chc${cls}${on ? ' sel' : ''}${locked ? ' locked' : ''}${o.cleared ? ' done' : ''}`,
+          'data-ch': o.id,
+          style: `--i:${this.chCards.length}`,
+          'aria-pressed': String(on),
+          'aria-disabled': locked ? 'true' : null,
+          title: o.tip,
+        },
+        h('span', { class: 'ch-ico', html: icon(o.icon) }),
+        h('b', { class: 'ch-name', text: o.name }),
+        h('span', { class: 'ch-note', text: o.note }),
+        locked ? h('span', { class: 'ch-badge lock', html: icon('lock') }) : o.cleared ? h('span', { class: 'ch-badge tick', html: icon('check') }) : null
+      );
+      // a locked card is aria-disabled, which wire() skips: it only shakes
+      if (locked) card.addEventListener('click', () => !reduced() && card.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-.3em)' }, { transform: 'translateX(.3em)' }, { transform: 'translateX(0)' }], { duration: 240 }));
+      this.ui.wire(card, () => {
+        this.pick(key);
+        card.blur(); // so Enter plays instead of pressing this card again
+      });
+      this.chCards.push({ key, el: card, locked });
+      box.appendChild(card);
+    };
+
+    chapters.forEach((c, i) => {
+      const locked = c.unlocked === false;
+      const note = locked ? c.hint || `Clear chapter ${i} first` : c.cleared ? (c.best > 0 ? `Best: wave ${c.best}` : 'Cleared') : c.sub || '';
+      add(i, '', { id: c.id, name: c.name, icon: c.icon || `ch_${c.id}`, locked, cleared: !!c.cleared && !locked, note, tip: c.sub ? `${c.name}: ${c.sub}` : c.name });
+    });
+    if (endless) {
+      const locked = !endless.unlocked;
+      const last = chapters[chapters.length - 1];
+      const note = locked ? `Clear ${last?.name || 'the last chapter'} to unlock` : endless.best > 0 ? `Best: wave ${endless.best}` : 'How long can you last?';
+      add('endless', ' endless', { id: 'endless', name: 'Endless', icon: 'endless', locked, cleared: false, note, tip: 'Endless: one run, no end' });
+    }
+  }
+
+  // choose a card on the title (a click, or the arrow keys)
+  pick(key) {
+    if (key === this.sel) return;
+    this.sel = key;
+    for (const c of this.chCards) {
+      const on = c.key === key;
+      c.el.classList.toggle('sel', on);
+      c.el.setAttribute('aria-pressed', String(on));
+    }
+    this.ui.call('onSelect', key);
+  }
+
+  // Left and Right walk the open cards; returns true when it used the key
+  titleKey(e) {
+    if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || !this.chCards.length) return false;
+    const open = this.chCards.filter((c) => !c.locked);
+    const at = open.findIndex((c) => c.key === this.sel);
+    const to = open[(at + (e.key === 'ArrowRight' ? 1 : open.length - 1)) % open.length];
+    if (!to) return false;
+    e.preventDefault();
+    if (to.key !== this.sel) {
+      this.pick(to.key);
+      this.ui.snd('hover');
+    }
+    return true;
   }
 
   // ----------------------------------------------------------------- pause

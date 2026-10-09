@@ -11,17 +11,17 @@ import { CRATE, CRATE_GUNS } from './game/pools.js';
 
 // how the pilot rates guns: a crate is worth taking for a star on the gun in
 // hand, or for a gun it rates above the one it holds (counting stars)
-const GUN_RANK = { blaster: 1.05, scatter: 0.95, rocket: 1.1, flamer: 1 };
+const GUN_RANK = { blaster: 1.05, scatter: 0.95, rocket: 1.1, flamer: 1, tesla: 1.05, saw: 1.05 };
 function wantCrate(run, id) {
   if (id === run.held) return run.arms[id] < 3;
   // the flamethrower cannot reach the boss
-  if (run.boss && run.enemies.alive[run.boss.i]) return id !== 'flamer' && (run.held === 'flamer' || run.arms[id] > run.arms[run.held]);
+  if (run.boss && run.enemies.alive[run.boss.i]) return id !== 'flamer' && id !== 'saw' && (run.held === 'flamer' || run.held === 'saw' || run.arms[id] > run.arms[run.held]);
   const mine = GUN_RANK[run.held] * (1 + 0.6 * run.arms[run.held]);
   const theirs = GUN_RANK[id] * (1 + 0.6 * Math.max(1, run.arms[id]));
   return theirs > mine;
 }
 
-const PRIORITY = ['railgun', 'stormcaller', 'carpetbomb', 'multishot', 'damage', 'firerate', 'pierce', 'crit', 'maxhp', 'explosive', 'chain', 'regen', 'speed', 'magnet', 'knockback', 'cooldown', 'freezer', 'bombup', 'shieldup'];
+const PRIORITY = ['railgun', 'inferno', 'swarm', 'dragon', 'thunder', 'bloodmill', 'stormcaller', 'carpetbomb', 'multishot', 'damage', 'firerate', 'maxhp', 'armour', 'pierce', 'bigshot', 'regen', 'bloodthirst', 'crit', 'deadeye', 'explosive', 'chain', 'incendiary', 'executioner', 'speed', 'corpsebomb', 'knockback', 'magnet', 'greed', 'bounce', 'cooldown', 'freezer', 'lucky', 'adrenaline', 'bombup', 'shieldup'];
 
 export function pilot(run, skill = 1) {
   const h = run.hero;
@@ -45,11 +45,37 @@ export function pilot(run, skill = 1) {
     const c = clamp(Math.floor(E.x[i] / 30), 0, cols - 1);
     if (E.y[i] < h.y - 120) C[c * 2] += 1 + (E.type[i] === 2 ? 2 : 0);
     const dy = h.y - E.y[i];
-    if (dy < 230 && dy > -60) C[c * 2 + 1] += 1;
+    // exploders close by are worth three of anything else to keep clear of
+    if (dy < 230 && dy > -60) C[c * 2 + 1] += TYPES[E.type[i]].burst ? 3 : TYPES[E.type[i]].key === 'hound' ? 2 : 1;
   }
   // crates: go for a star on the gun in hand or a better gun, keep clear of the rest; surge orbs are always welcome
   const P = run.pickups;
   const bossX = run.boss && E.alive[run.boss.i] && run.boss.state !== 'enter' ? E.x[run.boss.i] : null;
+  // shot threat per lane: shots that would pass close to the hero standing there (closest approach over the next
+  // 1.5 s; the sooner, the worse); a shot already past the hero's line is ignored
+  if (!run.botT2 || run.botT2.length < cols) run.botT2 = new Float32Array(cols + 4);
+  const T = run.botT2;
+  T.fill(0);
+  const S = run.shots;
+  const hy = run.target.y - 34;
+  for (let c = 2; c * 30 <= ARENA.w - 60; c++) {
+    const lx = c * 30;
+    let threat = 0;
+    for (let k = 0; k < S.n; k++) {
+      const px = S.x[k] - lx;
+      const py = S.y[k] - hy;
+      const vx = S.vx[k];
+      const vy = S.vy[k];
+      const vv = vx * vx + vy * vy || 1;
+      const t = clamp(-(px * vx + py * vy) / vv, 0, 1.5);
+      const dx = px + vx * t;
+      const dy = py + vy * t;
+      const rr = S.r[k] + 34;
+      if (dx * dx + dy * dy < rr * rr) threat += 1 / (0.2 + t);
+    }
+    T[c] = threat;
+  }
+  const hc = clamp(Math.floor(h.x / 30), 2, cols - 1);
   let bestX = h.x;
   let best = -1e9;
   for (let lx = 60; lx <= ARENA.w - 60; lx += 30) {
@@ -61,21 +87,23 @@ export function pilot(run, skill = 1) {
       if (d >= -1 && d <= 1) score += C[cc * 2];
       score -= 12 * skill * C[cc * 2 + 1];
     }
-    // shots heading into this lane
-    const S = run.shots;
-    for (let k = 0; k < S.n; k++) {
-      const t = (h.y - 30 - S.y[k]) / (S.vy[k] || 1);
-      if (t > 0 && t < 1.2) {
-        const xa = S.x[k] + S.vx[k] * t;
-        if (Math.abs(xa - lx) < 40) score -= 20 * skill;
-      }
-    }
+    // shots: the lane itself, and the worst lane on the way there (the hero crosses them at speed)
+    const c0 = Math.min(c, hc);
+    const c1 = Math.max(c, hc);
+    let path = 0;
+    for (let cc = c0; cc <= c1; cc++) if (T[cc] > path) path = T[cc];
+    score -= 45 * skill * (T[c] + 0.6 * path);
     for (let k = 0; k < P.n; k++) {
       if (P.y[k] < BAND.y0 - 260 || Math.abs(P.x[k] - lx) > 60) continue;
       if (P.kind[k] === CRATE) score += wantCrate(run, CRATE_GUNS[P.w[k]]) ? 40 : -40;
       else if (P.kind[k] > CRATE) score += 25;
     }
     score -= (Math.abs(lx - h.x) * 0.01) / FIELD.s;
+    // acid and fire pools on the hero's line
+    const HZ = run.hazards;
+    for (let k = 0; k < HZ.n; k++) if (Math.abs(HZ.y[k] - run.target.y) < HZ.r[k] * 0.7 + 20 && Math.abs(HZ.x[k] - lx) < HZ.r[k] + 30) score -= 60 * skill;
+    // a boss's marked lanes and circles (each boss says how dangerous a spot is, 0..1)
+    if (run.boss?.danger) score -= 400 * skill * run.boss.danger(lx, h.y);
     // a player stays under the boss to hit it (its charge and slam are dodged below)
     if (bossX !== null && Math.abs(lx - bossX) < 110) score += 30 * skill + 10;
     if (score > best) {

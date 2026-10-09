@@ -22,10 +22,24 @@ mkdir -p "$WORK/frames" "$WORK/atlas" "$HB_TMP" "$OUT"
 START=$(date +%s)
 QUIET="^Ignoring\|Saved:\|use_nodes\|DeprecationWarning\|^Fra:\|^Blender\|^Read\|^$\|Time:"
 
-# wait until the machine is calm enough for a render, and while two other Blender renders are already running
+# At most two heavy jobs at once on this machine (Blender builds, plus the lead's sims and benches): a job holds
+# one of two lock slots (mkdir is atomic, so jobs starting together cannot both slip in), and also waits while the
+# machine is busy or short of memory.
+HEAVY="${TMPDIR:-/tmp}/horde-buster-heavy"
+mkdir -p "$HEAVY"
+SLOT=""
+while [ -z "$SLOT" ]; do
+  for s in 0 1; do
+    d="$HEAVY/slot$s"
+    if mkdir "$d" 2>/dev/null; then echo $$ > "$d/pid"; SLOT="$d"; break; fi
+    p=$(cat "$d/pid" 2>/dev/null)
+    # a slot whose job has gone (or that never got its pid written) is freed
+    if { [ -n "$p" ] && ! kill -0 "$p" 2>/dev/null; } || { [ -z "$p" ] && [ -n "$(find "$d" -maxdepth 0 -mmin +1 2>/dev/null)" ]; }; then rm -rf "$d"; fi
+  done
+  [ -z "$SLOT" ] && { echo "waiting: two heavy jobs going"; sleep 10; }
+done
+trap 'rm -rf "$SLOT"' EXIT
 while : ; do
-  BUSY=$(pgrep -f "MacOS/Blender -b" | wc -l | tr -d ' ')
-  if [ "$BUSY" -ge 2 ]; then echo "waiting: $BUSY Blender runs going"; sleep 10; continue; fi
   LOAD=$(uptime | sed 's/.*load averages*: *//' | awk '{gsub(",","",$1); print int($1)}')
   FREE=$(memory_pressure 2>/dev/null | tail -1 | sed 's/[^0-9]*\([0-9]*\)%.*/\1/')
   [ -z "$FREE" ] && FREE=100
@@ -44,6 +58,7 @@ if [ -n "$REVIEW" ]; then
   "$BLENDER" -b --factory-startup -P review.py -- --frames "$WORK/frames" --out "$REVIEW/review-$TAG.png" ${REVIEW_MATCH:+--match "$REVIEW_MATCH"} 2>&1 | grep "review:" || true
 fi
 [ -n "$NOPACK" ] && exit 0
+rm -f "$WORK"/atlas/sprites_*.png # pages left from a bigger pack would be shipped too
 "$BLENDER" -b --factory-startup -P pack.py -- --frames "$WORK/frames" --out "$WORK/atlas" --json "$OUT/sprites.json" 2>&1 | grep -v "$QUIET"
 rm -f "$OUT"/sprites_*.webp
 for f in "$WORK"/atlas/sprites_*.png; do

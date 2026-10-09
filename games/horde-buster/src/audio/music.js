@@ -12,12 +12,12 @@
 // folding the tails that run past the end back onto the start.
 import { TAU, BLOCK, mtof, seeded, noise, Biquad, filter, normalise, wave, WAVES } from './dsp.js';
 
-const SR = 32000;
-const MASK = 65535;
+export const SR = 32000;
+export const MASK = 65535;
 
 // ---------------------------------------------------------------- the mix
 
-class Mix {
+export class Mix {
   constructor(n, big) {
     this.n = n;
     this.big = big;
@@ -27,7 +27,7 @@ class Mix {
 }
 
 // m.tmp[0..len) into the mix at sample `at`, equal-power panned (pan -1..1, unity at the centre)
-function put(m, mix, at, len, g, pan) {
+export function put(m, mix, at, len, g, pan) {
   const th = (pan + 1) * Math.PI * 0.25;
   const gl = g * Math.cos(th) * 1.4142;
   const gr = g * Math.sin(th) * 1.4142;
@@ -41,7 +41,7 @@ function put(m, mix, at, len, g, pan) {
   }
 }
 
-function* addMix(dst, src, g = 1) {
+export function* addMix(dst, src, g = 1) {
   for (let b = 0; b < dst.big; b += 16384) {
     const e = Math.min(dst.big, b + 16384);
     for (let i = b; i < e; i++) {
@@ -53,7 +53,7 @@ function* addMix(dst, src, g = 1) {
 }
 
 // the tail past the loop end laid back over the start
-function* fold(mix) {
+export function* fold(mix) {
   const { n, big } = mix;
   const L = new Float32Array(n);
   const R = new Float32Array(n);
@@ -69,7 +69,7 @@ function* fold(mix) {
 }
 
 // noise tables the drums read from
-function* makeTables(r) {
+export function* makeTables(r) {
   const n = MASK + 1;
   const t = {};
   for (const [name, chain] of [
@@ -86,13 +86,13 @@ function* makeTables(r) {
   return t;
 }
 
-function newCtx(r, tables) {
+export function newCtx(r, tables) {
   return { sr: SR, r, nz: tables, tmp: new Float32Array(SR * 8), ph: new Float64Array(64), dp: new Float64Array(64) };
 }
 
 // ---------------------------------------------------------------- drums
 
-function* kick(m, mix, t, vel = 1, o = {}) {
+export function* kick(m, mix, t, vel = 1, o = {}) {
   const sr = m.sr;
   const at = Math.round(t * sr);
   const len = Math.round((o.len ?? 0.3) * sr);
@@ -117,7 +117,7 @@ function* kick(m, mix, t, vel = 1, o = {}) {
   yield;
 }
 
-function* snare(m, mix, t, vel = 1, pan = 0) {
+export function* snare(m, mix, t, vel = 1, pan = 0) {
   const sr = m.sr;
   const at = Math.round(t * sr);
   const len = Math.round(0.3 * sr);
@@ -137,7 +137,7 @@ function* snare(m, mix, t, vel = 1, pan = 0) {
   yield;
 }
 
-function* hat(m, mix, t, vel = 1, open = false, pan = 0) {
+export function* hat(m, mix, t, vel = 1, open = false, pan = 0) {
   const sr = m.sr;
   const at = Math.round(t * sr);
   const len = Math.round((open ? 0.4 : 0.09) * sr);
@@ -150,7 +150,7 @@ function* hat(m, mix, t, vel = 1, open = false, pan = 0) {
   yield;
 }
 
-function* tom(m, mix, t, f, vel = 1, pan = 0, tau = 0.16) {
+export function* tom(m, mix, t, f, vel = 1, pan = 0, tau = 0.16) {
   const sr = m.sr;
   const at = Math.round(t * sr);
   const len = Math.round(Math.min(0.7, tau * 5) * sr);
@@ -171,7 +171,7 @@ function* tom(m, mix, t, f, vel = 1, pan = 0, tau = 0.16) {
   yield;
 }
 
-function* crash(m, mix, t, vel = 1, len = 2.4) {
+export function* crash(m, mix, t, vel = 1, len = 2.4) {
   const sr = m.sr;
   const at = Math.round(t * sr);
   const n = Math.round(len * sr);
@@ -188,7 +188,7 @@ function* crash(m, mix, t, vel = 1, len = 2.4) {
 }
 
 // a noise riser that swells to its end (the bar before a crash)
-function* riser(m, mix, t, dur, vel = 1) {
+export function* riser(m, mix, t, dur, vel = 1) {
   const sr = m.sr;
   const at = Math.round(t * sr);
   const n = Math.round(dur * sr);
@@ -212,7 +212,7 @@ function* riser(m, mix, t, dur, vel = 1) {
 //   vib [Hz, depth, delay], sub level of a sine an octave under the lowest note
 //   pump [beat s, depth, tc]: ducks after every beat, as if sidechained to the kick
 //   vel gain, pan -1..1
-function* note(m, mix, t, o) {
+export function* note(m, mix, t, o) {
   const sr = m.sr;
   const at = Math.round(t * sr);
   const rel = o.rel ?? 0.05;
@@ -291,7 +291,7 @@ function* note(m, mix, t, o) {
 // ---------------------------------------------------------------- effects
 
 // A stereo ping-pong echo over a whole mix: time in seconds, feedback fb, level wet.
-function* pingpong(mix, sr, time, fb, wet) {
+export function* pingpong(mix, sr, time, fb, wet) {
   const d = Math.round(time * sr);
   const n = mix.big;
   const { L, R } = mix;
@@ -316,7 +316,7 @@ function* pingpong(mix, sr, time, fb, wet) {
 }
 
 // A small Schroeder reverb (4 damped combs, 2 all-passes a side) laid over a whole mix.
-function* reverb(mix, sr, wet, size = 1, fbk = 0.82, damp = 0.35) {
+export function* reverb(mix, sr, wet, size = 1, fbk = 0.82, damp = 0.35) {
   const n = mix.big;
   const scale = (sr / 44100) * size;
   const mk = (list) => list.map((d) => ({ buf: new Float32Array(Math.round(d * scale)), i: 0, lp: 0 }));
@@ -354,8 +354,8 @@ function* reverb(mix, sr, wet, size = 1, fbk = 0.82, damp = 0.35) {
 
 // ---------------------------------------------------------------- chords and riffs
 
-const ARPS = [0, 1, 2, 3, 2, 1, 0, 1, 2, 3, 2, 1, 0, 1, 2, 3];
-const on = (pat, s) => pat[s] !== '.';
+export const ARPS = [0, 1, 2, 3, 2, 1, 0, 1, 2, 3, 2, 1, 0, 1, 2, 3];
+export const on = (pat, s) => pat[s] !== '.';
 
 const EM = { g: 40, b: 28, pad: [52, 55, 59, 64], arp: [64, 67, 71, 76] };
 const CM = { g: 48, b: 36, pad: [48, 52, 55, 60], arp: [60, 64, 67, 72] };
@@ -642,7 +642,7 @@ function* renderDefeat() {
 
 // ---------------------------------------------------------------- the table
 
-const sm = (a, b, x) => {
+export const sm = (a, b, x) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
 };

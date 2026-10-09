@@ -4,6 +4,7 @@
 // and the grade. Lit in linear HDR when the device can render to half floats.
 import { createContext, program, texture, Target } from './gl.js';
 import * as S from './shaders.js';
+import { GROUNDS } from './ground/index.js';
 import { clamp } from '../config.js';
 
 const FRAME_FLOATS = 4 * (8 + S.MAX_LIGHTS * 2);
@@ -257,7 +258,6 @@ export class Renderer {
     gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, this.ubo);
     const P = (src, name) => program(gl, src.vs, src.fs, name);
     this.p = {
-      bake: P(S.GROUND_BAKE, 'bake'),
       ground: P(S.GROUND, 'ground'),
       sprite: P(S.SPRITE, 'sprite'),
       stamp: P(S.STAMP, 'stamp'),
@@ -308,7 +308,7 @@ export class Renderer {
       gl.vertexAttribDivisor(i, 1);
     }
     gl.bindVertexArray(null);
-    return { vao, buf, size: 0 };
+    return { vao, buf, size: 0, attribs };
   }
 
   setAtlas(atlas) {
@@ -316,35 +316,46 @@ export class Renderer {
   }
 
   // ---- the ground: baked once per chapter (in strips, so no single draw runs long)
+  // theme: { kind (index into GROUNDS), rect, colors: 8 linear rgb, params: 4 vec4, seed, field: [w, h], glow }
   bakeGround(theme) {
     const gl = this.gl;
     const R = theme.rect;
     const res = this.q.groundRes;
     const w = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), Math.round(R.w * res));
     const h = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), Math.round(R.h * res));
-    if (!this.base || this.base.w !== w || this.base.h !== h) {
-      if (this.base) gl.deleteTexture(this.base.tex);
+    const glow = !!theme.glow;
+    if (!this.base || this.base.w !== w || this.base.h !== h || !!this.base.glow !== glow) {
+      if (this.base) {
+        gl.deleteTexture(this.base.tex);
+        if (this.base.glow) gl.deleteTexture(this.base.glow);
+      }
       const tex = texture(gl, { w, h, internal: gl.SRGB8_ALPHA8 });
-      this.base = { tex, w, h, fb: this.base?.fb || gl.createFramebuffer() };
+      // the glow layer only exists for grounds that glow; it shares the size so one pass writes both
+      const gt = glow ? texture(gl, { w, h, internal: gl.RGBA8 }) : null;
+      this.base = { tex, glow: gt, w, h, fb: this.base?.fb || gl.createFramebuffer() };
     }
     this.baseRect = [R.x, R.y, R.w, R.h];
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.base.fb);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.base.tex, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.base.glow, 0);
+    gl.drawBuffers(glow ? [gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1] : [gl.COLOR_ATTACHMENT0]);
     gl.viewport(0, 0, w, h);
     gl.disable(gl.BLEND);
-    const p = this.p.bake;
+    const kind = theme.kind || 0;
+    this.bakeP ||= [];
+    if (!this.bakeP[kind]) {
+      const g = GROUNDS[kind];
+      this.bakeP[kind] = program(gl, ...Object.values(S.groundBake(g.src, g.fn)), 'bake' + kind);
+    }
+    const p = this.bakeP[kind];
+    p.check();
     gl.useProgram(p.p);
     this.tex(p, 'uNoise', this.noise, 0);
     gl.uniform4f(p.u.uRect, R.x, R.y, R.w, R.h);
-    gl.uniform1i(p.u.uKind, theme.kind || 0);
-    gl.uniform4fv(p.u.uRoad, theme.road);
-    gl.uniform4fv(p.u.uVerge, theme.verge);
-    if (p.u.uLanes) gl.uniform1f(p.u.uLanes, theme.lanes || 3);
-    if (p.u.uCross) gl.uniform4fv(p.u.uCross, theme.cross || [0, 0, 1, 0]);
-    for (const k of ['asphalt', 'asphalt2', 'kerb', 'walk', 'grass', 'dirt', 'plaza', 'line']) {
-      const u = p.u['u' + k[0].toUpperCase() + k.slice(1)];
-      if (u) gl.uniform3fv(u, theme.colors[k]);
-    }
+    gl.uniform3fv(p.u['uC[0]'] ?? p.u.uC, theme.colors.flat());
+    gl.uniform4fv(p.u['uP[0]'] ?? p.u.uP, theme.params.flat());
+    if (p.u.uSeed) gl.uniform1f(p.u.uSeed, theme.seed || 0);
+    if (p.u.uField) gl.uniform2fv(p.u.uField, theme.field || [720, 1280]);
     gl.bindVertexArray(this.vao);
     gl.enable(gl.SCISSOR_TEST);
     for (let x = 0; x < w; x += 512) {
@@ -353,6 +364,7 @@ export class Renderer {
       gl.flush();
     }
     gl.disable(gl.SCISSOR_TEST);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
@@ -457,8 +469,16 @@ export class Renderer {
     gl.uniform1i(p.u[name], unit);
   }
 
+  // each list streams into its own buffer, made at the list's full size the first time it draws: a buffer shared by
+  // several draws in one frame, or one that grows in a busy moment, stalls the GPU for a frame or two
   drawInstances(v, list) {
     const gl = this.gl;
+    if (!list.gpu) {
+      list.gpu = this.instanceVao(list.stride, v.attribs);
+      list.gpu.size = list.data.length;
+      gl.bufferData(gl.ARRAY_BUFFER, list.data.byteLength, gl.DYNAMIC_DRAW);
+    }
+    v = list.gpu;
     gl.bindVertexArray(v.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, v.buf);
     const n = list.count * list.stride;
@@ -474,9 +494,43 @@ export class Renderer {
   // ---- the frame. `s` holds this frame's lists: sprites (a sorted
   // InstanceList), shadows, under (ground glows), alpha (blood, smoke), hot
   // (fire, bolts, sparks), text, and the paint lists (splats, stamps).
+  // GPU time per frame (debug bench only): timer queries, read back a few frames later
+  gpuBegin() {
+    const gl = this.gl;
+    if (!this.gpuOn) return;
+    this.gpuExt ??= gl.getExtension('EXT_disjoint_timer_query_webgl2') || false;
+    const X = this.gpuExt;
+    if (!X) return;
+    this.gpuQ ||= [];
+    this.gpuTimes ||= [];
+    // collect finished queries
+    while (this.gpuQ.length && gl.getQueryParameter(this.gpuQ[0], gl.QUERY_RESULT_AVAILABLE)) {
+      const q = this.gpuQ.shift();
+      if (!gl.getParameter(X.GPU_DISJOINT_EXT)) {
+        this.gpuTimes.push(gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6);
+        (this.gpuFrames ||= []).push(q.frame);
+      }
+      gl.deleteQuery(q);
+    }
+    if (this.gpuQ.length > 8) return;
+    const q = gl.createQuery();
+    q.frame = this.frameNo; // which frame it timed (the bench lines it up with the game)
+    gl.beginQuery(X.TIME_ELAPSED_EXT, q);
+    this.gpuQ.push(q);
+    this.gpuOpen = true;
+  }
+
+  gpuEnd() {
+    if (!this.gpuOpen) return;
+    this.gpuOpen = false;
+    this.gl.endQuery(this.gpuExt.TIME_ELAPSED_EXT);
+  }
+
   render(s) {
     const gl = this.gl;
     if (gl.lost || !this.base) return;
+    this.frameNo = (this.frameNo || 0) + 1;
+    this.gpuBegin();
     const q = this.q;
     this.stats.draws = 0;
     const c = this.cam;
@@ -541,6 +595,8 @@ export class Renderer {
     gl.uniform4fv(p.u.uBaseRect, this.baseRect);
     gl.uniform4fv(p.u.uPaintRect, this.paintRect);
     gl.uniform2f(p.u.uBaseTexel, 1 / this.base.w, 1 / this.base.h);
+    gl.uniform1f(p.u.uGlowOn, this.base.glow ? 1 : 0);
+    if (this.base.glow) this.tex(p, 'uGlow', this.base.glow, 2);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     gl.enable(gl.BLEND);
@@ -622,6 +678,7 @@ export class Renderer {
     gl.uniform4fv(p.u.uFlash, po.flash);
     gl.uniform4f(p.u.uGrade, po.contrast, po.vignette, po.red, po.desat);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    this.gpuEnd();
   }
 
   drawParticles(list) {

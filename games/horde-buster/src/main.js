@@ -5,27 +5,33 @@
 // out again for the new width.
 //
 // URL switches for testing:
-//   ?play            start straight into chapter 1 (skips the title)
-//   ?wave=1..5       start at that wave (with ?play)
+//   ?play            start straight into a game (skips the title)
+//   ?chapter=1..3    the chapter to play (with ?debug, any chapter, even a locked one)
+//   ?endless         endless mode
+//   ?wave=N          start at that wave (with ?play)
 //   ?quality=high|medium|low   force a quality tier (the frame governor still trims the render scale)
 //   ?cover           hide the interface (for screenshots)
 //   ?debug           expose window.__hb (nothing is saved while it is set):
 //     freeze() / thaw()        stop and restart the simulation (rendering continues)
 //     step(ms)                 advance the frozen simulation by ms in fixed steps
-//     spawn(type, n, pattern)  type: shambler runner brute spider spitter; pattern: random line wall cluster flank center swarm
+//     spawn(type, n, pattern)  type: shambler runner brute spider spitter exploder knight imp hound;
+//                              pattern: random line wall cluster flank center swarm
 //     wave(n)                  jump to wave n (1-based) of the chapter
-//     boss()                   bring on the Ogre now
+//     play(i, n = 1)           start chapter i (0..2) or 'endless' at wave n
+//     boss(key)                bring on a boss now: ogre | demon | abom (default: the chapter's own)
 //     god(on = true)           the hero takes no damage
 //     level(n)                 gain n levels now (banked; their cards come in the break after the wave)
 //     pickup(kind)             drop magnet | freeze | shield | bomb | heart | lightning | chest | overdrive | triple | rage
-//     crate(gun)               drop a weapon crate: blaster | scatter | rocket | flamer (default: what the game would pick)
+//     crate(gun)               drop a weapon crate: blaster | scatter | rocket | flamer | tesla | saw (default: what the game would pick)
 //     surge(kind, s = 8)       start a power surge now: overdrive | triple | rage
 //     gun(id, stars)           hold that gun now at that many stars
 //     kill()                   kill everything on the road
-//     bench(ms = 5000, n = 0, gun = 'scatter')  measure frames for ms; with n > 0 first fills the field with n creatures
-//                              (god mode on, spawning topped up, a strong build holding that gun with all three surges);
-//                              resolves {interval:{mean,p50,p95,p99,max}, work:{...}, fps, counts:{enemies, bullets,
-//                              particles, gibs, gems}, size, field, tier, scale}
+//     bench(ms = 5000, n = 0, gun = 'scatter', chapter, boss)  measure frames for ms; with n > 0 first fills the field with n
+//                              creatures of the chapter's (0..2) heaviest mix (god mode on, spawning topped up, a strong
+//                              build holding that gun with all three surges, and the chapter's boss if boss); resolves {interval:{mean,p50,p95,p99,max},
+//                              dropped (frames that missed a refresh), work:{...} (CPU per frame), gpu:{...} (GPU per
+//                              frame, when the browser has timer queries), fps, counts:{enemies, bullets, particles, gibs,
+//                              gems}, size, field, tier, scale, chapter}
 //     sim(seconds, skill, wave) plays the chapter with the test pilot (src/bot.js) flat out, no drawing; resolves a log per wave
 //     auto(on = true)          the test pilot plays in real time
 //     state()                  a summary of the run
@@ -37,8 +43,9 @@ import { loadAtlas } from './gl/atlas.js';
 import { Draw } from './draw.js';
 import { Run } from './game/run.js';
 import { CHAPTERS } from './game/chapters.js';
+import * as ENDLESS from './game/endless.js';
 import { WEAPONS } from './game/upgrades.js';
-import { T } from './game/enemies.js';
+import { T, TYPES } from './game/enemies.js';
 import { PICKUPS, CRATE_GUNS, SURGES } from './game/pools.js';
 import { Input } from './input.js';
 import { UI } from './ui/ui.js';
@@ -46,6 +53,14 @@ import * as Save from './save.js';
 import { canFullscreen, enterFullscreen, toggleFullscreen, isFullscreen } from './fullscreen.js';
 
 const $ = (id) => document.getElementById(id);
+// light a prop gives off (from its glow anchor): radius, colour, flicker
+const PROP_LIGHTS = {
+  fire_barrel: { r: 260, c: [2.6, 1.2, 0.3], flicker: 1, y: -40 },
+  lantern_post: { r: 230, c: [2.0, 1.45, 0.6], flicker: 0.3 },
+  candles: { r: 150, c: [2.4, 1.3, 0.4], flicker: 1 },
+  brazier: { r: 300, c: [2.8, 1.1, 0.25], flicker: 1 },
+  hell_gate: { r: 420, c: [2.6, 0.6, 0.15], flicker: 0.4 },
+};
 // one short line the first time each pickup ever drops (and for the two powers at the first start)
 const HINTS = {
   powers: 'Left-click: Bomb  ·  Right-click: Shield',
@@ -60,6 +75,8 @@ const HINTS = {
   crate_scatter: 'Weapon crate: touch to take the Scatter Gun  ·  the same gun gains a star',
   crate_rocket: 'Weapon crate: touch to take the homing Rocket Pod  ·  the same gun gains a star',
   crate_flamer: 'Weapon crate: touch to take the Flamethrower  ·  short range, burns the horde',
+  crate_tesla: 'Weapon crate: touch to take the Tesla Gun  ·  lightning jumps between foes',
+  crate_saw: 'Weapon crate: touch to take the Saw Launcher  ·  blades rip through whole lines',
   overdrive: 'Overdrive surge: double fire rate for 8 s',
   triple: 'Triple Shot surge: three-way fire for 8 s',
   rage: 'Rage surge: shots pierce and explode for 8 s',
@@ -121,7 +138,10 @@ class App {
     progress(1, 'Ready');
     // a first frame while the loader is still up
     this.frame(performance.now());
-    if (QUERY.has('play')) this.startRun(clamp((parseInt(QUERY.get('wave'), 10) || 1) - 1, 0, 4));
+    // the chapter (or endless) the title screen has picked: the first one not yet cleared
+    this.sel = QUERY.has('endless') ? 'endless' : QUERY.has('chapter') ? clamp((parseInt(QUERY.get('chapter'), 10) || 1) - 1, 0, CHAPTERS.length - 1) : this.firstOpen();
+    if (!this.unlocked(this.sel) && !DEBUG) this.sel = this.firstOpen();
+    if (QUERY.has('play')) this.startRun(Math.max(0, (parseInt(QUERY.get('wave'), 10) || 1) - 1));
     else this.toTitle();
     if (COVER) document.body.classList.add('cover');
     requestAnimationFrame((t) => this.loop(t));
@@ -136,9 +156,40 @@ class App {
 
   setChapter(i) {
     const ch = CHAPTERS[i];
+    if (ch === this.chapter) return;
     this.chapter = ch;
     this.renderer.look = ch.look;
     this.layoutField(true);
+    // a chapter's own themes are built in the background (they are not part of the start-up sounds)
+    this.sound.preload?.(ch.music, ch.bossMusic);
+  }
+
+  // chapters open one after another; endless opens once the last is cleared
+  unlocked(i) {
+    return i === 'endless' ? !!this.data.cleared[CHAPTERS[CHAPTERS.length - 1].id] : i === 0 || !!this.data.cleared[CHAPTERS[i - 1].id] || (DEBUG && QUERY.has('chapter'));
+  }
+
+  firstOpen() {
+    for (let i = 0; i < CHAPTERS.length; i++) if (!this.data.cleared[CHAPTERS[i].id]) return i;
+    return 'endless';
+  }
+
+  titleInfo() {
+    const d = this.data;
+    return {
+      coins: d.coins,
+      best: d.best,
+      chapterName: this.sel === 'endless' ? 'Endless' : CHAPTERS[this.sel].name,
+      canContinue: false,
+      selected: this.sel,
+      chapters: CHAPTERS.map((c, i) => ({ id: c.id, name: c.name, sub: c.sub, icon: c.icon, unlocked: this.unlocked(i), cleared: !!d.cleared[c.id], best: d.bestWave?.[c.id] || 0 })),
+      endless: { unlocked: this.unlocked('endless'), best: d.endlessBest || 0 },
+    };
+  }
+
+  // which setting a run of the selection is fought in
+  settingOf(sel, wave = 0) {
+    return sel === 'endless' ? CHAPTERS.findIndex((c) => c.id === ENDLESS.endlessSetting(wave)) : sel;
   }
 
   // The field fills the screen: its width follows the screen's shape (see
@@ -152,7 +203,15 @@ class App {
     this.renderer.bakeGround(ch.ground(W));
     this.renderer.initPaint({ x: -200, y: -520, w: W + 400, h: 2040 });
     this.props = ch.scenery(W).map((p) => ({ ...p, f: this.atlas.get(p.name) }));
-    this.fireBarrels = this.props.filter((p) => p.name === 'fire_barrel').slice(0, 8);
+    // props that give light (fire barrels, lanterns, candles, braziers, the hell gate): the ones nearest the field first
+    const lit = [];
+    for (const p of this.props) {
+      const L = PROP_LIGHTS[p.name];
+      if (!L || p.x < -60 || p.x > W + 60) continue;
+      const g = this.atlas.anchor('glow', p.name, [0, L.y ?? -40]);
+      lit.push({ x: p.x + g[0] * p.scale * p.flip, y: p.y + g[1] * p.scale, r: L.r * p.scale, c: L.c, flicker: L.flicker, k: Math.abs(p.y - 700) });
+    }
+    this.fireBarrels = lit.sort((a, b) => a.k - b.k).slice(0, 10);
     // wrecks and barriers in play turn the horde aside: a footprint box per prop (centre x, y, half width, half depth)
     const ob = [];
     for (const p of this.props) {
@@ -211,18 +270,22 @@ class App {
     this.ui.hideHud();
     this.canvas.style.cursor = '';
     this.sound.music('menu');
-    this.ui.showTitle({ coins: this.data.coins, best: this.data.best, chapterName: this.chapter.name, canContinue: false });
-    // the road behind the title: a quiet horde shambling past an invulnerable hero
-    this.run.start(0, Save.meta());
+    this.setChapter(this.settingOf(this.sel));
+    this.ui.showTitle(this.titleInfo());
+    // the field behind the title: a quiet horde shambling past an invulnerable hero
+    this.run.start(this.settingOf(this.sel), Save.meta());
     this.run.god = true;
     this.run.demo = true;
   }
 
-  startRun(wave = 0) {
+  startRun(wave = 0, sel = this.sel) {
+    this.sel = sel;
     this.ui.hideTitle();
     this.ui.hideOverlays();
+    this.setChapter(this.settingOf(sel, wave));
     this.renderer.clearPaint();
-    this.run.start(0, Save.meta(), { wave });
+    if (sel === 'endless') this.run.start(0, Save.meta(), { wave, endless: ENDLESS });
+    else this.run.start(sel, Save.meta(), { wave: Math.min(wave, CHAPTERS[sel].waves.length - 1) });
     this.run.demo = false;
     this.run.god = DEBUG && QUERY.has('god');
     this.state = 'play';
@@ -272,6 +335,23 @@ class App {
         if (canFullscreen && !isFullscreen()) enterFullscreen();
         this.startRun(0);
       },
+      // a chapter card (0..2) or 'endless' picked on the title screen
+      onSelect: (i) => {
+        if (this.state !== 'title' || !this.unlocked(i)) return;
+        this.sound.ui?.('click');
+        this.sel = i;
+        if (i === 'endless') this.sound.preload?.('endless');
+        this.toTitle();
+      },
+      // after a chapter is won: straight on to the next one, or into endless
+      onNext: () => {
+        const i = CHAPTERS.indexOf(this.run.chapter) + 1;
+        if (i < CHAPTERS.length) this.startRun(0, i);
+      },
+      onEndless: () => {
+        this.sound.preload?.('endless');
+        this.startRun(0, 'endless');
+      },
       onArmoury: () => this.ui.showArmoury(this.armouryData()),
       onSettings: () => this.ui.showSettings({ ...this.data.settings }),
       onResume: () => this.resume(),
@@ -292,7 +372,7 @@ class App {
         if (this.persist) Save.save();
         this.ui.showArmoury(this.armouryData());
       },
-      onBack: () => this.state === 'title' && this.ui.showTitle({ coins: this.data.coins, best: this.data.best, chapterName: this.chapter.name, canContinue: false }),
+      onBack: () => this.state === 'title' && this.ui.showTitle(this.titleInfo()),
       onSound: (n) => this.sound.ui(n),
     };
   }
@@ -384,7 +464,14 @@ class App {
         this.sound.music('defeat');
         const r = this.run;
         const best = this.recordBest();
-        this.ui.showGameOver({ wave: r.wave + 1, waves: r.chapter.waves.length, level: r.level, kills: r.kills, time: Math.round(r.time), coins: r.coins, best });
+        const endless = !!r.endless;
+        let newBest = false;
+        if (endless && r.wave + 1 > (this.data.endlessBest || 0)) {
+          this.data.endlessBest = r.wave + 1;
+          newBest = true;
+          if (this.persist) Save.save();
+        }
+        this.ui.showGameOver({ wave: r.wave + 1, waves: endless ? 0 : r.chapter.waves.length, level: r.level, kills: r.kills, time: Math.round(r.time), coins: r.coins, best: endless ? newBest : best, endless, bestWave: this.data.endlessBest || 0, chapter: endless ? 'Endless' : r.chapter.name });
       },
       victory: () => {
         this.state = 'victory';
@@ -392,9 +479,32 @@ class App {
         this.canvas.style.cursor = '';
         this.sound.music('victory');
         const r = this.run;
+        const i = CHAPTERS.indexOf(r.chapter);
+        const wasOpen = this.unlocked('endless');
         this.data.cleared[r.chapter.id] = true;
         const best = this.recordBest(true);
-        this.ui.showVictory({ wave: r.wave + 1, waves: r.chapter.waves.length, level: r.level, kills: r.kills, time: Math.round(r.time), coins: r.coins, best });
+        const next = CHAPTERS[i + 1];
+        if (next) this.sel = i + 1;
+        else this.sel = 'endless';
+        if (this.persist) Save.save();
+        this.sound.chapterClear?.();
+        this.ui.showVictory({
+          wave: r.wave + 1,
+          waves: r.chapter.waves.length,
+          level: r.level,
+          kills: r.kills,
+          time: Math.round(r.time),
+          coins: r.coins,
+          best,
+          chapter: r.chapter.name,
+          next: next ? { name: next.name, id: next.id } : null,
+          endlessUnlocked: !next && !wasOpen,
+        });
+      },
+      // endless moves to another setting: the field is dressed again (the blood washes away with it)
+      setting: (i) => {
+        this.setChapter(i);
+        this.renderer.clearPaint();
       },
       bossKilled: () => {},
     };
@@ -404,6 +514,11 @@ class App {
     const r = this.run;
     const b = this.data.best;
     const mine = { wave: r.wave + 1 + (cleared ? 1 : 0), chapter: r.chapterIndex + 1, kills: r.kills };
+    // the furthest wave reached in each chapter, for its card on the title screen
+    if (!r.endless) {
+      const bw = (this.data.bestWave ||= {});
+      bw[r.chapter.id] = Math.max(bw[r.chapter.id] || 0, r.wave + 1);
+    }
     const better = !b || mine.chapter > b.chapter || (mine.chapter === b.chapter && (mine.wave > b.wave || (mine.wave === b.wave && mine.kills > b.kills)));
     if (better) this.data.best = mine;
     if (this.persist) Save.save();
@@ -571,7 +686,7 @@ class App {
     s.xp = Math.floor(run.xp);
     s.xpNext = run.xpNext;
     s.wave = run.wave + 1;
-    s.waves = run.chapter.waves.length;
+    s.waves = run.endless ? 0 : run.chapter.waves.length;
     s.chapter = run.chapter.name;
     // the held gun first, then the others found this run
     s.weapons.length = 0;
@@ -650,8 +765,13 @@ class App {
         if (app.state !== 'play') app.startRun(n - 1);
         else run().beginWave(clamp(n - 1, 0, run().chapter.waves.length - 1));
       },
-      boss() {
-        run().spawnBoss('ogre');
+      // bring on a boss now: ogre | demon | abom (default: the chapter's own)
+      boss(key = run().chapter.boss) {
+        run().spawnBoss(key);
+      },
+      // start a run of chapter i (0..2) or 'endless' at wave n (1-based)
+      play(i = 0, n = 1) {
+        app.startRun(n - 1, i);
       },
       god(on = true) {
         run().god = on;
@@ -702,19 +822,22 @@ class App {
       },
       state() {
         const r = run();
-        return { state: app.state, phase: r.phase, wave: r.wave + 1, level: r.level, xp: r.xp, hp: r.hero.hp, field: ARENA.w, enemies: r.enemies.n, bullets: r.bullets.n, particles: r.fx.n, gibs: r.gore.n, gems: r.gems.n, pickups: r.pickups.n, kills: r.kills, weapons: r.weapons.map((w) => `${w.id}*${w.stars}`), surges: { ...r.surge }, upgrades: { ...r.levels }, evolved: Object.keys(r.evolved), missingFrames: [...app.atlas.missing] };
+        return { state: app.state, phase: r.phase, chapter: r.chapter.id, endless: !!r.endless, wave: r.wave + 1, hazards: r.hazards.n, boss: r.boss ? { key: TYPES[r.enemies.type[r.boss.i]].key, state: r.boss.state, hp: Math.round(r.enemies.hp[r.boss.i]) } : null, level: r.level, xp: r.xp, hp: r.hero.hp, field: ARENA.w, enemies: r.enemies.n, bullets: r.bullets.n, particles: r.fx.n, gibs: r.gore.n, gems: r.gems.n, pickups: r.pickups.n, kills: r.kills, weapons: r.weapons.map((w) => `${w.id}*${w.stars}`), surges: { ...r.surge }, upgrades: { ...r.levels }, evolved: Object.keys(r.evolved), missingFrames: [...app.atlas.missing] };
       },
-      bench(ms = 5000, n = 0, gun = 'scatter') {
-        const r = run();
+      bench(ms = 5000, n = 0, gun = 'scatter', chapter = null, boss = false) {
+        let r = run();
         if (n > 0) {
-          if (app.state !== 'play') app.startRun(2);
+          if (chapter != null) app.startRun(2, chapter);
+          else if (app.state !== 'play') app.startRun(2);
+          r = run();
           reseed(1234);
           r.god = true;
           r.phase = 'fight';
           r.script = [];
           r.scriptI = 0;
           r.streams = [];
-          const types = ['shambler', 'runner', 'spider', 'spider', 'brute', 'spitter'];
+          // each chapter's own crowd (its heaviest mix: exploders going off in chains, imps over the horde)
+          const types = [['shambler', 'runner', 'spider', 'spider', 'brute', 'spitter'], ['shambler', 'exploder', 'knight', 'imp', 'spider', 'runner'], ['hound', 'imp', 'exploder', 'knight', 'spider', 'brute']][r.chapterIndex] || ['shambler'];
           for (let k = 0; k < n; k++) r.enemies.spawn(T[types[k % types.length]], rand(20, ARENA.w - 20), rand(-600, 900), 6);
           // a strong build so the screen fills with bullets and gore
           r.stats.multi = 3;
@@ -727,11 +850,15 @@ class App {
             r.held = gun;
           }
           for (const k of SURGES) r.surge[k] = 1e9;
+          if (boss) r.spawnBoss(r.chapter.boss);
           app.benchFill = n;
         }
         return new Promise((resolve) => {
           const gaps = [];
           app.frameTimes.length = 0;
+          const R = app.renderer;
+          R.gpuOn = true;
+          R.gpuTimes = [];
           const t0 = performance.now();
           let last = t0;
           const counts = { enemies: 0, bullets: 0, particles: 0, gibs: 0, gems: 0, frames: 0 };
@@ -746,7 +873,7 @@ class App {
             counts.gems += rr.gems.n;
             counts.frames++;
             if (app.benchFill && rr.enemies.n < app.benchFill * 0.9) {
-              const types = ['shambler', 'spider', 'runner', 'spider'];
+              const types = [['shambler', 'spider', 'runner', 'spider'], ['shambler', 'spider', 'exploder', 'imp'], ['hound', 'spider', 'exploder', 'imp']][rr.chapterIndex] || ['shambler'];
               for (let k = rr.enemies.n; k < app.benchFill; k++) rr.enemies.spawn(T[types[k & 3]], rand(20, ARENA.w - 20), rand(-500, -40), 6);
             }
             rr.pendingLevels = 0;
@@ -761,7 +888,11 @@ class App {
               };
               const iv = st(gaps.slice(2));
               for (const k of Object.keys(counts)) if (k !== 'frames') counts[k] = Math.round(counts[k] / counts.frames);
-              resolve({ interval: iv, work: st(app.frameTimes.slice()), fps: +(1000 / iv.mean).toFixed(1), counts, size: [app.renderer.w, app.renderer.h], field: ARENA.w, tier: app.q.tier, scale: app.q.scale, draws: app.renderer.stats.draws });
+              R.gpuOn = false;
+              // a dropped frame: an interval of about two refreshes or more (the timer itself jitters by a fraction of a ms)
+              const dropped = gaps.slice(2).filter((g) => g > iv.p50 * 1.5).length;
+              const gpu = R.gpuTimes.length ? st(R.gpuTimes) : null;
+              resolve({ interval: iv, dropped, work: st(app.frameTimes.slice()), gpu, fps: +(1000 / iv.mean).toFixed(1), counts, size: [R.w, R.h], field: ARENA.w, tier: app.q.tier, scale: app.q.scale, draws: R.stats.draws, chapter: run().chapter.id });
             }
           };
           requestAnimationFrame(tick);

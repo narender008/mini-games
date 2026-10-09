@@ -21,6 +21,7 @@ const fresh = () => ({
   startWeapon: 'blaster',
   best: null,
   cleared: {},
+  endlessBest: 0,
   runs: 0,
   hints: {},
   settings: { volume: 0.8, music: 0.6, muted: false, quality: 'auto', shake: 'full', numbers: true, gore: 'max' },

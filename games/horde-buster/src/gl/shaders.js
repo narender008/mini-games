@@ -84,11 +84,13 @@ void main() {
 }`;
 
 // ---------------------------------------------------------------- ground bake
-// Draws a chapter's ground once into a texture: colour (sRGB) and a height in
-// alpha for the bump. uRect = world rectangle the texture covers. The layout
-// numbers (road edges, kerbs, verges) come in uP / uQ; uKind picks the theme.
-export const GROUND_BAKE = {
-  vs: `${HEAD}
+// Draws a chapter's ground once into two textures: colour (sRGB) with a height
+// in alpha for the bump, and glow (emissive / 4 in rgb, a flicker phase in
+// alpha). uRect = world rectangle the texture covers. Each chapter's ground is
+// its own GLSL function (src/gl/ground/<setting>.js) with this signature:
+//   void groundX(vec2 w, out vec3 col, out float h, out vec3 glow)
+// reading its palette from uC[8] and its layout numbers from uP[4].
+export const GROUND_VS = `${HEAD}
 const vec2 P[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
 uniform vec4 uRect;
 out vec2 vW;
@@ -96,24 +98,20 @@ void main() {
   vec2 p = P[gl_VertexID];
   vW = uRect.xy + (p * 0.5 + 0.5) * uRect.zw;
   gl_Position = vec4(p, 0.0, 1.0);
-}`,
-  fs: `${HEAD}${HASH}
+}`;
+
+export function groundBake(src, fn) {
+  return {
+    vs: GROUND_VS,
+    fs: `${HEAD}${HASH}
 in vec2 vW;
 uniform sampler2D uNoise;
-uniform int uKind;
-uniform vec4 uRoad;     // road x0, x1, kerb width, sidewalk width
-uniform vec4 uVerge;    // verge width, plaza start, seed, lane dash
-uniform float uLanes;   // lanes across the road (an even count gets a double yellow centre line)
-uniform vec4 uCross;    // crosswalk: y0, y1, stripe period, on
-uniform vec3 uAsphalt;
-uniform vec3 uAsphalt2;
-uniform vec3 uKerb;
-uniform vec3 uWalk;
-uniform vec3 uGrass;
-uniform vec3 uDirt;
-uniform vec3 uPlaza;
-uniform vec3 uLine;
-out vec4 o;
+uniform vec3 uC[8];   // the chapter's palette (linear rgb)
+uniform vec4 uP[4];   // the chapter's layout numbers
+uniform float uSeed;
+uniform vec2 uField;  // field width, height
+layout(location = 0) out vec4 o;
+layout(location = 1) out vec4 oGlow;
 float n1(vec2 p) { return texture(uNoise, p).r; }
 float n2(vec2 p) { return texture(uNoise, p).g; }
 float n3(vec2 p) { return texture(uNoise, p).b; }
@@ -125,141 +123,17 @@ float crack(vec2 p, float sc) {
   float b = abs(n2(p * sc * 1.7 + 0.31) - 0.5);
   return min(a * 2.2, b * 3.0);
 }
+${src}
 void main() {
-  vec2 w = vW;
-  float seed = uVerge.z;
-  vec2 q = w / 512.0 + seed;
-  float x0 = uRoad.x, x1 = uRoad.y, kerb = uRoad.z, walk = uRoad.w;
-  float dl = x0 - w.x;            // distance outside the left road edge
-  float dr = w.x - x1;            // ... right
-  float side = max(dl, dr);       // > 0 off the road
-  float sx = dl > dr ? -1.0 : 1.0;
   vec3 col;
-  float h = 0.5;
-  float big = fbm(q * 0.6);
-  float fine = n3(w / 37.0 + seed);
-  if (side <= 0.0) {
-    // ---- asphalt: two tones of patching, grain, cracks, lane paint, manholes, oil
-    col = mix(uAsphalt, uAsphalt2, smoothstep(0.42, 0.62, big));
-    col *= 0.88 + 0.24 * fine;
-    float grain = hash12(floor(w * 0.9));
-    col *= 0.92 + 0.12 * grain;
-    h = 0.45 + 0.1 * fine + 0.06 * grain;
-    // patched rectangles of newer, darker asphalt
-    vec2 pc = floor(w / vec2(170.0, 230.0));
-    float pr = hash12(pc + seed * 3.0);
-    vec2 pf = fract(w / vec2(170.0, 230.0));
-    if (pr > 0.78 && pf.x > 0.12 && pf.x < 0.88 && pf.y > 0.1 && pf.y < 0.75) { col *= 0.78; h += 0.03; }
-    // lane lines: worn dashed dividers; on a wide boulevard a solid double yellow down the middle
-    float lanes = max(uLanes, 2.0);
-    for (int i = 1; i < 16; i++) {
-      if (float(i) >= lanes) break;
-      float lx = x0 + (x1 - x0) * float(i) / lanes;
-      float d = abs(w.x - lx);
-      float wear = smoothstep(0.25, 0.6, n2(w / 90.0 + float(i)));
-      if (lanes >= 4.0 && abs(float(i) * 2.0 - lanes) < 0.5) {
-        float m = (1.0 - smoothstep(3.0, 4.5, abs(d - 7.0))) * (0.55 + 0.45 * wear);
-        col = mix(col, vec3(0.85, 0.62, 0.12), m * 0.85);
-        h += m * 0.05;
-      } else {
-        float dash = step(0.42, fract(w.y / uVerge.w));
-        float m = (1.0 - smoothstep(5.0, 7.0, d)) * dash * wear;
-        col = mix(col, uLine, m * 0.8);
-        h += m * 0.05;
-      }
-    }
-    // a zebra crossing and stop line where the horde comes in
-    if (uCross.w > 0.5 && w.y > uCross.x && w.y < uCross.y) {
-      float sx2 = fract((w.x - x0) / uCross.z);
-      float m = step(0.45, sx2) * smoothstep(0.2, 0.5, n2(w / 70.0 + 3.0)) * step(x0 + 30.0, w.x) * step(w.x, x1 - 30.0);
-      col = mix(col, uLine, m * 0.75);
-      h += m * 0.04;
-    }
-    if (uCross.w > 0.5 && abs(w.y - (uCross.y + 26.0)) < 6.0 && w.x > x0 + 30.0 && w.x < x1 - 30.0) col = mix(col, uLine, 0.6 * smoothstep(0.2, 0.5, n1(w / 60.0)));
-    // edge lines
-    float de = min(abs(w.x - (x0 + 22.0)), abs(w.x - (x1 - 22.0)));
-    float em = (1.0 - smoothstep(3.5, 5.5, de)) * smoothstep(0.3, 0.55, n2(w / 120.0 + 7.0));
-    col = mix(col, uLine * vec3(1.0, 0.92, 0.6), em * 0.7);
-    // cracks
-    float cr = crack(w / 900.0 + seed, 1.0);
-    float cm = 1.0 - smoothstep(0.012, 0.03, cr);
-    cm *= smoothstep(0.35, 0.6, n3(w / 260.0 + 3.0));
-    col *= 1.0 - cm * 0.6;
-    h -= cm * 0.25;
-    // potholes from the cells channel
-    float ph = cells(w / 700.0 + seed * 0.5);
-    float pm = smoothstep(0.82, 0.9, ph) * step(0.5, n1(w / 300.0 + 9.0));
-    col = mix(col, uAsphalt * 0.45, pm);
-    h -= pm * 0.3;
-    // oil stains
-    float oil = smoothstep(0.66, 0.8, n2(w / 160.0 + 13.0)) * 0.35;
-    col *= 1.0 - oil;
-    // manholes
-    vec2 mc = vec2(x0 + (x1 - x0) * 0.68, 0.0);
-    for (int i = 0; i < 3; i++) {
-      vec2 c = vec2(mc.x + float(i - 1) * 190.0 * (i == 1 ? 0.0 : 1.0), 260.0 + float(i) * 410.0);
-      float d = length(w - c);
-      if (d < 30.0) {
-        float rim = smoothstep(26.0, 28.0, d);
-        float grid = step(0.5, fract((w.x - c.x) / 7.0)) * step(0.5, fract((w.y - c.y) / 7.0));
-        col = mix(vec3(0.17, 0.17, 0.19) * (0.8 + 0.4 * grid), uKerb * 0.55, rim);
-        h = 0.5 + 0.1 * grid - rim * 0.05;
-      }
-    }
-  } else if (side < kerb) {
-    // ---- kerb stone: raised, pale, chipped; red-white paint near crossings
-    col = uKerb * (0.85 + 0.25 * fine);
-    float seg = floor(w.y / 64.0);
-    col *= 0.92 + 0.12 * hash12(vec2(seg, sx));
-    if (fract(w.y / 64.0) < 0.04) col *= 0.7;
-    float paint = step(0.5, fract(w.y / 128.0)) * step(0.55, n1(w / 700.0 + 4.0));
-    col = mix(col, vec3(0.75, 0.12, 0.1), paint * 0.75);
-    h = 0.75 + 0.05 * fine - (side / kerb) * 0.05;
-    if (side < 4.0) { col *= 0.65; h = 0.55; }
-  } else if (side < kerb + walk) {
-    // ---- sidewalk slabs with dark joints, a few cracked or missing
-    vec2 tw = vec2(side - kerb, w.y);
-    vec2 cell = floor(tw / 48.0);
-    vec2 f = fract(tw / 48.0);
-    float r = hash12(cell + sx * 17.0 + seed);
-    col = uWalk * (0.86 + 0.18 * r) * (0.9 + 0.2 * fine);
-    float joint = 1.0 - smoothstep(0.0, 0.05, min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y)));
-    col *= 1.0 - joint * 0.45;
-    h = 0.66 - joint * 0.1 + 0.03 * fine;
-    if (r > 0.93) { col *= 0.7; h -= 0.05; }
-    float cm = 1.0 - smoothstep(0.01, 0.03, crack(w / 400.0 + 2.0, 1.0));
-    col *= 1.0 - cm * 0.5 * step(0.6, r);
-    // weeds in the joints
-    col = mix(col, uGrass * 0.7, joint * smoothstep(0.62, 0.75, n2(w / 80.0)) * 0.8);
-  } else if (side < kerb + walk + uVerge.x) {
-    // ---- grass verge with dirt patches and tyre ruts
-    float g = fbm(w / 220.0 + seed);
-    col = mix(uGrass * 0.82, uGrass * 1.12, smoothstep(0.3, 0.7, g));
-    col *= 0.85 + 0.3 * n3(w / 23.0);
-    float dirt = smoothstep(0.58, 0.72, n1(w / 330.0 + 5.0));
-    col = mix(col, uDirt, dirt);
-    float blades = hash12(floor(w / 3.0));
-    col *= 0.9 + 0.2 * blades;
-    h = 0.55 + 0.15 * blades + 0.1 * g - dirt * 0.05;
-  } else {
-    // ---- plaza / parking: big concrete squares, painted bays, drains
-    vec2 tw = vec2(side, w.y);
-    vec2 cell = floor(tw / 96.0);
-    vec2 f = fract(tw / 96.0);
-    float r = hash12(cell + seed * 7.0 + sx);
-    col = uPlaza * (0.88 + 0.14 * r) * (0.9 + 0.2 * fine);
-    float joint = 1.0 - smoothstep(0.0, 0.02, min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y)));
-    col *= 1.0 - joint * 0.35;
-    float bay = (1.0 - smoothstep(2.0, 4.0, abs(fract(w.y / 110.0) - 0.5) * 110.0)) * step(uVerge.y, side) * step(side, uVerge.y + 220.0);
-    col = mix(col, vec3(0.9, 0.88, 0.8), bay * 0.6);
-    h = 0.5 - joint * 0.08 + 0.04 * fine;
-    col *= 1.0 - smoothstep(0.6, 0.8, n2(w / 200.0 + 8.0)) * 0.25;
-  }
-  // a little grime everywhere so nothing is perfectly clean
-  col *= 0.9 + 0.1 * smoothstep(0.2, 0.8, big);
-  o = vec4(col, clamp(h, 0.0, 1.0));
+  float h;
+  vec3 glow;
+  ${fn}(vW, col, h, glow);
+  o = vec4(max(col, vec3(0.0)), clamp(h, 0.0, 1.0));
+  oGlow = vec4(clamp(glow * 0.25, 0.0, 1.0), hash12(floor(vW / 40.0)));
 }`,
-};
+  };
+}
 
 // ---------------------------------------------------------------- ground
 // The baked ground plus the paint layer (blood, gibs, scorch, frost), lit by
@@ -274,6 +148,8 @@ uniform sampler2D uPaint;
 uniform vec4 uBaseRect;   // world rect of the base texture
 uniform vec4 uPaintRect;  // world rect of the paint texture
 uniform vec2 uBaseTexel;
+uniform sampler2D uGlow;
+uniform float uGlowOn;    // 1 when the chapter's ground glows (lava)
 out vec4 o;
 void main() {
   vec2 buv = (vWorld - uBaseRect.xy) / uBaseRect.zw;
@@ -297,6 +173,11 @@ void main() {
   vec3 h = normalize(uKey.xyz + vec3(0.0, 0.0, 1.0));
   float sp = pow(max(dot(n, h), 0.0), 40.0);
   c += wet * (uKeyCol.rgb * sp * 0.35 + pointLights(vec3(0.0, 0.0, 1.0), vWorld, 0.0) * 0.12);
+  // emissive ground (lava, runes): flickers slowly, blood paint smothers it
+  if (uGlowOn > 0.5) {
+    vec4 g = texture(uGlow, buv);
+    c += g.rgb * 4.0 * (0.82 + 0.18 * sin(uMisc.x * 2.3 + g.a * 6.283)) * (1.0 - p.a * 0.85);
+  }
   // haze toward the top of the view (far up the road)
   float fog = uFog.a * smoothstep(0.55, 1.0, vUV.y);
   c = mix(c, uFog.rgb, fog);

@@ -235,7 +235,7 @@ export class Gore {
     const big = T0.big ? 1.6 : T0.small ? 0.5 : 1;
     if (cause === 'ice') {
       // shatter: frozen chunks, no blood
-      const parts = [`${g}_head`, `${g}_arm`, `${g}_leg`, 'ice_chunk_0', 'ice_chunk_1', 'ice_chunk_2', 'ice_chunk_3'];
+      const parts = T0.parts ? [...T0.parts, 'ice_chunk_0', 'ice_chunk_1', 'ice_chunk_2'] : [`${g}_head`, `${g}_arm`, `${g}_leg`, 'ice_chunk_0', 'ice_chunk_1', 'ice_chunk_2', 'ice_chunk_3'];
       this.burst(parts, x, y, h, 330 * Math.sqrt(big), col, dx, dy, 1);
       fx.ice(x, y, h, 22 * big);
       return;
@@ -243,9 +243,9 @@ export class Gore {
     if (cause === 'fire') {
       // burnt up: charred chunks and smoking limbs burst out of a fireball, blood boils onto the road
       const busy = this.n > this.cap * 0.6;
-      const parts = [`${g}_torso`];
-      if (!headless) parts.push(`${g}_head`);
-      if (!T0.small) parts.push(`${g}_arm`, rnd() < 0.5 ? `${g}_leg` : `${g}_arm`);
+      const parts = T0.parts ? T0.parts.slice(0, 2) : [`${g}_torso`];
+      if (!headless && !T0.parts) parts.push(`${g}_head`);
+      if (!T0.small && !T0.parts) parts.push(`${g}_arm`, rnd() < 0.5 ? `${g}_leg` : `${g}_arm`);
       for (let k = 0; k < (busy ? 1 : 3) * big; k++) parts.push(this.char[(k + Math.floor(rnd() * 3)) % 3]);
       this.burst(parts, x, y, h, 300 * Math.sqrt(big), col, dx * 0.4, dy * 0.4 - 0.3);
       fx.blood(x, y, h, dx, dy, 12 * big, 300, col, 1.6);
@@ -259,18 +259,22 @@ export class Gore {
     const blast = cause === 'blast';
     const crit = cause === 'crit';
     const parts = [];
-    if (!headless) parts.push(`${g}_head`);
-    if (T0.small) {
-      parts.push(`${g}_leg`, `${g}_leg`, `${g}_body`);
+    if (T0.parts) {
+      // a creature with its own set of pieces (imps, hounds): all of them on a blast, most otherwise
+      for (let k = 0; k < T0.parts.length; k++) if (blast || k === 0 || rnd() < 0.7) parts.push(T0.parts[k]);
     } else {
-      if (blast || rnd() < 0.7) parts.push(`${g}_arm`);
-      if (blast || rnd() < 0.45) parts.push(`${g}_arm`);
-      if (blast || rnd() < 0.5) parts.push(`${g}_leg`);
-      if (blast) parts.push(`${g}_leg`);
-      parts.push(`${g}_torso`);
-      if (T0.key === 'brute') parts.push('brute_horn');
-      if (T0.key === 'spitter') parts.push('spitter_eye');
+      if (!headless) parts.push(`${g}_head`);
+      if (T0.small) {
+        parts.push(`${g}_leg`, `${g}_leg`, `${g}_body`);
+      } else {
+        if (blast || rnd() < 0.7) parts.push(`${g}_arm`);
+        if (blast || rnd() < 0.45) parts.push(`${g}_arm`);
+        if (blast || rnd() < 0.5) parts.push(`${g}_leg`);
+        if (blast) parts.push(`${g}_leg`);
+        parts.push(`${g}_torso`);
+      }
     }
+    if (T0.extra) for (let k = 0; k < T0.extra.length; k++) if (blast || rnd() < 0.5) parts.push(T0.extra[k]);
     // fewer loose chunks when the road is already full of them
     const busy = this.n > this.cap * 0.6;
     const nChunks = busy ? (blast ? 1 : 0) : blast ? 4 : crit ? 2 : 1;

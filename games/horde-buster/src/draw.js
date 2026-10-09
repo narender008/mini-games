@@ -3,8 +3,8 @@
 // motion from the 60 Hz simulation). Allocation free: the lists are reused.
 import { InstanceList, SpriteList, PARTICLE_STRIDE, SHADOW_STRIDE } from './gl/renderer.js';
 import { TYPES, WIND, RECOVER, HEADLESS, SPIT, HOLD } from './game/enemies.js';
-import { PICKUPS, PICKUP_COL as PICK_COL, CRATE, SURGES, CRATE_GUNS } from './game/pools.js';
-import { WEAPONS } from './game/upgrades.js';
+import { PICKUPS, PICKUP_COL as PICK_COL, CRATE, SURGES, CRATE_GUNS, SHOT_KINDS, HAZARD_LIST } from './game/pools.js';
+import { WEAPONS, drawWeapons } from './game/weapons.js';
 import { HOT, ALPHA, UNDER, BOLT, ORB, GLOW, HERO_RING, BUBBLE, RETICLE, PICK, SPARK, FIRE, ARC } from './fx/particles.js';
 import { TAU } from './config.js';
 
@@ -16,8 +16,8 @@ export class Draw {
     this.over = new InstanceList(16, 64);
     this.shadows = new InstanceList(SHADOW_STRIDE, 2048);
     this.under = new InstanceList(PARTICLE_STRIDE, 2048);
-    this.alpha = new InstanceList(PARTICLE_STRIDE, 4096);
-    this.hot = new InstanceList(PARTICLE_STRIDE, 4096);
+    this.alpha = new InstanceList(PARTICLE_STRIDE, 8192);
+    this.hot = new InstanceList(PARTICLE_STRIDE, 8192);
     this.top = new InstanceList(PARTICLE_STRIDE, 64);
     this.text = new InstanceList(PARTICLE_STRIDE, 512);
     this.layers = [this.under, this.alpha, this.hot];
@@ -32,7 +32,11 @@ export class Draw {
       walk: A.anim(t.anim, `${t.fallback || 'shambler'}_walk`),
       headless: A.anim(t.headless || '', `${t.key}_walk`, `${t.fallback || 'shambler'}_nohead`, 'shambler_nohead'),
       attack: A.anim(t.attack || '', `${t.key}_walk`, `${t.fallback || 'shambler'}_attack`, 'shambler_attack'),
+      bare: t.bare ? A.anim(t.bare, t.anim, `${t.fallback || 'shambler'}_walk`) : null,
+      bareAttack: t.bareAttack ? A.anim(t.bareAttack, t.attack, `${t.fallback || 'shambler'}_attack`) : null,
     }));
+    // boss poses by name, looked up the first time each is asked for (falls back to its walk, then the Ogre's)
+    this.poses = {};
     this.hero = {
       idle: A.anim('hero_idle', 'hero_run', 'shambler_walk'),
       run: A.anim('hero_run', 'hero_idle', 'shambler_walk'),
@@ -40,6 +44,7 @@ export class Draw {
     };
     this.ogre = {};
     for (const k of ['ogre_walk', 'ogre_charge', 'ogre_slam', 'ogre_shoot']) this.ogre[k] = A.anim(k, 'ogre_walk', 'brute_walk', 'shambler_walk');
+    this.A = A;
     this.barrel = A.get('barrel');
     this.gemSmall = A.get('xp_small');
     this.gemBig = A.get('xp_big', 'xp_small');
@@ -81,8 +86,8 @@ export class Draw {
       S.put(p.f, p.x, p.y, p.y, p.scale, 0, p.flip);
     }
     for (const fb of app.fireBarrels) {
-      const fl = 0.75 + 0.25 * Math.sin(t * 17 + fb.x) * Math.sin(t * 7.3 + fb.y);
-      lights.add(fb.x, fb.y - 40, 60, 260, 2.6 * fl, 1.2 * fl, 0.3 * fl);
+      const fl = 1 - fb.flicker * (0.25 - 0.25 * Math.sin(t * 17 + fb.x) * Math.sin(t * 7.3 + fb.y));
+      lights.add(fb.x, fb.y, 60, fb.r, fb.c[0] * fl, fb.c[1] * fl, fb.c[2] * fl);
     }
     // ---- barrels
     const B = run.barrels;
@@ -168,28 +173,34 @@ export class Draw {
       const y = E.py[i] + (E.y[i] - E.py[i]) * a;
       const sc = E.scale[i];
       let f;
+      let alpha = 1;
+      let gold = E.elite[i] ? 0.8 + 0.2 * Math.sin(t * 6) : 0;
       if (T0.boss) {
         const [anim, fi] = run.boss.pose();
-        const fr = this.ogre[anim];
+        const fr = (this.poses[anim] ||= this.A.anim(anim, T0.anim, 'ogre_walk', 'shambler_walk'));
         f = fr[fi % fr.length];
+        alpha = run.boss.fade ?? 1;
+        gold = run.boss.glow || 0;
       } else {
         const an = this.enemyAnims[ty];
         const st = E.state[i];
         if (st === HEADLESS) f = an.headless[Math.floor(E.anim[i]) % an.headless.length];
         else if (st === WIND || st === RECOVER || st === SPIT) {
-          const at = an.attack;
+          const at = an.bareAttack && E.armor[i] <= 0 ? an.bareAttack : an.attack;
           const prog = st === WIND || st === SPIT ? 1 - E.t[i] / T0.wind : 1;
           f = at[Math.min(at.length - 1, Math.floor(prog * (at.length - 1) + (st === RECOVER ? 1 : 0)))];
-        } else if (st === HOLD) f = an.walk[0];
-        else f = an.walk[Math.floor(E.anim[i]) % an.walk.length];
+        } else {
+          const wk = an.bare && E.armor[i] <= 0 ? an.bare : an.walk;
+          f = st === HOLD ? wk[0] : wk[Math.floor(E.anim[i]) % wk.length];
+        }
       }
       const fr = E.frozen[i] > 0 ? Math.min(1, E.frozen[i] * 3) : 0;
       // creatures face the hero: flip toward his side when close, keep their own flip otherwise
       let flip = E.flip[i];
       if (!T0.boss && Math.abs(hero.x - x) > 30 && y > 700) flip = hero.x > x ? 1 : -1;
       if (T0.boss) flip = 1;
-      S.put(f, x, y, y, sc, 0, flip, E.flash[i], fr, 1, E.elite[i] ? 0.8 + 0.2 * Math.sin(t * 6) : 0);
-      this.shadow(x, y, T0.shadow * sc, T0.boss ? 0.6 : 0.45);
+      S.put(f, x, y, y, sc, 0, flip, E.flash[i], fr, alpha, gold);
+      this.shadow(x, y, T0.shadow * sc, (T0.boss ? 0.6 : T0.fly ? 0.3 : 0.45) * alpha);
       if (E.elite[i]) lights.add(x, y - T0.hitY, 60, 220, 1.8, 1.3, 0.3);
     }
     // ---- the hero
@@ -240,12 +251,27 @@ export class Draw {
       const rot = Math.atan2(BL.vy[i], BL.vx[i]);
       const kind = BL.kind[i];
       if (kind === 2) {
-        this.hot.p(x, y, 9, rot, 2, 0.9, 0.3, 1, BOLT, 0, 0, 1.4);
-        this.hot.p(x - Math.cos(rot) * 16, y - Math.sin(rot) * 16, 16, 0, 2.4, 1.0, 0.25, 0.9, FIRE, 0.2, BL.life[i], 0);
+        // swarm mini rockets are drawn smaller
+        const k = Math.min(1, BL.size[i] / 11);
+        this.hot.p(x, y, 9 * k, rot, 2, 0.9, 0.3, 1, BOLT, 0, 0, 1.4);
+        this.hot.p(x - Math.cos(rot) * 16 * k, y - Math.sin(rot) * 16 * k, 16 * k, 0, 2.4, 1.0, 0.25, 0.9, FIRE, 0.2, BL.life[i], 0);
         if (rockets++ < 6) lights.add(x, y, 50, 180, 1.6, 0.8, 0.2);
       } else {
         this.hot.p(x, y, BL.size[i] * (kind === 1 ? 0.7 : 1), rot, BL.r[i], BL.g[i], BL.b[i], 1, BOLT, 0, 0, kind === 1 ? 1.2 : 2.4);
       }
+    }
+    // ---- the guns' own projectiles (saw blades and the like)
+    drawWeapons(run, this, a);
+    // ---- the boss's own extras: telegraphs, portals, chains
+    if (run.boss?.draw) run.boss.draw(this, a, lights);
+    // ---- ground hazards: glowing pools that shrink away as they dry
+    const HZ = run.hazards;
+    for (let i = 0; i < HZ.n; i++) {
+      const c = HAZARD_LIST[HZ.kind[i]].col;
+      const k = Math.min(1, HZ.life[i] / 0.6) * Math.min(1, (HZ.max[i] - HZ.life[i]) / 0.25 + 0.3);
+      const pulse = 0.85 + 0.15 * Math.sin(t * 5 + i);
+      this.under.p(HZ.x[i], HZ.y[i], HZ.r[i] * (0.8 + 0.2 * k), 0, c[0] * 0.5 * pulse, c[1] * 0.5 * pulse, c[2] * 0.5 * pulse, 0.75 * k, GLOW, 0, i * 0.37, 0);
+      if (i < 12) lights.add(HZ.x[i], HZ.y[i], 30, HZ.r[i] * 2.4, c[0] * 0.5 * k, c[1] * 0.5 * k, c[2] * 0.5 * k);
     }
     // ---- enemy shots
     const SH = run.shots;
@@ -253,12 +279,10 @@ export class Draw {
     for (let i = 0; i < SH.n; i++) {
       const x = SH.px[i] + (SH.x[i] - SH.px[i]) * a;
       const y = SH.py[i] + (SH.y[i] - SH.py[i]) * a;
-      if (SH.kind[i] === 1) {
-        this.hot.p(x, y, SH.r[i] * 1.6, 0, 2.6, 0.25, 0.1, 1, ORB, 0, i * 0.37, 0);
-        if (orbs++ < 10) lights.add(x, y, 40, 150, 2.4, 0.3, 0.1);
-      } else {
-        this.hot.p(x, y, SH.r[i] * 1.5, 0, 0.5, 2.2, 0.3, 1, ORB, 0, i * 0.37, 0);
-      }
+      const K = SHOT_KINDS[SH.kind[i]];
+      const c = K.col;
+      this.hot.p(x, y, SH.r[i] * (K.light ? 1.6 : 1.5), 0, c[0], c[1], c[2], 1, ORB, 0, i * 0.37, 0);
+      if (K.light && orbs++ < 10) lights.add(x, y, 40, 150, c[0] * 0.9, c[1] * 0.9, c[2] * 0.9);
       this.shadow(x, y + 30, SH.r[i], 0.25);
     }
     // ---- bombs in flight: an arc with a spin, the landing spot marked

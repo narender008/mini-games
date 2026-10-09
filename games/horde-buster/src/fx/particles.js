@@ -304,6 +304,29 @@ export class Particles {
     this.splat(x, y, radius * 0.75, 0.05, 0.045, 0.04, 0.55, 2);
   }
 
+  // an exploder goes up: a green-yellow flash, a cloud of toxic mist, bubbling slime and a green stain
+  toxic(x, y, radius) {
+    const busy = Math.min(1, Math.max(0.25, 1 - (this.boom - 8) / 24));
+    this.boom += 1;
+    const n = Math.round((5 + radius / 16) * busy);
+    for (let k = 0; k < n; k++) {
+      const a = rnd() * TAU;
+      const s = rand(60, 200);
+      this.add(MIST, ALPHA, x + Math.cos(a) * radius * 0.2, y + Math.sin(a) * radius * 0.15, rand(10, 40), Math.cos(a) * s, Math.sin(a) * s * 0.6, rand(20, 80), rand(0.5, 0.9), radius * 0.25, radius * rand(0.6, 0.9), 0.35, 0.75, 0.08, 0.7, 0, 2.5);
+    }
+    for (let k = 0; k < n; k++) {
+      const a = rnd() * TAU;
+      const s = rand(200, 520);
+      const sz = rand(2.5, 5);
+      this.add(DROP, ALPHA, x, y, rand(10, 40), Math.cos(a) * s, Math.sin(a) * s * 0.7, rand(150, 420), 3, sz, sz, 0.3, 0.75, 0.04, 1, GRAV | PAINT, 0.6);
+    }
+    this.sparks(x, y, 20, Math.round(8 * busy), 1.2, 2.8, 0.3, 500, 0, -1, TAU);
+    this.flash(x, y, 30, radius * 1.5, 1.4, 3.2, 0.4, 0.16);
+    this.ring(x, y, radius * 0.2, radius * 1.15, 0.9, 2.4, 0.3, 0.3);
+    this.light(x, y, 80, radius * 4, 1.6, 4, 0.6, 0.4);
+    this.splat(x, y, radius * 0.7, 0.16, 0.38, 0.03, 0.8, 0);
+  }
+
   // a frozen creature shatters: shards, cold mist, frost on the road
   ice(x, y, z, size) {
     for (let k = 0; k < 10; k++) {

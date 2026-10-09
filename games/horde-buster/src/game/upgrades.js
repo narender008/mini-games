@@ -8,20 +8,20 @@
 // Piercing III turns the Blaster into the Railgun.
 import { rnd } from '../config.js';
 
-// stars: a weapon found again levels up (more damage, faster)
-export const WEAPONS = {
-  blaster: { name: 'Blaster', icon: 'blaster', interval: 0.12, dmg: 11, speed: 1500, pellets: 1, spread: 0, gap: 16, life: 1.1, kb: 26, size: 11, color: [0.35, 0.75, 1.6], sound: 'blaster' },
-  scatter: { name: 'Scatter Gun', icon: 'scatter', interval: 0.55, dmg: 13, speed: 1250, pellets: 8, spread: 0.46, gap: 0, life: 0.5, kb: 150, size: 6, color: [1.6, 0.9, 0.3], sound: 'scatter', perShot: 2 },
-  rocket: { name: 'Rocket Pod', icon: 'rocket', interval: 0.95, dmg: 40, speed: 330, accel: 1500, pellets: 1, spread: 0.12, gap: 22, life: 1.6, kb: 60, size: 10, blast: 78, blastDmg: 38, color: [1.6, 0.7, 0.25], sound: 'rocket' },
-  // the flamethrower: a short cone that hits everything in it every tick and sets it alight
-  flamer: { name: 'Flamethrower', icon: 'flamer', interval: 0.06, dmg: 7.5, range: 300, cone: 0.34, burn: 2.2, burnDps: 16, kb: 6, size: 0, color: [2.4, 1.0, 0.25], sound: 'flamer' },
-  railgun: { name: 'Railgun', icon: 'railgun', interval: 0.32, dmg: 34, beam: true, pellets: 1, gap: 18, kb: 90, size: 9, color: [0.4, 1.2, 2.2], sound: 'railgun' },
-};
+export { WEAPONS, STAR_DMG, STAR_RATE, STAR_SIZE } from './weapons.js';
 
-export const STAR_DMG = [1, 1, 1.3, 1.65];
-export const STAR_RATE = [1, 1, 1.12, 1.25];
-// each star also adds bolts (blaster lanes, scatter pellets, rockets) and a bigger look
-export const STAR_SIZE = [1, 1, 1.2, 1.4];
+// Level tables for the upgrades whose effect grows by uneven steps: the TOTAL after each level. The card text and
+// `apply` both read them, so what a card promises is what the stat gets. `gain` is the step the level just taken
+// adds (applyCard raises run.levels before it calls apply; a bare call counts as level 1).
+const IGNITE = [0.08, 0.14, 0.2];
+const LEECH = [0.15, 0.3, 0.45];
+const EXECUTE = [0.08, 0.12, 0.16];
+const CORPSE = [0.08, 0.14, 0.2];
+const pct = (v) => Math.round(v * 100);
+const gain = (tab, run, id) => {
+  const l = Math.min(tab.length, Math.max(1, run?.levels?.[id] || 1));
+  return tab[l - 1] - (l > 1 ? tab[l - 2] : 0);
+};
 
 // Upgrades: max level, card colour, what one level does (`apply`), the card text for the NEXT level.
 export const UPGRADES = [
@@ -41,12 +41,31 @@ export const UPGRADES = [
   { id: 'freezer', name: 'Frost Rounds', icon: 'freezer', color: 'blue', max: 3, text: (l) => `${[6, 10, 14][l]}% of hits freeze for 2 s`, apply: (s) => (s.freezer += 1) },
   { id: 'bombup', name: 'Demolition', icon: 'bombup', color: 'red', max: 2, text: () => '+1 Bomb, +25% blast size', apply: (s, run) => { s.bombR *= 1.25; run.abil.bomb.max += 1; run.abil.bomb.charges += 1; } },
   { id: 'shieldup', name: 'Bulwark', icon: 'shieldup', color: 'blue', max: 2, text: () => '+1 Shield, +1 s duration', apply: (s, run) => { s.shieldTime += 1; run.abil.shield.max += 1; run.abil.shield.charges += 1; } },
+  // ---- stage 2
+  { id: 'incendiary', name: 'Incendiary Rounds', icon: 'incendiary', color: 'red', max: 3, text: (l) => `${pct(IGNITE[l])}% of hits set foes alight`, apply: (s, run) => (s.ignite += gain(IGNITE, run, 'incendiary')) },
+  { id: 'deadeye', name: 'Deadeye', icon: 'deadeye', color: 'purple', max: 3, text: () => '+50% Crit Damage', apply: (s) => (s.critMul += 0.5) },
+  { id: 'armour', name: 'Armour Plating', icon: 'armour', color: 'green', max: 3, text: (l) => `Take ${10 * (l + 1)}% less damage`, apply: (s) => (s.armor += 0.1) },
+  { id: 'bloodthirst', name: 'Bloodthirst', icon: 'bloodthirst', color: 'red', max: 3, text: (l) => `Heal 1 HP every ${Math.round(1 / LEECH[l])} kills`, apply: (s, run) => (s.leech += gain(LEECH, run, 'bloodthirst')) },
+  { id: 'greed', name: 'Greed', icon: 'greed', color: 'gold', max: 3, text: () => '+15% XP from gems', apply: (s) => (s.xpMul += 0.15) },
+  { id: 'lucky', name: 'Lucky Charm', icon: 'lucky', color: 'gold', max: 3, text: () => '+25% drops: crates, surges, pickups', apply: (s) => (s.luck += 0.25) },
+  { id: 'adrenaline', name: 'Adrenaline', icon: 'adrenaline', color: 'green', max: 2, text: () => 'Power surges last 3 s longer', apply: (s) => (s.surgeTime += 3) },
+  { id: 'bigshot', name: 'Big Bullets', icon: 'bigshot', color: 'red', max: 3, text: () => '+25% Bullet Size, +10% Damage', apply: (s) => { s.size += 0.25; s.dmg *= 1.1; } },
+  { id: 'executioner', name: 'Executioner', icon: 'executioner', color: 'purple', max: 3, text: (l) => `Foes under ${pct(EXECUTE[l])}% health die at once`, apply: (s, run) => (s.execute += gain(EXECUTE, run, 'executioner')) },
+  { id: 'corpsebomb', name: 'Corpse Bomb', icon: 'corpsebomb', color: 'red', max: 3, text: (l) => `${pct(CORPSE[l])}% of kills explode`, apply: (s, run) => (s.corpse += gain(CORPSE, run, 'corpsebomb')) },
+  { id: 'bounce', name: 'Ricochet', icon: 'bounce', color: 'blue', max: 2, text: (l) => `Shots ricochet to ${l + 1} more foe${l ? 's' : ''}`, apply: (s) => (s.bounce += 1) },
 ];
 export const UP = Object.fromEntries(UPGRADES.map((u) => [u.id, u]));
 
+// An evolution card appears once both `needs` upgrades are maxed (and, for a gun's evolution, that gun has been
+// found this run); the gun's slot then fires the evolved gun (WEAPONS[id] in weapons.js) from then on.
 export const EVOLUTIONS = [
   { id: 'railgun', name: 'RAILGUN', icon: 'railgun', needs: ['multishot', 'pierce'], weapon: 'blaster', text: 'Blaster evolves: piercing rail beams', apply: (s, run) => run.evolveWeapon('blaster', 'railgun') },
-  { id: 'stormcaller', name: 'STORM CALLER', icon: 'stormcaller', needs: ['chain', 'crit'], text: 'Every crit chains lightning; storms strike the horde', apply: (s) => (s.storm = true) },
+  { id: 'inferno', name: 'INFERNO', icon: 'inferno', needs: ['incendiary', 'firerate'], weapon: 'flamer', text: 'Flamethrower evolves: a long blue-white jet', apply: (s, run) => run.evolveWeapon('flamer', 'inferno') },
+  { id: 'swarm', name: 'SWARM POD', icon: 'swarm', needs: ['explosive', 'multishot'], weapon: 'rocket', text: 'Rocket Pod evolves: salvos of homing mini rockets', apply: (s, run) => run.evolveWeapon('rocket', 'swarm') },
+  { id: 'dragon', name: "DRAGON'S BREATH", icon: 'dragon', needs: ['incendiary', 'knockback'], weapon: 'scatter', text: 'Scatter Gun evolves: burning, bursting shells', apply: (s, run) => run.evolveWeapon('scatter', 'dragon') },
+  { id: 'thunder', name: 'THUNDERGOD', icon: 'thunder', needs: ['chain', 'crit'], weapon: 'tesla', text: 'Tesla Gun evolves: forking storm bolts', apply: (s, run) => run.evolveWeapon('tesla', 'thunder') },
+  { id: 'bloodmill', name: 'BLOODMILL', icon: 'bloodmill', needs: ['pierce', 'bigshot'], weapon: 'saw', text: 'Saw Launcher evolves: huge blades that come back', apply: (s, run) => run.evolveWeapon('saw', 'bloodmill') },
+  { id: 'stormcaller', name: 'STORM CALLER', icon: 'stormcaller', needs: ['chain', 'deadeye'], text: 'Every crit chains lightning; storms strike the horde', apply: (s) => (s.storm = true) },
   { id: 'carpetbomb', name: 'CARPET BOMB', icon: 'carpetbomb', needs: ['explosive', 'firerate'], text: 'Every hit explodes in a bigger blast', apply: (s) => (s.carpet = true) },
 ];
 
@@ -55,26 +74,39 @@ export function baseStats(meta) {
     rate: 1, dmg: 1 + 0.08 * (meta.firepower || 0), multi: 0, pierce: 0, crit: 0.05 + 0.03 * (meta.lucky || 0), critMul: 2.2,
     maxHp: 100 + 10 * (meta.vitality || 0), move: 1, kb: 1, explosive: 0, chain: 0, magnet: 1 + 0.2 * (meta.magnetism || 0),
     cooldown: 1 - 0.08 * (meta.hands || 0), regen: 0, freezer: 0, bombR: 1, shieldTime: 3.5, storm: false, carpet: false,
+    // armor: share of damage blocked; leech: HP per kill; xpMul: XP per gem; luck: extra chance on every drop;
+    // surgeTime: seconds added to surges; size: projectile size; ignite: chance a hit sets the foe alight;
+    // execute: share of max HP below which a non-boss foe dies at once; corpse: chance a kill explodes; bounce: ricochets
+    armor: 0, leech: 0, xpMul: 1, luck: 0, surgeTime: 0, size: 1, ignite: 0, execute: 0, corpse: 0, bounce: 0,
   };
 }
+
+// An evolution is in play once it is not taken yet and, for a gun's evolution, that gun has been found this run.
+const live = (run, e) => !run.evolved[e.id] && (!e.weapon || run.arms[e.weapon] > 0);
 
 // Three cards for a level-up: an evolution when one is ready, then random upgrades that are not maxed.
 export function drawCards(run, n = 3) {
   const lv = run.levels;
   const cards = [];
   for (const e of EVOLUTIONS) {
-    if (run.evolved[e.id]) continue;
-    if (e.weapon && !(run.arms[e.weapon] > 0)) continue;
-    if (e.needs.every((id) => (lv[id] || 0) >= UP[id].max)) {
+    if (!live(run, e)) continue;
+    if (e.needs.every((id) => UP[id] && (lv[id] || 0) >= UP[id].max)) {
       cards.push({ id: e.id, name: e.name, text: e.text, icon: e.icon, color: 'gold', level: 1, max: 1, evolution: true, weapon: !!e.weapon });
       break;
     }
   }
   const pool = UPGRADES.filter((u) => (lv[u.id] || 0) < u.max);
-  // weight toward upgrades that lead to an evolution the player has started
+  const going = EVOLUTIONS.filter((e) => live(run, e));
+  // weight toward upgrades that lead to an evolution the player has started (its other part is picked up, and
+  // more so when that part is maxed, so this card finishes the job); a gun's evolution counts once the gun is found
   const weight = (u) => {
     let w = 1;
-    for (const e of EVOLUTIONS) if (!run.evolved[e.id] && e.needs.includes(u.id) && e.needs.some((id) => id !== u.id && (lv[id] || 0) > 0)) w += 0.8;
+    for (const e of going) {
+      if (!e.needs.includes(u.id)) continue;
+      const others = e.needs.filter((id) => id !== u.id);
+      if (others.some((id) => (lv[id] || 0) > 0)) w += 0.8;
+      if (others.every((id) => UP[id] && (lv[id] || 0) >= UP[id].max)) w += 0.6;
+    }
     if ((lv[u.id] || 0) > 0) w += 0.3;
     return w;
   };

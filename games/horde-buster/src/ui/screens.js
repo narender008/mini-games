@@ -16,6 +16,17 @@ const feather = (tx, ty, b) => {
 };
 const WING = `<svg class="wing" viewBox="0 0 124 76" aria-hidden="true">${feather(8, 22, 13)}${feather(2, 38, 13)}${feather(8, 54, 13)}${feather(24, 68, 12)}${feather(8, 8, 10)}</svg>`;
 
+// 'Wave 3/5', or just the number when a mode has no last wave (endless)
+const waveText = (wave, waves) => (waves > 0 ? `${wave}/${waves}` : String(wave));
+
+// the emblem of a newly opened chapter: its icon or id when given, else guessed from the name
+const emblemFor = (ch) => {
+  if (ch.icon) return ch.icon;
+  if (ch.id) return `ch_${ch.id}`;
+  const n = String(ch.name).toLowerCase();
+  return n.includes('grave') ? 'ch_graveyard' : n.includes('hell') ? 'ch_hell' : n.includes('city') ? 'ch_city' : 'star';
+};
+
 // the three stars under a weapon; the newest filled one pops
 const starRow = (n, popLast) => {
   let html = '';
@@ -180,6 +191,27 @@ export class Screens {
     const splat = `<svg class="splat" viewBox="0 0 400 220" aria-hidden="true"><path d="${splatPath(200, 112, 82)}" fill="#7d0a1a"/><path d="${splatPath(204, 108, 56)}" fill="#a60f26"/>${[[54, 70, 9], [350, 52, 7], [88, 176, 6], [326, 178, 10], [372, 120, 5], [30, 130, 6]].map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="#7d0a1a"/>`).join('')}</svg>`;
 
     const stat = (ico, value, label) => h('div', { class: 'stat' }, h('span', { class: 'sico', html: icon(ico) }), h('b', { text: value }), h('span', { class: 'slab', text: label }));
+    // endless has no last wave: the wave reached is the headline, with the best wave beside it
+    const endless = !!stats.endless;
+    const bestWave = Math.max(stats.bestWave | 0, stats.wave | 0);
+    const hero = endless
+      ? h('div', { class: 'hero' },
+          h('span', { class: 'hlab', text: 'Wave reached' }),
+          h('b', { class: 'hnum gtext', text: String(stats.wave) }),
+          stats.best
+            ? h('p', { class: 'newbest' }, h('span', { html: icon('star') }), 'New best!')
+            : h('span', { class: 'hbest' }, h('span', { class: 'ico', html: icon('star') }), `Best: wave ${bestWave}`)
+        )
+      : null;
+    const tiles = endless
+      ? [stat('skull', fmt(stats.kills), 'Kills'), stat('xp', String(stats.level), 'Level'), stat('cooldown', clock(stats.time), 'Time'), stat('coin', `+${fmt(stats.coins)}`, 'Coins')]
+      : [
+          stat('lightning', waveText(stats.wave, stats.waves), 'Wave'),
+          stat('xp', String(stats.level), 'Level'),
+          stat('skull', fmt(stats.kills), 'Kills'),
+          stat('cooldown', clock(stats.time), 'Time'),
+          stat('coin', `+${fmt(stats.coins)}`, 'Coins'),
+        ];
     const btnRetry = ui.btn('Retry', 'xl red shine guarded', retry, 'play');
     const btnMenu = ui.btn('Menu', 'navy guarded', menu, 'home');
     const el = ui.dyn(
@@ -188,14 +220,9 @@ export class Screens {
       'Game over',
       h('div', { class: 'go' },
         h('div', { class: 'died-wrap' }, h('span', { class: 'splat-wrap', html: splat }), h('h1', { class: 'died gtext', text: 'YOU DIED' }), drips),
-        stats.best ? h('p', { class: 'newbest' }, h('span', { html: icon('star') }), 'New best run!') : null,
-        h('div', { class: 'stats' },
-          stat('lightning', `${stats.wave}/${stats.waves}`, 'Wave'),
-          stat('xp', String(stats.level), 'Level'),
-          stat('skull', fmt(stats.kills), 'Kills'),
-          stat('cooldown', clock(stats.time), 'Time'),
-          stat('coin', `+${fmt(stats.coins)}`, 'Coins')
-        ),
+        hero,
+        !endless && stats.best ? h('p', { class: 'newbest' }, h('span', { html: icon('star') }), 'New best run!') : null,
+        h('div', { class: `stats${tiles.length === 4 ? ' four' : ''}` }, tiles),
         h('div', { class: 'stack row2' }, btnRetry, btnMenu)
       )
     );
@@ -211,6 +238,10 @@ export class Screens {
   }
 
   // ----------------------------------------------------------------- victory
+  // stats: { wave, waves, level, kills, time, coins, best, chapter: 'City Road',
+  //          next: { name, icon? } | null, endlessUnlocked: bool }
+  // Buttons call onNext (when a new chapter opened), onEndless (when endless just
+  // opened), onRestart (play the chapter again) and onQuit (back to the title).
   showVictory(stats) {
     const ui = this.ui;
     this.dropVictory(false);
@@ -223,14 +254,25 @@ export class Screens {
       this.dropVictory(true);
       return true;
     };
-    const next = once(() => ui.call('onQuit'));
+    const next = stats.next ? once(() => ui.call('onNext')) : null;
+    const endless = stats.endlessUnlocked ? once(() => ui.call('onEndless')) : null;
     const again = once(() => ui.call('onRestart'));
+    const title = once(() => ui.call('onQuit'));
 
     const coinN = document.createTextNode('+0');
     const stat = (ico, value, label) => h('div', { class: 'stat' }, h('span', { class: 'sico', html: icon(ico) }), h('b', { text: value }), h('span', { class: 'slab', text: label }));
     const confetti = h('div', { class: 'confetti', 'aria-hidden': 'true' });
     const cols = ['#ffd23c', '#ff5a5a', '#5fe05a', '#4aa8ff', '#c07bff', '#ffffff'];
     for (let i = 0; i < 26; i++) confetti.appendChild(h('i', { style: `--x:${(i * 37) % 100}%;--c:${cols[i % cols.length]};--d:${((i * 53) % 90) / 30}s;--t:${3.2 + ((i * 17) % 20) / 10}s;--r:${(i * 47) % 360}deg` }));
+
+    // the main button is the first one that applies; with none of the new flow, Continue goes to the title
+    const main = [];
+    if (next) main.push(ui.btn('Next chapter', 'xl green shine guarded', next, 'play'));
+    if (endless) main.push(ui.btn('Play endless', `xl purple guarded${next ? '' : ' shine'}`, endless, 'endless'));
+    if (!main.length) main.push(ui.btn('Continue', 'xl green shine guarded', title, 'play'));
+    const side = [ui.btn('Play again', 'blue guarded', again)];
+    if (next || endless) side.push(ui.btn('Title', 'navy guarded', title, 'home'));
+
     const el = ui.dyn(
       'victory',
       'victory dim',
@@ -239,20 +281,25 @@ export class Screens {
         confetti,
         h('div', { class: 'rays' }),
         h('div', { class: 'wv-ribbon big' }, h('span', { class: 'gtext', text: 'CHAPTER CLEAR!' })),
+        stats.chapter ? h('p', { class: 'wv-sub', text: stats.chapter }) : null,
         stats.best ? h('p', { class: 'newbest' }, h('span', { html: icon('star') }), 'New best run!') : null,
+        stats.next ? h('p', { class: 'newbest unlock' }, h('span', { html: icon(emblemFor(stats.next)) }), `Unlocked: ${stats.next.name}`) : null,
+        stats.endlessUnlocked ? h('p', { class: 'newbest unlock' }, h('span', { html: icon('endless') }), 'Endless mode unlocked!') : null,
         h('div', { class: 'tiles' }, h('div', { class: 'tile t-coin', style: '--d:250ms' }, h('span', { class: 'tico', html: icon('coin') }), h('b', { class: 'tnum' }, coinN), h('span', { class: 'tlab', text: 'Coins' }))),
-        h('div', { class: 'stats' },
-          stat('lightning', `${stats.wave}/${stats.waves}`, 'Waves'),
+        h('div', { class: 'stats four' },
+          stat('lightning', waveText(stats.wave, stats.waves), 'Waves'),
           stat('xp', String(stats.level), 'Level'),
           stat('skull', fmt(stats.kills), 'Kills'),
           stat('cooldown', clock(stats.time), 'Time')
         ),
-        h('div', { class: 'stack row2' }, ui.btn('Continue', 'xl green shine guarded', next, 'play'), ui.btn('Play again', 'blue guarded', again))
+        h('div', { class: 'stack main' }, main),
+        h('div', { class: 'stack row2' }, side)
       )
     );
     guard = this.arm(el);
     const stop = countUp(stats.coins | 0, 1100, (n) => (coinN.data = `+${fmt(n)}`), { delay: 400, ticks: 5, onTick: () => ui.snd('coin') });
-    this.vc = { next, guard, stop };
+    // Enter takes the main button's action
+    this.vc = { next: next || endless || title, guard, stop };
   }
 
   dropVictory(animate) {

@@ -66,3 +66,9 @@ export function rng(s) {
     return (x >>> 0) / 4294967296;
   };
 }
+
+// '#rrggbb' -> linear rgb
+export const lin = (hex) => {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  return c.map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+};

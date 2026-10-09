@@ -70,7 +70,8 @@ export class Hud {
     const bb = bar('boss');
     this.bossBar = bb;
     this.bossName = document.createTextNode('');
-    this.boss = h('div', { class: 'boss', hidden: true }, h('span', { class: 'badge', html: icon('skull') }), h('div', { class: 'bbody' }, h('div', { class: 'bname' }, this.bossName), bb.track));
+    this.bossNameEl = h('div', { class: 'bname' }, this.bossName);
+    this.boss = h('div', { class: 'boss', hidden: true }, h('span', { class: 'badge', html: icon('skull') }), h('div', { class: 'bbody' }, this.bossNameEl, bb.track));
 
     // ---- coins and kills, and the small round buttons
     this.coinText = document.createTextNode('0');
@@ -179,7 +180,8 @@ export class Hud {
     if (s.wave !== c.wave || s.waves !== c.waves) {
       c.wave = s.wave;
       c.waves = s.waves;
-      this.waveText.data = `Wave ${s.wave}/${s.waves}`;
+      // endless has no last wave (waves is 0): just the number
+      this.waveText.data = s.waves > 0 ? `Wave ${s.wave}/${s.waves}` : `Wave ${s.wave}`;
     }
 
     // experience
@@ -206,6 +208,8 @@ export class Hud {
       if (b.name !== c.bname) {
         c.bname = b.name;
         this.bossName.data = b.name;
+        // a long name (THE GILDED SUMMONER) steps down a size so it never gets cut off
+        this.bossNameEl.classList.toggle('long', b.name.length > 15);
       }
       const bq = Math.round(clamp(b.hp, 0, 1) * 400);
       if (bq !== c.bq) {
@@ -326,6 +330,8 @@ export class Hud {
       wc.ev[i] = w ? !!w.evolved : false;
     }
     this.weapons.textContent = '';
+    // with many guns the badges go in a row above the card, so the card keeps its width
+    this.weapons.classList.toggle('many', n > 3);
     if (!n) return;
     const m = ws[0];
     const stars = h('span', { class: 'stars' });

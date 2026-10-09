@@ -9,6 +9,10 @@ const RED = [0.42, 0.015, 0.02];
 const DARK = [0.3, 0.01, 0.015];
 const PURPLE = [0.13, 0.02, 0.16];
 const BLUE = [0.05, 0.22, 0.42];
+const TOXIC = [0.2, 0.42, 0.02];
+const ORANGE = [0.5, 0.08, 0.01];
+const GOLD = [0.55, 0.36, 0.04];
+const VILE = [0.3, 0.03, 0.1];
 
 export const TYPES = [
   // 0
@@ -19,17 +23,41 @@ export const TYPES = [
     anim: 'runner_walk', fps: 13, headless: 'runner_nohead', attack: 'runner_attack', gib: 'runner', blood: RED, shadow: 26, fallback: 'shambler' },
   // 2
   { key: 'brute', hp: 240, speed: 36, r: 35, hitY: 59, hr: 43, mass: 4, dmg: 20, reach: 39, wind: 0.6, cool: 1.2, xp: 16,
-    anim: 'brute_walk', fps: 6, headless: 'brute_nohead', attack: 'brute_attack', gib: 'brute', blood: DARK, shadow: 49, fallback: 'shambler', big: true },
+    anim: 'brute_walk', fps: 6, headless: 'brute_nohead', attack: 'brute_attack', gib: 'brute', blood: DARK, shadow: 49, fallback: 'shambler', big: true, crate: 0.3, surge: 0.14, extra: ['brute_horn'] },
   // 3
   { key: 'spider', hp: 8, speed: 80, r: 15, hitY: 14, hr: 18, mass: 0.35, dmg: 5, reach: 18, wind: 0.18, cool: 0.6, xp: 1,
     anim: 'spider_walk', fps: 16, gib: 'spider', blood: PURPLE, shadow: 22, fallback: 'shambler', small: true },
   // 4
   { key: 'spitter', hp: 60, speed: 36, r: 23, hitY: 38, hr: 28, mass: 1.4, dmg: 10, reach: 26, wind: 0.5, cool: 1.0, xp: 7,
-    anim: 'spitter_walk', fps: 7, attack: 'spitter_attack', gib: 'spitter', blood: BLUE, shadow: 32, fallback: 'shambler', ranged: true },
+    anim: 'spitter_walk', fps: 7, attack: 'spitter_attack', gib: 'spitter', blood: BLUE, shadow: 32, fallback: 'shambler', ranged: true, extra: ['spitter_eye'] },
   // 5: the chapter 1 boss; its behaviour is in boss.js
   { key: 'ogre', hp: 110000, speed: 48, r: 108, hitY: 230, hr: 150, mass: 60, dmg: 30, reach: 78, wind: 0.6, cool: 1, xp: 300,
     anim: 'ogre_walk', fps: 5, gib: 'ogre', blood: RED, shadow: 190, fallback: 'shambler', boss: true },
+  // 6: bloated with toxic boils: swells up and bursts beside the hero, and bursts when killed (`burst` = blast radius),
+  // so a pack of them goes up in a chain
+  { key: 'exploder', hp: 46, speed: 58, r: 24, hitY: 46, hr: 30, mass: 1.6, dmg: 20, reach: 30, wind: 0.6, cool: 0.5, xp: 5,
+    anim: 'exploder_walk', fps: 8, attack: 'exploder_attack', gib: 'exploder', blood: TOXIC, shadow: 46, fallback: 'shambler', burst: 96, extra: ['exploder_boil'] },
+  // 7: a tower shield soaks bullets until it breaks (`armor`); fire gets round it, blasts half round it
+  { key: 'knight', hp: 70, armor: 170, speed: 33, r: 24, hitY: 40, hr: 32, mass: 2.6, dmg: 17, reach: 32, wind: 0.5, cool: 1.0, xp: 9,
+    anim: 'knight_walk', bare: 'knight_bare', bareAttack: 'knight_bare_attack', fps: 6, attack: 'knight_attack', gib: 'knight', blood: DARK, shadow: 34, fallback: 'shambler', extra: ['knight_plate'], surge: 0.03 },
+  // 8: flies over the wrecks and the horde, weaving
+  { key: 'imp', hp: 18, speed: 92, r: 16, hitY: 58, hr: 24, mass: 0.4, dmg: 8, reach: 26, wind: 0.3, cool: 0.8, xp: 3,
+    anim: 'imp_fly', fps: 12, attack: 'imp_attack', gib: 'imp', blood: ORANGE, shadow: 18, fallback: 'spider', fly: true, parts: ['imp_head', 'imp_wing', 'imp_wing', 'imp_torso'] },
+  // 9: gallops in and pounces from a few strides out
+  { key: 'hound', hp: 58, speed: 136, r: 24, hitY: 60, hr: 34, mass: 1.5, dmg: 14, reach: 30, wind: 0.24, cool: 0.8, xp: 6,
+    anim: 'hound_run', fps: 12, attack: 'hound_attack', gib: 'hound', blood: DARK, shadow: 40, fallback: 'runner', parts: ['hound_head', 'hound_leg', 'hound_leg', 'hound_torso'] },
+  // 10, 11: the chapter 2 and 3 bosses (bosses/demon.js, bosses/abomination.js)
+  { key: 'demon', hp: 90000, speed: 50, r: 90, hitY: 215, hr: 150, mass: 60, dmg: 26, reach: 70, wind: 0.6, cool: 1, xp: 400,
+    anim: 'demon_float', fps: 6, gib: 'demon', blood: GOLD, shadow: 150, fallback: 'ogre', boss: true, fly: true },
+  { key: 'abom', hp: 120000, speed: 40, r: 115, hitY: 240, hr: 160, mass: 80, dmg: 34, reach: 86, wind: 0.6, cool: 1, xp: 500,
+    anim: 'abom_walk', fps: 4, gib: 'abom', blood: VILE, shadow: 200, fallback: 'ogre', boss: true },
 ];
+// how hard each kind homes in on the hero (far up the road, and the extra close by), and how it weaves
+const STEER = { runner: [0.25, 1], spider: [0.35, 0.8, 0.8, 6], exploder: [0.15, 1], imp: [0.3, 0.9, 0.9, 2.6], hound: [0.4, 1] };
+for (const t of TYPES) {
+  const [home, homeNear, weave, weaveF] = STEER[t.key] || [0.08, 0.9];
+  Object.assign(t, { home, homeNear, weave: weave || 0, weaveF: weaveF || 0 });
+}
 export const T = Object.fromEntries(TYPES.map((t, i) => [t.key, i]));
 
 // states
@@ -60,6 +88,9 @@ export class Enemies {
     this.slow = F();
     this.burn = F(); // seconds left on fire (the flamethrower)
     this.burnT = F(); // time to the next burn tick
+    this.burnDps = F(); // how hot it burns
+    this.armor = F(); // what is left of a knight's shield
+    this.aux = F(); // a behaviour timer of its own (a hound's pounce)
     this.holdY = F();
     this.seed = F();
     this.scale = F();
@@ -101,6 +132,9 @@ export class Enemies {
     this.slow[i] = 0;
     this.burn[i] = 0;
     this.burnT[i] = 0;
+    this.burnDps[i] = 0;
+    this.armor[i] = (T0.armor || 0) * hpMul * (elite ? 3 : 1);
+    this.aux[i] = rand(0.5, 1.5);
     this.seed[i] = rnd();
     this.scale[i] = (elite ? 1.3 : 1) * (0.93 + rnd() * 0.14);
     this.spd[i] = (0.88 + rnd() * 0.24) * spdMul;
@@ -183,11 +217,19 @@ export class Enemies {
         } else {
           // head down the road; home in on the hero more the closer they get
           const near = run.mopUp ? 1 : clamp((y[i] - 200) / 700, 0, 1);
-          const home = type[i] === 1 ? 0.25 + near : type[i] === 3 ? 0.35 + near * 0.8 : 0.08 + near * 0.9;
+          const home = T0.home + near * T0.homeNear;
           if (run.mopUp) sp *= 1.6;
           mx = (dx / d) * home;
-          my = Math.max(dy / d, 0.15) * (1 - home * 0.3) + 0.2;
-          if (type[i] === 3) mx += Math.sin(run.time * 6 + this.seed[i] * TAU) * 0.8; // spiders zig-zag
+          // mopping up, a straggler knocked past the hero turns back for him
+          my = run.mopUp ? dy / d : Math.max(dy / d, 0.15) * (1 - home * 0.3) + 0.2;
+          if (T0.weave) mx += Math.sin(run.time * T0.weaveF + this.seed[i] * TAU) * T0.weave; // spiders zig-zag, imps swoop
+          if (T0.key === 'hound') {
+            // a pounce: a burst of speed straight at the hero from a few strides out
+            this.aux[i] -= dt;
+            if (this.aux[i] < -0.4) this.aux[i] = rand(1.1, 2.0);
+            else if (this.aux[i] < 0) sp *= 2.3;
+            else if (d < 300 && d > reach + 40 && this.aux[i] > 0.6) this.aux[i] = 0;
+          }
           const l = Math.sqrt(mx * mx + my * my) || 1;
           mx /= l;
           my /= l;
@@ -195,10 +237,20 @@ export class Enemies {
             state[i] = WIND;
             t[i] = T0.wind;
             mx = my = 0;
+            if (T0.burst) run.sound.exploderSwell?.(run.pan(x[i]));
           }
         }
       } else if (st === WIND) {
-        if (t[i] <= 0) {
+        if (T0.burst) {
+          // swelling up: it waddles on toward the hero, then goes off wherever it is
+          if (t[i] <= 0) {
+            run.burstNow(i);
+            continue;
+          }
+          mx = dx / d;
+          my = dy / d;
+          sp *= 0.35;
+        } else if (t[i] <= 0) {
           if (d < reach + 14) run.hitHero(T0.dmg * (this.elite[i] ? 1.3 : 1), x[i], y[i]);
           state[i] = RECOVER;
           t[i] = T0.cool * 0.5;
@@ -228,8 +280,10 @@ export class Enemies {
     // separation: push overlapping creatures apart (cheap, position based)
     for (let k = 0; k < this.n; k++) {
       const i = this.list[k];
-      if (TYPES[type[i]].boss) continue;
-      const ri = TYPES[type[i]].r * this.scale[i];
+      const Ti = TYPES[type[i]];
+      if (Ti.boss) continue;
+      const ri = Ti.r * this.scale[i];
+      const fly = Ti.fly;
       const c0 = grid.cx(x[i] - 40);
       const c1 = grid.cx(x[i] + 40);
       const r0 = grid.cy(y[i] - 40);
@@ -242,15 +296,17 @@ export class Enemies {
           for (let m = start[cc]; m < start[cc + 1]; m++) {
             const j = items[m];
             if (j === i || !this.alive[j]) continue;
+            const Tj = TYPES[type[j]];
+            if (Tj.fly !== fly) continue; // flyers pass over the horde
             const ddx = x[i] - x[j];
             const ddy = y[i] - y[j];
-            const rr = ri + TYPES[type[j]].r * this.scale[j];
+            const rr = ri + Tj.r * this.scale[j];
             const d2 = ddx * ddx + ddy * ddy;
             if (d2 >= rr * rr || d2 < 1e-6) continue;
             const dd = Math.sqrt(d2);
             const push = (rr - dd) / dd;
             // heavier creatures shove lighter ones
-            const w = TYPES[type[j]].mass / (TYPES[type[i]].mass + TYPES[type[j]].mass);
+            const w = Tj.mass / (Ti.mass + Tj.mass);
             sx += ddx * push * w;
             sy += ddy * push * w;
           }
@@ -270,7 +326,7 @@ export class Enemies {
       }
       // wrecks and barriers in play: pushed out of the footprint; one that meets it
       // head on slides along it toward the nearer end, so the horde flows round
-      const ob = run.obstacles;
+      const ob = fly ? null : run.obstacles;
       if (ob) {
         const pad = ri * 0.6;
         for (let o = 0; o < ob.length; o += 4) {

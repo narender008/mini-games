@@ -7,8 +7,12 @@
 // finished sound is measured (loudness(), dsp.js) and scaled in place to its
 // target loudness from sfx.js, whatever its recipe, so the mix is balanced by
 // number rather than by ear, and no buffer peaks above 0.98.
-import { SFX } from './sfx.js';
-import { TRACKS } from './music.js';
+//
+// Chapter 1's sounds and score are queued at once. The chapter themes (the tracks
+// marked `lazy` in music2.js) are not: they wait in `held` until bump() / release()
+// asks for one, or releaseAll() queues the lot once the rest is built. A sound can
+// also name its own place in the queue (`load` in sfx2.js).
+import { SFX, TRACKS } from './bank.js';
 import { loudness, peakOf, rmsOf, BLOCK } from './dsp.js';
 
 // loudness of a whole music loop at full music volume, in dB (A-weighted, mean)
@@ -31,6 +35,7 @@ export class Library {
     this.sfx = new Map(); // key -> [entry per variant]
     this.music = new Map(); // name -> entry
     this.jobs = [];
+    this.held = new Map(); // lazy tracks not queued yet: name -> job
     this.errors = [];
     this._last = {};
     this.stats = { jobs: 0, done: 0, ms: 0, slowest: 0, slowestKey: '', longest: 0 };
@@ -39,25 +44,46 @@ export class Library {
 
   _queue() {
     const jobs = this.jobs;
+    // a sound may name its own place in the queue (`load`, see sfx2.js); the others are sorted by name
+    const first = (key, d) => d.load ?? (FIRST.test(key) ? 0 : SECOND.test(key) ? 1 : 2);
     for (const [key, d] of Object.entries(SFX)) {
       this.sfx.set(key, new Array(d.variants));
-      const prio = FIRST.test(key) ? 0 : SECOND.test(key) ? 1 : 2;
-      jobs.push({ kind: 'sfx', key, v: 0, prio, gen: null });
+      jobs.push({ kind: 'sfx', key, v: 0, prio: first(key, d), gen: null });
     }
     for (const [key, d] of Object.entries(SFX)) {
-      for (let v = 1; v < d.variants; v++) jobs.push({ kind: 'sfx', key, v, prio: FIRST.test(key) ? 1.5 : 3, gen: null });
+      for (let v = 1; v < d.variants; v++) jobs.push({ kind: 'sfx', key, v, prio: d.load !== undefined ? d.load + 0.6 : FIRST.test(key) ? 1.5 : 3, gen: null });
     }
     jobs.push({ kind: 'music', key: 'menu', v: 0, prio: 1.2, gen: null });
     jobs.push({ kind: 'music', key: 'battle', v: 0, prio: 2.5, gen: null });
     jobs.push({ kind: 'music', key: 'boss', v: 0, prio: 3.5, gen: null });
     jobs.push({ kind: 'music', key: 'victory', v: 0, prio: 3.6, gen: null });
     jobs.push({ kind: 'music', key: 'defeat', v: 0, prio: 3.7, gen: null });
+    // the chapter themes are not queued at all until they are wanted (bump, release) or the rest is built (releaseAll)
+    for (const [name, T] of Object.entries(TRACKS)) if (T.lazy) this.held.set(name, { kind: 'music', key: name, v: 0, prio: 5, gen: null });
     jobs.sort((a, b) => a.prio - b.prio);
     this.stats.jobs = jobs.length;
   }
 
+  // queue a held track (a chapter theme) at a priority; the default sits after the stage 1 score
+  release(name, prio = 3.8) {
+    const j = this.held.get(name);
+    if (!j) return false;
+    this.held.delete(name);
+    j.prio = prio;
+    this.jobs.push(j);
+    this.jobs.sort((a, b) => a.prio - b.prio);
+    this.stats.jobs++;
+    return true;
+  }
+
+  // queue every held track, behind everything else
+  releaseAll() {
+    for (const name of [...this.held.keys()]) this.release(name, 5);
+  }
+
   // move a music track (or any key) to the front of the queue
   bump(key) {
+    if (this.held.has(key)) this.release(key, -1);
     let any = false;
     for (const j of this.jobs) {
       if (j.key === key && j.prio > -1) {
@@ -123,6 +149,7 @@ export class Library {
     // scale, then keep each stem as 16-bit (half the memory); audio.js widens it again when the track first plays
     const k16 = (gain * 32767) / NORM;
     const q = (x) => (x > 32767 ? 32767 : x < -32767 ? -32767 : Math.round(x));
+    let nan = 0;
     for (let j = 0; j < stems.length; j++) {
       const st = stems[j];
       const L = new Int16Array(n);
@@ -130,13 +157,17 @@ export class Library {
       for (let b = 0; b < n; b += BLOCK * 8) {
         const e = Math.min(n, b + BLOCK * 8);
         for (let i = b; i < e; i++) {
-          L[i] = q(st.L[i] * k16);
-          R[i] = q(st.R[i] * k16);
+          const l = st.L[i] * k16;
+          const r = st.R[i] * k16;
+          if (l !== l || r !== r) nan++; // an Int16Array would turn it into a quiet 0
+          L[i] = q(l);
+          R[i] = q(r);
         }
         yield;
       }
       stems[j] = { L, R };
     }
+    if (nan || !Number.isFinite(gain)) throw new Error(`music ${name}: ${nan} samples are not numbers (gain ${gain})`);
     res.norm = NORM / 32767;
     res.gain = gain;
     res.dur = n / sr;
@@ -192,6 +223,7 @@ export class Library {
 
   // render everything that is queued, right now (tests); music: false skips the score
   renderAll({ music = true } = {}) {
+    if (music) this.releaseAll();
     const keep = music ? [] : this.jobs.filter((j) => j.kind === 'music');
     if (!music) this.jobs = this.jobs.filter((j) => j.kind !== 'music');
     while (this.jobs.length) this.step();

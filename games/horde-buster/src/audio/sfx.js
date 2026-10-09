@@ -13,11 +13,11 @@
 import { seeded, removeDC, fadeEnds, saturate, modulate, addTo, foldLoop } from './dsp.js';
 import { runLayers, colored, crackleLoop } from './layers.js';
 
-const LO = 24000;
-const HI = 32000;
+export const LO = 24000;
+export const HI = 32000;
 
 // Turn a list of layers (or a function of (rng, variant) making one) into a render generator.
-function recipe(dur, build, o = {}) {
+export function recipe(dur, build, o = {}) {
   return function* render(sr, seed, v) {
     const r = seeded(seed);
     const n = Math.round(dur * sr);
@@ -35,29 +35,29 @@ function recipe(dur, build, o = {}) {
 // small phrases the recipes share
 
 // an FM bell: a sine with a decaying inharmonic modulator (coins, chimes, gems)
-const bell = (at, f, tau, amp, idx = 1.6, ratio = 3.5) => ({
+export const bell = (at, f, tau, amp, idx = 1.6, ratio = 3.5) => ({
   k: 'tone', at, wave: 'sine', f0: f, f1: f, dur: tau * 6, att: 0.002, tau, amp, fm: [ratio, idx, tau * 0.6], rel: 0.03, jit: 0,
 });
 
 // a brass note: two detuned saws through a low-pass that opens as the note speaks
-const brass = (at, f, dur, amp, o = {}) => ({
+export const brass = (at, f, dur, amp, o = {}) => ({
   k: 'tone', at, wave: 'saw', f0: f, f1: f, det: o.det ?? 12, dur, att: o.att ?? 0.02, tau: o.tau ?? Infinity, rel: o.rel ?? 0.12, amp,
   lp: [o.lp0 ?? 800, o.lp1 ?? 4000, o.tc ?? 0.12], q: 1, drive: o.drive ?? 1.2, jit: 0,
 });
 
 // a short metallic tick (a latch, a clasp)
-const tick = (at, f, amp = 0.3) => [
+export const tick = (at, f, amp = 0.3) => [
   { k: 'crack', at, amp: amp * 1.4, dur: 0.003, hp: 2200, snap: 0 },
   { k: 'modal', at, amp, partials: [[f, 0.6, 0.012], [f * 1.8, 0.4, 0.008], [f * 2.7, 0.2, 0.005]] },
 ];
 
 // a ring of glass
-const sparkle = (at, n, t1, amp = 0.2, fLo = 3000, fHi = 11000) => ({
+export const sparkle = (at, n, t1, amp = 0.2, fLo = 3000, fHi = 11000) => ({
   k: 'tinkle', at, n, t0: 0, t1, lam: t1 * 0.5, amp, fLo, fHi, tauLo: 0.02, tauHi: 0.08, jit: 0,
 });
 
 // a fireball of the given size 0..1 starting at `at`
-const boom = (at, s) => [
+export const boom = (at, s) => [
   { k: 'crack', at, amp: 1, dur: 0.012, hp: 600, snap: 0.8, snapFc: 2500, snapTau: 0.03 },
   { k: 'roar', at, dur: 0.35 + 0.65 * s, amp: 1, fA: 7000, fB: 300, tauF: 0.06 + 0.09 * s, q: 0.8, modFc: 25, modDepth: 0.5 },
   { k: 'body', at, f0: 130 - 50 * s, f1: 42 - 14 * s, tp: 0.06, tau: 0.12 + 0.3 * s, amp: 1, drive: 2.2 },
@@ -66,13 +66,13 @@ const boom = (at, s) => [
 ];
 
 // bones going: a handful of dry ticks and cracks
-const crunch = (at, s) => [
+export const crunch = (at, s) => [
   { k: 'debris', at, n: Math.round(6 + 10 * s), t0: 0.004, t1: 0.1 + 0.1 * s, lam: 0.05, amp: 0.4, fLo: 800, fHi: 3500, grit: 0.35 },
   { k: 'modal', at: at + 0.012, amp: 0.2 + 0.1 * s, partials: [[700 + 300 * s, 0.5, 0.02], [1500 + 400 * s, 0.3, 0.012]] },
 ];
 
 // blood and mess: wet noise flutter, rising bubbles, drops
-const gore = (at, s) => [
+export const gore = (at, s) => [
   { k: 'roar', at, dur: 0.2 + 0.4 * s, amp: 0.6, fA: 1800, fB: 220, tauF: 0.08 + 0.1 * s, q: 1.5, modFc: 40, modDepth: 0.9, hp: 150 },
   { k: 'bubbles', at, n: Math.round(4 + 10 * s), t0: 0.02, t1: 0.2 + 0.7 * s, amp: 0.45, fLo: 180, fHi: 650 },
   { k: 'debris', at, n: Math.round(8 + 20 * s), t0: 0.04, t1: 0.25 + 0.7 * s, lam: 0.15 + 0.25 * s, amp: 0.3, fLo: 300, fHi: 1600, grit: 0.85 },
@@ -473,7 +473,7 @@ const heartbeat = recipe(0.92, [
 // the boss
 
 // 'oh' to 'ah' formants: the shape of a roar
-const ROAR_F = [[500, 900, 5, 1], [1000, 1500, 6, 0.8], [2400, 1800, 9, 0.35]];
+export const ROAR_F = [[500, 900, 5, 1], [1000, 1500, 6, 0.8], [2400, 1800, 9, 0.35]];
 
 const bossRoar = recipe(2.6, [
   {
@@ -609,7 +609,7 @@ function* flameCrackle(sr, seed) {
 // the hero grabs another weapon: a chunky clack, then a charge in the flavour of the weapon (~0.45 s)
 
 // a hard mechanical clack: a snap, a thud and a ring of metal at pitch f
-const clack = (at, f, amp = 1) => [
+export const clack = (at, f, amp = 1) => [
   { k: 'crack', at, amp: 0.8 * amp, dur: 0.006, hp: 900, snap: 0.6, snapFc: 2200, snapTau: 0.015 },
   { k: 'body', at, f0: 190, f1: 80, tp: 0.02, tau: 0.045, amp: 0.8 * amp, drive: 1.5, dur: 0.14 },
   { k: 'modal', at, amp: 0.45 * amp, partials: [[f, 1, 0.05], [f * 1.7, 0.6, 0.035], [f * 2.9, 0.35, 0.02], [f * 4.3, 0.2, 0.012]] },
@@ -765,7 +765,7 @@ const surgeEnd = recipe(0.42, [
 
 // ----------------------------------------------------------------------------
 
-const def = (sr, variants, render, tgt, gap, max, pri, extra = {}) => ({ sr, variants, render, tgt, gap, max, pri, ...extra });
+export const def = (sr, variants, render, tgt, gap, max, pri, extra = {}) => ({ sr, variants, render, tgt, gap, max, pri, ...extra });
 
 export const SFX = {
   'shot.blaster': def(HI, 4, blaster, -25, 45, 6, 1),

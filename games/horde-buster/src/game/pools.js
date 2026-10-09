@@ -39,7 +39,7 @@ const I16 = Int16Array;
 // piercing shot went through (slot * 4096 + generation), so it hits each once.
 export class Bullets extends Pool {
   constructor(cap) {
-    super(cap, { x: F, y: F, px: F, py: F, vx: F, vy: F, dmg: F, life: F, kb: F, size: F, accel: F, blast: F, pierce: I16, kind: U8, hitN: U8, rage: U8, home: U8, tx: F, ty: F, r: F, g: F, b: F });
+    super(cap, { x: F, y: F, px: F, py: F, vx: F, vy: F, dmg: F, life: F, kb: F, size: F, accel: F, blast: F, pierce: I16, kind: U8, hitN: U8, rage: U8, home: U8, bounce: U8, tx: F, ty: F, r: F, g: F, b: F });
     this.hits = new Int32Array(cap * 4);
   }
   kill(i) {
@@ -49,10 +49,31 @@ export class Bullets extends Pool {
   }
 }
 
-// enemy shots. kinds: 0 acid glob, 1 boss fireball
+// enemy shots, by kind: radius, damage, colour (HDR), how hard it homes on the hero (radians a second), life
+export const SHOT_KINDS = [
+  { r: 12, dmg: 10, col: [0.5, 2.2, 0.3], life: 6 }, // 0 acid glob (spitters)
+  { r: 15, dmg: 9, col: [2.6, 0.25, 0.1], life: 6, light: true }, // 1 boss fireball (the Ogre)
+  { r: 16, dmg: 10, col: [2.1, 1.45, 0.32], life: 7, light: true }, // 2 golden orb (the Summoner)
+  { r: 14, dmg: 9, col: [0.9, 2.4, 0.7], life: 4.5, home: 1.7, light: true }, // 3 homing skull (the Summoner)
+  { r: 13, dmg: 9, col: [0.7, 2.2, 0.15], life: 6 }, // 4 bile glob (the Abomination)
+];
+
 export class Shots extends Pool {
   constructor(cap) {
     super(cap, { x: F, y: F, px: F, py: F, vx: F, vy: F, r: F, dmg: F, life: F, kind: U8 });
+  }
+}
+
+// ground hazards that hurt the hero while he stands in them (acid, fire, molten gold)
+export const HAZARD_KINDS = {
+  acid: { id: 0, dps: 14, col: [0.35, 1.5, 0.1], paint: [0.1, 0.42, 0.04] },
+  fire: { id: 1, dps: 16, col: [2.4, 0.9, 0.2], paint: [0.06, 0.03, 0.02] },
+  gold: { id: 2, dps: 14, col: [2.4, 1.6, 0.35], paint: [0.42, 0.3, 0.06] },
+};
+export const HAZARD_LIST = Object.values(HAZARD_KINDS);
+export class Hazards extends Pool {
+  constructor(cap) {
+    super(cap, { x: F, y: F, r: F, life: F, max: F, kind: U8 });
   }
 }
 
@@ -75,7 +96,7 @@ export class Gems extends Pool {
 export const PICKUPS = ['magnet', 'freeze', 'shield', 'bomb', 'heart', 'lightning', 'chest', 'crate', 'overdrive', 'triple', 'rage'];
 export const CRATE = 7;
 export const SURGES = ['overdrive', 'triple', 'rage'];
-export const CRATE_GUNS = ['blaster', 'scatter', 'rocket', 'flamer'];
+export const CRATE_GUNS = ['blaster', 'scatter', 'rocket', 'flamer', 'tesla', 'saw'];
 // each pickup's colour: its bubble, the burst on the hero when grabbed
 export const PICKUP_COL = {
   magnet: [1.6, 0.35, 0.3],

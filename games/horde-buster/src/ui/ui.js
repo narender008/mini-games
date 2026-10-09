@@ -190,7 +190,9 @@ export class UI {
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
     if (this.screens.key(e)) return;
     const onControl = e.target instanceof Element && e.target.closest('button, a, input');
-    if (e.key === 'Enter' && this.open.size === 1 && this.open.has('title') && !onControl) {
+    const titleOnly = this.open.size === 1 && this.open.has('title');
+    if (titleOnly && this.menus.titleKey(e)) return;
+    if (e.key === 'Enter' && titleOnly && !onControl) {
       e.preventDefault();
       this.call('onPlay');
     } else if (e.key === 'Escape') {
@@ -200,8 +202,15 @@ export class UI {
   }
 
   // --------------------------------------------------------------- public API
+  // info: { coins, best, chapterName, chapters: [{ id, name, sub, icon, unlocked, cleared, best }],
+  //         endless: { unlocked, best }, selected: chapter index | 'endless' }
+  // A click on an open card calls onSelect(index | 'endless'); Play calls onPlay().
   showTitle(info) {
     this.menus.showTitle(info);
+  }
+  // the card the title has selected now: a chapter index, 'endless', or null without chapter cards
+  selection() {
+    return this.menus.selection();
   }
   hideTitle() {
     this.hide('title');
@@ -277,8 +286,14 @@ export class UI {
 // demo(ui): walk through every screen with sample data (call from the console).
 //   const d = demo(ui);       // runs the whole tour, d.stop() ends it
 //   demo(ui, 'levelup');      // just one: title armoury settings hud pause
-//                             // levelup wave gameover victory
-const STEPS = ['title', 'armoury', 'settings', 'hud', 'pause', 'levelup', 'wave', 'gameover', 'victory'];
+//                             // levelup wave gameover victory unlock endless
+const STEPS = ['title', 'armoury', 'settings', 'hud', 'pause', 'levelup', 'wave', 'gameover', 'victory', 'unlock', 'endless'];
+
+const CHAPTERS = [
+  { id: 'city', name: 'City Road', sub: 'Ogre Warlord', icon: 'ch_city', unlocked: true, cleared: true, best: 5 },
+  { id: 'graveyard', name: 'The Graveyard', sub: 'The Gilded Summoner', icon: 'ch_graveyard', unlocked: true, cleared: false, best: 0 },
+  { id: 'hell', name: 'Hellgate', sub: 'The Abomination', icon: 'ch_hell', unlocked: false, cleared: false, best: 0 },
+];
 
 function sampleCards() {
   return [
@@ -289,7 +304,7 @@ function sampleCards() {
 }
 
 export function demo(ui, only) {
-  for (const n of ['onPlay', 'onArmoury', 'onSettings', 'onResume', 'onRestart', 'onQuit', 'onAbility', 'onPause', 'onMute', 'onVolume', 'onFullscreen', 'onSetting', 'onBuy', 'onBack']) {
+  for (const n of ['onPlay', 'onArmoury', 'onSettings', 'onResume', 'onRestart', 'onQuit', 'onAbility', 'onPause', 'onMute', 'onVolume', 'onFullscreen', 'onSetting', 'onBuy', 'onBack', 'onSelect', 'onNext', 'onEndless']) {
     if (typeof ui.handlers[n] !== 'function') ui.handlers[n] = (...a) => console.log('[ui demo]', n, ...a);
   }
   const timers = [];
@@ -305,13 +320,13 @@ export function demo(ui, only) {
 
   const hudState = {
     hp: 100, maxHp: 100, level: 1, xp: 0, xpNext: 100, wave: 1, waves: 5, chapter: 1,
-    weapons: [{ id: 'blaster', name: 'Pulse Blaster', stars: 2, evolved: false }, { id: 'rocket', name: 'Rocket', stars: 1, evolved: false }, { id: 'scatter', name: 'Scatter', stars: 3, evolved: true }],
+    weapons: [{ id: 'blaster', name: 'Pulse Blaster', stars: 2, evolved: false }, { id: 'rocket', name: 'Rocket', stars: 1, evolved: false }, { id: 'scatter', name: 'Scatter', stars: 3, evolved: true }, { id: 'tesla', name: 'Tesla Gun', stars: 1, evolved: false }, { id: 'saw', name: 'Saw Launcher', stars: 2, evolved: false }, { id: 'flamer', name: 'Flamethrower', stars: 1, evolved: false }],
     abilities: { bomb: { charges: 1, max: 3, recharge: 0 }, shield: { charges: 3, max: 3, recharge: 0, active: 0 }, lightning: { charges: 2, max: 3, recharge: 0 }, freeze: { charges: 0, max: 3, recharge: 0 } },
     boss: null, coins: 120, kills: 0, muted: false, lowHp: false, touch: false,
   };
 
   const steps = {
-    title: () => ui.showTitle({ coins: 1240, best: { wave: 4, chapter: 1, kills: 312 }, chapterName: 'Dead End Highway', canContinue: false }),
+    title: () => ui.showTitle({ coins: 1240, best: { wave: 4, chapter: 1, kills: 312 }, chapterName: 'City Road', chapters: CHAPTERS, endless: { unlocked: false, best: 0 }, selected: 1 }),
     armoury: () =>
       ui.showArmoury({
         coins: 640,
@@ -319,7 +334,9 @@ export function demo(ui, only) {
           { id: 'blaster', name: 'Pulse Blaster', icon: 'blaster', unlocked: true, selected: true, hint: '' },
           { id: 'scatter', name: 'Scatter', icon: 'scatter', unlocked: true, selected: false, hint: '' },
           { id: 'rocket', name: 'Rocket', icon: 'rocket', unlocked: false, selected: false, hint: 'Clear wave 3' },
-          { id: 'railgun', name: 'Railgun', icon: 'railgun', unlocked: false, selected: false, hint: 'Clear chapter 1' },
+          { id: 'flamer', name: 'Flamethrower', icon: 'flamer', unlocked: false, selected: false, hint: 'Find it in a weapon crate' },
+          { id: 'tesla', name: 'Tesla Gun', icon: 'tesla', unlocked: true, selected: false, hint: '' },
+          { id: 'saw', name: 'Saw Launcher', icon: 'saw', unlocked: false, selected: false, hint: 'Find it in a weapon crate' },
         ],
         items: [
           { id: 'maxhp', name: 'Max HP', text: '+10 starting HP', icon: 'maxhp', level: 2, max: 5, cost: 300 },
@@ -344,7 +361,8 @@ export function demo(ui, only) {
         hudState.level = 1 + Math.floor((t * 22) / 100);
         hudState.kills = Math.floor(t * 7);
         hudState.coins = 120 + Math.floor(t * 3);
-        hudState.boss = t > 3 ? { name: 'OGRE WARLORD', hp: Math.max(0.05, 1 - ((t - 3) * 0.12) % 1) } : null;
+        hudState.boss = t > 3 ? { name: t > 6 ? 'THE GILDED SUMMONER' : 'OGRE WARLORD', hp: Math.max(0.05, 1 - ((t - 3) * 0.12) % 1) } : null;
+        hudState.waves = t > 5 ? 0 : 5; // 0: endless, just 'Wave N'
         const a = hudState.abilities;
         a.bomb.recharge = (t * 0.3) % 1;
         a.bomb.charges = 1 + (Math.floor(t * 0.3) % 3);
@@ -368,10 +386,14 @@ export function demo(ui, only) {
     wave: () =>
       ui.showWaveComplete({ wave: 3, waves: 5, coins: 320, xp: 180, weapon: { id: 'railgun', name: 'Railgun', stars: 2, isNew: true }, chest: true }, () => console.log('[ui demo] claimed')),
     gameover: () => ui.showGameOver({ wave: 3, waves: 5, level: 7, kills: 143, time: 252, coins: 210, best: true }),
-    victory: () => ui.showVictory({ wave: 5, waves: 5, level: 12, kills: 412, time: 611, coins: 1250, best: true }),
+    victory: () => ui.showVictory({ wave: 5, waves: 5, level: 12, kills: 412, time: 611, coins: 1250, best: true, chapter: 'City Road', next: null, endlessUnlocked: false }),
+    // chapter 1 cleared: chapter 2 opens
+    unlock: () => ui.showVictory({ wave: 5, waves: 5, level: 12, kills: 412, time: 611, coins: 1250, best: false, chapter: 'City Road', next: { name: 'The Graveyard', icon: 'ch_graveyard' }, endlessUnlocked: false }),
+    // endless: the wave reached and the best wave
+    endless: () => ui.showGameOver({ wave: 17, waves: 0, endless: true, bestWave: 17, level: 21, kills: 1432, time: 905, coins: 640, best: true }),
   };
 
-  const dur = { title: 3200, armoury: 3600, settings: 3200, hud: 8200, pause: 3000, levelup: 4500, wave: 5000, gameover: 4000, victory: 5000 };
+  const dur = { title: 3200, armoury: 3600, settings: 3200, hud: 9200, pause: 3000, levelup: 4500, wave: 5000, gameover: 4000, victory: 5000, unlock: 5000, endless: 4500 };
   let i = 0;
   let stopped = false;
   const run = (name) => {
