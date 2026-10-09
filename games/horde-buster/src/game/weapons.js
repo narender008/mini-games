@@ -711,7 +711,7 @@ function rip(run, j, dmg, nx, ny, kb) {
   run.hurt(j, lethal ? Math.max(0, tough - 0.01) : dmg, nx, ny, kb, CRIT | PROC | QUIET);
   const fx = run.fx;
   if (lethal) {
-    if (E.alive[j] && !E.dying[j]) run.kill(j, 'crit', nx, ny);
+    run.kill(j, 'crit', nx, ny);
     fx.blood(x, y, h, nx, ny, 16, 520, col, 1.1);
     fx.blood(x, y, h, -nx, -ny, 6, 300, col, 1.5);
     fx.mist(x, y, h, col, 26, 2);

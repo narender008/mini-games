@@ -786,6 +786,7 @@ export class Run {
     const jumps = Math.round(10 * FIELD.c);
     if (best >= 0 && E.alive[best]) this.chain(best, jumps, 90);
     else {
+      this.chainId++;
       const near = this.nearest(x, y, 300 * FIELD.r, -1);
       if (near >= 0) this.chain(near, jumps, 90);
     }
@@ -1008,7 +1009,10 @@ export class Run {
             const bdy = E.y[boss] - TYPES[E.type[boss]].hitY - B.y[i];
             if (bdx * bdx + bdy * bdy < 560 * 560 * FIELD.r) j = boss;
           }
-          if (j < 0) j = this.nearest(B.x[i] + B.vx[i] * 0.15, B.y[i] + B.vy[i] * 0.15 - 60, 360 * FIELD.r, -1);
+          if (j < 0) {
+            this.chainId++;
+            j = this.nearest(B.x[i] + B.vx[i] * 0.15, B.y[i] + B.vy[i] * 0.15 - 60, 360 * FIELD.r, -1);
+          }
           if (j >= 0) {
             // a rocket locked on the boss flies over the horde (2); one after a creature hits whatever it meets (1)
             B.home[i] = j === boss ? 2 : 1;
@@ -1259,6 +1263,7 @@ export class Run {
 
   kill(j, cause, dx, dy) {
     const E = this.enemies;
+    if (!E.alive[j] || E.dying[j]) return;
     const T0 = TYPES[E.type[j]];
     const x = E.x[j];
     const y = E.y[j];
@@ -1291,12 +1296,9 @@ export class Run {
         this.hero.hp = Math.min(s.maxHp, this.hero.hp + n);
       }
     }
-    // corpse bomb: some bodies blow apart and take the neighbours with them
-    if (s.corpse && !T0.boss && rnd() < s.corpse && this.blastBudget > 0) {
-      this.blastBudget--;
-      this.explode(x, y - T0.hitY * 0.5, 62 + 0.25 * T0.r, Math.min(E.maxHp[j], 500) * 0.6 + 20, 360, 'round');
-      cause = 'blast';
-    }
+    // corpse bomb: some bodies blow apart and take the neighbours with them (once this one is gone)
+    const corpse = s.corpse && !T0.boss && rnd() < s.corpse && this.blastBudget > 0;
+    if (corpse) cause = 'blast';
     const pan = this.pan(x);
     if (T0.boss) {
       this.bossDeath(j);
@@ -1328,6 +1330,10 @@ export class Run {
       this.app.bloomKick?.(elite ? 0.8 : 0.4);
     }
     E.remove(j);
+    if (corpse) {
+      this.blastBudget--;
+      this.explode(x, y - T0.hitY * 0.5, 62 + 0.25 * T0.r, Math.min(E.maxHp[j], 500) * 0.6 + 20, 360, 'round');
+    }
   }
 
   // a headless body finally drops

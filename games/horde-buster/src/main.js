@@ -355,7 +355,7 @@ class App {
       onArmoury: () => this.ui.showArmoury(this.armouryData()),
       onSettings: () => this.ui.showSettings({ ...this.data.settings }),
       onResume: () => this.resume(),
-      onRestart: () => this.startRun(0),
+      onRestart: () => this.startRun(0, this.run.endless ? 'endless' : CHAPTERS.indexOf(this.run.chapter)),
       onQuit: () => this.toTitle(),
       onAbility: (k) => this.ability(k),
       onPause: () => this.pause(),
