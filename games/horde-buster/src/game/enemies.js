@@ -325,7 +325,8 @@ export class Enemies {
         y[i] += (hdy / hd) * (hr - hd);
       }
       // wrecks and barriers in play: pushed out of the footprint; one that meets it
-      // head on slides along it toward the nearer end, so the horde flows round
+      // head on slides along it toward the nearer end, so the horde flows round (toward the
+      // far end when the nearer one is off the field, as with the Graveyard's corner crypts)
       const ob = fly ? null : run.obstacles;
       if (ob) {
         const pad = ri * 0.6;
@@ -335,8 +336,13 @@ export class Enemies {
           const ex = ob[o + 2] + pad;
           const ey = ob[o + 3] + pad;
           if (odx >= ex || odx <= -ex || ody >= ey || ody <= -ey) continue;
-          const sx = odx > 0 || (odx === 0 && this.seed[i] > 0.5) ? 1 : -1;
-          const px = ex - Math.abs(odx);
+          let sx = odx > 0 || (odx === 0 && this.seed[i] > 0.5) ? 1 : -1;
+          let px = ex - Math.abs(odx);
+          const end = ob[o] + sx * ex;
+          if (end < 8 || end > ARENA.w - 8) {
+            sx = -sx;
+            px = Infinity;
+          }
           const py = ey - Math.abs(ody);
           if (px < py) x[i] += sx * px;
           else {

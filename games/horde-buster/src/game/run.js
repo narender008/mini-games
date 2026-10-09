@@ -398,9 +398,11 @@ export class Run {
 
   // a burst a moment from now (exploders set each other off in a ripple, not all in one frame)
   queueBurst(x, y, r, dmg, delay, heroDmg) {
-    if (this.pendN >= 96) {
-      this.toxicBurst(x, y, r, dmg, heroDmg);
-      return;
+    // a full queue grows: going off at once here would set off the next exploder inside this call, and so on down the stack
+    if (this.pendN * 6 >= this.pend.length) {
+      const grown = new Float32Array(this.pend.length * 2);
+      grown.set(this.pend);
+      this.pend = grown;
     }
     const P = this.pend;
     const k = this.pendN++ * 6;
