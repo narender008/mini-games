@@ -166,7 +166,10 @@ export class Run {
     this.leechAcc = 0;
     this.abil = {};
     for (const [k, a] of Object.entries(ABILITIES)) this.abil[k] = { charges: a.max, max: a.max, cd: 0, period: a.period, recharge: 0, active: 0 };
-    if (meta.bombs) this.abil.bomb.max += meta.bombs;
+    if (meta.bombs) {
+      this.abil.bomb.max += meta.bombs;
+      this.abil.bomb.charges += meta.bombs;
+    }
     const h = this.hero;
     h.x = h.px = ARENA.w / 2;
     h.y = h.py = 1120;

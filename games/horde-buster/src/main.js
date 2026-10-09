@@ -705,7 +705,7 @@ class App {
       this.bossHud.hp = run.enemies.hp[run.boss.i] / run.enemies.maxHp[run.boss.i];
       s.boss = this.bossHud;
     } else s.boss = null;
-    s.coins = this.data.coins + (this.state === 'play' ? 0 : 0);
+    s.coins = this.data.coins;
     s.kills = run.kills;
     s.muted = this.data.settings.muted;
     s.lowHp = h.hp < run.stats.maxHp * 0.3;
