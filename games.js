@@ -92,4 +92,13 @@ window.MINI_GAMES = [
     imageAlt: 'A tank at dawn firing across farmland as a heavy shell bursts in a fireball short of an enemy tank',
     tags: ['2D', 'Ages 14+', 'Touch friendly'],
   },
+  {
+    slug: 'horde-buster',
+    name: 'Horde Buster',
+    description: 'A gory horde shooter for grown-ups: hold a battlefield as wide as your screen, dodge with the mouse and blast the dead into chunks across three chapters, a city road, a moonlit graveyard and the gates of hell, swapping between six guns from weapon crates while upgrades stack up, until each chapter\'s boss comes. Then endless.',
+    path: 'games/horde-buster/',
+    image: 'games/horde-buster/cover.jpg',
+    imageAlt: 'A blue-armoured hero at the bottom of a wide city boulevard torching a horde of green zombies, red brutes and purple spiders with a flamethrower, weapon crates floating beside him',
+    tags: ['2D', 'Ages 18+', 'Mouse first'],
+  },
 ];

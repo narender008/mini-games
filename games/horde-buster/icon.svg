@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="bg" cx="0.5" cy="0.4" r="0.75"><stop offset="0" stop-color="#3a1a24"/><stop offset="1" stop-color="#120a12"/></radialGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9be05a"/><stop offset="1" stop-color="#4f9a2c"/></linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="12" fill="url(#bg)"/>
+  <!-- blood splat -->
+  <g fill="#b0101c">
+    <circle cx="44" cy="44" r="12"/><circle cx="54" cy="36" r="5"/><circle cx="34" cy="56" r="5"/><circle cx="56" cy="52" r="3"/>
+    <circle cx="25" cy="51" r="2.2"/><circle cx="58" cy="25" r="2"/>
+  </g>
+  <!-- zombie head -->
+  <ellipse cx="30" cy="30" rx="17" ry="16" fill="url(#skin)" stroke="#11170b" stroke-width="2.4"/>
+  <path d="M17 24 q4 -10 13 -10 q10 0 15 8" fill="none" stroke="#2f5e1a" stroke-width="2.4" stroke-linecap="round"/>
+  <circle cx="23.5" cy="28" r="5.4" fill="#fff6c8" stroke="#11170b" stroke-width="2"/>
+  <circle cx="37" cy="27" r="4.4" fill="#fff6c8" stroke="#11170b" stroke-width="2"/>
+  <circle cx="24.5" cy="29" r="2" fill="#d4141c"/>
+  <circle cx="36.5" cy="28" r="1.7" fill="#d4141c"/>
+  <path d="M21 38 q9 6 18 -1 l-1 4 q-8 5 -16 0 z" fill="#3a0a0e" stroke="#11170b" stroke-width="1.8" stroke-linejoin="round"/>
+  <path d="M25 39.5 l1.6 2.6 l1.6 -2.2 l1.6 2.4 l1.6 -2.4 l1.6 2.2 l1.4 -2.6" fill="none" stroke="#fff6c8" stroke-width="1.3" stroke-linejoin="round"/>
+  <!-- crosshair -->
+  <g fill="none" stroke="#5fd0ff" stroke-width="2.6" stroke-linecap="round">
+    <circle cx="44" cy="44" r="9"/>
+    <path d="M44 31 v6 M44 51 v6 M31 44 h6 M51 44 h6"/>
+  </g>
+  <circle cx="44" cy="44" r="1.8" fill="#5fd0ff"/>
+</svg>

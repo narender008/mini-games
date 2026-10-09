@@ -1,0 +1,17 @@
+{
+  "name": "Horde Buster",
+  "short_name": "Horde Buster",
+  "description": "A gory 18+ horde shooter: hold the road, level up and blast waves of the dead into chunks until the Ogre Warlord falls.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#120a12",
+  "theme_color": "#120a12",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}
