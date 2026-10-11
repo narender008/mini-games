@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="bg" cx="0.5" cy="0.42" r="0.75"><stop offset="0" stop-color="#4a2030"/><stop offset="1" stop-color="#140b14"/></radialGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c9d2de"/></linearGradient>
+    <linearGradient id="visor" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6fd0ff"/><stop offset="1" stop-color="#1b4f8a"/></linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="12" fill="url(#bg)"/>
+  <!-- impact burst -->
+  <path d="M32 4l4 12 10-8-3 12 13-2-9 9 12 5-13 3 8 10-12-4 1 13-8-10-6 11-2-13-11 6 5-12-13-1 11-7-9-9 13 1-4-12 10 7z" fill="#ffb020" opacity="0.9"/>
+  <!-- blood -->
+  <g fill="#c0121e"><circle cx="49" cy="47" r="7"/><circle cx="56" cy="40" r="3"/><circle cx="43" cy="56" r="3"/><circle cx="58" cy="52" r="2"/></g>
+  <!-- helmet -->
+  <path d="M14 36c0-12 8-21 19-21s18 8 18 19v6H14z" fill="url(#shell)" stroke="#1a1020" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="M30 15.5c-2 7-2 15 0 24.5" stroke="#d81e2c" stroke-width="5" fill="none"/>
+  <path d="M36 15.6c-1 7-1 15 0 24.4" stroke="#2456c8" stroke-width="3" fill="none"/>
+  <path d="M33 33h19v7c0 4-3 6-7 6H33z" fill="url(#visor)" stroke="#1a1020" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="M37 36h10" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" opacity="0.8"/>
+  <path d="M18 27l2.2 1.6-0.8 2.6 2.2-1.6 2.2 1.6-0.8-2.6 2.2-1.6h-2.7l-0.9-2.6-0.9 2.6z" fill="#d81e2c"/>
+  <!-- crack -->
+  <path d="M22 18l3 5-2 3 4 4" stroke="#1a1020" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="12" y="40" width="40" height="5" rx="2" fill="#2a2030" stroke="#1a1020" stroke-width="2"/>
+</svg>

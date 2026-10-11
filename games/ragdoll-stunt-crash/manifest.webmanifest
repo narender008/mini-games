@@ -1,0 +1,17 @@
+{
+  "name": "Ragdoll Stunt Crash",
+  "short_name": "Stunt Crash",
+  "description": "A grown-up physics stunt game: launch a floppy stuntman into walls, traffic and oil drums and score for damage, flips and impacts. Cartoon gore, ages 18+.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#1a0f1c",
+  "theme_color": "#1a0f1c",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}
