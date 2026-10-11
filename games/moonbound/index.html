@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>Moonbound · Mini Games</title>
+    <meta name="description" content="A dark-fantasy action roguelike: the last moon witch fights up a ruined citadel of endless midnight, one chamber at a time. Ages 18+." />
+    <meta name="theme-color" content="#07070d" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <!-- "Add to Home Screen" opens the game full screen, with no browser bars -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Moonbound" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas id="view" aria-label="Moonbound"></canvas>
+    <div id="ui"></div>
+    <div id="loading" style="background-image: url(art/maelis.webp)" role="progressbar" aria-label="Loading Moonbound">
+      <div class="box">
+        <h1 class="logo" style="font-size: clamp(34px, 6vw, 64px)">Moonbound</h1>
+        <p class="cap">Loading…</p>
+        <div class="bar"><i></i></div>
+      </div>
+    </div>
+    <noscript><p style="position: fixed; inset: 40% 0 auto; text-align: center">Moonbound needs JavaScript.</p></noscript>
+    <script type="module" src="src/boot.js"></script>
+  </body>
+</html>

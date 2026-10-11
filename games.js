@@ -110,4 +110,13 @@ window.MINI_GAMES = [
     imageAlt: 'A stuntman in a red, white and blue suit flying out through the shattered windscreen of an estate car that has hit a concrete wall marked The Wall, with sparks, glass and blood flying and a traffic cone spinning overhead',
     tags: ['2D', 'Ages 18+', 'Mouse first'],
   },
+  {
+    slug: 'moonbound',
+    name: 'Moonbound',
+    description: 'A dark-fantasy action roguelike for grown-ups: the last moon witch fights up a ruined citadel of endless midnight one chamber at a time, choosing blessings from four star patrons, dying, growing stronger at home and trying again.',
+    path: 'games/moonbound/',
+    image: 'games/moonbound/cover.jpg',
+    imageAlt: 'Seen from above, a witch in a pointed hat whirls twin crescents of moonlight in a ring of skeleton soldiers and pale ghosts on dark rampart flagstones lit by blue braziers',
+    tags: ['2D', 'Ages 18+', 'Mouse first'],
+  },
 ];
