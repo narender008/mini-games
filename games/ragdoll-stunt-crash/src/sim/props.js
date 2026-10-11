@@ -2,7 +2,7 @@
 // ({ kind: 'prop', prop }) on its fixtures; how it behaves comes from the
 // KINDS table: static scenery, loose dynamic clutter, breakables (crates,
 // glass, snowmen, ice), explosives (red drums, TNT), bouncers (trampolines,
-// bumpers, tyres), kinematic traffic that loops along a stretch of road,
+// bumpers, tyres), traffic that loops along a stretch of road,
 // pendulums (wrecking balls, logs), sensors (hoops of fire, bullseyes) and
 // spikes that impale. Loose props stand square to the ground under them.
 // Traffic is heavy, upright dynamic bodies held at their speed each step (so
