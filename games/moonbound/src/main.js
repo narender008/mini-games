@@ -202,9 +202,7 @@ class App {
     }
     if (this.atlas.half !== this.q.halfAtlas) {
       this.atlas.half = this.q.halfAtlas;
-      const sets = this.atlas.sets;
-      this.atlas.sets = [];
-      if (sets.length) this.useSets(sets, null);
+      if (this.atlas.want.length) this.useSets(this.atlas.want, null);
     }
   }
 
@@ -220,13 +218,39 @@ class App {
     this.renderer.cam.ppm = ppm;
   }
 
-  // load sprite sets behind a loading card (the old pages are let go before the new ones are in)
+  // load sprite sets behind a loading card (the old pages are let go before the new ones are in), which stays up
+  // until no rebuild is left in the queue
   async useSets(sets, bossSet) {
-    const same = sets.length === this.atlas.sets.length && sets.every((s) => this.atlas.sets.includes(s));
-    if (same) return;
+    if (!this.atlas.queued && this.atlas.resident(sets)) return;
     this.loadingCard(bossSet);
     await this.atlas.use(sets, (p) => this.loadingProgress(p));
-    this.loadingDone();
+    if (!this.atlas.queued) this.loadingDone();
+  }
+
+  // a sprite download failed even after its retries: the card says so and offers Retry, which runs the same load again
+  loadFailed() {
+    const L = document.getElementById('loading');
+    const cap = L.querySelector('.cap');
+    const before = cap.textContent;
+    cap.textContent = 'The download failed. Check the connection, then try again.';
+    const b = document.createElement('button');
+    b.className = 'btn primary';
+    b.dataset.nav = '';
+    b.innerHTML = `Retry<span class="k">${this.input.device === 'pad' ? 'A' : 'Enter'}</span>`;
+    L.querySelector('.box').append(b);
+    this.ui.adopt('retry', L, () => {});
+    return new Promise((done) => {
+      b.addEventListener(
+        'click',
+        () => {
+          b.remove();
+          cap.textContent = before;
+          this.ui.close(true);
+          done();
+        },
+        { once: true },
+      );
+    });
   }
 
   loadingCard(bossSet) {
@@ -433,6 +457,7 @@ class App {
     // preload the first sets behind the boot screen
     const weapon = WEAPONS[QUERY.get('weapon')] || WEAPONS[this.save.weapon] || WEAPONS.twins;
     await this.atlas.use(play ? [weapon.set, 'gloamwall', 'common'] : [weapon.set, 'hollow', 'common'], (p) => progress(0.3 + p * 0.65));
+    this.atlas.onFail = () => this.loadFailed();
     progress(1, 'Ready');
     this.tick = (t) => this.frame(t);
     requestAnimationFrame(this.tick);
@@ -508,7 +533,7 @@ class App {
         const wp = WEAPONS[id];
         if (!wp) throw new Error('no weapon ' + id);
         app.save.weapon = id;
-        const sets = app.atlas.sets.filter((s) => !s.startsWith('hero_'));
+        const sets = app.atlas.want.filter((s) => !s.startsWith('hero_'));
         await app.useSets([wp.set, ...sets], null);
         const H = w().hero;
         H.weapon = wp;

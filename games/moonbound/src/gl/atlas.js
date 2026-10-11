@@ -29,48 +29,64 @@ export class Atlas {
     this.generation = 0;
     this.anchors = {};
     this.values = {};
+    this.builtHalf = false; // the size the resident arrays were built at
+    this.want = []; // the sets last asked for
+    this.queued = 0; // rebuilds asked for and not yet done
     this.pending = Promise.resolve();
+    this.onFail = null; // (error) => promise: a load that failed even after its retries runs again when it resolves
   }
 
   async json(set) {
     if (this.meta.has(set)) return this.meta.get(set);
-    const r = await fetch(`${this.base}${set}.json`);
-    if (!r.ok) throw new Error(`sprites ${set}: ${r.status}`);
-    const m = await r.json();
+    const m = await download(`${this.base}${set}.json`, (r) => r.json());
     this.meta.set(set, m);
     return m;
   }
 
+  // are exactly these sets resident, at the current size?
+  resident(sets) {
+    return !!this.albedo && this.builtHalf === this.half && sets.length === this.sets.length && sets.every((s) => this.sets.includes(s));
+  }
+
   // Make exactly these sets resident. onProgress(0..1). Rebuilds run one at a time.
   use(sets, onProgress) {
-    const next = () => this.load(sets, onProgress);
+    this.want = sets;
+    this.queued++;
+    const next = () => this.settle(sets, onProgress).finally(() => this.queued--);
     return (this.pending = this.pending.then(next, next));
+  }
+
+  async settle(sets, onProgress) {
+    for (;;) {
+      try {
+        return await this.load(sets, onProgress);
+      } catch (e) {
+        if (!this.onFail) throw e;
+        console.error(e);
+        await this.onFail(e);
+      }
+    }
   }
 
   async load(sets, onProgress) {
     sets = [...new Set(sets)];
-    const same = sets.length === this.sets.length && sets.every((s) => this.sets.includes(s));
-    if (same && this.albedo) return;
+    if (this.resident(sets)) return;
     const metas = [];
     for (const s of sets) {
       try {
         metas.push([s, await this.json(s)]);
       } catch (e) {
+        if (e.status !== 404) throw e;
         console.warn(e.message); // a set that is not built yet: its sprites are simply missing
       }
     }
     const pages = metas.flatMap(([s, m]) => Array.from({ length: m.pages }, (_, i) => ({ s, i })));
     let done = 0;
     const tick = () => onProgress?.(++done / Math.max(1, pages.length * 4));
-    const download = (url) =>
-      fetch(url).then((r) => {
-        if (!r.ok) throw new Error(`could not load ${url}`);
-        tick();
-        return r.blob();
-      });
+    const page = (url) => download(url, (r) => r.blob()).then((b) => (tick(), b));
     // the compressed pages download together; then the old arrays are let go and each page is decoded, uploaded
     // and dropped in turn, so no more than one decoded page is held at a time
-    const files = await Promise.all(pages.map(({ s, i }) => Promise.all([download(`${this.base}${s}_${i}.webp`), download(`${this.base}${s}_${i}_n.webp`)])));
+    const files = await Promise.all(pages.map(({ s, i }) => Promise.all([page(`${this.base}${s}_${i}.webp`), page(`${this.base}${s}_${i}_n.webp`)])));
     const gl = this.gl;
     if (this.albedo) gl.deleteTexture(this.albedo);
     if (this.normal) gl.deleteTexture(this.normal);
@@ -111,6 +127,7 @@ export class Atlas {
       freeScratch(gl);
     }
     this.sets = sets;
+    this.builtHalf = half;
   }
 
   // the frame and animation tables: a frame's layer is its page's index in `pages`
@@ -209,6 +226,21 @@ export class Atlas {
   }
   value(kind, name) {
     return this.values[kind]?.[name];
+  }
+}
+
+// a download, tried up to three times (0.5 s, then 1.5 s apart) so a dropped connection does not lose it; a file
+// that is not there (404) is not asked for again
+async function download(url, read) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw Object.assign(new Error(`could not load ${url} (${r.status})`), { status: r.status });
+      return await read(r);
+    } catch (e) {
+      if (attempt === 2 || e.status === 404) throw e;
+      await new Promise((ok) => setTimeout(ok, attempt ? 1500 : 500));
+    }
   }
 }
 

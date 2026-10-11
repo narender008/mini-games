@@ -72,6 +72,18 @@ export class UI {
     return wrap;
   }
 
+  // a choice in an element outside the interface layer (the loading card's Retry), reached by the same focus, keys and pad
+  adopt(name, el, back) {
+    if (this.modal) this.stack.push(this.modal);
+    this.closeEl();
+    this.modal = { name, el, back, onKey: null, onPad: null };
+    this.app.input.flush();
+    this.app.input.releaseAll();
+    wireNav(el, this);
+    this.setFocus(el.querySelector('[data-nav]'));
+    this.app.onModal?.(true);
+  }
+
   closeEl() {
     const m = $('#modal', this.root);
     if (m) m.remove();
