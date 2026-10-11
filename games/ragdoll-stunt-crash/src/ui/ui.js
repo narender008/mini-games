@@ -394,8 +394,8 @@ export class UI {
   tick(dt) {
     this.hudView.tick(dt);
   }
-  damage(dollars) {
-    this.hudView.damage(dollars);
+  damage(dollars, total) {
+    this.hudView.damage(dollars, total);
   }
   style(mult) {
     this.hudView.setStyle(mult);

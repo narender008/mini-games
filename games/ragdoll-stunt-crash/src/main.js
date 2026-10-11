@@ -1161,7 +1161,7 @@ class App {
     const ui = this.ui;
     const h = this.hud;
     const S = run.score;
-    ui.damage(S.damage);
+    ui.damage(S.damage, S.total);
     if (S.style !== h.style) {
       h.style = S.style;
       ui.style(S.style);

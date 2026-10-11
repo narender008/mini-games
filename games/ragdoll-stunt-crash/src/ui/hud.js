@@ -41,6 +41,7 @@ export class Hud {
     this.bumpAt = 0;
     this.target = 0; // the damage the counter is rolling to
     this.shown = 0; // the damage it shows now
+    this.total = 0; // the run's score so far, for the target bar
     this.banked = 0;
     this.goal = 0;
     this.runs = 3;
@@ -153,7 +154,7 @@ export class Hud {
     this.goalText.data = `TARGET $${fmt(this.goal)}`;
     this.bankText.data = sum > 0 ? `BANKED $${fmt(sum)}` : '';
     this.el.classList.remove('hit');
-    this.target = this.shown = 0;
+    this.target = this.shown = this.total = 0;
     c.d = -1;
     c.gq = -1;
     c.style = -1;
@@ -170,8 +171,14 @@ export class Hud {
   }
 
   // ---- the per-frame paths: compare, then write only what changed ----
-  damage(v) {
+  // v: the run's damage dollars; total: its score so far (damage times style), which fills the target bar
+  damage(v, total = v) {
     const t = v > 0 ? v : 0;
+    const tot = total > 0 ? total : 0;
+    if (tot !== this.total) {
+      this.total = tot;
+      this.setGoalBar();
+    }
     // a quick bump when it rises, at most every 160 ms so a per-frame caller costs nothing
     if (t > this.target && !reduced()) {
       const now = performance.now();
@@ -193,13 +200,12 @@ export class Hud {
     if (r !== this.c.d) {
       this.c.d = r;
       this.dmgText.data = `$${commas(r)}`;
-      this.setGoalBar();
     }
   }
 
   setGoalBar() {
     if (this.goal <= 0) return;
-    const q = Math.round(clamp((this.banked + Math.round(this.shown)) / this.goal, 0, 1) * 200);
+    const q = Math.round(clamp((this.banked + Math.round(this.total)) / this.goal, 0, 1) * 200);
     if (q === this.c.gq) return;
     this.c.gq = q;
     this.goalFill.style.transform = `scaleX(${q / 200})`;

@@ -4,6 +4,7 @@
 // settings. Every read and write is guarded, so the game still works with
 // storage blocked (nothing is then kept).
 import { RIDES } from './sim/defs.js';
+import { DEBUG, REDUCED_MOTION } from './config.js';
 
 const KEY = 'ragdoll-stunt-crash';
 
@@ -27,7 +28,7 @@ const fresh = () => ({
   cleared: {},
   runs: 0,
   earned: 0,
-  settings: { volume: 0.8, music: 0.5, muted: false, quality: 'auto', shake: 'full', gore: 'max', replay: true },
+  settings: { volume: 0.8, music: 0.5, muted: false, quality: 'auto', shake: REDUCED_MOTION ? 'reduced' : 'full', gore: 'max', replay: true },
 });
 
 function read() {
@@ -44,7 +45,9 @@ function read() {
 
 export const data = read();
 
+// Nothing is written while ?debug is on, so testing never touches the real save.
 export function save() {
+  if (DEBUG) return;
   try {
     localStorage.setItem(KEY, JSON.stringify(data));
   } catch {

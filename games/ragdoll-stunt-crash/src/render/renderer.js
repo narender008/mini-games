@@ -72,8 +72,10 @@ export class Renderer {
   }
 
   paintBackdrop() {
-    const W = this.canvas.width;
-    const H = this.canvas.height;
+    // never painted tiny: the painters step by fractions of the size, so a 0 px
+    // window (a hidden frame) would never finish
+    const W = Math.max(64, this.canvas.width);
+    const H = Math.max(64, this.canvas.height);
     const wd = this.world;
     this.sky = makeCanvas(W, H);
     try {
