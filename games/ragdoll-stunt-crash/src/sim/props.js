@@ -16,7 +16,7 @@ import { rand } from '../config.js';
 
 const STATIC_MASK = 0xffff & ~CAT.TRAFFIC;
 const DYN_MASK = CAT.WORLD | CAT.PROP | CAT.RIDE | CAT.RAG | CAT.DEBRIS;
-const TRAFFIC_MASK = CAT.WORLD | CAT.RIDE | CAT.RAG | CAT.TRAFFIC;
+export const TRAFFIC_MASK = CAT.WORLD | CAT.RIDE | CAT.RAG | CAT.TRAFFIC;
 
 // body: static | dynamic | kinematic; kg: mass for dynamic bodies; breaks: N·s that smashes it
 export const KINDS = {

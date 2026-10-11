@@ -12,7 +12,7 @@
 import { Physics, pl, CAT } from '../sim/physics.js';
 import { Ragdoll, POSES } from '../sim/ragdoll.js';
 import { Ride, Launcher } from '../sim/rides.js';
-import { buildProp, breakProp, removeProp, KINDS } from '../sim/props.js';
+import { buildProp, breakProp, removeProp, KINDS, TRAFFIC_MASK } from '../sim/props.js';
 import { Terrain } from '../sim/terrain.js';
 import { Score, FRACTURE, BONES, FRACTURE_PAY } from './score.js';
 import { Replay } from './replay.js';
@@ -27,6 +27,9 @@ const STILL_SPEED = 0.55;
 const STILL_TIME = 1.0;
 const MAX_FLIGHT = 14;
 const EVENTS = 512;
+// traffic in its lane, and traffic driving on through what it was pinning
+const LANE = { groupIndex: 0, categoryBits: CAT.TRAFFIC, maskBits: TRAFFIC_MASK };
+const GHOST = { groupIndex: 0, categoryBits: CAT.TRAFFIC, maskBits: CAT.WORLD };
 // face codes for the replay: calm, scared, pain, ko, dead
 export const FACES = ['calm', 'scared', 'pain', 'ko', 'dead'];
 
@@ -452,7 +455,7 @@ export class Run {
     const fr = FRACTURE[part.shape] * this.fracMul;
     if (imp > fr && part.fractured === 0 && !this.opts.god) {
       this.rag.fracture(part);
-      S.fractures++;
+      if (!S.closed) S.fractures++;
       this.stunt(BONES[part.shape], Math.round(FRACTURE_PAY * part.mult));
       this.events.push('fracture', x, y, ox, oy, s, '', part);
     }
@@ -462,7 +465,7 @@ export class Run {
       this.rag.conscious = false;
       this.stunt('KNOCKED OUT');
     }
-    if (imp > S.biggest) {
+    if (!S.closed && imp > S.biggest) {
       S.biggest = imp;
       S.bigT = ph.time;
     }
@@ -764,14 +767,14 @@ export class Run {
 
   // traffic keeps its speed and loops round its stretch of road; one that stops
   // getting anywhere (pinning him or his wreck against a post it passes) drives
-  // on through them, touching only the road from then on
+  // on through them, touching only the road until it comes round again
   traffic(dt) {
     for (const P of this.props) {
       if (!P.range) continue;
       const p = P.body.getPosition();
       const v = P.body.getLinearVelocity();
       const f = P.body.getFixtureList();
-      if ((P.item.x - P.item.px) * P.vx < 0.5 * P.vx * P.vx * dt && f.getFilterMaskBits() !== CAT.WORLD) f.setFilterData({ groupIndex: 0, categoryBits: CAT.TRAFFIC, maskBits: CAT.WORLD });
+      if ((P.item.x - P.item.px) * P.vx < 0.5 * P.vx * P.vx * dt && f.getFilterMaskBits() !== CAT.WORLD) f.setFilterData(GHOST);
       if (v.x !== P.vx) {
         this.tmp.x = P.vx;
         this.tmp.y = v.y;
@@ -786,6 +789,8 @@ export class Run {
     this.tmp.x = x;
     this.tmp.y = y;
     P.body.setTransform(this.tmp, 0);
+    const f = P.body.getFixtureList();
+    if (f.getFilterMaskBits() === CAT.WORLD) f.setFilterData(LANE);
     this.phys.settle(P.item);
   }
 
