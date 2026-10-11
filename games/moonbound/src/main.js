@@ -193,19 +193,18 @@ class App {
     const want = QUERY.get('quality') || s.quality;
     const t = want !== 'auto' ? tierSettings(want) : null;
     if (t && t.tier !== this.q.tier) {
-      const half = this.q.halfAtlas;
       Object.assign(this.q, t, { scale: 1, forced: true });
       this.fx.maxBursts = this.q.bursts;
       this.resize();
-      if (half !== this.q.halfAtlas) {
-        this.atlas.half = this.q.halfAtlas;
-        const sets = this.atlas.sets;
-        this.atlas.sets = [];
-        this.atlas.use(sets);
-      }
     } else if (!t && this.q.forced && !QUERY.get('quality')) {
       Object.assign(this.q, detectQuality('auto'));
       this.resize();
+    }
+    if (this.atlas.half !== this.q.halfAtlas) {
+      this.atlas.half = this.q.halfAtlas;
+      const sets = this.atlas.sets;
+      this.atlas.sets = [];
+      if (sets.length) this.useSets(sets, null);
     }
   }
 
@@ -221,18 +220,13 @@ class App {
     this.renderer.cam.ppm = ppm;
   }
 
-  // load sprite sets, with a loading card when it takes a moment
+  // load sprite sets behind a loading card (the old pages are let go before the new ones are in)
   async useSets(sets, bossSet) {
     const same = sets.length === this.atlas.sets.length && sets.every((s) => this.atlas.sets.includes(s));
     if (same) return;
-    let shown = false;
-    const timer = setTimeout(() => {
-      shown = true;
-      this.loadingCard(bossSet);
-    }, 120);
+    this.loadingCard(bossSet);
     await this.atlas.use(sets, (p) => this.loadingProgress(p));
-    clearTimeout(timer);
-    if (shown) this.loadingDone();
+    this.loadingDone();
   }
 
   loadingCard(bossSet) {

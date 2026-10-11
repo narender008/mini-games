@@ -58,6 +58,4 @@ export const GLOAMWALL = {
   encounters: ENCOUNTERS,
   miniboss: 'gaoler',
   boss: 'seraph',
-  // the run through the region: chamber kinds in order (DESIGN.md "Run structure")
-  chambers: 11,
 };

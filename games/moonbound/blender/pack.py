@@ -2,6 +2,10 @@
 UVs, a quarter of the memory), write <set>.json and the page PNGs.
 
 blender -b --factory-startup -P pack.py -- --frames DIR/<set> --out DIR_FOR_PNGS --json PATH/<set>.json --set NAME
+                                           [--old SHIPPED/<set>.json [--allow-shrink]]
+
+Fails on a set with no frames, and on one missing frames that the --old json has (a partial render cache) unless
+--allow-shrink.
 
 build.sh runs cwebp on the PNGs. The game uploads a set's pages as layers of the shared sprite texture arrays.
 json: {page, npage, pages, frames: {name: [page, x, y, w, h, px, py, ppm]}, anims, anchors, values}
@@ -156,8 +160,13 @@ def main():
     os.makedirs(outdir, exist_ok=True)
     frames = load_frames(fdir)
     if not frames:
-        print('set %s: no frames' % name)
-        return
+        raise SystemExit('set %s: no frames' % name)
+    old = opt('--old')
+    if old and os.path.exists(old) and '--allow-shrink' not in ARGV:
+        lost = sorted(set(json.load(open(old))['frames']) - set(frames))
+        if lost:
+            raise SystemExit('set %s: %d frame(s) of %s are missing, such as %s (render them, or ALLOW_SHRINK=1 if they '
+                             'were removed on purpose)' % (name, len(lost), old, ', '.join(lost[:4])))
     items = [(k, v['w'] + 2 * PAD, v['h'] + 2 * PAD) for k, v in frames.items()]
     pos, npages = maxrects(items, PAGE, PAGE)
     jf = {}

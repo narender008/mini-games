@@ -1,9 +1,11 @@
 // Device quality tiers. The starting tier comes from a quick look at the
 // device; the frame governor then trims the render scale if frames run long
 // and gives it back when there is headroom. ?quality=high|medium|low forces a
-// tier (as does the Settings screen). Low also halves the sprite atlases at
-// upload (a quarter of the texture memory).
+// tier (as does the Settings screen). Low halves the sprite atlases at upload
+// (a quarter of the texture memory), and so do phones and tablets at every tier.
 import { QUERY } from './config.js';
+
+const MOBILE = matchMedia('(pointer: coarse)').matches || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
 const TIERS = {
   high: { tier: 'high', maxDpr: 2, maxPixels: 3.7e6, lights: 24, bloomLevels: 5, bursts: 120, floorRes: 64, shadows: true, halfAtlas: false, mist: 1 },
@@ -11,20 +13,23 @@ const TIERS = {
   low: { tier: 'low', maxDpr: 1.1, maxPixels: 1.3e6, lights: 8, bloomLevels: 3, bursts: 45, floorRes: 32, shadows: false, halfAtlas: true, mist: 0 },
 };
 
+function settings(name) {
+  const t = TIERS[name];
+  return { ...t, halfAtlas: t.halfAtlas || MOBILE };
+}
+
 export function detectQuality(saved) {
   const forced = QUERY.get('quality') || (saved && saved !== 'auto' ? saved : null);
-  if (forced && TIERS[forced]) return { ...TIERS[forced], scale: 1, forced: true };
-  const coarse = matchMedia('(pointer: coarse)').matches;
-  const mobile = coarse || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+  if (forced && TIERS[forced]) return { ...settings(forced), scale: 1, forced: true };
   const mem = navigator.deviceMemory || 8;
   const cores = navigator.hardwareConcurrency || 8;
   let tier = 'high';
-  if (mobile) tier = mem <= 3 || cores <= 4 ? 'low' : 'medium';
+  if (MOBILE) tier = mem <= 3 || cores <= 4 ? 'low' : 'medium';
   else if (mem <= 4 || cores <= 4) tier = 'medium';
   // integrated graphics on an ordinary laptop: start at medium, the governor does the rest
   const gpu = gpuName();
-  if (!mobile && /Intel|UHD|Iris|Radeon\(TM\) Graphics|Mali|Adreno/i.test(gpu) && tier === 'high') tier = 'medium';
-  return { ...TIERS[tier], scale: 1, forced: false };
+  if (!MOBILE && /Intel|UHD|Iris|Radeon\(TM\) Graphics|Mali|Adreno/i.test(gpu) && tier === 'high') tier = 'medium';
+  return { ...settings(tier), scale: 1, forced: false };
 }
 
 function gpuName() {
@@ -41,7 +46,7 @@ function gpuName() {
 }
 
 export function tierSettings(name) {
-  return TIERS[name] || null;
+  return TIERS[name] ? settings(name) : null;
 }
 
 // Watches frame times against the display's refresh period and lowers the

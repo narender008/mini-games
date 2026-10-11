@@ -69,6 +69,7 @@ export class World {
     this.marks.length = 0;
     this.boss = null;
     this.darkTarget = 0;
+    for (const id of ['charge', 'whirl', 'fountain', 'cauldron']) this.audio.loop(id, id, false);
     this.spikes = room.spikes.map((s) => ({ ...s, state: 0, t: 0, hit: new Set() }));
     this.arrowTraps = room.arrowTraps.map((a, i) => ({ ...a, t: -1 - i * 0.7, warn: null }));
     this.flow.setRoom(room);

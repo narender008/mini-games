@@ -1,10 +1,11 @@
 // The sprite atlases pre-rendered in Blender (blender/build.sh). A "set" is
 // one json plus its pages (`<set>_<n>.webp` albedo 2048², `<set>_<n>_n.webp`
 // normal 1024²: RG normal xy, B gloss, A glow). The sets in use (the heroine
-// with her weapon, the area, its bosses, common effects) are uploaded together
-// as the layers of two texture arrays, so every sprite on screen is drawn by
-// one instanced call. Changing area rebuilds the arrays (behind a loading
-// card); frames are looked up by name, so nothing holds stale references.
+// with her weapon, the area, the chamber's boss, common effects) are uploaded
+// together as the layers of two texture arrays, so every sprite on screen is
+// drawn by one instanced call. Changing area rebuilds the arrays (behind a
+// loading card), which also lets go of a boss's pages once its chamber is
+// left; frames are looked up by name, so nothing holds stale references.
 //
 // Frames are placed by their pivot (the ground point under them), in screen
 // metres. Animations: atlas.anim(prefix) -> {n, fps, loop, dirs, mirror, at(i, angle)}.
@@ -16,7 +17,7 @@ export class Atlas {
   constructor(gl, base, opts = {}) {
     this.gl = gl;
     this.base = base; // url prefix of the sprite folder
-    this.half = !!opts.half; // low quality: halve the pages at upload
+    this.half = !!opts.half; // low quality and phones: halve the pages at upload
     this.meta = new Map(); // set -> json
     this.sets = [];
     this.albedo = null;
@@ -28,6 +29,7 @@ export class Atlas {
     this.generation = 0;
     this.anchors = {};
     this.values = {};
+    this.pending = Promise.resolve();
   }
 
   async json(set) {
@@ -39,8 +41,13 @@ export class Atlas {
     return m;
   }
 
-  // Make exactly these sets resident. onProgress(0..1).
-  async use(sets, onProgress) {
+  // Make exactly these sets resident. onProgress(0..1). Rebuilds run one at a time.
+  use(sets, onProgress) {
+    const next = () => this.load(sets, onProgress);
+    return (this.pending = this.pending.then(next, next));
+  }
+
+  async load(sets, onProgress) {
     sets = [...new Set(sets)];
     const same = sets.length === this.sets.length && sets.every((s) => this.sets.includes(s));
     if (same && this.albedo) return;
@@ -52,61 +59,67 @@ export class Atlas {
         console.warn(e.message); // a set that is not built yet: its sprites are simply missing
       }
     }
-    const pages = metas.reduce((n, [, m]) => n + m.pages, 0);
+    const pages = metas.flatMap(([s, m]) => Array.from({ length: m.pages }, (_, i) => ({ s, i })));
     let done = 0;
-    const tick = () => onProgress?.(++done / Math.max(1, pages * 2));
-    const imgs = [];
-    await Promise.all(
-      metas.flatMap(([s, m]) =>
-        Array.from({ length: m.pages }, (_, i) =>
-          Promise.all([
-            loadImage(`${this.base}${s}_${i}.webp`).then((x) => (tick(), x)),
-            loadImage(`${this.base}${s}_${i}_n.webp`).then((x) => (tick(), x)),
-          ]).then(([a, n]) => imgs.push({ s, i, a, n })),
-        ),
-      ),
-    );
-    imgs.sort((p, q) => (p.s === q.s ? p.i - q.i : sets.indexOf(p.s) - sets.indexOf(q.s)));
-    this.build(metas, imgs);
-    this.sets = sets;
-  }
-
-  build(metas, imgs) {
+    const tick = () => onProgress?.(++done / Math.max(1, pages.length * 4));
+    const download = (url) =>
+      fetch(url).then((r) => {
+        if (!r.ok) throw new Error(`could not load ${url}`);
+        tick();
+        return r.blob();
+      });
+    // the compressed pages download together; then the old arrays are let go and each page is decoded, uploaded
+    // and dropped in turn, so no more than one decoded page is held at a time
+    const files = await Promise.all(pages.map(({ s, i }) => Promise.all([download(`${this.base}${s}_${i}.webp`), download(`${this.base}${s}_${i}_n.webp`)])));
     const gl = this.gl;
     if (this.albedo) gl.deleteTexture(this.albedo);
     if (this.normal) gl.deleteTexture(this.normal);
-    const P = 2048 >> (this.half ? 1 : 0);
-    const NP = 1024 >> (this.half ? 1 : 0);
-    const n = Math.max(1, imgs.length);
-    const make = (internal, size, key) => {
-      const levels = Math.floor(Math.log2(size)) + 1;
+    this.sets = [];
+    const half = this.half;
+    const n = Math.max(1, pages.length);
+    const kinds = [
+      [gl.SRGB8_ALPHA8, 2048 >> (half ? 1 : 0)],
+      [gl.RGBA8, 1024 >> (half ? 1 : 0)],
+    ];
+    [this.albedo, this.normal] = kinds.map(([internal, size]) => {
       const t = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, t);
-      gl.texStorage3D(gl.TEXTURE_2D_ARRAY, levels, internal, size, size, n);
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-      gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
-      imgs.forEach((im, layer) => {
-        if (this.half) shrinkInto(gl, t, internal, im[key], size, layer);
-        else gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, size, size, 1, gl.RGBA, gl.UNSIGNED_BYTE, im[key]);
-      });
-      gl.bindTexture(gl.TEXTURE_2D_ARRAY, t);
+      gl.texStorage3D(gl.TEXTURE_2D_ARRAY, Math.floor(Math.log2(size)) + 1, internal, size, size, n);
       gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
       gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      if (imgs.length) gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
       return t;
-    };
-    this.albedo = make(gl.SRGB8_ALPHA8, P, 'a');
-    this.normal = make(gl.RGBA8, NP, 'n');
-    freeScratch(gl);
+    });
     this.layers = n;
-    // frames: layer = the image's index in imgs
+    this.index(metas, pages);
+    for (let k = 0; k < kinds.length; k++) {
+      const [internal, size] = kinds[k];
+      const t = k ? this.normal : this.albedo;
+      for (let layer = 0; layer < files.length; layer++) {
+        const img = await decode(files[layer][k]);
+        files[layer][k] = null;
+        gl.bindTexture(gl.TEXTURE_2D_ARRAY, t);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+        gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+        if (half) shrinkInto(gl, t, internal, img, size, layer);
+        else gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, size, size, 1, gl.RGBA, gl.UNSIGNED_BYTE, img);
+        tick();
+      }
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, t);
+      if (files.length) gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
+      freeScratch(gl);
+    }
+    this.sets = sets;
+  }
+
+  // the frame and animation tables: a frame's layer is its page's index in `pages`
+  index(metas, pages) {
     this.frames.clear();
     this.anims.clear();
     this.anchors = {};
     this.values = {};
-    const layerOf = new Map(imgs.map((im, k) => [`${im.s}:${im.i}`, k]));
+    const layerOf = new Map(pages.map((pg, k) => [`${pg.s}:${pg.i}`, k]));
     for (const [s, m] of metas) {
       const PG = m.page;
       for (const [name, f] of Object.entries(m.frames)) {
@@ -196,6 +209,16 @@ export class Atlas {
   }
   value(kind, name) {
     return this.values[kind]?.[name];
+  }
+}
+
+// a downloaded page as an image (uploaded unpremultiplied, which keeps the normal pages' glow alpha apart from their colour)
+async function decode(blob) {
+  const url = URL.createObjectURL(blob);
+  try {
+    return await loadImage(url);
+  } finally {
+    URL.revokeObjectURL(url);
   }
 }
 

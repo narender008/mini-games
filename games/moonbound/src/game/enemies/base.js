@@ -242,6 +242,7 @@ export class Foe {
     this.act = null;
     this.state = 'idle';
     this.t = 0;
+    this.z = this.def.hover || 0;
     this.targetable = this.alive; // an act may have lifted it out of reach
     this.cool = Math.max(this.cool, 0.6);
   }
@@ -307,8 +308,7 @@ export class Foe {
   }
 
   die(world) {
-    if (this.act?.hazard) this.act.hazard.cancelled = true;
-    this.act = null;
+    this.cancelAct();
     this.state = 'dead';
     this.t = 0;
     this.targetable = false;

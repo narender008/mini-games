@@ -8,10 +8,14 @@ packs each set into 2048x2048 albedo pages and 1024x1024 normal pages (`pack.py`
 ```sh
 ./build.sh                                   # everything (wipes the frame cache first)
 ONLY=thrall,gravebow ./build.sh              # only those modules; other frames come from the cache
-FRAME=thrall_attack_d2_5 ONLY=thrall ./build.sh
-REVIEW=/some/dir REVIEW_MATCH=thrall_ ./build.sh   # also a lit contact sheet of those frames
-NOPACK=1 / PACKONLY=1 / SETS=gloamwall / QUALITY=fast|high / ATLAS_OUT=dir CODEX_OUT=dir
+FRAME=thrall_attack_d2_5 ONLY=thrall ./build.sh   # FRAME needs ONLY
+REVIEW=/some/dir ./build.sh                  # also a lit contact sheet of the frames this run rendered (REVIEW_MATCH=thrall_ narrows it)
+NOPACK=1 / PACKONLY=1 / SETS=gloamwall / QUALITY=fast|high / ATLAS_OUT=dir CODEX_OUT=dir / ALLOW_SHRINK=1
 ```
+
+The build stops at the first failure (a Python error in any script, a missing Blender or cwebp). Sets are packed into
+`$WORK/stage` and the shipped files are replaced only once every set has packed; a set that would lose frames its shipped
+json has (a partial frame cache) fails unless `ALLOW_SHRINK=1`.
 
 Outputs: `../assets/sprites/<set>_<n>.webp` (albedo), `<set>_<n>_n.webp` (RG normal, B gloss, A glow), `<set>.json`
 (frames with pivots, animations, light anchors and footprints) and `../assets/codex/<name>.webp` (codex portraits).

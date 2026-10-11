@@ -1,10 +1,12 @@
 """Contact sheet of rendered frames, for checking art without running the game.
 
-blender -b --factory-startup -P review.py -- --frames DIR --out FILE.png [--match prefix1,prefix2] [--scale 1] [--max 400]
+blender -b --factory-startup -P review.py -- --frames DIR --out FILE.png [--match prefix1,prefix2] [--since EPOCH] [--scale 1]
+                                             [--max 600]
 
 Frames from every set folder under DIR are shown lit roughly the way the game lights them (cool moonlight from the upper left
 and behind, a dim violet bounce from below, a soft rim, a warm point light at the lower right, gloss highlights, glowing parts)
-on dark flagstone grey. One row per animation and direction (the name without its trailing frame number).
+on dark flagstone grey. One row per animation and direction (the name without its trailing frame number). --since keeps
+only the frames written at or after that time (build.sh passes its start, so the sheet shows what the run rendered).
 """
 import glob
 import re
@@ -69,6 +71,7 @@ def main():
     out = opt('--out')
     match = opt('--match')
     match = match.split(',') if match else None
+    since = float(opt('--since', '0'))
     sc = int(opt('--scale', '1'))
     mx = int(opt('--max', '600'))
     # numeric order: thrall_attack_d2_10 after _d2_9
@@ -81,7 +84,13 @@ def main():
         nm = os.path.basename(jp)[:-5]
         if match and not any(nm.startswith(m) for m in match):
             continue
+        if os.path.getmtime(jp) < since:
+            continue
         names.append((nm, os.path.dirname(jp)))
+    if not names:
+        print('review: no frames%s%s in %s, no sheet written' % (' matching ' + ','.join(match) if match else '',
+                                                                ' rendered by this run' if since else '', fdir))
+        return
     names = names[:mx]
     rows = {}
     for nm, d in names:

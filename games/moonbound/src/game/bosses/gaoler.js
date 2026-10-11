@@ -200,6 +200,10 @@ export class Gaoler extends Foe {
     }
     super.runAct(dt);
   }
+  cancelAct() {
+    this.world.audio.loop('charge', 'charge', false);
+    super.cancelAct();
+  }
   pose() {
     if (this.stun > 0) return this.P('gaoler_hit', this.specFrame('gaoler_hit', Math.floor(this.stun * 4) % 3, 3));
     if (this.state === 'act' && this.act?.def === CHARGE && this.act.fired) return this.P('gaoler_charge', -1);

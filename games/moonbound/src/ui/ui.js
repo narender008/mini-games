@@ -751,7 +751,7 @@ export class UI {
         <p>The Hollow Seraph folds her broken wings and is still. For a moment the moon shows through the endless midnight.</p>
         <p>Beyond her, the stair to the Vigil Vaults climbs into the dark, and stops at a door the stopped hour holds shut. <b style="color:var(--gold-hi)">The path deeper is sealed, for now.</b></p>
         <div class="stats"><div><b>${run.kills}</b><span>Foes shattered</span></div><div><b>${active(run.held).length}</b><span>Blessings</span></div><div><b>${run.shardsGained}</b><span>Moonshards</span></div><div><b>${fmtTime(run.time)}</b><span>Time</span></div></div>
-        <p class="muted">Your progress is saved. The wall can be climbed again, harder each time the moon remembers you.</p>
+        <p class="muted">Your progress is saved. The wall waits to be climbed again, and the moon remembers you.</p>
         <button class="btn primary" data-nav data-act="home">${icon('moon', 20)} Return to the Hollow</button></div>`,
       { focusFirst: true, back: () => {} },
     );

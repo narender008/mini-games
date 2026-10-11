@@ -77,7 +77,8 @@ No `.blend` files are kept. See `blender/README.md` for the commands.
 * **Sets** are loaded together: `hero_twins` and `hero_staff` (Maelis with each weapon; only the equipped one is resident),
   `hollow` (home base), `gloamwall` (region 1 creatures and kit), `gaoler` and `seraph` (loaded for their chambers only),
   `common` (shared effects sprites). Later regions add their own sets.
-* **Pages**: albedo 2048x2048, normals half size (1024x1024, same UVs). Low quality halves both at upload.
+* **Pages**: albedo 2048x2048, normals half size (1024x1024, same UVs). Low quality, and phones and tablets at every
+  quality, halve both at upload. A rebuild decodes and uploads one page at a time.
 * **Resolution**: Maelis 80 px/m, creatures 72 px/m, bosses 60 px/m, props 64 px/m.
 * **Directions**: Maelis 16, every creature 8, mirrored (only the eastern half is rendered; the game flips the western half).
   Direction d faces angle d * 360 / N degrees with 0 = east, 90 = south (toward the camera).

@@ -221,7 +221,7 @@ export function kill(world, e, src) {
 // Maelis is hit. src: {x, y (where from), knock, by (a name for the death screen)}
 export function hurtHero(world, amount, src = {}) {
   const h = world.hero;
-  if (!h.alive || h.invulnerable() || world.god) return false;
+  if (!h.alive || h.invulnerable() || world.god || world.run?.over) return false;
   const m = h.mods;
   if (h.wardUp) {
     h.wardUp = false;

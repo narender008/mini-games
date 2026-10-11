@@ -503,7 +503,7 @@ export class Run {
     this.kills++;
     const s = e.def.silver || 0;
     if (s && this.rng.next() < 0.55) w.spawnPickup('silver', e.x, e.y, Math.round(s * (1 + this.rng.next())));
-    if (e.boss) {
+    if (e.boss && !this.over) {
       this.app.ui.bossBar(null);
       w.eclipse(false);
       this.bossDown = true;
@@ -523,6 +523,7 @@ export class Run {
       } else {
         this.reward = { type: 'blessing', patron: PATRON_LIST[Math.floor(this.rng.next() * 4)].id, bonus: 0.25 };
         setTimeout(() => {
+          if (this.over || this.app.run !== this) return;
           this.addShards(15);
           w.toast('The Gaoler falls', '+15 moonshards');
           this.spawnReward(this.rewardSpot());
@@ -539,6 +540,7 @@ export class Run {
     this.addShards(30);
     save();
     setTimeout(() => {
+      if (app.run !== this) return;
       app.audio.music('victory');
       app.ui.ending(this, () => app.goHome('victory'));
     }, 3200);
@@ -551,7 +553,7 @@ export class Run {
     save();
     app.audio.music('death');
     app.audio.intensity(0);
-    setTimeout(() => app.ui.death(this, () => app.goHome('death')), 2400);
+    setTimeout(() => app.run === this && app.ui.death(this, () => app.goHome('death')), 2400);
   }
 
   cleared() {
@@ -667,10 +669,13 @@ export class Run {
       this.refreshMods();
     } else if (id === 'shards') this.addShards(12);
     else if (id === 'blessing') {
-      const patron = PATRON_LIST[Math.floor(this.rng.next() * PATRON_LIST.length)];
-      const offers = offer(this.held, patron.id, this.rng, this.mods.luck);
-      this.app.codexSee('patrons', patron.id);
-      if (offers.length) this.app.ui.blessingChoice(patron, offers, this.held, (pick) => this.takeBlessing(pick));
+      for (const patron of this.rng.shuffle(PATRON_LIST.slice())) {
+        const offers = offer(this.held, patron.id, this.rng, this.mods.luck);
+        if (!offers.length) continue;
+        this.app.codexSee('patrons', patron.id);
+        this.app.ui.blessingChoice(patron, offers, this.held, (pick) => this.takeBlessing(pick));
+        break;
+      }
     }
     this.app.ui.hud.update(this);
   }
