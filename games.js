@@ -101,4 +101,13 @@ window.MINI_GAMES = [
     imageAlt: 'A blue-armoured hero at the bottom of a wide city boulevard torching a horde of green zombies, red brutes and purple spiders with a flamethrower, weapon crates floating beside him',
     tags: ['2D', 'Ages 18+', 'Mouse first'],
   },
+  {
+    slug: 'ragdoll-stunt-crash',
+    name: 'Ragdoll Stunt Crash',
+    description: 'A physics stunt game for grown-ups: launch a floppy stuntman through a windscreen, off a cliff or out of a cannon into walls, traffic, glass and exploding drums, and get paid for every broken bone, flip and impact across ten tracks. Cartoon gore.',
+    path: 'games/ragdoll-stunt-crash/',
+    image: 'games/ragdoll-stunt-crash/cover.jpg',
+    imageAlt: 'A stuntman in a red, white and blue suit flying out through the shattered windscreen of an estate car that has hit a concrete wall marked The Wall, with sparks, glass and blood flying and a traffic cone spinning overhead',
+    tags: ['2D', 'Ages 18+', 'Mouse first'],
+  },
 ];

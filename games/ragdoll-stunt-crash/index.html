@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>Ragdoll Stunt Crash · Mini Games</title>
+    <meta name="description" content="A grown-up physics stunt game: launch a floppy stuntman from a crashing car, off ramps and cliffs or out of a cannon, and score for damage, flips and impacts. Cartoon gore. Ages 18+." />
+    <meta name="theme-color" content="#1a0f1c" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <!-- "Add to Home Screen" opens the game full screen, with no browser bars -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Stunt Crash" />
+    <link rel="stylesheet" href="style.css" />
+    <script type="importmap">
+      { "imports": { "planck": "../../vendor/planck/planck.mjs" } }
+    </script>
+  </head>
+  <body data-state="loading">
+    <canvas id="scene" aria-label="Ragdoll Stunt Crash track"></canvas>
+    <div id="ui"></div>
+
+    <div id="loader" role="progressbar" aria-label="Loading Ragdoll Stunt Crash" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <p class="loader-title">Ragdoll Stunt Crash</p>
+      <div class="bar"><span id="loader-fill"></span></div>
+      <p id="loader-text">Loading…</p>
+    </div>
+
+    <noscript><p class="noscript">Ragdoll Stunt Crash needs JavaScript.</p></noscript>
+    <script type="module" src="src/boot.js"></script>
+  </body>
+</html>
