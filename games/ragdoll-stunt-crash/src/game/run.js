@@ -95,8 +95,7 @@ export class Run {
     rag.spinTorque *= 1 + (opts.air || 0) * 0.3;
     this.rag = rag;
     this.fracMul = 1 - (opts.bones || 0) * 0.1;
-    const at = (x) => T.at(x);
-    this.props = track.props.map((s) => buildProp(ph, s, at));
+    this.props = track.props.map((s) => buildProp(ph, s, T));
     this.ride = null;
     this.launcher = null;
     const x = track.start.x;
@@ -113,6 +112,10 @@ export class Run {
       this.ride = new Ride(ph, rag, opts.ride, x, T.at(x), T.slope(x), { speedMul: opts.speedMul, ground: T });
       this.ride.seat();
     }
+    // loose props wait asleep until something hits them (making the contacts of
+    // things placed touching wakes them, so they are made first)
+    ph.world.step(0);
+    for (const P of this.props) if (P.body.isDynamic() && !P.range && !P.pivot) P.body.setAwake(false);
     this.score.reset();
     this.phase = 'aim';
     this.aim = track.kind === 'car' ? 0.7 : track.kind === 'ramp' ? 0.75 : this.launcher.power;
@@ -245,7 +248,7 @@ export class Run {
     }
     rag.tear(ph.time, (j) => this.onTear(j));
     this.impactsAfter();
-    this.traffic();
+    this.traffic(dt);
     this.chains();
     if (this.phase === 'drive' || this.phase === 'flight') this.track3(dt);
     if (this.phase !== 'aim' && this.phase !== 'done' && (ph.steps & 1) === 0) this.replay.record(ph.time, this.faceCode(), this.ride ? this.ride.crush : 0);
@@ -410,12 +413,13 @@ export class Run {
       const a = B.a[i];
       const b = B.b[i];
       const imp = B.imp[i];
+      const knock = B.knock[i];
       if (a.kind === 'part') this.partHit(a.part, b, imp, B.x[i], B.y[i], -B.nx[i], -B.ny[i]);
       else if (b.kind === 'part') this.partHit(b.part, a, imp, B.x[i], B.y[i], B.nx[i], B.ny[i]);
-      if (a.kind === 'prop') this.propHit(a.prop, b, imp, B.x[i], B.y[i]);
-      if (b.kind === 'prop') this.propHit(b.prop, a, imp, B.x[i], B.y[i]);
-      if ((a.kind === 'ride' || a.kind === 'wheel') && b.kind !== 'part' && imp > 300) this.events.push('clang', B.x[i], B.y[i], B.nx[i], B.ny[i], clamp(imp / 6000, 0.1, 1), b.mat, a.ride);
-      else if ((b.kind === 'ride' || b.kind === 'wheel') && a.kind !== 'part' && imp > 300) this.events.push('clang', B.x[i], B.y[i], -B.nx[i], -B.ny[i], clamp(imp / 6000, 0.1, 1), a.mat, b.ride);
+      if (a.kind === 'prop') this.propHit(a.prop, b, imp, knock, B.x[i], B.y[i]);
+      if (b.kind === 'prop') this.propHit(b.prop, a, imp, knock, B.x[i], B.y[i]);
+      if ((a.kind === 'ride' || a.kind === 'wheel') && b.kind !== 'part' && knock > 300) this.events.push('clang', B.x[i], B.y[i], B.nx[i], B.ny[i], clamp(knock / 6000, 0.1, 1), b.mat, a.ride);
+      else if ((b.kind === 'ride' || b.kind === 'wheel') && a.kind !== 'part' && knock > 300) this.events.push('clang', B.x[i], B.y[i], -B.nx[i], -B.ny[i], clamp(knock / 6000, 0.1, 1), a.mat, b.ride);
     }
   }
 
@@ -489,14 +493,14 @@ export class Run {
     }
   }
 
-  propHit(P, o, imp, x, y) {
+  propHit(P, o, imp, knock, x, y) {
     if (!P || P.broken) return;
     if (P.explosive && imp > (o.kind === 'part' ? 40 : 90)) {
       this.ignite(P, o.kind === 'part' ? 0.04 : 0.02);
       return;
     }
     if (P.breaks && imp > P.breaks) this.smash(P, o, x, y);
-    else if (imp > 25 && P.t !== 'plank') this.events.push('thud', x, y, 0, 0, clamp(imp / 400, 0.05, 1), P.mat, P);
+    else if (knock > 25 && P.t !== 'plank') this.events.push('thud', x, y, 0, 0, clamp(knock / 400, 0.05, 1), P.mat, P);
   }
 
   // ------------------------------------------------------------ the props
@@ -594,8 +598,8 @@ export class Run {
       else if (Q.breaks) this.smash(Q, null, q.x, q.y);
       else if (Q.t === 'glass') this.shatter(Q, q.x, q.y, null);
     }
-    this.events.push('explode', x, y, 0, 1, tnt ? 1 : 0.8, 'fire', P);
-    this.replay.log(this.phys.time, 'explode', x, y, 0, 1, tnt ? 1 : 0.8, 'fire', P);
+    this.events.push('explode', x, y, 0, 1, tnt ? 1 : 0.3, 'fire', P);
+    this.replay.log(this.phys.time, 'explode', x, y, 0, 1, tnt ? 1 : 0.3, 'fire', P);
     if (hitHim) this.stunt(tnt ? 'KABOOM' : 'DRUM BOOM');
   }
 
@@ -666,7 +670,7 @@ export class Run {
     const a = j.a.body.getWorldPoint(this.tmp.set(0, j.la));
     this.events.push('tear', a.x, a.y, 0, 1, 1, 'flesh', j);
     this.replay.log(this.phys.time, 'tear', a.x, a.y, 0, 1, 1, 'flesh', j);
-    this.score.lost++;
+    if (!this.score.closed) this.score.lost++;
     if (id === 'head' || id === 'neck') {
       if (!rag.byId.head.lostScored) {
         rag.byId.head.lostScored = true;
@@ -680,6 +684,7 @@ export class Run {
   }
 
   stunt(name, amount, text) {
+    if (this.score.closed) return 0;
     const pay = this.score.stunt(name, amount, text);
     const e = this.events.push('stunt', 0, 0, 0, 0, 0, '', null);
     e.name = name;
@@ -757,12 +762,16 @@ export class Run {
     }
   }
 
-  // traffic keeps its speed and loops round its stretch of road
-  traffic() {
+  // traffic keeps its speed and loops round its stretch of road; one that stops
+  // getting anywhere (pinning him or his wreck against a post it passes) drives
+  // on through them, touching only the road from then on
+  traffic(dt) {
     for (const P of this.props) {
       if (!P.range) continue;
       const p = P.body.getPosition();
       const v = P.body.getLinearVelocity();
+      const f = P.body.getFixtureList();
+      if ((P.item.x - P.item.px) * P.vx < 0.5 * P.vx * P.vx * dt && f.getFilterMaskBits() !== CAT.WORLD) f.setFilterData({ groupIndex: 0, categoryBits: CAT.TRAFFIC, maskBits: CAT.WORLD });
       if (v.x !== P.vx) {
         this.tmp.x = P.vx;
         this.tmp.y = v.y;
@@ -872,6 +881,7 @@ export class Run {
     const d = Math.max(0, px - this.launchX);
     this.score.distance = d;
     if (d > 3) this.stunt('DISTANCE', Math.round(d * 30), 'DISTANCE ' + Math.round(d) + ' m');
+    this.score.closed = true;
     this.events.push('end', px, 0, 0, 0, 0, '', null);
   }
 

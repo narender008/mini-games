@@ -15,7 +15,7 @@ const PAD = 0.4;
 // how far a prop's art may reach beyond its box (x pad, top pad, bottom pad)
 const PROP_PAD = {
   pole: [2.2, 1.4, 0.4],
-  billboard: [0.6, 0.6, 3.6],
+  billboard: [0.6, 0.6, 6.6],
   watertower: [0.6, 0.6, 2.6],
   hoop: [0.8, 0.8, 0.8],
   trampoline: [0.4, 0.4, 0.4],
@@ -126,7 +126,7 @@ export class Sprites {
 
   barrel(id) {
     const b = RIDES[id].barrel;
-    return this.make('barrel|' + id, b.x0 - 0.4, -b.r0 - 0.5, b.x1 + 0.5, b.r0 + 0.5, (c) => paintBarrel(c, id));
+    return this.make('barrel|' + id, b.x0 - 0.6, -b.r0 - 0.5, b.x1 + 0.5, b.r0 + 0.5, (c) => paintBarrel(c, id));
   }
 
   base(id) {

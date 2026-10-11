@@ -71,12 +71,14 @@ export class Score {
     this.distance = 0;
     this.top = 0; // top speed (m/s)
     this.impact = 0; // speed at impact (m/s)
+    this.closed = false; // the run is banked: nothing more counts
   }
 
   // A knock of `imp` N·s on a part at physics time t; returns the dollars
   // it cost. Only what is new counts: a knock no harder than the part's
   // recent ones is free. Without t (a blast, a spike) it always counts.
   hit(part, imp, t) {
+    if (this.closed) return 0;
     let e = imp;
     if (t !== undefined) {
       const was = part.recentT < 0 ? 0 : part.recent * Math.exp(-(t - part.recentT) / RECENT);

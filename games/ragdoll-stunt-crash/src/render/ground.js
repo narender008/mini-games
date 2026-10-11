@@ -63,12 +63,13 @@ export class Ground {
         ctx.beginPath();
         ctx.rect(cx, -(yb + C), C, C);
         ctx.clip();
+        // the painters fill a band under the surface; the rest of the solid is the deep colour
+        ctx.fillStyle = this.world.ground.deep;
+        ctx.fill(solid);
         try {
           this.world.ground.paint(ctx, solid, surface, { x0: cx, y0: -(yb + C), x1: cx + C, y1: -yb }, rng(((cx * 73856093) ^ (r * 19349663)) >>> 0));
         } catch (e) {
           console.warn('ground paint failed', e);
-          ctx.fillStyle = this.world.ground.deep;
-          ctx.fill(solid);
         }
         ctx.restore();
         this.chunks.push({ x0: cx, yb, canvas, ctx });

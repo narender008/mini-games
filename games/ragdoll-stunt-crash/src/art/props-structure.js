@@ -383,8 +383,15 @@ export function paintBillboard(ctx, p) {
   const H = 4;
   const bx = W / 2;
   const by = H / 2;
+  const k = Math.min(p.w / W, p.h / H);
+  // two steel posts from under the board down to the ground, 6 m below the box
+  for (const sx of [-1, 1]) {
+    const x = sx * 2.4 * k;
+    plate(ctx, rrect(x - 0.13, by * k - 0.1, 0.26, p.h / 2 + 6 - by * k + 0.1, 0.03), grad(ctx, x - 0.13, 0, x + 0.13, 0, [0, '#8a93a6', 1, '#3a4152']), 0.04);
+    plate(ctx, rrect(x - 0.3, p.h / 2 + 5.9, 0.6, 0.1, 0.03), '#4a5366', 0.03);
+  }
   ctx.save();
-  ctx.scale(Math.min(p.w / W, p.h / H), Math.min(p.w / W, p.h / H));
+  ctx.scale(k, k);
   // lamps on a rail above the board
   for (const lx of [-2.6, 0, 2.6]) {
     line(ctx, lx, -by, lx, -by - 0.12, 0.07, OUT);
@@ -855,10 +862,12 @@ export function paintContainer(ctx, p) {
 // --------------------------------------------------------------- water tower
 export function paintWaterTower(ctx, p) {
   const r = rng(p.seed);
+  // drawn 3 x 5 units: the tank and roof (the box) on top, the legs below it
   const sx = p.w / 3;
-  const sy = p.h / 5;
+  const sy = p.h / 3;
   ctx.save();
   ctx.scale(sx, sy);
+  ctx.translate(0, 1);
   ctx.lineJoin = 'round';
   const lwd = (v) => v / ((sx + sy) / 2);
   // legs: far pair, near pair, cross braces, ladder

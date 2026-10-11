@@ -57,8 +57,7 @@ export class Renderer {
     const ppm = clamp(Math.round((Math.sqrt((w * h) / 324) * this.dpr * 1.5) / 16) * 16, 48, q.spritePpm);
     if (!this.sprites || Math.abs(this.sprites.ppm - ppm) > 24) {
       this.sprites = new Sprites(ppm);
-      this.fx = null;
-      this.clones = null;
+      this.fxs = null;
     }
     if (this.world) this.paintBackdrop();
   }

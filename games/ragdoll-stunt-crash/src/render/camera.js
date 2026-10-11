@@ -29,9 +29,9 @@ export class Camera {
   }
 
   fit(w, h) {
-    this.W = w;
-    this.H = h;
-    this.S0 = Math.sqrt((w * h) / VIEW_AREA);
+    this.W = Math.max(1, w);
+    this.H = Math.max(1, h);
+    this.S0 = Math.sqrt((this.W * this.H) / VIEW_AREA);
   }
 
   // pixels per metre (CSS pixels)

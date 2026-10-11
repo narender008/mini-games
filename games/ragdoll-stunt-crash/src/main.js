@@ -34,7 +34,7 @@ import { Camera } from './render/camera.js';
 import { Particles, P } from './fx/particles.js';
 import { Run } from './game/run.js';
 import { TRACKS, starsFor } from './game/tracks.js';
-import { RIDES, RIDE_KINDS, BODY_PARTS } from './sim/defs.js';
+import { RIDES, RIDE_KINDS, BODY_PARTS, MATS } from './sim/defs.js';
 import { WORLDS } from './art/worlds.js';
 import { Input } from './input.js';
 import { UI } from './ui/ui.js';
@@ -61,7 +61,7 @@ const REPLAY_FAST = 0.85; // and away from it
 
 class App {
   async init(progress) {
-    this.q = detectQuality();
+    this.q = detectQuality(Save.data.settings.quality);
     this.canvas = $('scene');
     this.renderer = new Renderer(this.canvas, this.q);
     this.cam = new Camera();
@@ -401,18 +401,18 @@ class App {
   showTally() {
     this.stopReplay();
     this.state = 'tally';
-    const s = this.run.score;
+    const r = this.lastResult;
     const set = this.set;
     const best = this.data.best[this.track.id] || 0;
     const setTotal = set.scores.reduce((a, b) => a + b, 0);
     this.ui.showTally({
       run: set.run + 1,
       runs: RUNS_PER_SET,
-      damage: Math.round(s.damage),
-      style: s.style,
-      stunts: this.lastResult.stunts.slice(0, 8),
-      distance: Math.round(s.distance),
-      payout: this.lastResult.pay,
+      damage: r.damage,
+      style: r.style,
+      stunts: r.stunts.slice(0, 8),
+      distance: r.distance,
+      payout: r.pay,
       best,
       newBest: false,
       setTotal,
@@ -937,7 +937,8 @@ class App {
       const L = this.run.launcher;
       if (L.def.forks) s.sling(e.s);
       else {
-        s.cannon(e.s);
+        // the sound tells the circus cannon (below 0.6) from the mega cannon
+        s.cannon(L.id === 'mega' ? 0.6 + 0.4 * e.s : 0.55 * e.s);
         this.fx.fire(e.x, e.y, 18, 0.8);
         this.fx.smoke(e.x, e.y, 14, 1.4);
         this.fx.sparks(e.x, e.y, e.nx, e.ny, 0.8, 1);
@@ -968,7 +969,7 @@ class App {
         fx.blood(x, y, nx, ny, amt, 3 + s * 9);
         if ((mat === 'metal' || mat === 'concrete') && s > 0.25) fx.sparks(x, y, nx, ny, s * 0.7);
         if ((mat === 'dirt' || mat === 'snow') && s > 0.15) fx.dust(x, y, 3 + Math.round(s * 8), 0.8 + s, mat === 'snow' ? 1 : 0);
-        snd.impact(s, mat === 'none' ? 'flesh' : mat, pan);
+        snd.impact(s, MATS[mat]?.sound || 'flesh', pan);
         if (s > 0.45) snd.splat(s, pan);
         cam.shake(s * 0.45);
         if (s > 0.7 && !replay) this.hitStop = Math.max(this.hitStop, 0.045);
@@ -1020,7 +1021,7 @@ class App {
         snd.impact(0.7, mat === 'glass' ? 'glass' : mat === 'snow' ? 'snow' : 'wood', pan);
         break;
       case 'explode':
-        fx.fire(x, y, 46, 1.3 * s + 0.4);
+        fx.fire(x, y, 46, 0.37 * s + 1.33);
         fx.smoke(x, y + 0.5, 22, 2.2, 1);
         fx.sparks(x, y, 0, 1, 1.6, 1);
         fx.debris(x, y, 10, 2, 11);
@@ -1089,7 +1090,7 @@ class App {
         fx.blood(x, y, nx, ny, 0.6 * gore, 4);
         break;
       case 'thud':
-        if (s > 0.12) snd.impact(s * 0.7, mat, pan);
+        if (s > 0.12) snd.impact(s * 0.7, MATS[mat]?.sound || 'flesh', pan);
         if (s > 0.4 && mat === 'metal') fx.sparks(x, y, 0, 1, s * 0.5);
         break;
       case 'clang':

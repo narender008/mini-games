@@ -44,7 +44,8 @@ export class Popups {
     const slots = this.slots;
     let pick = null;
     for (let i = 0; i < MAX; i++) if (slots[i].rank < 0) pick = slots[i];
-    if (!pick) for (let i = 0; i < MAX; i++) if (slots[i].rank === MAX - 1) pick = slots[i];
+    // all busy: recycle the oldest
+    if (!pick) for (let i = 0; i < MAX; i++) if (!pick || slots[i].rank > pick.rank) pick = slots[i];
     pick.anim?.cancel();
     for (let i = 0; i < MAX; i++) {
       const s = slots[i];

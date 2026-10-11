@@ -213,6 +213,8 @@ export function paintCrate(ctx, p) {
 // -------------------------------------------------------------- crate plank
 export function paintPlank(ctx, p) {
   const r = rng(p.seed);
+  const k = CRATES[p.variant] || CRATES.wood;
+  const ice = p.variant === 'ice';
   const hw = p.w / 2;
   const hh = p.h / 2;
   // torn ends: a zigzag of splinters at each side, joined by the long straight edges
@@ -221,14 +223,14 @@ export function paintPlank(ctx, p) {
   for (let i = 0; i <= steps; i++) pts.push(-hw + (i % 2 ? 0.03 + r() * 0.08 : 0.005 + r() * 0.02), hh - (i / steps) * p.h);
   for (let i = 0; i <= steps; i++) pts.push(hw - (i % 2 ? 0.03 + r() * 0.08 : 0.005 + r() * 0.02), -hh + (i / steps) * p.h);
   const path = poly(pts);
-  plate(ctx, path, body(ctx, -hw, -hh, p.w, p.h, '#d79a52', 0.28, 0.15), 0.022, (c) => {
-    grain(c, r, -hw, -hh, p.w, p.h, '#6b3d17', 2, 0.35);
+  plate(ctx, path, body(ctx, -hw, -hh, p.w, p.h, k.planks[0], 0.28, 0.15), 0.022, (c) => {
+    grain(c, r, -hw, -hh, p.w, p.h, k.grain, 2, 0.35);
     fillRect(c, -hw, hh - 0.04, p.w, 0.04, OUT, 0.2);
-    // pale torn wood at both ends
-    c.fillStyle = '#f2d9a0';
+    // pale torn wood (or frosted ice) at both ends
+    c.fillStyle = ice ? '#f2fbff' : '#f2d9a0';
     c.fillRect(-hw, -hh, 0.09, p.h);
     c.fillRect(hw - 0.09, -hh, 0.09, p.h);
-    c.fillStyle = '#59606b';
+    c.fillStyle = ice ? '#ffffff' : '#59606b';
     c.beginPath();
     c.arc(hw - 0.19, 0, 0.018, 0, TAU);
     c.fill();

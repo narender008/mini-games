@@ -2,8 +2,9 @@
 // list of things the renderer interpolates and the replay records, and the
 // contact plumbing. Every fixture carries an owner record in its user data
 // ({ kind, mat, ...}); after each step the impacts the solver reported (the
-// strongest normal impulse of every touching contact above a floor) sit in a
-// preallocated buffer for the run to turn into damage, sparks and sound.
+// strongest normal impulse of every touching contact above a floor, and how
+// much of it is a knock rather than a steady press) sit in a preallocated
+// buffer for the run to turn into damage, sparks and sound.
 // Bodies are built once per run (building a world takes a few milliseconds,
 // so a retry is still instant); nothing in step() allocates.
 import * as pl from 'planck';
@@ -30,6 +31,9 @@ class Impacts {
     this.y = new Float32Array(n);
     this.nx = new Float32Array(n); // contact normal, from a to b
     this.ny = new Float32Array(n);
+    // the impulse beyond a steady press: the heavier body resting there, or the
+    // same contact's last step (a lorry on the road, a drum under a wreck)
+    this.knock = new Float32Array(n);
   }
 }
 
@@ -41,11 +45,13 @@ export class Physics {
     this.wm = new pl.WorldManifold();
     this.time = 0;
     this.steps = 0;
+    this.dt = 0;
     // hooks the run sets: preSolve(contact, ownerA, ownerB, vn, nx, ny) may disable a contact
     this.onPreSolve = null;
     this.onBegin = null; // begin(ownerA, ownerB): sensors (hoops, targets)
     this.world.on('pre-solve', (c) => this.preSolve(c));
     this.world.on('begin-contact', (c) => {
+      c.lastImp = 0;
       if (!this.onBegin) return;
       const oa = c.getFixtureA().getUserData();
       const ob = c.getFixtureB().getUserData();
@@ -106,16 +112,21 @@ export class Physics {
       const v = c.v_points[i].normalImpulse;
       if (v > imp) imp = v;
     }
+    const last = c.lastImp || 0;
+    c.lastImp = imp;
     const oa = c.getFixtureA().getUserData();
     const ob = c.getFixtureB().getUserData();
     if (oa) oa.touch = this.steps;
     if (ob) ob.touch = this.steps;
     if (imp < IMPACT_FLOOR || !oa || !ob) return;
+    const rest = Math.max(c.getFixtureA().getBody().getMass(), c.getFixtureB().getBody().getMass()) * G * this.dt;
+    const knock = imp - Math.max(rest, last);
     const B = this.impacts;
     // the same pair may report more than once a step (TOI sub-steps): keep the stronger
     for (let i = B.n - 1; i >= 0 && i >= B.n - 8; i--) {
       if (B.a[i] === oa && B.b[i] === ob) {
         if (imp > B.imp[i]) B.imp[i] = imp;
+        if (knock > B.knock[i]) B.knock[i] = knock;
         return;
       }
     }
@@ -130,6 +141,7 @@ export class Physics {
     B.y[k] = wm.points[0].y;
     B.nx[k] = wm.normal.x;
     B.ny[k] = wm.normal.y;
+    B.knock[k] = knock;
   }
 
   step(dt) {
@@ -143,6 +155,7 @@ export class Physics {
     }
     this.impacts.n = 0;
     this.steps++;
+    this.dt = dt;
     this.world.step(dt, 8, 3);
     this.time += dt;
     for (let i = 0; i < items.length; i++) {

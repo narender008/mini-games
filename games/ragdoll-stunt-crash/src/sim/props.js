@@ -4,17 +4,19 @@
 // glass, snowmen, ice), explosives (red drums, TNT), bouncers (trampolines,
 // bumpers, tyres), kinematic traffic that loops along a stretch of road,
 // pendulums (wrecking balls, logs), sensors (hoops of fire, bullseyes) and
-// spikes that impale. Traffic is heavy, upright dynamic bodies held at their
-// speed each step (so a lorry rides over the stuntman instead of crushing him
-// through the road); far-lane traffic is kinematic scenery that collides with
-// nothing. Crate debris is built with the crate, asleep and out of
-// the world, so breaking one allocates nothing.
+// spikes that impale. Loose props stand square to the ground under them.
+// Traffic is heavy, upright dynamic bodies held at their speed each step (so
+// a lorry rides over the stuntman instead of crushing him through the road)
+// that meet only the road, other traffic, him and his ride; far-lane traffic
+// is kinematic scenery that collides with nothing. Crate debris is built with
+// the crate, asleep and out of the world, so breaking one allocates nothing.
 import { pl, CAT } from './physics.js';
 import { PROPS } from './defs.js';
 import { rand } from '../config.js';
 
-const STATIC_MASK = 0xffff;
-const DYN_MASK = CAT.WORLD | CAT.PROP | CAT.RIDE | CAT.RAG | CAT.TRAFFIC | CAT.DEBRIS;
+const STATIC_MASK = 0xffff & ~CAT.TRAFFIC;
+const DYN_MASK = CAT.WORLD | CAT.PROP | CAT.RIDE | CAT.RAG | CAT.DEBRIS;
+const TRAFFIC_MASK = CAT.WORLD | CAT.RIDE | CAT.RAG | CAT.TRAFFIC;
 
 // body: static | dynamic | kinematic; kg: mass for dynamic bodies; breaks: N·s that smashes it
 export const KINDS = {
@@ -52,7 +54,7 @@ export const KINDS = {
   platform: { body: 'static' },
 };
 
-export function buildProp(phys, spec, groundAt) {
+export function buildProp(phys, spec, terrain) {
   const t = spec.t;
   const K = KINDS[t];
   const D = PROPS[t];
@@ -60,12 +62,15 @@ export function buildProp(phys, spec, groundAt) {
   const h = spec.h ?? D.h;
   const variant = spec.v ?? defaultVariant(t);
   const mat = spec.mat ?? (t === 'crate' && variant === 'ice' ? 'glass' : D.mat);
-  const ang = spec.a ?? 0;
-  const x = spec.x;
-  const y = spec.y ?? (spec.on ?? groundAt(x)) + h / 2 + (spec.up ?? 0);
   let type = spec.body ?? K.body;
   if (spec.fixed) type = 'static';
   if (K.traffic && spec.far) type = 'kinematic';
+  // a loose prop on the ground leans with the slope, lifted (and stacked) along its normal
+  const lean = type === 'dynamic' && !K.traffic && spec.a === undefined && spec.y === undefined && spec.on === undefined;
+  const ang = lean ? terrain.slope(spec.x) : spec.a ?? 0;
+  const lift = h / 2 + (spec.up ?? 0);
+  const x = lean ? spec.x - lift * Math.sin(ang) : spec.x;
+  const y = spec.y ?? (spec.on ?? terrain.at(spec.x)) + (lean ? lift * Math.cos(ang) : lift);
   const prop = {
     t,
     variant,
@@ -94,7 +99,7 @@ export function buildProp(phys, spec, groundAt) {
   prop.owner = owner;
   const body = phys.body({ type, position: pl.Vec2(x, y), angle: ang, bullet: false, angularDamping: K.soft ? 2 : 0.1, linearDamping: K.soft ? 0.6 : 0, fixedRotation: !!K.traffic });
   const cat = K.traffic ? CAT.TRAFFIC : type === 'static' ? CAT.WORLD : CAT.PROP;
-  const mask = prop.far ? 0 : type === 'dynamic' ? DYN_MASK : STATIC_MASK;
+  const mask = prop.far ? 0 : K.traffic ? TRAFFIC_MASK : type === 'dynamic' ? DYN_MASK : STATIC_MASK;
   let shape;
   if (K.circle || t === 'wreckingball') shape = pl.Circle(Math.min(w, h) / 2);
   else if (K.poly === 'ramp') shape = pl.Polygon([pl.Vec2(-w / 2, -h / 2), pl.Vec2(w / 2, -h / 2), pl.Vec2(w / 2, h / 2)]);
@@ -131,10 +136,10 @@ export function buildProp(phys, spec, groundAt) {
       const pb = phys.body({ type: 'dynamic', position: pl.Vec2(x, y), angle: 0, active: false });
       const pw = w * 0.95;
       const ph = PROPS.plank.h * (w / 0.9);
-      const pown = { kind: 'prop', mat: 'wood', prop: null, pre: false, touch: -1 };
+      const pown = { kind: 'prop', mat, prop: null, pre: false, touch: -1 };
       pb.createFixture(pl.Box(pw / 2, ph / 2), { density: 4 / (pw * ph), friction: 0.6, restitution: 0.1, filterCategoryBits: CAT.DEBRIS, filterMaskBits: CAT.WORLD | CAT.PROP | CAT.RAG | CAT.RIDE | CAT.DEBRIS, userData: pown });
       pb.setActive(false);
-      const piece = { t: 'plank', variant: variant === 'tnt' ? 'tnt' : 'wood', w: pw, h: ph, mat: 'wood', seed: prop.seed + i, body: pb, item: null, owner: pown, debrisOf: prop, broken: false, hit: false, spec: null };
+      const piece = { t: 'plank', variant, w: pw, h: ph, mat, seed: prop.seed + i, body: pb, item: null, owner: pown, debrisOf: prop, broken: false, hit: false, spec: null };
       pown.prop = piece;
       piece.item = phys.track(pb, 'prop', piece);
       piece.item.vis = false;
@@ -158,7 +163,7 @@ export function breakProp(phys, prop, tmp) {
   const vx = v.x;
   const vy = v.y;
   const ang = b.getAngle();
-  b.setActive(false);
+  takeOut(b);
   prop.item.vis = false;
   const n = prop.debris.length;
   for (let i = 0; i < n; i++) {
@@ -182,6 +187,12 @@ export function breakProp(phys, prop, tmp) {
 export function removeProp(prop) {
   if (prop.broken) return;
   prop.broken = true;
-  prop.body.setActive(false);
+  takeOut(prop.body);
   prop.item.vis = false;
+}
+
+// Props sleep until hit: whatever rested on a body taken away wakes, so it falls.
+function takeOut(b) {
+  for (let e = b.getContactList(); e; e = e.next) if (e.other.isDynamic()) e.other.setAwake(true);
+  b.setActive(false);
 }

@@ -10,16 +10,8 @@ const TIERS = {
   low: { tier: 'low', maxDpr: 1.1, maxPixels: 1.4e6, spritePpm: 112, groundPpm: 32, particles: 1100 },
 };
 
-export function savedQuality() {
-  try {
-    const q = JSON.parse(localStorage.getItem('ragdoll-stunt-crash'))?.settings?.quality;
-    return TIERS[q] ? q : null;
-  } catch {
-    return null;
-  }
-}
-
-export function detectQuality(saved = savedQuality()) {
+// saved: the Settings screen's choice ('auto' or a tier name)
+export function detectQuality(saved) {
   const forced = QUERY.get('quality') || saved;
   if (forced && TIERS[forced]) return { ...TIERS[forced], scale: 1, forced: true };
   const coarse = matchMedia('(pointer: coarse)').matches;
