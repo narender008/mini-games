@@ -351,12 +351,13 @@ export class UI {
       <h1 class="logo">Moonbound</h1>
       <div class="tagline">The last witch of the moon climbs the citadel of endless midnight</div>
       <div class="title-menu">
-        <button class="btn primary" data-nav data-act="start">${icon('moon', 20)} ${has ? 'Continue' : 'Begin'}<span class="k">${app.input.device === 'pad' ? 'A' : 'Enter'}</span></button>
+        <button class="btn primary" data-nav data-act="start">${icon('moon', 20)} ${has ? 'Continue' : 'Begin'}<span class="k"></span></button>
         <button class="btn" data-nav data-act="settings">${icon('gear', 20)} Settings</button>
         <button class="btn" data-nav data-act="full">${icon('full', 20)} Full screen<span class="k">F</span></button>
       </div>`;
     this.root.append(t);
     this.titleEl = t;
+    this.titleGlyph();
     const go = () => {
       if (!this.titleEl) return;
       app.audio.unlock();
@@ -378,9 +379,16 @@ export class UI {
         go();
       }
     });
-    this.modal = { name: 'title', el: t, back: () => {}, onKey: (e) => (e.code === 'Enter' ? (go(), true) : false) };
+    // a pad's A begins too, unless another button has the focus
+    this.modal = { name: 'title', el: t, back: () => {}, onKey: (e) => (e.code === 'Enter' ? (go(), true) : false), onPad: (edge) => (edge(0) && !this.focus ? (go(), true) : false) };
     wireNav(t, this);
     app.audio.music('title');
+  }
+
+  // the Begin button's key follows the device in use
+  titleGlyph() {
+    const k = this.titleEl?.querySelector('.title-menu .k');
+    if (k) k.textContent = this.app.input.device === 'pad' ? 'A' : 'Enter';
   }
 
   pause() {

@@ -157,7 +157,10 @@ class App {
     this.frozen = false;
     this.stepOnce = 0;
     this.frameTimes = null;
-    this.input.onDevice = () => this.ui.hud.update(this.run);
+    this.input.onDevice = () => {
+      this.ui.hud.update(this.run);
+      this.ui.titleGlyph();
+    };
     if (COVER) document.body.classList.add('cover');
     window.addEventListener('resize', () => this.resize());
     window.addEventListener('keydown', (e) => {

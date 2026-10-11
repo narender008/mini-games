@@ -662,6 +662,15 @@ p {
   gap: 8px;
   z-index: 5;
 }
+/* a narrow screen (a phone held upright): the counters and buttons drop below the health bar and charges, the toasts below them */
+@media (max-width: 640px) {
+  .hud-tr {
+    top: calc(max(14px, env(safe-area-inset-top)) + 56px);
+  }
+  #toasts {
+    top: calc(max(14px, env(safe-area-inset-top)) + 108px);
+  }
+}
 .toast {
   padding: 10px 14px;
   animation:
