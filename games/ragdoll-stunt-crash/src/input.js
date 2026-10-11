@@ -1,6 +1,7 @@
 // Mouse, touch and keys, turned into a few calls on the app: press(x, y,
 // button), drag(x, y), release(x, y, button) in CSS pixels on the canvas, and
-// key(code, down). The canvas eats its own right-click menu (the right button
+// key(code, down); release gets a fourth argument, true when the pointer was
+// cancelled or the window lost focus rather than let go. The canvas eats its own right-click menu (the right button
 // flips forward), and a press on the HUD never reaches it (the UI stops those
 // events). Pointer capture keeps a drag going when it leaves the canvas.
 export class Input {
@@ -38,7 +39,7 @@ export class Input {
       if (!this.down || e.pointerId !== this.id) return;
       this.down = false;
       this.id = -1;
-      app.release(e.clientX, e.clientY, this.button);
+      app.release(e.clientX, e.clientY, this.button, e.type === 'pointercancel');
     };
     canvas.addEventListener('pointerup', up);
     canvas.addEventListener('pointercancel', up);
@@ -53,7 +54,7 @@ export class Input {
     window.addEventListener('blur', () => {
       if (this.down) {
         this.down = false;
-        app.release(this.x, this.y, this.button);
+        app.release(this.x, this.y, this.button, true);
       }
       app.key('Blur', false, false);
     });

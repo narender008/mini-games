@@ -14,6 +14,7 @@ import { G, clamp, lerp } from '../config.js';
 
 // stuntman draw order: far limbs, torso, near legs, near arms
 const ORDER = ['uarmB', 'larmB', 'ulegB', 'llegB', 'pelvis', 'chest', 'neck', 'head', 'ulegF', 'llegF', 'uarmF', 'larmF'];
+const MAX_PART_SPLATS = 48 * 4; // blood stamps kept per body part (four numbers each)
 const BACK_PROPS = { target: 1, pole: 1, billboard: 1, watertower: 1, glass: 1 };
 const DEBRIS_MATS = ['concrete', 'wood', 'metal', 'ice', 'snow'];
 
@@ -303,7 +304,7 @@ export class Renderer {
     if (ride) {
       const seated = ride.seated || (v.replay && look.seated);
       const crush = v.replay ? look.crush : ride.crush;
-      const glass = v.replay ? (look.glassGone ? 'gone' : 'intact') : ride.glass;
+      const glass = v.replay ? look.glass : ride.glass;
       this.drawRideLayer(ride, a, 'back', crush, glass);
       if (seated) this.drawMan(rag, a, v);
       this.drawRideLayer(ride, a, 'front', crush, glass);
@@ -336,8 +337,8 @@ export class Renderer {
       const ang = lerp(it.pa, it.a, a);
       this.obj(x, y, ang);
       const base = part.shape === 'head' ? S.part('head', '', face, true) : S.part(part.shape, part.side);
-      const clone = this.clones && this.clones[part.id];
-      this.img(clone && clone.src === base ? clone : base);
+      const blood = this.clones && this.clones[part.id];
+      this.img(blood ? this.bloodied(blood, base, part.shape === 'head' ? face : 0) : base);
       if (part.burnt > 0.05) {
         this.ctx.globalAlpha = Math.min(0.6, part.burnt * 0.6);
         this.img(S.char(base));
@@ -611,16 +612,28 @@ export class Renderer {
     this.stampInto(s, u, -v, size, i);
   }
 
-  splatPart(part, u, v, size, i, face) {
+  // Blood on a body part: the splats are kept per part and stamped into a copy
+  // of its sprite, one copy per face for the head (made when that face is first
+  // drawn), so the blood stays when his expression changes.
+  splatPart(part, u, v, size, i) {
     if (!this.clones) this.clones = {};
-    const base = part.shape === 'head' ? this.sprites.part('head', '', face, true) : this.sprites.part(part.shape, part.side);
-    let s = this.clones[part.id];
+    let b = this.clones[part.id];
+    if (!b) b = this.clones[part.id] = { splats: [], by: {} };
+    if (b.splats.length >= MAX_PART_SPLATS) return;
+    b.splats.push(u, v, size, i);
+    for (const key in b.by) this.stampInto(b.by[key], u, -v, size, i);
+  }
+
+  bloodied(b, base, key) {
+    let s = b.by[key];
     if (!s || s.src !== base) {
       const c = makeCanvas(base.canvas.width, base.canvas.height);
       c.getContext('2d').drawImage(base.canvas, 0, 0);
-      s = this.clones[part.id] = { canvas: c, x0: base.x0, y0: base.y0, w: base.w, h: base.h, src: base };
+      s = b.by[key] = { canvas: c, x0: base.x0, y0: base.y0, w: base.w, h: base.h, src: base };
+      const sp = b.splats;
+      for (let k = 0; k < sp.length; k += 4) this.stampInto(s, sp[k], -sp[k + 1], sp[k + 2], sp[k + 3]);
     }
-    this.stampInto(s, u, -v, size, i);
+    return s;
   }
 
   stampInto(s, x, y, size, i) {

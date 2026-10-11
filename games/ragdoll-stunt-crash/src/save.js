@@ -52,10 +52,12 @@ export function save() {
   }
 }
 
+// Progress starts over; the settings are kept.
 export function reset() {
   const f = fresh();
+  const settings = data.settings || f.settings;
   for (const k of Object.keys(data)) delete data[k];
-  Object.assign(data, f, { settings: data.settings || f.settings });
+  Object.assign(data, f, { settings });
   save();
 }
 

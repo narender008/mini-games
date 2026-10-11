@@ -157,7 +157,8 @@ export class UI {
   }
 
   // Back from tracks, garage or settings: show what was under it, then tell the
-  // game (except when settings was opened from pause, which simply returns).
+  // game which screen that was (except when settings was opened from pause,
+  // which simply returns).
   goBack() {
     const cur = this.cur;
     if (cur !== 'tracks' && cur !== 'garage' && cur !== 'settings') return;
@@ -168,7 +169,7 @@ export class UI {
     else if (from === 'tracks' && this.last.tracks) this.menus.showTracks(this.last.tracks);
     else if (from === 'garage' && this.last.garage) this.menus.showGarage(this.last.garage);
     else this.menus.showTitle(this.last.title || {});
-    if (from !== 'pause') this.call('back');
+    if (from !== 'pause') this.call('back', from);
   }
 
   // ------------------------------------------------------------------ layout

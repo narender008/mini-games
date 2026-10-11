@@ -367,9 +367,10 @@ export class Sound {
     return b;
   }
 
-  // flags: 1 = interface (slow motion does not touch it), 2 = keep the pitch exact, 4 = second of a pair (no gap check)
+  // flags: 1 = interface (slow motion does not touch it), 2 = keep the pitch exact, 4 = second of a pair (no gap check);
+  // returns whether it played
   _play(key, pan, level, rate, flags) {
-    if (!this._ok() || !this._lib) return;
+    if (!this._ok() || !this._lib) return false;
     const def = SFX[key];
     const gk = def.grp || key;
     const st = this._st[gk];
@@ -377,21 +378,21 @@ export class Sound {
     if (!(flags & 4)) {
       if (def.gap && now - st.last < def.gap * 0.001) {
         if (st.dropped < 8) st.dropped++;
-        return;
+        return false;
       }
       st.last = now;
       level *= 1 + 0.09 * st.dropped;
       st.dropped = 0;
     }
     const ent = this._lib.pick(key);
-    if (!ent) return;
+    if (!ent) return false;
     if (st.n >= def.max) {
       const v = this._oldest(gk, -1);
       if (v) this._steal(v, now);
     }
     while (this._voices.length >= MAX_VOICES) {
       const v = this._oldest(null, def.pri);
-      if (!v) return;
+      if (!v) return false;
       this._steal(v, now);
     }
     const ctx = this.ctx;
@@ -423,6 +424,7 @@ export class Sound {
     this._voices.push(v);
     st.n++;
     if (def.duck) this.duck(def.duck[0], def.duck[1]);
+    return true;
   }
 
   // the oldest live voice of a kind (key), or of equal or lower priority (pri >= 0)
@@ -568,8 +570,8 @@ export class Sound {
   crowd(kind) {
     const key = CROWD[kind];
     if (!key) return;
-    this._play(key, -0.6, 0.75, 1, 0);
-    this._play(key, 0.6, 0.75, 1, 4);
+    // the right-hand copy only goes with a left-hand one that played
+    if (this._play(key, -0.6, 0.75, 1, 0)) this._play(key, 0.6, 0.75, 1, 4);
   }
 
   // a sting for a stunt popup, tier 0..3: a blip, a run, a flourish, a fanfare

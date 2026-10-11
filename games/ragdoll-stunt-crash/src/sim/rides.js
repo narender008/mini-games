@@ -33,6 +33,8 @@ export class Ride {
     this.state = 'parked'; // parked | driving | crashed (the stuntman has left)
     this.crush = 0; // 0..1 how crumpled the front is
     this.glass = 'intact';
+    this.crackT = -1; // physics times the windscreen cracked and went (for the replay)
+    this.goneT = -1;
     this.wheels = [];
     this.wheelJoints = [];
     this.seated = false;

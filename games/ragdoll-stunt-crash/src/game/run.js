@@ -132,6 +132,7 @@ export class Run {
     this.landed = false; // first touch after leaving
     this.burning = 0;
     this.hold = false; // the player is holding (tuck)
+    this.holdDir = 0;
     this.spreadT = 0;
     this.face = 0;
     this.painT = 0;
@@ -199,11 +200,14 @@ export class Run {
     this.landed = false;
     if (!this.hold) this.rag.control = this.launcher ? 'pose' : 'limp';
     this.spreadT = this.launcher ? 0.5 : 0;
+    // a hold that began before he left (the bail tap, or held through the crash) tucks him now
+    if (this.hold) this.setHold(true, this.holdDir);
   }
 
   // The player holds (tuck and spin) or lets go (spread for a moment, then limp).
   setHold(on, dir = 0) {
     this.hold = on;
+    this.holdDir = dir;
     const rag = this.rag;
     if (this.phase === 'drive' && on && this.ride && this.ride.kind === 'ramp') {
       if (this.ride.bail()) {
@@ -325,7 +329,10 @@ export class Run {
         s.broken = true;
         c.setEnabled(false);
         this.queue.push({ type: 'screen', ride: s.ride, x: this.phys.wm.points[0].x, y: this.phys.wm.points[0].y });
-      } else if (appr > 0.8) s.ride.glass = 'cracked';
+      } else if (appr > 0.8 && s.ride.glass === 'intact') {
+        s.ride.glass = 'cracked';
+        s.ride.crackT = this.phys.time;
+      }
       return;
     }
     if (s.kind !== 'prop') return;
@@ -514,6 +521,7 @@ export class Run {
 
   screenOut(ride, x, y) {
     ride.glass = 'gone';
+    ride.goneT = this.phys.time;
     const f = ride.screen;
     for (let fx = ride.chassis.getFixtureList(); fx; fx = fx.getNext()) if (fx.getUserData() === f) fx.setFilterData({ groupIndex: 0, categoryBits: CAT.SCREEN, maskBits: 0 });
     this.events.push('glass', x, y, 1, 0.3, 1.4, 'glass', ride);

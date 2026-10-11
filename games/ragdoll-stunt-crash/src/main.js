@@ -92,6 +92,10 @@ class App {
     this.ui.setFullscreen(canFullscreen, isFullscreen());
     onFullscreenChange(() => this.ui.setFullscreen(canFullscreen, isFullscreen()));
     this.input = new Input(this, this.canvas);
+    // browsers only allow sound after a gesture: the first press or key anywhere (menus included) starts it
+    const unlock = () => this.sound.unlock?.();
+    window.addEventListener('pointerdown', unlock, true);
+    window.addEventListener('keydown', unlock, true);
     this.governor = new FrameGovernor(this.q, () => this.resize());
     // per-frame state
     this.frozen = false;
@@ -101,14 +105,15 @@ class App {
     this.timeK = 1;
     this.after = 0; // seconds after the run ended before the replay
     this.rp = { on: false, t: 0, t0: 0, t1: 0, last: 0, big: 0, speed: 1, alpha: 1, fxI: 0 };
-    this.look = { face: 0, crush: 0, seated: false, glassGone: false };
+    this.look = { face: 0, crush: 0, seated: false, glass: 'intact' };
     this.view = { cam: this.cam, run: this.run, fx: this.fx, alpha: 1, dt: 0, aim: false, look: this.look, replay: false, replayT: 0, horizonY: 0 };
     this.aimState = { mode: 'speed', value: 0.7, text: '', angle: null };
     this.drag0 = { x: 0, y: 0, aim: 0, on: false, moved: 0 };
-    this.keys = { up: false, down: false, left: false, right: false };
+    this.keys = { up: false, down: false, left: false, right: false, hold: false };
     this.hud = { parts: new Int8Array(BODY_PARTS.length).fill(-1), frac: -1, style: -1, speedT: 0, hint: null, aimV: -1, aimA: -1 };
     this.emit = []; // stump blood spurts: { part, l, t }
     this.steam = 0;
+    this.skidT = 0;
     this.work = new Float32Array(1024); // recent frame work times (ms), a ring
     this.workN = 0;
     this.pt = { x: 0, y: 0 };
@@ -206,7 +211,10 @@ class App {
     if (this.renderer.sprites) this.renderer.newRun(this.run);
     this.emit.length = 0;
     this.steam = 0;
+    if (this.slow > 0) this.sound.slowmo(1);
     this.slow = 0;
+    this.cam.punch = this.cam.punchT = this.cam.trauma = 0;
+    this.drag0.on = false;
     this.hitStop = 0;
     this.acc = 0;
     this.after = 0;
@@ -270,12 +278,14 @@ class App {
 
   showTracks() {
     this.state = 'tracks';
+    this.sound.music('menu');
     this.makeThumbs('tracks');
     this.ui.showTracks(this.tracksInfo());
   }
 
   showGarage() {
     this.state = 'garage';
+    this.sound.music('menu');
     this.makeThumbs('garage');
     this.ui.showGarage(this.garageInfo());
   }
@@ -314,6 +324,8 @@ class App {
 
   // the run ended (he came to rest): bank it, then replay, then the tally
   endRun() {
+    // a run abandoned from the pause menu (quit, reset) never banks
+    if (this.state !== 'play') return;
     const run = this.run;
     const s = run.score;
     const total = s.total;
@@ -438,13 +450,12 @@ class App {
     this.state = 'results';
     this.ui.hideHud();
     this.ui.showResults({ track: tr.name, total, target: tr.target, passed, stars, best: Math.max(prev, total), newBest, earned: this.set.earned, cash: this.data.cash, unlocked, runs: this.set.scores.slice(), canNext: this.trackIndex + 1 < TRACKS.length && this.unlocked(this.trackIndex + 1) });
-    this.sound[passed ? 'win' : 'fail']();
-    if (unlocked) setTimeout(() => this.sound.unlockSting(), 900);
   }
 
   pause() {
     if (this.state !== 'play') return;
     this.state = 'paused';
+    this.drag0.on = false;
     this.ui.showPause({ track: this.track.name, run: this.set.run + 1, runs: RUNS_PER_SET });
     this.sound.duck?.(0.5, 0.3);
     this.run.setHold(false);
@@ -484,10 +495,16 @@ class App {
       tracks: () => this.showTracks(),
       garage: () => this.showGarage(),
       settings: () => {
-        this.state = 'settings';
+        // opened from the pause menu, the run stays paused (the UI goes back to the pause menu itself)
+        if (this.state !== 'paused') this.state = 'settings';
         this.ui.showSettings({ ...this.data.settings });
       },
-      back: () => this.toTitle(),
+      // the UI has already put back the screen underneath (from: 'title', 'tracks' or 'garage')
+      back: (from) => {
+        if (from === 'tracks') this.showTracks();
+        else if (from === 'garage') this.showGarage();
+        else this.toTitle();
+      },
       buyRide: (id) => {
         if (Save.buyRide(id)) {
           this.sound.cash();
@@ -512,6 +529,8 @@ class App {
         this.ui.hideOverlays();
         this.ui.hideHud();
         this.stopReplay();
+        // the run left behind starts over, so it does not play on behind the menus
+        if (this.run.phase !== 'aim' && this.run.phase !== 'done') this.buildRun();
         this.showTracks();
       },
       nextRun: () => this.nextRun(),
@@ -526,6 +545,9 @@ class App {
       resetSave: () => {
         Save.reset();
         this.applySettings();
+        this.stopReplay();
+        if (this.run.phase !== 'aim' && this.run.phase !== 'done') this.buildRun();
+        this.ui.hideHud();
         this.toTitle();
       },
       sound: (name) => {
@@ -632,13 +654,14 @@ class App {
     run.aim = L.power;
   }
 
-  release(x, y, button) {
+  // cancel: the pointer was taken away (a system gesture, the window lost focus), so nothing launches
+  release(x, y, button, cancel = false) {
     const run = this.run;
     if (this.state !== 'play') return;
     if (run.phase === 'aim') {
       if (!this.drag0.on) return;
       this.drag0.on = false;
-      this.launch();
+      if (!cancel) this.launch();
       return;
     }
     run.setHold(false);
@@ -656,15 +679,18 @@ class App {
     const run = this.run;
     const k = this.keys;
     if (code === 'Blur') {
-      k.up = k.down = k.left = k.right = false;
+      k.up = k.down = k.left = k.right = k.hold = false;
       return false;
     }
     if (code === 'ArrowUp' || code === 'KeyW') k.up = down;
     else if (code === 'ArrowDown' || code === 'KeyS') k.down = down;
     else if (code === 'ArrowLeft' || code === 'KeyA') k.left = down;
     else if (code === 'ArrowRight' || code === 'KeyD') k.right = down;
+    if (code === 'Space' || code === 'Enter') k.hold = down;
     if (!down) {
-      if ((code === 'Space' || code === 'Enter') && this.state === 'play' && run.phase !== 'aim') run.setHold(false);
+      // let go of the last held tuck key (and no pointer held): he spreads out
+      const tuckKey = code === 'Space' || code === 'Enter' || code === 'ArrowLeft' || code === 'ArrowRight' || code === 'KeyA' || code === 'KeyD';
+      if (tuckKey && !k.hold && !k.left && !k.right && !this.input.down && this.state === 'play' && run.phase !== 'aim') run.setHold(false);
       return code === 'Space';
     }
     if (repeat) return code === 'Space' || code.startsWith('Arrow');
@@ -768,6 +794,8 @@ class App {
       simDt = dt * k;
       this.drainEvents();
     }
+    const L = run.launcher;
+    if (L && L.recoil > 0) L.recoil = Math.max(0, L.recoil - dt * 2.5);
     if (this.state === 'after') {
       this.after -= dt;
       if (this.after <= 0) this.startReplay();
@@ -801,8 +829,9 @@ class App {
     const run = this.run;
     const L = this.look;
     if (this.state === 'replay') {
-      L.seated = run.ride ? this.rp.t < run.ride.exitT || run.ride.exitT < 0 : false;
-      L.glassGone = run.ride && run.ride.screen ? run.ride.screen.broken && this.rp.t >= run.ride.exitT : false;
+      const ride = run.ride;
+      L.seated = ride ? this.rp.t < ride.exitT || ride.exitT < 0 : false;
+      L.glass = !ride ? 'intact' : ride.goneT >= 0 && this.rp.t >= ride.goneT ? 'gone' : ride.crackT >= 0 && this.rp.t >= ride.crackT ? 'cracked' : 'intact';
       return;
     }
     L.face = run.faceCode();
@@ -951,7 +980,7 @@ class App {
           const sn = Math.sin(it.a);
           const dx = x - it.x;
           const dy = y - it.y;
-          this.renderer.splatPart(part, dx * c + dy * sn, -dx * sn + dy * c, 0.12 + s * 0.25, (x * 97) | 0, this.look.face);
+          this.renderer.splatPart(part, dx * c + dy * sn, -dx * sn + dy * c, 0.12 + s * 0.25, (x * 97) | 0);
           if (s > 0.2) {
             if (other && other.kind === 'prop' && other.prop && this.splatProps.includes(other.prop)) {
               const pi = other.prop.item;
@@ -1193,6 +1222,7 @@ class App {
       s.engine(0, 0);
       s.wind(0);
       s.rocket(0);
+      s.stretch(0);
       return;
     }
     const ride = run.ride;
@@ -1200,7 +1230,15 @@ class App {
     else s.engine(0, 0);
     s.rocket(ride && ride.boost > 0 && run.phase === 'drive' ? 1 : 0);
     s.wind(run.phase === 'flight' || run.phase === 'drive' ? clamp((run.speedNow - 8) / 40, 0, 1) : 0);
-    if (ride && run.phase === 'drive' && ride.grounded() && ride.kind === 'car' && run.speedNow < ride.target * 0.9) s.skid(0.15);
+    // the skid is asked for no faster than it can play, so dropped calls do not pile up its level
+    this.skidT -= dt;
+    if (this.skidT <= 0 && ride && run.phase === 'drive' && ride.grounded() && ride.kind === 'car' && run.speedNow < ride.target * 0.9) {
+      s.skid(0.15);
+      this.skidT = 0.16;
+    }
+    // the slingshot's rubber creaks as it is pulled back
+    const L = run.launcher;
+    s.stretch(L && L.def.forks && run.phase === 'aim' && this.drag0.on ? L.power : 0);
   }
 
   // ------------------------------------------------------------- thumbs
