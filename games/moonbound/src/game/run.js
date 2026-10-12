@@ -200,6 +200,12 @@ export class Run {
     return combatDepth(this.region.plan, this.planStep);
   }
 
+  // combat chambers climbed this run: every one in the regions below, then this region's so far
+  climbDepth() {
+    const below = REGIONS.slice(0, REGIONS.indexOf(this.region));
+    return below.reduce((n, r) => n + combatDepth(r.plan, r.plan.length), this.combatDepth());
+  }
+
   // the step of the region's plan to enter next, or 'region' for the way up once its boss has fallen
   nextKind() {
     const plan = this.region.plan;
@@ -362,7 +368,7 @@ export class Run {
       w.audio.play('pickup_heartroot', { x: o.x, y: o.y });
       this.app.ui.toast('Heartroot', '+15 max health');
     } else if (rw.type === 'shards') {
-      const n = rw.amount || 6 + Math.floor(this.combatDepth() * 1.2);
+      const n = rw.amount || 6 + Math.floor(this.climbDepth() * 1.2);
       this.addShards(n);
       w.fx.number(o.x, o.y, 1.6, '+' + n, [0.6, 1.2, 1.5], 0.6);
       w.audio.play('pickup_shard', { x: o.x, y: o.y });
