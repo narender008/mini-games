@@ -192,7 +192,7 @@ silver and everything else. Difficulty runs on through the whole climb: foe heal
 climbed, never below a region's own `baseline`, and a region's combat chambers never plan a smaller budget, fewer waves or a
 lower elite chance than the last combat chamber of the region below. Above the highest region built, its boss ends the run
 with that region's ending card (the path deeper sealed, for now); the final region, the Midnight Clock, ends it with its own
-finale. The save keeps each region's record (times reached and cleared) and the deepest region reached. Silver buys the
+finale. The save keeps how often each region has been cleared (Maelis's journal reads it). Silver buys the
 Pedlar's wares (healing, a sealed prayer for a blessing, a heartroot, a Moon Tear for +1 cast charge, a whetstone for +12%
 damage, moonshards). Moonshards are kept on death and brewed at the Moonwell Cauldron (`src/game/upgrades.js`): Deep Roots,
 Moonsteel, Shadowstep, Tidewell, Last Light (a revive), Pedlar's Favour, Lucky Star, Silver Purse. The Mercy of the Moon
@@ -234,16 +234,16 @@ everything region-specific from the object, so nothing else changes:
 | `look`, `floor`, `kit`, `lights` | lighting and grade (`gl/look.js`); the floor shader (a GLSL function `void floorX(vec2 w, vec4 m, out vec3 col, out float h)` plus eight colours and four parameter vectors); the wall kit (sprite names the room builder places along edges); the light each kind of prop gives off |
 | `layouts` | hand-made chambers (`layouts.js`, legend in `src/game/room.js`): one each of kind `start`, `shop`, `fountain`, `miniboss` and `boss` (whose gate is the way up), and at least 16 combat layouts each with two or three exit gates |
 | `plan`, `shopOffers` | the chamber kind of each step, `start` first and `boss` last; the steps whose doors may offer the Pedlar instead of a reward |
-| `encounters` | `encounters.js`: `budget(d)`, `waves(d)` and `eliteChance(d)` by the region's combat depth d (1 at its first combat chamber; its mini-boss counts once she is past it), `elites`, `noElite` (swarms), `pool`, set pieces in `sets`, `threat`. `src/game/waves.js` plans the waves; a region may bring its own `planWaves(enc, depth, rng, numbers)` |
+| `encounters` | `encounters.js`: `budget(d)`, `waves(d)` and `eliteChance(d)` by the region's combat depth d (1 at its first combat chamber; its mini-boss counts once she is past it), `elites`, `noElite` (swarms), `pool`, set pieces in `sets`, `threat` |
+| `planWaves` (optional) | `planWaves(encounters, depth, rng, numbers)`: the region's own wave planner for its combat chambers, in place of `src/game/waves.js`'s; `numbers` is the chamber's `{budget, waves, elite}` (`chamberNumbers`), and it returns the waves |
 | `miniboss`, `boss` | foe ids (section 10, "A boss"); their names and titles (the banners), music themes and sprite sets come from their foe data |
 | `foes` | the foes the codex lists under the region, in this order |
-| `rooms` | per chamber kind, optional `title`, `subtitle`, `music` and `door` (the label over a door leading there); the Gloamwall's name the shop and fountain chambers and the boss's door |
+| `rooms` | per chamber kind, optional `title` (its banner), `subtitle` (the line under the banner), `music` (its theme, in place of a boss's or the region's) and `door` (the label over a door leading there); the Gloamwall's name the shop and fountain chambers and the boss's door |
 | `cards` | loading cards `{art, text}` (art is `art/<art>.webp`): `region` (also the passage card's picture, and shuffled in with the others), `miniboss`, `boss` |
 | `passage` | the line on the passage card as Maelis climbs on past its boss |
 | `ending` | `{art, title, text, note}`: the ending card when the run stops at its boss because nothing above is built yet; the card adds "The path deeper is sealed, for now." |
 | `journal` | `{ahead, behind}`: Maelis's journal line before the region is first cleared, and after while it is the top of the climb |
 | `lore` | its codex world pages `{id, name, art, unlock, text}` (`unlock`: a foe id that must have been beaten) |
-| `bounty` (optional) | `{miniboss, boss}`, each `{shards, reward}`: what falls with them (by default 15 moonshards and a blessing at +0.25 luck; 30 and a heartroot) |
 | `baseline` (optional) | `{hp, dmg}`: floors under the foe health and damage multipliers in its chambers |
 | `final`, `finale(run, done)` | the Midnight Clock only: its boss ends the run with `finale` (call `done()` to send Maelis home), or without one with its `ending` card, unsealed |
 

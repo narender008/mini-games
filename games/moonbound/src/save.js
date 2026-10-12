@@ -1,8 +1,7 @@
 // What is kept between runs, on this device only (localStorage 'moonbound'):
 // moonshards and the cauldron's upgrades, the chosen weapon, the codex (what
-// has been met), which hints have been shown, the assist mode, records (per
-// region: how often reached and cleared, and the deepest region reached) and
-// settings. Older saves are brought up to date as they are read. Every read and write is guarded, so the game still works with
+// has been met), which hints have been shown, the assist mode, records (how
+// often each region has been cleared, among others) and settings. Older saves are brought up to date as they are read. Every read and write is guarded, so the game still works with
 // storage blocked (nothing is then kept). Under ?debug nothing is written.
 import { DEBUG } from './config.js';
 
@@ -18,8 +17,7 @@ export const fresh = () => ({
   wins: 0,
   bestChamber: 0,
   cleared: {}, // foe id -> times beaten (the bosses)
-  regions: {}, // region id -> {reached, cleared}
-  deepest: null, // the highest region reached (regions/index.js CLIMB)
+  regions: {}, // region id -> {cleared}
   seen: {},
   prompts: {},
   assist: false,
@@ -44,7 +42,7 @@ function read() {
     const f = fresh();
     if (!d || typeof d !== 'object') return f;
     const regions = {};
-    for (const [k, v] of Object.entries(d.regions || {})) regions[k] = { reached: 0, cleared: 0, ...v };
+    for (const [k, v] of Object.entries(d.regions || {})) regions[k] = { cleared: 0, ...v };
     return migrate({
       ...f,
       ...d,
@@ -63,11 +61,9 @@ function read() {
 function migrate(d) {
   // v1 had one region: every run climbed the Gloamwall, and its clears were counted in cleared.gloamwall
   if (!(d.v >= 2)) {
-    const r = (d.regions.gloamwall ||= { reached: 0, cleared: 0 });
-    r.reached = Math.max(r.reached, d.runs || 0);
+    const r = (d.regions.gloamwall ||= { cleared: 0 });
     r.cleared = Math.max(r.cleared, d.cleared.gloamwall || 0, d.wins || 0);
     delete d.cleared.gloamwall;
-    if (d.runs > 0 && !d.deepest) d.deepest = 'gloamwall';
     d.v = 2;
   }
   return d;
@@ -94,7 +90,7 @@ export function reset() {
 
 // one region's record, made on first use
 export function regionRecord(id) {
-  return (data.regions[id] ||= { reached: 0, cleared: 0 });
+  return (data.regions[id] ||= { cleared: 0 });
 }
 
 // the codex: remember that something was met

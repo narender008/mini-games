@@ -20,16 +20,10 @@ import { applyUpgrades, rank } from './upgrades.js';
 import { WEAPONS } from './weapons/index.js';
 import { FOES } from './enemies/index.js';
 import { chamberNumbers, planWaves } from './waves.js';
-import { REGIONS, regionAfter, climbIndex } from '../regions/index.js';
+import { REGIONS, regionAfter } from '../regions/index.js';
 import { healHero, COL } from './combat.js';
 import { BURST, GROUND, GLOW } from '../fx/fx.js';
 import { save, regionRecord } from '../save.js';
-
-// what a boss leaves when it falls, unless the region says otherwise (its `bounty`)
-const BOUNTY = {
-  miniboss: { shards: 15, reward: { type: 'blessing', bonus: 0.25 } },
-  boss: { shards: 30, reward: { type: 'heartroot' } },
-};
 
 export const REWARDS = {
   blessing: { name: 'Blessing', icon: 'blessing' },
@@ -85,14 +79,6 @@ export class Run {
     this.over = false;
     this.mods = this.computeMods();
     app.save.runs = (app.save.runs || 0) + 1;
-    this.arrive(region);
-  }
-
-  // a region reached: its record, and the deepest region reached
-  arrive(region) {
-    const s = this.app.save;
-    regionRecord(region.id).reached++;
-    if (climbIndex(region.id) > climbIndex(s.deepest)) s.deepest = region.id;
     save();
   }
 
@@ -502,7 +488,6 @@ export class Run {
       this.floor = this.last;
       this.next = null;
       this.usedLayouts.clear();
-      this.arrive(region);
       await this.enter('start');
     });
     this.leaving = false;
@@ -606,32 +591,34 @@ export class Run {
       }
       const R = this.region;
       const lord = e.kind === R.boss;
+      const shards = lord ? 30 : 15;
       if (lord) {
         regionRecord(R.id).cleared++;
         save();
         this.next = regionAfter(R);
-        if (!this.next) return this.victory();
+        if (!this.next) return this.victory(shards);
       }
-      // the bounty, then the reward; the gates open once it is taken (the way up, after the region's boss)
-      const b = R.bounty?.[lord ? 'boss' : 'miniboss'] || BOUNTY[lord ? 'boss' : 'miniboss'];
-      this.reward = b.reward && { ...b.reward };
-      if (this.reward?.type === 'blessing') this.reward.patron = PATRON_LIST[Math.floor(this.rng.next() * 4)].id;
+      // the moonshards, then the reward (a heartroot from the region's boss, from its mini-boss a blessing with
+      // better odds); the gates open once it is taken (the way up, after the region's boss)
+      this.reward = lord
+        ? { type: 'heartroot' }
+        : { type: 'blessing', patron: PATRON_LIST[Math.floor(this.rng.next() * 4)].id, bonus: 0.25 };
       setTimeout(() => {
         if (this.over || this.app.run !== this) return;
-        if (b.shards) this.addShards(b.shards);
-        w.toast(`${e.def.name} falls`, b.shards ? `+${b.shards} moonshards` : '');
+        this.addShards(shards);
+        w.toast(`${e.def.name} falls`, `+${shards} moonshards`);
         this.spawnReward(this.rewardSpot());
       }, 1600);
     }
   }
 
   // the top of the climb: the region's ending card (the path deeper sealed, for now), or the final region's finale
-  victory() {
+  victory(shards) {
     const app = this.app;
     const R = this.region;
     this.over = true;
     app.save.wins = (app.save.wins || 0) + 1;
-    this.addShards(R.bounty?.boss?.shards ?? BOUNTY.boss.shards);
+    this.addShards(shards);
     save();
     setTimeout(() => {
       if (app.run !== this) return;

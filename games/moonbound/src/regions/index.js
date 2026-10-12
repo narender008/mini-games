@@ -45,6 +45,3 @@ export function regionAfter(region) {
 
 // the registered region whose layouts hold this layout id
 export const regionOfLayout = (id) => REGIONS.find((r) => r.layouts.some((l) => l.id === id)) || null;
-
-// how far up the climb a region stands (for the deepest region reached)
-export const climbIndex = (id) => CLIMB.findIndex((s) => s.id === id);
