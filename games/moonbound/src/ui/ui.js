@@ -745,7 +745,7 @@ export class UI {
     const app = this.app;
     const s = app.save;
     // the first region not yet cleared looks ahead; once all are, the top one looks back
-    const cleared = REGIONS.reduce((a, r) => a + (s.regions[r.id]?.cleared || 0), 0);
+    const cleared = REGIONS.filter((r) => s.regions[r.id]?.cleared).length;
     const front = REGIONS.find((r) => !s.regions[r.id]?.cleared);
     const line = front ? front.journal?.ahead : REGIONS[REGIONS.length - 1]?.journal?.behind;
     const wrap = this.open(

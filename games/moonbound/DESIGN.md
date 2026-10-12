@@ -248,9 +248,13 @@ everything region-specific from the object, so nothing else changes:
 | `baseline` (optional) | `{hp, dmg}`: floors under the foe health and damage multipliers in its chambers |
 | `final`, `finale(run, done)` | the Midnight Clock only: its boss ends the run with `finale` (call `done()` to send Maelis home), or without one with its `ending` card, unsealed |
 
-Its art is a set built by new `blender/<region>_props.py` and creature modules. To test it, `?region=<id>` starts a run at
-its Gate with what a climb through the regions below would have gathered, `?room=<layout id>` opens one of its chambers, and
-`__mb.region(id)` climbs on into it mid-run (`src/main.js` header).
+Its art is a set built by new `blender/<region>_props.py` and creature modules. To test it, `?room=<layout id>` opens one of
+its chambers and `__mb.region(id)` climbs on into it mid-run, keeping the run's kit (`src/main.js` header). `?region=<id>`
+(and `__mb.region(id)` with no run going) is debug tooling: it starts a run at the region's Gate, partway up, with roughly
+what a climb through the regions below would have gathered (`Run.outfit()` in `src/game/run.js`). For each region below:
+its chambers count towards the depth (foe health and damage), its last combat chamber's numbers floor the wave planning,
+and Maelis gets 2 heartroots (+30 max health), 150 silver and one Gift. She also starts with a Bright blessing on each of
+Attack, Special, Cast and Dash. The blessings are drawn at random from all patrons.
 
 **A foe** is a file in `src/game/enemies/` with a data object (name, codex blurb, health, size, speed, animation names, threat,
 silver) and a class extending `Foe` (`enemies/base.js`) whose `think(dt, k)` walks, turns and starts attacks. Attacks are
