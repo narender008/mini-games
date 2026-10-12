@@ -11,7 +11,6 @@ import { WEAPONS, WEAPON_LIST } from '../game/weapons/index.js';
 import { FOES } from '../game/enemies/index.js';
 import { ACTIONS, ACTION_NAMES, glyph, keyName, padName } from '../input/input.js';
 import { LORE } from './lore.js';
-import { REGIONS } from '../regions/index.js';
 import { save, reset } from '../save.js';
 import { clamp } from '../config.js';
 
@@ -274,15 +273,13 @@ export class UI {
       return;
     }
     this.bossEl.hidden = false;
-    // a tick at each phase change (def.marks, % of health; one at half by default)
-    const marks = (foe.def.marks || [50]).map((m) => `<span class="ph" style="left:${m}%"></span>`).join('');
-    this.bossEl.innerHTML = `<h3>${esc(foe.def.name)}</h3><small>${esc(foe.def.title || '')}</small><div class="hp"><i></i><b></b>${marks}</div>`;
+    this.bossEl.innerHTML = `<h3>${esc(foe.def.name)}</h3><small>${esc(foe.def.title || '')}</small><div class="hp"><i></i><b></b>${foe.kind === 'seraph' ? '<span class="ph" style="left:66%"></span><span class="ph" style="left:33%"></span>' : '<span class="ph" style="left:50%"></span>'}</div>`;
     this.bossHp = $('.hp i', this.bossEl);
     this.bossLag = $('.hp b', this.bossEl);
   }
 
   bossPhase(e, n) {
-    this.banner(e.def.name, e.def.phaseLines?.[n] || 'grows desperate');
+    this.banner(e.def.name, n === 2 ? 'grows desperate' : 'calls the eclipse');
   }
 
   // ---- per rendered frame
@@ -339,8 +336,8 @@ export class UI {
       if (b.dataset.k !== key) {
         b.dataset.k = key;
         const P = r.patron ? PATRONS[r.patron] : null;
-        const col = P ? P.hex : { silver: '#e4e8f0', heartroot: '#ff7a9a', shards: '#9fe8ff', shop: '#f0d48a', fountain: '#9fe8ff', miniboss: '#ff6a3a', boss: '#ff4a2a', region: '#9fb4e0' }[r.type] || '#f0d48a';
-        const ic = P ? P.id : { silver: 'silver', heartroot: 'heartroot', shards: 'shard', shop: 'shop', fountain: 'fountain', miniboss: 'skull', boss: 'skull', region: 'moon' }[r.type] || 'star';
+        const col = P ? P.hex : { silver: '#e4e8f0', heartroot: '#ff7a9a', shards: '#9fe8ff', shop: '#f0d48a', fountain: '#9fe8ff', miniboss: '#ff6a3a', boss: '#ff4a2a' }[r.type] || '#f0d48a';
+        const ic = P ? P.id : { silver: 'silver', heartroot: 'heartroot', shards: 'shard', shop: 'shop', fountain: 'fountain', miniboss: 'skull', boss: 'skull' }[r.type] || 'star';
         b.style.color = col;
         b.style.borderColor = col;
         b.innerHTML = `${icon(ic, 26)}<small>${esc(run.doorLabel(r))}</small>`;
@@ -674,23 +671,11 @@ export class UI {
     const app = this.app;
     const seen = app.save.seen;
     const sections = { foes: 'Foes', patrons: 'Patrons', weapons: 'Weapons', world: 'The World' };
-    const lore = [...LORE, ...REGIONS.flatMap((r) => r.lore || [])];
     const entries = () => {
-      if (section === 'foes') {
-        // grouped by the region they haunt, bottom to top (a foe is listed under the first region that has it)
-        const out = [];
-        const add = (id, group) => {
-          if (!FOES[id] || out.some((x) => x.id === id)) return;
-          const d = FOES[id].def;
-          out.push({ id, name: d.name, known: !!seen.foes?.[id], group: out.some((x) => x.group === group) ? null : group });
-        };
-        for (const r of REGIONS) for (const id of r.foes || []) add(id, r.name);
-        for (const id of Object.keys(FOES)) add(id, 'Elsewhere');
-        return out;
-      }
+      if (section === 'foes') return Object.values(FOES).map((f) => ({ id: f.def.id, name: f.def.name, known: !!seen.foes?.[f.def.id] }));
       if (section === 'patrons') return PATRON_LIST.map((p) => ({ id: p.id, name: `${p.name}, ${p.title}`, known: !!seen.patrons?.[p.id] }));
       if (section === 'weapons') return WEAPON_LIST.map((w) => ({ id: w.id, name: w.name, known: true }));
-      return lore.map((l) => ({ id: l.id, name: l.name, known: !l.unlock || !!app.save.cleared[l.unlock] }));
+      return LORE.map((l) => ({ id: l.id, name: l.name, known: !l.unlock || !!app.save.cleared[l.unlock] }));
     };
     const body = (id) => {
       const list = entries();
@@ -711,7 +696,7 @@ export class UI {
         const w = WEAPONS[e.id];
         return `<img src="assets/codex/${e.id === 'twins' ? 'maelis' : 'maelis_staff'}.webp" alt="" onerror="this.remove()"><h3>${esc(w.name)}</h3><div class="rule"></div><p>${esc(w.blurb)}</p><p class="muted">Attack: a chain of three. Special: ${w.special.kind === 'whirl' ? 'the Eclipse Whirl (hold to keep spinning)' : 'the Crescent Tide (a rolling wave)'}. Dash, then attack: a dash strike.</p>`;
       }
-      const l = lore.find((x) => x.id === e.id);
+      const l = LORE.find((x) => x.id === e.id);
       return `${l.art ? `<img src="art/${l.art}.webp" alt="">` : ''}<h3>${esc(l.name)}</h3><div class="rule"></div>${l.text.map((t) => `<p>${esc(t)}</p>`).join('')}`;
     };
     const draw = (id) => {
@@ -719,7 +704,7 @@ export class UI {
       const cur = id || list[0]?.id;
       return `<div class="panel codex"><h2>The Codex</h2>
         <div class="tabs">${Object.entries(sections).map(([k, v]) => `<div class="tab ${k === section ? 'on' : ''}" data-nav data-sec="${k}">${v}</div>`).join('')}</div>
-        <div class="cx"><div class="cx-list">${list.map((x) => `${x.group ? `<div class="cx-group">${esc(x.group)}</div>` : ''}<div class="cx-item ${x.known ? '' : 'lock'} ${x.id === cur ? 'nav-sel' : ''}" data-nav data-id="${x.id}" style="${x.id === cur ? 'border-color:var(--gold)' : ''}">${x.known ? esc(x.name) : '???'}</div>`).join('')}</div>
+        <div class="cx"><div class="cx-list">${list.map((x) => `<div class="cx-item ${x.known ? '' : 'lock'} ${x.id === cur ? 'nav-sel' : ''}" data-nav data-id="${x.id}" style="${x.id === cur ? 'border-color:var(--gold)' : ''}">${x.known ? esc(x.name) : '???'}</div>`).join('')}</div>
         <div class="cx-body">${body(cur)}</div></div><div class="rule"></div>
         <button class="btn primary" data-nav data-act="done">Done<span class="k">Esc</span></button></div>`;
     };
@@ -744,18 +729,14 @@ export class UI {
   journal() {
     const app = this.app;
     const s = app.save;
-    // the first region not yet cleared looks ahead; once all are, the top one looks back
-    const cleared = REGIONS.filter((r) => s.regions[r.id]?.cleared).length;
-    const front = REGIONS.find((r) => !s.regions[r.id]?.cleared);
-    const line = front ? front.journal?.ahead : REGIONS[REGIONS.length - 1]?.journal?.behind;
     const wrap = this.open(
       'journal',
       `<div class="panel" style="width:min(560px,100%)"><h2>Maelis’s Journal</h2><div class="rule"></div>
         <div class="stats">
           <div><b>${s.runs || 0}</b><span>Climbs</span></div><div><b>${s.deaths || 0}</b><span>Falls</span></div>
-          <div><b>${cleared}</b><span>Regions cleared</span></div><div><b>${s.bestChamber || 0}</b><span>Deepest chamber</span></div>
+          <div><b>${s.wins || 0}</b><span>Seraph defeated</span></div><div><b>${s.bestChamber || 0}</b><span>Deepest chamber</span></div>
         </div>
-        ${line ? `<p class="muted">${esc(line)}</p>` : ''}
+        <p class="muted">${s.wins ? 'The wall is behind me. The stair beyond the Seraph is sealed by the stopped hour, for now.' : 'The Gloamwall first. Then whatever waits behind its warden.'}</p>
         ${toggle('assist', 'Mercy of the Moon (assist mode)', s.assist, true)}
         <p class="muted" style="font-size:13px">Take less damage, more each time you fall (20% to 80%).</p>
         <button class="btn primary" data-nav data-act="done">Done<span class="k">Esc</span></button></div>`,
@@ -794,18 +775,15 @@ export class UI {
     });
   }
 
-  // the card at the top of the climb, in the words of the region it ends in (card: {art, title, text, note,
-  // sealed}); a sealed one says the path deeper is closed, for now
-  ending(run, card, done) {
-    const text = card.text || [];
-    const paras = text.map((t, i) => `<p>${esc(t)}${card.sealed && i === text.length - 1 ? ' <b style="color:var(--gold-hi)">The path deeper is sealed, for now.</b>' : ''}</p>`).join('');
+  ending(run, done) {
     const wrap = this.open(
       'ending',
-      `<div class="panel end"><div class="art" style="background-image:url(art/${card.art}.webp)"></div>
-        <h2>${esc(card.title)}</h2>
-        ${paras}
+      `<div class="panel end"><div class="art" style="background-image:url(art/summit.webp)"></div>
+        <h2>The Gloamwall is breached</h2>
+        <p>The Hollow Seraph folds her broken wings and is still. For a moment the moon shows through the endless midnight.</p>
+        <p>Beyond her, the stair to the Vigil Vaults climbs into the dark, and stops at a door the stopped hour holds shut. <b style="color:var(--gold-hi)">The path deeper is sealed, for now.</b></p>
         <div class="stats"><div><b>${run.kills}</b><span>Foes shattered</span></div><div><b>${active(run.held).length}</b><span>Blessings</span></div><div><b>${run.shardsGained}</b><span>Moonshards</span></div><div><b>${fmtTime(run.time)}</b><span>Time</span></div></div>
-        ${card.note ? `<p class="muted">${esc(card.note)}</p>` : ''}
+        <p class="muted">Your progress is saved. The wall waits to be climbed again, and the moon remembers you.</p>
         <button class="btn primary" data-nav data-act="home">${icon('moon', 20)} Return to the Hollow</button></div>`,
       { focusFirst: true, back: () => {} },
     );
@@ -884,13 +862,11 @@ class Hud {
     if (this.el.hidden || !w?.hero) return;
     const h = w.hero;
     const f = clamp(h.hp / h.maxHp, 0, 1) * 100;
-    const n = Math.ceil(h.hp) * 65536 + h.maxHp; // the number changes at full health when max health grows
-    if (this.last.f !== f || this.last.n !== n) {
+    if (this.last.f !== f) {
       this.hpI.style.width = f + '%';
       this.hpB.style.width = f + '%';
       this.hpN.textContent = `${Math.ceil(h.hp)} / ${h.maxHp}`;
       this.last.f = f;
-      this.last.n = n;
     }
     this.hpBar.classList.toggle('ward', !!h.wardUp);
     const key = h.casts + h.maxCasts * 8 + h.dashes * 64 + h.maxDashes * 512;
