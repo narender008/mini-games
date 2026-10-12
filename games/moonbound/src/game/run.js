@@ -158,6 +158,7 @@ export class Run {
     this.waveT = 0;
     this.intro = 0.9;
     this.rewardObj = null;
+    this.shop = null;
     // load the chamber's sprite sets (bosses bring their own)
     const sets = [this.weapon.set, ...R.sets, 'common'];
     if (bossDef?.set) sets.push(bossDef.set);
