@@ -1,8 +1,10 @@
 // What is kept between runs, on this device only (localStorage 'moonbound'):
 // moonshards and the cauldron's upgrades, the chosen weapon, the codex (what
 // has been met), which hints have been shown, the assist mode, records (how
-// often each region has been cleared, among others) and settings. Older saves are brought up to date as they are read. Every read and write is guarded, so the game still works with
-// storage blocked (nothing is then kept). Under ?debug nothing is written.
+// often each region has been cleared, among others) and settings. Older saves
+// are brought up to date as they are read. Every read and write is guarded, so
+// the game still works with storage blocked (nothing is then kept). Under
+// ?debug nothing is written.
 import { DEBUG } from './config.js';
 
 const KEY = 'moonbound';

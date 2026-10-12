@@ -186,9 +186,9 @@ Bone Gaoler, the Pale Pedlar's shop, three combat chambers, the Moonwell fountai
 2-3 waves from a threat budget (the region's `encounters.js`, planned by `src/game/waves.js`). Doors show their reward: a
 patron's blessing, silver, a heartroot (+15 max health) or moonshards (more for each combat chamber of the whole climb);
 a shop may be offered on the third and eighth steps (`shopOffers`). A mini-boss leaves 15 moonshards and a blessing with
-better odds. A region's boss leaves 30 moonshards and a heartroot, then its gate opens on the way up: the passage card (the
-next region's art and name, and a line about the climb)
-covers the swap of sprite sets, and the next region begins at its Gate with its banner. Maelis keeps her health, blessings,
+better odds. A region's boss leaves 30 moonshards and, when a region above is built, a heartroot, then its gate opens on
+the way up: the passage card (the next region's art and name, and a line about the climb) covers the swap of sprite sets,
+and the next region begins at its Gate with its banner. Maelis keeps her health, blessings,
 silver and everything else. Difficulty runs on through the whole climb: foe health and damage grow with every chamber
 climbed, never below a region's own `baseline`, and a region's combat chambers never plan a smaller budget, fewer waves or a
 lower elite chance than the last combat chamber of the region below. Above the highest region built, its boss ends the run
