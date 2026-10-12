@@ -20,7 +20,6 @@ export const fresh = () => ({
   seen: {},
   prompts: {},
   assist: false,
-  intro: false,
   settings: {
     master: 0.9,
     music: 0.75,

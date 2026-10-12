@@ -723,6 +723,12 @@ p {
   width: min(420px, 70vw);
   margin: 10px auto;
 }
+/* a phone held upright: the banner takes the toasts' place below the lowered counters (toasts wait for it) */
+@media (max-width: 640px) {
+  #banner {
+    top: calc(max(14px, env(safe-area-inset-top)) + 108px);
+  }
+}
 @keyframes banner {
   0% {
     opacity: 0;

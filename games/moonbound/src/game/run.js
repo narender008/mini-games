@@ -143,11 +143,12 @@ export class Run {
     if (kind === 'combat') this.waves = planWaves(this.region.encounters, this.combatDepth(), this.rng);
     else this.waves = [];
     if (kind === 'miniboss' || kind === 'boss') this.waves = [];
+    // the banner first, so a toast the chamber raises waits for it
+    const title = kind === 'start' ? this.region.name : kind === 'shop' ? 'The Pale Pedlar' : kind === 'fountain' ? 'The Moonwell' : kind === 'miniboss' ? 'The Bone Gaoler' : kind === 'boss' ? 'The Hollow Seraph' : null;
+    if (title) app.ui.banner(title, kind === 'start' ? this.region.subtitle : kind === 'miniboss' ? 'Jailer of the Wall' : kind === 'boss' ? 'Warden of the Gloamwall' : '');
     this.setupRoomKind(kind);
     app.ui.hud.show(true);
     app.ui.hud.update(this);
-    const title = kind === 'start' ? this.region.name : kind === 'shop' ? 'The Pale Pedlar' : kind === 'fountain' ? 'The Moonwell' : kind === 'miniboss' ? 'The Bone Gaoler' : kind === 'boss' ? 'The Hollow Seraph' : null;
-    if (title) app.ui.banner(title, kind === 'start' ? this.region.subtitle : kind === 'miniboss' ? 'Jailer of the Wall' : kind === 'boss' ? 'Warden of the Gloamwall' : '');
     app.audio.music(kind === 'miniboss' ? 'gaoler' : kind === 'boss' ? 'seraph' : this.region.music);
     app.audio.intensity(0);
     app.audio.loop('wind', 'wind', true, { gain: 0.5 });

@@ -107,11 +107,6 @@ export class Hollow {
       w.fx.burst(BURST.motes, hero.x, hero.y, 0.8, COL.moon, 24, 1.6);
       w.fx.burst(BURST.wisps, hero.x, hero.y, 0.5, COL.moon, 18, 1.4);
     }
-    if (!s.intro) {
-      s.intro = true;
-      save();
-      setTimeout(() => app.ui.hint('move'), 1200);
-    }
   }
 
   updateRack() {

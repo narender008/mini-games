@@ -32,6 +32,8 @@ export class UI {
     this.promptEl = el('div', { id: 'prompt', hidden: true });
     this.badgesEl = el('div', { id: 'badges' });
     this.toastsEl = el('div', { id: 'toasts' });
+    this.bannerEl = null;
+    this.toastQ = [];
     this.hintEl = el('div', { id: 'hint', class: 'panel', hidden: true });
     this.bossEl = el('div', { id: 'bossbar', hidden: true });
     this.fadeEl = el('div', { id: 'fade' });
@@ -208,6 +210,8 @@ export class UI {
 
   // ---- small things
   toast(title, text) {
+    // a toast waits for the banner to go, so it never covers it (on a phone they share the top of the screen)
+    if (this.bannerEl) return void this.toastQ.push([title, text]);
     const t = el('div', { class: 'toast panel' });
     t.innerHTML = `<h3>${esc(title)}</h3>${text ? `<p>${esc(text)}</p>` : ''}`;
     this.toastsEl.append(t);
@@ -216,11 +220,17 @@ export class UI {
   }
 
   banner(title, sub) {
-    $('#banner', this.root)?.remove();
+    this.bannerEl?.remove();
     const b = el('div', { id: 'banner' });
     b.innerHTML = `<h1>${esc(title)}</h1><div class="rule"></div>${sub ? `<p>${esc(sub)}</p>` : ''}`;
     this.root.append(b);
-    setTimeout(() => b.remove(), 3500);
+    this.bannerEl = b;
+    setTimeout(() => {
+      b.remove();
+      if (this.bannerEl !== b) return;
+      this.bannerEl = null;
+      for (const [t, x] of this.toastQ.splice(0)) this.toast(t, x);
+    }, 3500);
   }
 
   fade(on) {
@@ -365,6 +375,8 @@ export class UI {
       t.remove();
       this.titleEl = null;
       this.modal = null;
+      // the press that begins (a pad's A is also Dash) is not read again in play
+      app.input.flush();
       onStart();
     };
     t.addEventListener('click', (e) => {
