@@ -430,13 +430,6 @@ p {
   opacity: 0;
   pointer-events: none;
 }
-/* the way up into a region: its name in place of the logo, on one line where it fits */
-#loading.passage .box {
-  width: min(860px, 100%);
-}
-#loading.passage .logo {
-  font-size: clamp(28px, 4.6vw, 52px) !important;
-}
 
 /* ---------- fade between chambers */
 #fade {
@@ -962,20 +955,6 @@ p {
 }
 .cx-item.lock {
   color: #5a566a;
-}
-.cx-group {
-  width: 100%;
-  box-sizing: border-box;
-  margin: 10px 0 2px;
-  padding: 0 10px 3px;
-  border-bottom: 1px solid var(--gold-dim);
-  color: var(--gold);
-  font-size: 12px;
-  font-variant: small-caps;
-  letter-spacing: 0.12em;
-}
-.cx-group:first-child {
-  margin-top: 0;
 }
 .cx-body img {
   width: min(260px, 100%);

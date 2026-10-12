@@ -1,29 +1,26 @@
-// A run up Nocthelm, one chamber at a time, climbing the registered regions
-// in order (regions/index.js). Each region brings its own plan of chamber
-// kinds (DESIGN.md "Run structure"): its Gate (a patron's first blessing
-// waits on the pedestal), combat chambers whose doors show the reward behind
-// them, its mini-boss, the Pale Pedlar's shop, the Moonwell fountain and its
-// boss, everything region-specific read from the region module. When a
-// region's boss falls Maelis takes its reward and the gate opens on
-// the way up: a passage card, then the next region's Gate, with everything she
-// carries. Above the last registered region the run ends with that region's
-// ending card (the path deeper sealed for now), or, for the final region, its
-// finale. Rewards: a blessing (choose one of three from the patron on the
-// door), silver (spent at the shop), a heartroot (+max health) or moonshards
-// (kept forever, spent at the cauldron at home). Death sends Maelis home
-// keeping her moonshards; everything else of the run is lost.
+// A run up through a region, one chamber at a time. The plan for the
+// Gloamwall (DESIGN.md "Run structure"):
+//   1 the Gate (a patron's first blessing waits on the pedestal)
+//   2-5 combat chambers, each door showing the reward behind it
+//   6 the Bone Gaoler (mini-boss)          7 the Pale Pedlar's shop
+//   8-10 combat chambers                   11 the Moonwell fountain
+//   12 the Hollow Seraph (region boss), then the ending card
+// Rewards: a blessing (choose one of three from the patron on the door),
+// silver (spent at the shop), a heartroot (+max health) or moonshards (kept
+// forever, spent at the cauldron at home). Death sends Maelis home keeping
+// her moonshards; everything else of the run is lost.
 import { Rng, rng as globalRng, clamp } from '../config.js';
 import { Room } from './room.js';
 import { Hero } from './hero.js';
-import { rebuild, offer, PATRONS, PATRON_LIST, BLESSINGS, SLOTS, active } from './blessings/index.js';
+import { rebuild, offer, PATRONS, PATRON_LIST, BLESSINGS, active } from './blessings/index.js';
 import { applyUpgrades, rank } from './upgrades.js';
 import { WEAPONS } from './weapons/index.js';
-import { FOES } from './enemies/index.js';
-import { chamberNumbers, planWaves } from './waves.js';
-import { REGIONS, regionAfter } from '../regions/index.js';
+import { planWaves } from '../regions/gloamwall/encounters.js';
 import { healHero, COL } from './combat.js';
 import { BURST, GROUND, GLOW } from '../fx/fx.js';
-import { save, regionRecord } from '../save.js';
+import { save } from '../save.js';
+
+export const PLAN = ['start', 'combat', 'combat', 'combat', 'combat', 'miniboss', 'shop', 'combat', 'combat', 'combat', 'fountain', 'boss'];
 
 export const REWARDS = {
   blessing: { name: 'Blessing', icon: 'blessing' },
@@ -33,7 +30,7 @@ export const REWARDS = {
   shop: { name: 'The Pale Pedlar', icon: 'shop', colour: '#c9a14a' },
   fountain: { name: 'Moonwell Fountain', icon: 'fountain', colour: '#7fd8ff' },
   miniboss: { name: 'Danger', icon: 'skull', colour: '#ff6a3a' },
-  boss: { name: 'The Lord Above', icon: 'skull', colour: '#ff4a2a' },
+  boss: { name: 'The Wall’s Lord', icon: 'skull', colour: '#ff4a2a' },
 };
 
 const WARES = [
@@ -57,11 +54,7 @@ export class Run {
     this.heartroots = 0;
     this.extra = { castCharges: 0, dmg: 1 };
     this.lastLight = rank(app.save, 'lastlight');
-    this.planStep = 0; // the chamber's step in the region's plan (1-based once entered)
-    this.depth = 0; // chambers climbed this run, across regions: the difficulty curve and the records
-    this.floor = null; // the last combat chamber's numbers below this region (waves.js chamberNumbers)
-    this.last = null; // the last combat chamber's numbers
-    this.next = null; // the region the way up leads to, once this one's boss has fallen
+    this.depth = 0;
     this.usedLayouts = new Set();
     this.room = null;
     this.waves = [];
@@ -80,28 +73,6 @@ export class Run {
     this.mods = this.computeMods();
     app.save.runs = (app.save.runs || 0) + 1;
     save();
-  }
-
-  // ?region= and __mb.region() without a run: start partway up with what a climb through the regions below
-  // would have gathered (their chambers' depth, a blessing on every move and a gift per region, heartroots, silver)
-  outfit() {
-    const below = REGIONS.slice(0, REGIONS.indexOf(this.region));
-    if (!below.length) return;
-    for (const r of below) {
-      this.depth += r.plan.length;
-      this.floor = regionEnd(r, this.floor);
-    }
-    this.last = this.floor;
-    this.heartroots += 2 * below.length;
-    this.silver += 150 * below.length;
-    for (const slot of [...SLOTS, ...below.map(() => 'passive')]) {
-      const pool = Object.values(BLESSINGS).filter((b) => b.slot === slot && !this.held.some((h) => h.id === b.id));
-      const b = pool[Math.floor(this.rng.next() * pool.length)];
-      if (!b) continue;
-      this.held.push({ id: b.id, rarity: 1 });
-      this.patronsMet.add(b.patron);
-    }
-    this.mods = this.computeMods();
   }
 
   computeMods() {
@@ -135,18 +106,11 @@ export class Run {
   // ---- chambers
   async enter(kind, reward) {
     const app = this.app;
-    const R = this.region;
-    this.planStep++;
     this.depth++;
     const depth = this.depth;
     this.kind = kind;
-    // foes grow with every chamber of the climb, never below the region's own baseline
-    this.depthScale = Math.max(1 + Math.max(0, depth - 2) * 0.06, R.baseline?.hp || 0);
-    this.dmgScale = Math.max(1 + Math.max(0, depth - 4) * 0.035, R.baseline?.dmg || 0);
-    this.bossDown = false;
-    this.bossFoe = null;
-    const boss = kind === 'miniboss' ? R.miniboss : kind === 'boss' ? R.boss : null;
-    const bossDef = boss ? FOES[boss].def : null;
+    this.depthScale = 1 + Math.max(0, depth - 2) * 0.06;
+    this.dmgScale = 1 + Math.max(0, depth - 4) * 0.035;
     const layout = this.pickLayout(kind);
     const room = new Room(layout, this.region, this.seed + depth * 101);
     this.room = room;
@@ -158,60 +122,44 @@ export class Run {
     this.waveT = 0;
     this.intro = 0.9;
     this.rewardObj = null;
-    this.shop = null;
     // load the chamber's sprite sets (bosses bring their own)
-    const sets = [this.weapon.set, ...R.sets, 'common'];
-    if (bossDef?.set) sets.push(bossDef.set);
-    await app.useSets(sets, boss ? R.cards?.[kind] : null);
+    const sets = [this.weapon.set, ...this.region.sets, 'common'];
+    if (kind === 'miniboss') sets.push('gaoler');
+    if (kind === 'boss') sets.push('seraph');
+    await app.useSets(sets, kind === 'boss' ? 'seraph' : kind === 'miniboss' ? 'gaoler' : null);
     const w = app.world;
     w.scene = this;
     w.run = this;
-    w.setRoom(room, R);
-    app.renderer.bakeFloor({ rect: room.rect, mask: room.mask, decals: room.decals, region: R.floor });
-    app.renderer.look = R.look;
+    w.setRoom(room, this.region);
+    app.renderer.bakeFloor({ rect: room.rect, mask: room.mask, decals: room.decals, region: this.region.floor });
+    app.renderer.look = this.region.look;
     if (!this.hero) this.hero = new Hero(w, this.weapon, this.mods);
     w.hero = this.hero;
     this.hero.world = w;
     const st = room.heroStart;
     this.hero.place(st.x, st.y, -Math.PI / 2);
     app.camera.snap(this.hero.x, this.hero.y);
-    // waves: the region's own planner if it has one
-    this.waves = [];
-    if (kind === 'combat') {
-      const cd = this.combatDepth();
-      const n = chamberNumbers(R.encounters, cd, this.floor);
-      this.waves = (R.planWaves || planWaves)(R.encounters, cd, this.rng, n);
-      this.last = n;
-    }
-    // the banner first, so a toast the chamber raises waits for it: the region's name at its Gate, a boss's
-    // name and title, else what the region calls the chamber
-    const rm = R.rooms?.[kind];
-    const title = kind === 'start' ? R.name : rm?.title || bossDef?.name || null;
-    if (title) app.ui.banner(title, kind === 'start' ? R.subtitle : rm?.subtitle ?? (rm?.title ? '' : bossDef?.title || ''));
+    // waves
+    if (kind === 'combat') this.waves = planWaves(this.region.encounters, this.combatDepth(), this.rng);
+    else this.waves = [];
+    if (kind === 'miniboss' || kind === 'boss') this.waves = [];
+    // the banner first, so a toast the chamber raises waits for it
+    const title = kind === 'start' ? this.region.name : kind === 'shop' ? 'The Pale Pedlar' : kind === 'fountain' ? 'The Moonwell' : kind === 'miniboss' ? 'The Bone Gaoler' : kind === 'boss' ? 'The Hollow Seraph' : null;
+    if (title) app.ui.banner(title, kind === 'start' ? this.region.subtitle : kind === 'miniboss' ? 'Jailer of the Wall' : kind === 'boss' ? 'Warden of the Gloamwall' : '');
     this.setupRoomKind(kind);
     app.ui.hud.show(true);
     app.ui.hud.update(this);
-    app.audio.music(rm?.music || bossDef?.music || R.music);
+    app.audio.music(kind === 'miniboss' ? 'gaoler' : kind === 'boss' ? 'seraph' : this.region.music);
     app.audio.intensity(0);
     app.audio.loop('wind', 'wind', true, { gain: 0.5 });
     app.save.bestChamber = Math.max(app.save.bestChamber || 0, depth);
   }
 
   combatDepth() {
-    return combatDepth(this.region.plan, this.planStep);
-  }
-
-  // combat chambers climbed this run: every one in the regions below, then this region's so far
-  climbDepth() {
-    const below = REGIONS.slice(0, REGIONS.indexOf(this.region));
-    return below.reduce((n, r) => n + combatDepth(r.plan, r.plan.length), this.combatDepth());
-  }
-
-  // the step of the region's plan to enter next, or 'region' for the way up once its boss has fallen
-  nextKind() {
-    const plan = this.region.plan;
-    if (this.planStep < plan.length) return plan[this.planStep];
-    return this.next ? 'region' : null;
+    // combat chambers count 1, 2, ... so the region's difficulty curve reads naturally
+    let n = 0;
+    for (let i = 0; i < this.depth; i++) if (PLAN[i] === 'combat') n++;
+    return n + (this.depth > 6 ? 1 : 0);
   }
 
   pickLayout(kind) {
@@ -271,9 +219,9 @@ export class Run {
       this.app.audio.loop('fountain', 'fountain', true, { x: f.x, y: f.y });
       this.openGates();
     } else if (kind === 'miniboss') {
-      this.bossIntro(this.region.miniboss);
+      this.bossIntro('gaoler');
     } else if (kind === 'boss') {
-      this.bossIntro(this.region.boss);
+      this.bossIntro('seraph');
     }
   }
 
@@ -369,7 +317,7 @@ export class Run {
       w.audio.play('pickup_heartroot', { x: o.x, y: o.y });
       this.app.ui.toast('Heartroot', '+15 max health');
     } else if (rw.type === 'shards') {
-      const n = rw.amount || 6 + Math.floor(this.climbDepth() * 1.2);
+      const n = rw.amount || 6 + Math.floor(this.combatDepth() * 1.2);
       this.addShards(n);
       w.fx.number(o.x, o.y, 1.6, '+' + n, [0.6, 1.2, 1.5], 0.6);
       w.audio.play('pickup_shard', { x: o.x, y: o.y });
@@ -411,7 +359,7 @@ export class Run {
     this.gatesOpen = true;
     const w = this.world;
     const room = this.room;
-    const next = this.nextKind();
+    const next = PLAN[this.depth]; // the next chamber's kind (PLAN is 0-based, depth 1-based)
     const gates = room.gates;
     if (!next) return;
     const choices = this.doorRewards(next, gates.length);
@@ -425,7 +373,7 @@ export class Run {
         x: g.x,
         y: g.y + 0.3,
         r: 1.8,
-        verb: next === 'region' ? 'Climb' : 'Enter',
+        verb: 'Enter',
         label: this.doorLabel(g.reward),
         act: () => this.leave(g),
       });
@@ -447,14 +395,13 @@ export class Run {
       out.push(r);
     }
     // a shop or fountain may be offered instead of a reward on the way up
-    if (n >= 2 && this.region.shopOffers?.includes(this.planStep) && this.rng.next() < 0.6) out[n - 1] = { kind: 'shop', type: 'shop' };
+    if (n >= 2 && (this.depth === 3 || this.depth === 8) && this.rng.next() < 0.6) out[n - 1] = { kind: 'shop', type: 'shop' };
     return this.rng.shuffle(out);
   }
 
   doorLabel(r) {
     if (r.type === 'blessing') return `Blessing of ${PATRONS[r.patron].name}`;
-    if (r.type === 'region') return this.next.name;
-    return this.region.rooms?.[r.type]?.door || REWARDS[r.type]?.name || 'Onward';
+    return REWARDS[r.type]?.name || 'Onward';
   }
 
   leave(gate) {
@@ -467,37 +414,13 @@ export class Run {
     // heal from Kindled Heart as the chamber is left behind
     if (this.mods.clearHeal && this.kind !== 'start') healHero(w, this.mods.clearHeal, true);
     const r = gate.reward;
-    if (r.kind === 'region') return this.climbOn(this.next);
     app.transition(async () => {
       let kind = r.kind;
       // a shop door off the plan: the plan continues after it
-      if (kind === 'shop' && this.region.plan[this.planStep] !== 'shop') {
-        // a shop off the plan is not a step of the climb
-        this.planStep--;
-        this.depth--;
-      }
+      if (kind === 'shop' && PLAN[this.depth] !== 'shop') this.depth--; // a shop off the plan is not a step of the climb
       await this.enter(kind, r.type === 'blessing' || r.type === 'silver' || r.type === 'heartroot' || r.type === 'shards' ? r : null);
       this.leaving = false;
     });
-  }
-
-  // on up into the next region: the passage card while its sprite sets replace the old region's, then its Gate.
-  // Maelis keeps her health, blessings, silver and everything else; the difficulty carries on from here.
-  async climbOn(region) {
-    const app = this.app;
-    const from = this.region;
-    this.leaving = true;
-    app.ui.bossBar(null);
-    await app.transition(async () => {
-      await app.passage(from, region, [this.weapon.set, ...region.sets, 'common']);
-      this.region = region;
-      this.planStep = 0;
-      this.floor = this.last;
-      this.next = null;
-      this.usedLayouts.clear();
-      await this.enter('start');
-    });
-    this.leaving = false;
   }
 
   // ---- per step
@@ -596,43 +519,31 @@ export class Run {
         f.hp = 0;
         f.die(w);
       }
-      const R = this.region;
-      const lord = e.kind === R.boss;
-      const shards = lord ? 30 : 15;
-      if (lord) {
-        regionRecord(R.id).cleared++;
-        save();
-        this.next = regionAfter(R);
-        if (!this.next) return this.victory(shards);
+      if (e.kind === 'seraph') {
+        this.victory();
+      } else {
+        this.reward = { type: 'blessing', patron: PATRON_LIST[Math.floor(this.rng.next() * 4)].id, bonus: 0.25 };
+        setTimeout(() => {
+          if (this.over || this.app.run !== this) return;
+          this.addShards(15);
+          w.toast('The Gaoler falls', '+15 moonshards');
+          this.spawnReward(this.rewardSpot());
+        }, 1600);
       }
-      // the moonshards, then the reward (a heartroot from the region's boss, from its mini-boss a blessing with
-      // better odds); the gates open once it is taken (the way up, after the region's boss)
-      this.reward = lord
-        ? { type: 'heartroot' }
-        : { type: 'blessing', patron: PATRON_LIST[Math.floor(this.rng.next() * 4)].id, bonus: 0.25 };
-      setTimeout(() => {
-        if (this.over || this.app.run !== this) return;
-        this.addShards(shards);
-        w.toast(`${e.def.name} falls`, `+${shards} moonshards`);
-        this.spawnReward(this.rewardSpot());
-      }, 1600);
     }
   }
 
-  // the top of the climb: the region's ending card (the path deeper sealed, for now), or the final region's finale
-  victory(shards) {
+  victory() {
     const app = this.app;
-    const R = this.region;
     this.over = true;
     app.save.wins = (app.save.wins || 0) + 1;
-    this.addShards(shards);
+    app.save.cleared.gloamwall = (app.save.cleared.gloamwall || 0) + 1;
+    this.addShards(30);
     save();
     setTimeout(() => {
       if (app.run !== this) return;
-      const done = () => app.goHome('victory');
-      if (R.final && R.finale) return R.finale(this, done);
       app.audio.music('victory');
-      app.ui.ending(this, { ...R.ending, sealed: !R.final }, done);
+      app.ui.ending(this, () => app.goHome('victory'));
     }, 3200);
   }
 
@@ -769,18 +680,4 @@ export class Run {
     }
     this.app.ui.hud.update(this);
   }
-}
-
-// combat chambers count 1, 2, ... through a region, so its difficulty curve reads naturally; the mini-boss
-// counts as one once it is behind her
-function combatDepth(plan, step) {
-  let n = 0;
-  for (let i = 0; i < step; i++) if (plan[i] === 'combat' || (plan[i] === 'miniboss' && i < step - 1)) n++;
-  return n;
-}
-
-// the numbers of a region's last combat chamber (the floor for the region above)
-function regionEnd(region, floor) {
-  const at = region.plan.lastIndexOf('combat') + 1;
-  return at > 0 ? chamberNumbers(region.encounters, combatDepth(region.plan, at), floor) : floor;
 }

@@ -178,8 +178,6 @@ export const SERAPH = {
   deathTime: 1.6,
   deathFps: 10,
   music: 'seraph',
-  marks: [66, 33], // the boss bar's phase ticks (% of health)
-  phaseLines: { 3: 'calls the eclipse' }, // the banner at each phase (default: grows desperate)
   threat: 20,
   soul: [0.5, 1.2, 1.3, 1],
 };

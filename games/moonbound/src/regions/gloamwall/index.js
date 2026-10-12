@@ -1,9 +1,7 @@
 // Region 1, the Gloamwall: the citadel's outer ramparts under a cold moon.
 // A region module names its sprite sets, its wall kit, its look and floor
-// shader, its layouts, its chamber plan, its encounter tables, its bosses and
-// the words of its banners, cards and codex pages; the run and the room
-// builder read nothing else (DESIGN.md "A region"). It is registered by one
-// line in regions/index.js.
+// shader, its layouts, its encounter tables and its bosses; the run and the
+// room builder read nothing else (DESIGN.md "Extending the game").
 import { LOOK, FLOOR } from './look.js';
 import { LAYOUTS } from './layouts.js';
 import { ENCOUNTERS } from './encounters.js';
@@ -12,6 +10,7 @@ export const GLOAMWALL = {
   id: 'gloamwall',
   name: 'The Gloamwall',
   subtitle: 'The outer ramparts of Nocthelm',
+  card: 'art/ramparts.webp',
   music: 'gloamwall',
   sets: ['gloamwall'],
   look: LOOK,
@@ -56,56 +55,7 @@ export const GLOAMWALL = {
     pedlar: { c: [0.6, 1.3, 1.6], r: 5, z: 1.6, flicker: 0.4 },
   },
   layouts: LAYOUTS,
-  // the climb through the region, one chamber kind per step
-  plan: ['start', 'combat', 'combat', 'combat', 'combat', 'miniboss', 'shop', 'combat', 'combat', 'combat', 'fountain', 'boss'],
-  shopOffers: [3, 8], // steps whose doors may offer the Pedlar instead of a reward
   encounters: ENCOUNTERS,
   miniboss: 'gaoler',
   boss: 'seraph',
-  // the codex lists these under the region, in this order
-  foes: ['thrall', 'gravebow', 'skitter', 'mourner', 'lampwight', 'warden', 'gaoler', 'seraph'],
-  // banners of the chambers that are not the start or a boss's (theirs come from the region and the boss)
-  rooms: {
-    shop: { title: 'The Pale Pedlar' },
-    fountain: { title: 'The Moonwell' },
-    boss: { door: 'The Wall’s Lord' },
-  },
-  // loading cards: art/<art>.webp and a line (the region's joins the shuffle)
-  cards: {
-    region: { art: 'ramparts', text: 'The Gloamwall: the bone legion still walks the walls it died defending.' },
-    miniboss: { art: 'bestiary', text: 'Warm light on the ground means danger: step out before it fills.' },
-    boss: { art: 'summit', text: 'At the summit the Midnight Clock waits, stopped at the last stroke.' },
-  },
-  // the line on the passage card as Maelis climbs on past the boss
-  passage: 'Past the Seraph’s empty perch the stair winds up out of the wind, into the dark above the wall.',
-  // the ending card while this is the top of the climb (and the path deeper is sealed)
-  ending: {
-    art: 'summit',
-    title: 'The Gloamwall is breached',
-    text: [
-      'The Hollow Seraph folds her broken wings and is still. For a moment the moon shows through the endless midnight.',
-      'Beyond her, the stair to the Vigil Vaults climbs into the dark, and stops at a door the stopped hour holds shut.',
-    ],
-    note: 'Your progress is saved. The wall waits to be climbed again, and the moon remembers you.',
-  },
-  // Maelis's journal: before the region is first cleared, and after (while nothing above is open)
-  journal: {
-    ahead: 'The Gloamwall first. Then whatever waits behind its warden.',
-    behind: 'The wall is behind me. The stair beyond the Seraph is sealed by the stopped hour, for now.',
-  },
-  // the codex's world pages for the region; `unlock` is a foe id that must have been beaten
-  lore: [
-    {
-      id: 'seraph',
-      name: 'Beyond the Wall',
-      art: 'rune',
-      unlock: 'seraph',
-      text: [
-        'With the Hollow Seraph fallen the way up lies open as far as the Vigil Vaults, where the dead keep an endless vigil among candles and reliquaries.',
-        'The door at the top of the stair is held shut by the stopped hour itself. Something will have to give.',
-      ],
-    },
-  ],
 };
-
-export default GLOAMWALL;

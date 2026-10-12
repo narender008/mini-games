@@ -28,14 +28,13 @@ into lasting power. The Gate of Roots leads up into the citadel.
 
 | # | Region | What it is | Region boss | Status |
 | --- | --- | --- | --- | --- |
-| 1 | The Gloamwall | Nocthelm's outer ramparts and bridges under a cold moon, patrolled by the bone legion that once defended the city. Mini-boss: the Bone Gaoler. | The Hollow Seraph, once the moon's own warden, now the Tyrant's jailer on the wall | built |
+| 1 | The Gloamwall | Nocthelm's outer ramparts and bridges under a cold moon, patrolled by the bone legion that once defended the city. Mini-boss: the Bone Gaoler. | The Hollow Seraph, once the moon's own warden, now the Tyrant's jailer on the wall | this delivery |
 | 2 | The Vigil Vaults | Candlelit undercroft, ossuaries and reliquaries where the dead keep an endless vigil: shadow wraiths, screaming skull spirits, wax-sealed tombs, moonlit lancet windows. | The Wax Abbess, who keeps the vigil and melts and reforms in candle flame | later |
 | 3 | The Fallen Orrery | A ruined astral sanctum floating over violet fog, constellation lines in the floor, the Celestine's broken altars under pillars of light. | The Orrery Engine, a brass-and-starlight machine that once moved the heavens | later |
 | 4 | The Midnight Clock | The summit: a vast cracked marble arena inlaid with gold clockwork rings and rune circles, hooded statues and braziers under the full moon. | The Hour Tyrant, a giant gilded knight with a halo of spikes and an hourglass staff; the final boss | later |
 
-A run climbs every region built so far, in this order, without going home: past each region's boss the stair leads on into
-the next. Above the highest region built so far the way is sealed by the stopped clock "for now": its boss ends the run, the
-ending card says so, and progress is saved. Each later delivery adds its region to the climb (section 10).
+Beating a region's boss in this delivery ends the run: the way past the Seraph is sealed by the stopped clock "for now", the
+ending card says so, and progress is saved. Later deliveries open the next region instead.
 
 ## 2. Camera, scale and space
 
@@ -77,8 +76,7 @@ No `.blend` files are kept. See `blender/README.md` for the commands.
 
 * **Sets** are loaded together: `hero_twins` and `hero_staff` (Maelis with each weapon; only the equipped one is resident),
   `hollow` (home base), `gloamwall` (region 1 creatures and kit), `gaoler` and `seraph` (loaded for their chambers only),
-  `common` (shared effects sprites). Later regions add their own sets; a region's sets are resident only while the run is in
-  it and are let go as the run climbs on.
+  `common` (shared effects sprites). Later regions add their own sets.
 * **Pages**: albedo 2048x2048, normals half size (1024x1024, same UVs). Low quality, and phones and tablets at every
   quality, halve both at upload. A rebuild decodes and uploads one page at a time.
 * **Resolution**: Maelis 80 px/m, creatures 72 px/m, bosses 60 px/m, props 64 px/m.
@@ -163,8 +161,7 @@ with the mouse, keys 1-3, or the pad.
 | Umbriel of the Eclipse | Umbra: 3 a stack every 0.5 s, 5 stacks | Shadow Cut, Penumbra, Eclipse Rune, Umbral Passage | Deepening Dark, Grim Omen, Totality, Night Harvest |
 | Corvane the Wandering Comet | Starfall: delayed star strikes | Comet Strike, Starfall, Meteor Rune, Comet Trail | Swift Orbit, Second Wind, Wanderer's Luck, Trajectory |
 
-**Foes of the Gloamwall** (health at the first chamber of a run; +6% per chamber climbed after the second, damage +3.5%
-after the fourth):
+**Foes of the Gloamwall** (health at the first chamber; +6% per chamber after the second, damage +3.5% after the fourth):
 Bone Thrall 60 (a 100-degree, 2.2 m falchion cut, 0.62 s wind-up, 9 damage), Gravebow 42 (keeps 6-9 m away, a 14 m arrow
 line, 0.85 s draw, 8), Skitterskull 20 (swarms, a leap onto a 1.15 m circle, 6), Mourner 50 (floats, a 6.5 m streak through
 her, 9), Lampwight 75 (fans of soul orbs that drift toward her, 7 each; a 1.9 m pyre under her, 11), Rampart Warden 120 + 90
@@ -180,20 +177,10 @@ on a 2.5 m circle, 22; a ring follows from phase 2), and a wing gust that throws
 Mourners and a Lampwight; phase 3 at one third is the eclipse: the light drains (`world.darkness`), Skitterskulls keep
 coming, and she dives twice.
 
-**Run structure.** A run climbs the built regions in order (`src/regions/index.js`), each region's chambers following its
-`plan` (`src/game/run.js` runs it). The Gloamwall's: the Gate (a first blessing on the pedestal), four combat chambers, the
-Bone Gaoler, the Pale Pedlar's shop, three combat chambers, the Moonwell fountain, the Hollow Seraph. Combat chambers come in
-2-3 waves from a threat budget (the region's `encounters.js`, planned by `src/game/waves.js`). Doors show their reward: a
-patron's blessing, silver, a heartroot (+15 max health) or moonshards (more for each combat chamber of the whole climb);
-a shop may be offered on the third and eighth steps (`shopOffers`). A mini-boss leaves 15 moonshards and a blessing with
-better odds. A region's boss leaves 30 moonshards and, when a region above is built, a heartroot, then its gate opens on
-the way up: the passage card (the next region's art and name, and a line about the climb) covers the swap of sprite sets,
-and the next region begins at its Gate with its banner. Maelis keeps her health, blessings,
-silver and everything else. Difficulty runs on through the whole climb: foe health and damage grow with every chamber
-climbed, never below a region's own `baseline`, and a region's combat chambers never plan a smaller budget, fewer waves or a
-lower elite chance than the last combat chamber of the region below. Above the highest region built, its boss ends the run
-with that region's ending card (the path deeper sealed, for now); the final region, the Midnight Clock, ends it with its own
-finale. The save keeps how often each region has been cleared (Maelis's journal reads it). Silver buys the
+**Run structure** (`src/game/run.js` PLAN): the Gate (a first blessing on the pedestal), four combat chambers, the Bone
+Gaoler, the Pale Pedlar's shop, three combat chambers, the Moonwell fountain, the Hollow Seraph. Combat chambers come in
+2-3 waves from a threat budget (`regions/gloamwall/encounters.js`). Doors show their reward: a patron's blessing,
+silver, a heartroot (+15 max health) or moonshards; a shop may be offered on the third and eighth steps. Silver buys the
 Pedlar's wares (healing, a sealed prayer for a blessing, a heartroot, a Moon Tear for +1 cast charge, a whetstone for +12%
 damage, moonshards). Moonshards are kept on death and brewed at the Moonwell Cauldron (`src/game/upgrades.js`): Deep Roots,
 Moonsteel, Shadowstep, Tidewell, Last Light (a revive), Pedlar's Favour, Lucky Star, Silver Purse. The Mercy of the Moon
@@ -221,40 +208,13 @@ transient, a low thump and a crunch or a crystalline shatter for bone.
 
 ## 10. Extending the game
 
-**A region** is a folder `src/regions/<id>/` whose `index.js` default-exports one object (the Gloamwall's,
-`regions/gloamwall/index.js`, is the pattern). It joins the climb by one line: its own slot in `CLIMB` in `src/regions/index.js`
-becomes `{ id: '<id>', load: () => import('./<id>/index.js') }`. That list fixes the order (`gloamwall`, `vaults`, `orrery`,
-`clock`) whatever order the regions are built in; an empty slot is skipped. `run.js`, `main.js` and the interface read
-everything region-specific from the object, so nothing else changes:
-
-| Field | What it is |
-| --- | --- |
-| `id`, `name`, `subtitle` | the slot's id; the banner at the region's Gate, and the passage card's title |
-| `music` | the score theme of its chambers (`src/audio/themes_*.js`) |
-| `sets` | its sprite sets, resident while the run is in the region (section 4) |
-| `look`, `floor`, `kit`, `lights` | lighting and grade (`gl/look.js`); the floor shader (a GLSL function `void floorX(vec2 w, vec4 m, out vec3 col, out float h)` plus eight colours and four parameter vectors); the wall kit (sprite names the room builder places along edges); the light each kind of prop gives off |
-| `layouts` | hand-made chambers (`layouts.js`, legend in `src/game/room.js`): one each of kind `start`, `shop`, `fountain`, `miniboss` and `boss` (whose gate is the way up), and at least 16 combat layouts each with two or three exit gates |
-| `plan`, `shopOffers` | the chamber kind of each step, `start` first and `boss` last; the steps whose doors may offer the Pedlar instead of a reward |
-| `encounters` | `encounters.js`: `budget(d)`, `waves(d)` and `eliteChance(d)` by the region's combat depth d (1 at its first combat chamber; its mini-boss counts once she is past it), `elites`, `noElite` (swarms), `pool`, set pieces in `sets`, `threat` |
-| `planWaves` (optional) | `planWaves(encounters, depth, rng, numbers)`: the region's own wave planner for its combat chambers, in place of `src/game/waves.js`'s; `numbers` is the chamber's `{budget, waves, elite}` (`chamberNumbers`), and it returns the waves |
-| `miniboss`, `boss` | foe ids (section 10, "A boss"); their names and titles (the banners), music themes and sprite sets come from their foe data |
-| `foes` | the foes the codex lists under the region, in this order |
-| `rooms` | per chamber kind, optional `title` (its banner), `subtitle` (the line under the banner), `music` (its theme, in place of a boss's or the region's) and `door` (the label over a door leading there); the Gloamwall's name the shop and fountain chambers and the boss's door |
-| `cards` | loading cards `{art, text}` (art is `art/<art>.webp`): `region` (also the passage card's picture, and shuffled in with the others), `miniboss`, `boss` |
-| `passage` | the line on the passage card as Maelis climbs on past its boss |
-| `ending` | `{art, title, text, note}`: the ending card when the run stops at its boss because nothing above is built yet; the card adds "The path deeper is sealed, for now." |
-| `journal` | `{ahead, behind}`: Maelis's journal line before the region is first cleared, and after while it is the top of the climb |
-| `lore` | its codex world pages `{id, name, art, unlock, text}` (`unlock`: a foe id that must have been beaten) |
-| `baseline` (optional) | `{hp, dmg}`: floors under the foe health and damage multipliers in its chambers |
-| `final`, `finale(run, done)` | the Midnight Clock only: its boss ends the run with `finale` (call `done()` to send Maelis home), or without one with its `ending` card, unsealed |
-
-Its art is a set built by new `blender/<region>_props.py` and creature modules. To test it, `?room=<layout id>` opens one of
-its chambers and `__mb.region(id)` climbs on into it mid-run, keeping the run's kit (`src/main.js` header). `?region=<id>`
-(and `__mb.region(id)` with no run going) is debug tooling: it starts a run at the region's Gate, partway up, with roughly
-what a climb through the regions below would have gathered (`Run.outfit()` in `src/game/run.js`). For each region below:
-its chambers count towards the depth (foe health and damage), its last combat chamber's numbers floor the wave planning,
-and Maelis gets 2 heartroots (+30 max health), 150 silver and one Gift. She also starts with a Bright blessing on each of
-Attack, Special, Cast and Dash. The blessings are drawn at random from all patrons.
+**A region** is a folder `src/regions/<id>/` with an `index.js` exporting the same shape as `gloamwall/index.js`: its name,
+sprite sets, music theme, `look` (lighting and grade, `gl/look.js`), floor shader (a GLSL function `void floorX(vec2 w, vec4
+m, out vec3 col, out float h)` plus eight colours and four parameter vectors), the wall kit (sprite names the room builder
+places along edges), light definitions per prop kind, hand-made layouts (`layouts.js`, legend in `src/game/room.js`, at
+least 16 combat layouts each with two or three exit gates), encounters (`encounters.js`: threat budget, pool, set pieces,
+elite chance) and its mini-boss and boss ids. Its art is a set built by new `blender/<region>_props.py` and creature modules.
+`run.js` takes the region in its constructor; later deliveries will chain regions where the ending card now stops.
 
 **A foe** is a file in `src/game/enemies/` with a data object (name, codex blurb, health, size, speed, animation names, threat,
 silver) and a class extending `Foe` (`enemies/base.js`) whose `think(dt, k)` walks, turns and starts attacks. Attacks are
@@ -262,9 +222,7 @@ data with a wind-up, a strike frame, a recovery and a telegraph shape; `fire`/`d
 in `enemies/index.js` and the region's encounter pool. Its sprites follow section 5; its portrait goes in the codex.
 
 **A boss** is the same with `boss: true`, phases switched in `think()` (call `world.bossPhase(this, n)`), its own sprite set
-(`set`, loaded only for its chamber) and a `kind: 'boss'` or `'miniboss'` layout. Its data also names its chamber's banner
-(`name`, `title`), its theme (`music`), the boss bar's phase ticks (`marks`, in % of health; one at 50 by default) and the
-banner line of each phase (`phaseLines`; "grows desperate" by default). A region names it as its `miniboss` or `boss`.
+(loaded only for its chamber) and a `kind: 'boss'` or `'miniboss'` layout.
 
 **A blessing** is an entry in a patron file: id, slot, name, values per rarity, text, and `apply(mods, value)` writing into
 the modifier object (`blessings/index.js` `baseMods()` lists every field; new behaviour needs a field read by
