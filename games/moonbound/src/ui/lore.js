@@ -1,5 +1,6 @@
-// The codex's pages on the world (DESIGN.md section 1). `unlock`: shown once
-// that thing has been beaten (save.cleared).
+// The codex's pages on the world (DESIGN.md section 1). Each region adds its
+// own pages after these (its `lore`); `unlock`: shown once that foe has been
+// beaten (save.cleared).
 export const LORE = [
   {
     id: 'hour',
@@ -44,16 +45,6 @@ export const LORE = [
     text: [
       'A cavern crossroads in the roots of the Elder Yew, the tree that still binds Nocthelm to what is left of the world.',
       'Lost things gather there: ghost cats, the familiars of the fallen witches; small wisps, souls too gentle to haunt the walls; candles that never burn down. At its heart stands the Moonwell Cauldron.',
-    ],
-  },
-  {
-    id: 'seraph',
-    name: 'Beyond the Wall',
-    art: 'rune',
-    unlock: 'seraph',
-    text: [
-      'With the Hollow Seraph fallen the way up lies open as far as the Vigil Vaults, where the dead keep an endless vigil among candles and reliquaries.',
-      'The door at the top of the stair is held shut by the stopped hour itself. Something will have to give.',
     ],
   },
 ];

@@ -11,7 +11,10 @@
 // Debug switches (URL query):
 //   ?debug            exposes window.__mb (below); nothing is saved
 //   ?play             skip the title and the Hollow: straight into a run
-//   ?room=<layout id> straight into that chamber of the Gloamwall (implies ?play), e.g. gw_spikehall, gw_gaoler, gw_seraph
+//   ?region=<id>      start the run at that region's Gate (implies ?play), with the kit a climb through the
+//                     regions below would have gathered (regions/index.js lists the ids: gloamwall, ...)
+//   ?room=<layout id> straight into that chamber (implies ?play), of the ?region= one or else the region that
+//                     has it, e.g. gw_spikehall, gw_gaoler, gw_seraph
 //   ?weapon=twins|staff   the weapon to use
 //   ?quality=high|medium|low   force a quality tier
 //   ?cover            hide the interface (for screenshots)
@@ -21,14 +24,16 @@
 // window.__mb (with ?debug):
 //   freeze() / thaw()          stop and restart the simulation (rendering goes on)
 //   step(ms)                   advance a frozen simulation by ms
-//   room(id)                   jump into a chamber by layout id (a run is started if needed)
+//   room(id)                   jump into a chamber of the run's region by layout id (a run is started if needed)
+//   region(id)                 climb on into that region's Gate, keeping the run's kit (a run is started, with
+//                              the ?region= kit, if needed)
 //   spawn(kind, n = 1, elite)  raise foes near Maelis (thrall gravebow skitter mourner lampwight warden gaoler seraph)
 //   weapon(id)                 switch weapon (twins, staff)
 //   bless(id, rarity = 0)      take a blessing by id (see game/blessings/*.js), e.g. 'vaela_attack'
 //   god(on = true)             Maelis cannot be hurt
 //   clear()                    shatter every foe in the room
 //   bench(ms = 5000)           frame-interval stats over ms: resolves {frames, fps, mean, p50, p95, p99, max, gpu}
-//   state()                    a summary: state, room, heroine, foes, missing sprites, quality
+//   state()                    a summary: state, region, room, heroine, foes, sprite sets, missing sprites, quality
 //   tp(x, y)                   put Maelis at a ground point (metres)
 //   interact()                 use the nearest interactable however far (reward, gate, shop ware, cauldron...)
 //   home(), run(), app         go home, start a run, the app itself
@@ -48,20 +53,20 @@ import { WEAPONS } from './game/weapons/index.js';
 import { BLESSINGS } from './game/blessings/index.js';
 import { FOES } from './game/enemies/index.js';
 import { kill } from './game/combat.js';
-import { GLOAMWALL } from './regions/gloamwall/index.js';
+import { REGIONS, loadRegions, regionById, regionOfLayout } from './regions/index.js';
 import { UI } from './ui/ui.js';
 import { FEEL } from './game/feel.js';
 import * as FS from './fullscreen.js';
 
+// loading cards shuffled in while sprites load, with each region's own (its cards.region)
 const CARDS = [
-  ['ramparts', 'The Gloamwall: the bone legion still walks the walls it died defending.'],
-  ['battle', 'Dash through danger: for a breath Maelis cannot be touched.'],
-  ['hollow', 'The Hollow, beneath the Elder Yew. Ghost cats nap by the cauldron.'],
-  ['rune', 'A Moon Rune bursts a moment after it is drawn. Lure them in.'],
-  ['maelis', 'Maelis, the last Moonbound. The moon will not let her die.'],
-  ['bestiary', 'Warm light on the ground means danger: step out before it fills.'],
-  ['orrery', 'The Celestine lend their light. Choose one gift of three.'],
-  ['summit', 'At the summit the Midnight Clock waits, stopped at the last stroke.'],
+  { art: 'battle', text: 'Dash through danger: for a breath Maelis cannot be touched.' },
+  { art: 'hollow', text: 'The Hollow, beneath the Elder Yew. Ghost cats nap by the cauldron.' },
+  { art: 'rune', text: 'A Moon Rune bursts a moment after it is drawn. Lure them in.' },
+  { art: 'maelis', text: 'Maelis, the last Moonbound. The moon will not let her die.' },
+  { art: 'bestiary', text: 'Warm light on the ground means danger: step out before it fills.' },
+  { art: 'orrery', text: 'The Celestine lend their light. Choose one gift of three.' },
+  { art: 'summit', text: 'At the summit the Midnight Clock waits, stopped at the last stroke.' },
 ];
 
 class Camera {
@@ -221,12 +226,28 @@ class App {
     this.renderer.cam.ppm = ppm;
   }
 
-  // load sprite sets behind a loading card (the old pages are let go before the new ones are in), which stays up
-  // until no rebuild is left in the queue
-  async useSets(sets, bossSet) {
+  // load sprite sets behind a loading card ({art, text}, or null for one from the shuffle; the old pages are let
+  // go before the new ones are in), which stays up until no rebuild is left in the queue
+  async useSets(sets, card) {
     if (!this.atlas.queued && this.atlas.resident(sets)) return;
-    this.loadingCard(bossSet);
+    this.loadingCard(card);
     await this.atlas.use(sets, (p) => this.loadingProgress(p));
+    if (!this.atlas.queued) this.loadingDone();
+  }
+
+  // the way up into the next region: its art and name, with the line of the region left behind, held a moment
+  // however fast the sets load (the previous region's pages are let go as the new region's come in)
+  async passage(from, to, sets) {
+    const L = document.getElementById('loading');
+    this.loadingCard(to.cards?.region || null);
+    L.classList.add('passage');
+    L.querySelector('.logo').textContent = to.name;
+    L.querySelector('.cap').textContent = from.passage || to.subtitle || '';
+    this.audio.music(null);
+    this.audio.stinger?.('run_start');
+    const hold = wait(2600);
+    await this.atlas.use(sets, (p) => this.loadingProgress(p));
+    await hold;
     if (!this.atlas.queued) this.loadingDone();
   }
 
@@ -256,11 +277,17 @@ class App {
     });
   }
 
-  loadingCard(bossSet) {
+  loadingCard(card) {
     const L = document.getElementById('loading');
-    const c = bossSet === 'seraph' ? CARDS[7] : bossSet === 'gaoler' ? CARDS[5] : CARDS[Math.floor(Math.random() * CARDS.length)];
-    L.style.backgroundImage = `url(art/${c[0]}.webp)`;
-    L.querySelector('.cap').textContent = c[1];
+    let c = card;
+    if (!c) {
+      const all = [...CARDS, ...REGIONS.map((r) => r.cards?.region).filter(Boolean)];
+      c = all[Math.floor(Math.random() * all.length)];
+    }
+    L.style.backgroundImage = `url(art/${c.art}.webp)`;
+    L.classList.remove('passage');
+    L.querySelector('.logo').textContent = 'Moonbound';
+    L.querySelector('.cap').textContent = c.text;
     L.querySelector('.bar i').style.width = '0%';
     L.classList.remove('out');
     L.hidden = false;
@@ -299,19 +326,24 @@ class App {
     await this.transition(() => this.hollow.enter(reason));
   }
 
-  async startRun(roomId) {
+  // a run from the first region's Gate; the debug switches may start it higher (regionId) or in a chamber (roomId)
+  async startRun(roomId, regionId) {
     if (this.state !== 'play' && this.state !== 'title') return;
     const seed = QUERY.has('seed') ? +QUERY.get('seed') : undefined;
     const weapon = QUERY.get('weapon') && WEAPONS[QUERY.get('weapon')] ? QUERY.get('weapon') : this.save.weapon;
-    this.run = new Run(this, GLOAMWALL, weapon, seed);
+    const region = startRegion(regionId, roomId);
+    this.run = new Run(this, region, weapon, seed);
+    this.run.outfit();
     this.audio.stinger?.('run_start');
     await this.transition(async () => {
       if (roomId) {
-        const L = GLOAMWALL.layouts.find((l) => l.id === roomId);
-        const kind = L?.kind === 'miniboss' ? 'miniboss' : L?.kind === 'boss' ? 'boss' : L?.kind || 'combat';
+        const L = region.layouts.find((l) => l.id === roomId);
+        const kind = L?.kind || 'combat';
         if (kind === 'combat') this.forcedRoom = roomId;
         // the step before that chamber's place in the climb (enter() steps onto it)
-        this.run.depth = { start: 0, combat: 1, miniboss: 5, shop: 6, fountain: 10, boss: 11 }[kind] ?? 1;
+        const at = Math.max(0, region.plan.indexOf(kind));
+        this.run.planStep = at;
+        this.run.depth += at;
         await this.run.enter(kind, kind === 'combat' ? { type: 'blessing', patron: 'vaela' } : null);
       } else await this.run.enter('start');
     });
@@ -454,12 +486,15 @@ class App {
     await this.loadAudio();
     this.applySettings();
     this.renderer.ready();
+    await loadRegions();
     progress(0.3, 'Gathering the Hollow…');
     const roomId = QUERY.get('room');
-    const play = PLAY || !!roomId;
+    const regionId = QUERY.get('region');
+    const play = PLAY || !!roomId || !!regionId;
     // preload the first sets behind the boot screen
     const weapon = WEAPONS[QUERY.get('weapon')] || WEAPONS[this.save.weapon] || WEAPONS.twins;
-    await this.atlas.use(play ? [weapon.set, 'gloamwall', 'common'] : [weapon.set, 'hollow', 'common'], (p) => progress(0.3 + p * 0.65));
+    const first = play ? startRegion(regionId, roomId).sets : ['hollow'];
+    await this.atlas.use([weapon.set, ...first, 'common'], (p) => progress(0.3 + p * 0.65));
     this.atlas.onFail = () => this.loadFailed();
     progress(1, 'Ready');
     this.tick = (t) => this.frame(t);
@@ -471,7 +506,7 @@ class App {
       const unlock = () => this.audio.unlock?.();
       window.addEventListener('pointerdown', unlock, { once: true });
       window.addEventListener('keydown', unlock, { once: true });
-      await this.startRun(roomId);
+      await this.startRun(roomId, regionId);
     } else {
       this.state = 'title';
       await this.hollow.enter('title');
@@ -513,11 +548,19 @@ class App {
       async room(id) {
         app.ui.closeAll();
         if (!app.run) return app.startRun(id);
-        const L = GLOAMWALL.layouts.find((l) => l.id === id);
-        if (!L) throw new Error('no layout ' + id);
-        const kind = L.kind === 'miniboss' ? 'miniboss' : L.kind === 'boss' ? 'boss' : L.kind || 'combat';
+        const L = app.run.region.layouts.find((l) => l.id === id);
+        if (!L) throw new Error(`no layout ${id} in ${app.run.region.id}`);
+        const kind = L.kind || 'combat';
         if (kind === 'combat') app.forcedRoom = id;
         await app.transition(() => app.run.enter(kind, kind === 'combat' ? { type: 'silver' } : null));
+      },
+      async region(id) {
+        const R = regionById(id);
+        if (!R) throw new Error(`no region ${id} (registered: ${REGIONS.map((r) => r.id).join(', ')})`);
+        app.ui.closeAll();
+        if (!app.run || app.run.over) return app.startRun(null, id);
+        await app.run.climbOn(R);
+        return id;
       },
       spawn(kind, n = 1, elite) {
         const W = w();
@@ -595,7 +638,9 @@ class App {
         return {
           state: app.state,
           modal: app.ui.modal?.name || null,
+          region: app.run?.region.id ?? null,
           room: W.room?.id,
+          step: app.run?.planStep ?? null,
           depth: app.run?.depth ?? null,
           kind: app.run?.kind ?? 'hollow',
           cleared: app.run?.clearedRoom ?? null,
@@ -643,6 +688,11 @@ class App {
 
 function wait(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+// the region a run starts in: the ?region= one, else the one holding the ?room= layout, else the first
+function startRegion(regionId, roomId) {
+  return (regionId && regionById(regionId)) || (roomId && regionOfLayout(roomId)) || REGIONS[0];
 }
 
 // a stand-in until the sound module has loaded (or if it fails)
