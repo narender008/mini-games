@@ -122,10 +122,10 @@ window.MINI_GAMES = [
   {
     slug: 'last-line',
     name: 'Last Line',
-    description: 'Hold the wire for ten waves in the rain: spin up a rotary gun, mind its heat, pick off sappers and mortar teams as they come out of the fog, flank the shield troopers, choose an upgrade or a repair between waves, and stop the Iron Mammoth.',
+    description: 'Hold the line across five vivid sectors, easiest first: a sunset canyon, a monsoon jungle, a neon city, a frozen pass under the aurora and a magma forge. Win a new weapon with every sector cleared (Tesla Arc, Plasma Lance, Swarm Launcher, Rail Cannon), call down an orbital strike, choose upgrades between waves, and beat a boss at the end of each sector.',
     path: 'games/last-line/',
     image: 'games/last-line/cover.jpg',
-    imageAlt: 'Seen from above at night in the rain, a soldier behind sandbags and barbed wire fires a rotary gun at ranks of gas-masked troops and shield troopers while shells burst among them under sweeping searchlights',
+    imageAlt: 'Seen from above on a neon-lit city street at night, a soldier behind sandbags fires chain lightning into yellow-armoured troops and shield troopers under magenta and cyan signs',
     tags: ['2D', 'Ages 14+', 'Mouse first'],
   },
   {

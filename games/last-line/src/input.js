@@ -1,10 +1,12 @@
 // Last Line: keyboard, mouse and touch, turned into one input per frame.
 //   Mouse: move with WASD or the arrows, aim with the mouse, hold the left
 //   button to fire, right-click or E drops a barricade where you point,
-//   Q or Space calls an airstrike down the lane you point at.
+//   Q or Space calls an airstrike down the lane you point at, F calls the
+//   orbital strike where you point (it then follows the pointer).
 //   Touch: drag anywhere to move (the soldier follows your finger's motion),
 //   the gun fires on its own at the worst threat while a finger is down; tap
-//   a deploy button, then tap the field to place it.
+//   a deploy button, then tap the field to place it. The orbital button
+//   fires at the thickest crowd and follows it.
 import { ZONE, clamp } from './config.js';
 
 export class Input {
@@ -16,7 +18,7 @@ export class Input {
     this.touch = null; // { id, ax, ay, px, py }
     this.touchMode = false;
     this.placing = null; // 'barrier' | 'air' while waiting for a tap
-    this.queued = { barrier: null, air: null };
+    this.queued = { barrier: null, air: null, orb: null };
     this.enabled = true;
 
     addEventListener('keydown', (e) => {
@@ -25,6 +27,7 @@ export class Input {
       this.keys.add(k);
       if (!this.enabled) return;
       if (k === 'e') this.queued.barrier = { x: this.mouse.x, y: this.mouse.y };
+      if (k === 'f') this.queued.orb = { x: this.mouse.x, y: this.mouse.y, auto: this.touchMode };
       if (k === 'q' || k === ' ') {
         this.queued.air = { x: this.mouse.x };
         e.preventDefault();
@@ -102,9 +105,11 @@ export class Input {
       autoAim: false,
       barrier: this.queued.barrier,
       air: this.queued.air,
+      orb: this.queued.orb,
     };
     this.queued.barrier = null;
     this.queued.air = null;
+    this.queued.orb = null;
     if (this.touch) {
       const t = this.touch;
       if (t.start) {

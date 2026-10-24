@@ -213,6 +213,23 @@ export class Sound {
     this.diesel = osc('sawtooth', 38);
     this.dieselG = gain(0, this.bus);
     this.diesel.connect(this._filter('lowpass', 210, 2)).connect(this.dieselG);
+
+    // plasma lance: a detuned saw pair through a resonant band, plus crackle
+    this.beamA = osc('sawtooth', 110);
+    this.beamB = osc('sawtooth', 111.7);
+    this.beamF = this._filter('bandpass', 900, 3);
+    this.beamG = gain(0, this.bus);
+    this.beamA.connect(this.beamF);
+    this.beamB.connect(this.beamF);
+    this.beamF.connect(this.beamG);
+    this.crackG = gain(0, this.bus);
+    loop(this.white, 1.7).connect(this._filter('highpass', 5000, 1)).connect(this.crackG);
+  }
+
+  // how loud the rain bed is for this sector's weather
+  setWeather(kind) {
+    this._rain = { rain: 1, snow: 0.15, ash: 0.25, dust: 0.3, spores: 0.6 }[kind] ?? 1;
+    delete this._lv.rain;
   }
 
   // ---------- helpers ----------
@@ -339,7 +356,7 @@ export class Sound {
   ambience(intensity) {
     if (!this._running()) return;
     const i = clamp01(intensity);
-    this._set('rain', this.rainG.gain, 1, 1.5);
+    this._set('rain', this.rainG.gain, this._rain ?? 1, 1.5);
     this._set('wind', this.windG.gain, 0.012 + i * 0.07, 0.6);
     this._set('rumb', this.rumbleG.gain, 0.05 + i * 0.25, 0.6);
   }
@@ -353,7 +370,118 @@ export class Sound {
     this._set('dg', this.dieselG.gain, l * 0.1, 0.15);
   }
 
+  beam(level) {
+    if (!this._running()) return;
+    const l = clamp01(level);
+    this._set('bg', this.beamG.gain, l * 0.07, 0.03);
+    this._set('bf', this.beamF.frequency, 600 + l * 1400, 0.05);
+    this._set('ba', this.beamA.frequency, 90 + l * 70, 0.05);
+    this._set('bb', this.beamB.frequency, 91.5 + l * 72, 0.05);
+    this._set('cg', this.crackG.gain, l * 0.035, 0.03);
+  }
+
   // ---------- one-shots ----------
+
+  zap(pan = 0, n = 2) {
+    const t = this._gate('zap', 0.07, 3, 0.2);
+    if (t < 0) return;
+    const out = this._out(pan, 0.32 + Math.min(0.2, n * 0.03), 0.2);
+    const bp = this._burst(t, 'bandpass', rnd(2400, 3600), 2, 0.9, 0.001, 0.09, out);
+    bp.frequency.exponentialRampToValueAtTime(900, t + 0.09);
+    const o = this._osc(t, 0.1, 'square', rnd(70, 110), this._env(t, 0.35, 0.001, 0.09, out));
+    o.frequency.setValueAtTime(rnd(300, 500), t + 0.02);
+    o.frequency.setValueAtTime(rnd(60, 90), t + 0.05);
+  }
+
+  rocket(pan = 0) {
+    const t = this._gate('rocket', 0.15, 3, 0.7);
+    if (t < 0) return;
+    const out = this._out(pan, 0.5, 0.25);
+    for (let i = 0; i < 4; i++) {
+      const tt = t + i * 0.04;
+      const bp = this._burst(tt, 'bandpass', 800, 1.2, 0.6, 0.004, 0.35, out);
+      bp.frequency.exponentialRampToValueAtTime(3200, tt + 0.3);
+    }
+    this._thump(t, 160, 60, 0.6, 0.12, out);
+  }
+
+  rail(c = 1) {
+    const t = this._gate('rail', 0.2, 2, 1.4);
+    if (t < 0) return;
+    const out = this._out(0, 0.6 + c * 0.4, 0.5, this.grit);
+    this._burst(t, 'highpass', 3000, 0.7, 1, 0.001, 0.06, out);
+    const z = this._osc(t, 0.5, 'sawtooth', 2400, this._env(t, 0.3, 0.001, 0.45, out));
+    z.frequency.exponentialRampToValueAtTime(80, t + 0.45);
+    this._thump(t, 120, 30, 1, 0.5, out);
+    const body = this._burst(t, 'lowpass', 2400, 0.8, 0.8, 0.002, 0.9, out, true);
+    body.frequency.exponentialRampToValueAtTime(120, t + 0.8);
+  }
+
+  pop(pan = 0) {
+    const t = this._gate('pop', 0.05, 4, 0.3);
+    if (t < 0) return;
+    const out = this._out(pan, 0.35, 0.2);
+    this._burst(t, 'bandpass', 1800, 1, 0.8, 0.001, 0.12, out);
+    this._thump(t, 300, 80, 0.5, 0.12, out);
+  }
+
+  lock(pan = 0) {
+    const t = this._gate('lock', 0.12, 3, 0.4);
+    if (t < 0) return;
+    const out = this._out(pan, 0.12);
+    for (let i = 0; i < 3; i++) this._osc(t + i * 0.1, 0.05, 'square', 1700, this._env(t + i * 0.1, 0.5, 0.002, 0.04, out));
+  }
+
+  charge() {
+    const t = this._gate('charge', 1, 1, 1.4);
+    if (t < 0) return;
+    const out = this._out(0, 0.25, 0.3);
+    const o = this._osc(t, 1.3, 'sawtooth', 120, this._env(t, 0.6, 1.1, 0.2, out));
+    o.frequency.exponentialRampToValueAtTime(900, t + 1.25);
+  }
+
+  laser() {
+    const t = this._gate('laser', 0.5, 2, 0.8);
+    if (t < 0) return;
+    const out = this._out(0, 0.5, 0.4, this.grit);
+    const o = this._osc(t, 0.6, 'sawtooth', 220, this._env(t, 0.8, 0.005, 0.55, out));
+    o.frequency.linearRampToValueAtTime(180, t + 0.55);
+    this._osc(t, 0.6, 'square', 331, this._env(t, 0.3, 0.005, 0.55, out));
+    this._burst(t, 'highpass', 2000, 0.6, 0.6, 0.01, 0.5, out);
+  }
+
+  orbital() {
+    const t = this._gate('orbital', 2, 1, 5);
+    if (t < 0) return;
+    const out = this._out(0, 0.9, 0.6, this.grit);
+    // the charge-down whine
+    const w = this._osc(t, 0.8, 'sine', 3000, this._env(t, 0.25, 0.05, 0.7, out));
+    w.frequency.exponentialRampToValueAtTime(200, t + 0.75);
+    // then the beam: a roaring drone for the burn
+    const g = this._ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t + 0.65);
+    g.gain.exponentialRampToValueAtTime(0.9, t + 0.75);
+    g.gain.setValueAtTime(0.9, t + 3.6);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 4.6);
+    g.connect(out);
+    const lp = this._filter('lowpass', 900, 1.5);
+    lp.connect(g);
+    this._noise(t + 0.65, 4, lp, true);
+    for (const f of [55, 82.5, 110.7]) this._osc(t + 0.65, 4, 'sawtooth', f, lp);
+    this._thump(t + 0.7, 90, 25, 1, 1.2, out);
+  }
+
+  unlock2() {
+    // a fanfare for a cleared sector or a new weapon
+    const t = this._gate('fanfare', 1, 1, 2);
+    if (t < 0) return;
+    const out = this._out(0, 0.25, 0.5);
+    [392, 523.25, 659.25, 783.99].forEach((f, i) => {
+      const tt = t + i * 0.12;
+      this._osc(tt, 0.9, 'triangle', f, this._env(tt, 0.6, 0.01, 0.85, out));
+      this._osc(tt, 0.9, 'sine', f * 2, this._env(tt, 0.15, 0.01, 0.6, out));
+    });
+  }
 
   shot(pan = 0) {
     const t = this._gate('shot', 0.028, 6, 0.35);
