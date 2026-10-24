@@ -119,4 +119,13 @@ window.MINI_GAMES = [
     imageAlt: 'Seen from above, a witch in a pointed hat whirls twin crescents of moonlight in a ring of skeleton soldiers and pale ghosts on dark rampart flagstones lit by blue braziers',
     tags: ['2D', 'Ages 18+', 'Mouse first'],
   },
+  {
+    slug: 'last-line',
+    name: 'Last Line',
+    description: 'Hold the wire for ten waves in the rain: spin up a rotary gun, mind its heat, pick off sappers and mortar teams as they come out of the fog, flank the shield troopers, choose an upgrade or a repair between waves, and stop the Iron Mammoth.',
+    path: 'games/last-line/',
+    image: 'games/last-line/cover.jpg',
+    imageAlt: 'Seen from above at night in the rain, a soldier behind sandbags and barbed wire fires a rotary gun at ranks of gas-masked troops and shield troopers while shells burst among them under sweeping searchlights',
+    tags: ['2D', 'Ages 14+', 'Mouse first'],
+  },
 ];

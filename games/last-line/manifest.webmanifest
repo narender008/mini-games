@@ -1,0 +1,13 @@
+{
+  "name": "Last Line",
+  "short_name": "Last Line",
+  "description": "Hold the wire through ten waves in the rain and fog.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "portrait",
+  "background_color": "#0b0d10",
+  "theme_color": "#0b0d10",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
