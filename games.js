@@ -128,4 +128,13 @@ window.MINI_GAMES = [
     imageAlt: 'Seen from above at night in the rain, a soldier behind sandbags and barbed wire fires a rotary gun at ranks of gas-masked troops and shield troopers while shells burst among them under sweeping searchlights',
     tags: ['2D', 'Ages 14+', 'Mouse first'],
   },
+  {
+    slug: 'feed-the-monster',
+    name: 'Feed the Monster',
+    description: 'For the littlest players: drag or tap big bright fruits into a friendly hungry monster\'s mouth and watch it chomp, giggle and dance under a rainbow. No losing, no timers, no reading.',
+    path: 'games/feed-the-monster/',
+    image: 'games/feed-the-monster/cover.jpg',
+    imageAlt: 'A round purple monster with little horns and a big open smile in a sunny meadow, holding up an apple to its mouth, with a watermelon slice, cherries, a pear, a strawberry and a banana floating around it',
+    tags: ['2D', 'Ages 2+', 'Touch friendly'],
+  },
 ];
