@@ -242,7 +242,7 @@ body.cover #ui {
 .boss {
   position: absolute;
   left: 50%;
-  top: 6.4em;
+  top: 8.4em;
   width: 70%;
   transform: translateX(-50%);
   text-align: center;
