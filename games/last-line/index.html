@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>Last Line · Mini Games</title>
+    <meta name="description" content="A vertical horde-defence shooter for ages 14 and up: hold the wire with a rotary gun through ten waves in the rain and fog, choose upgrades between waves, and stop the Iron Mammoth." />
+    <meta name="theme-color" content="#0b0d10" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Last Line" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body data-state="loading">
+    <canvas id="scene" aria-label="Last Line battlefield"></canvas>
+    <div id="ui"></div>
+
+    <div id="loader" role="progressbar" aria-label="Loading Last Line" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <p class="loader-title">LAST LINE</p>
+      <div class="bar"><span id="loader-fill"></span></div>
+      <p id="loader-text">Loading…</p>
+    </div>
+
+    <noscript><p class="noscript">Last Line needs JavaScript.</p></noscript>
+    <script type="module" src="src/boot.js"></script>
+  </body>
+</html>
