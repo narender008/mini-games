@@ -1173,6 +1173,7 @@ export function closeCodex(G) { if (G.scene === 'codex') setScene(G, G.codexFrom
 
 // Abandon the run (pause menu): back to the hub, keeping banked currencies.
 export function quit(G) {
+  flushBossDefeat(G);
   if (!G.run || G.run.over) { if (G.scene === 'paused' || G.scene === 'hub') return toTitle(G); return { ok: false }; }
   G.meta.stats.quits = (G.meta.stats.quits || 0) + 1;
   G.lastRun = summary(G, 'quit');
@@ -1438,6 +1439,8 @@ export function tick(G, dt) {
     if (ch.deathT <= 0) heroDied(G);
     return;
   }
+  // a boss defeat (deferred from the bus) counts even if a conversation opened over it
+  if (ch.bossDefeat && !(G.hero && G.hero.dead)) { flushBossDefeat(G); if (run.over) return; }
   if (G.scene !== 'run') return;
   if (ch.victoryInfo) {
     ch.victoryT -= dt;
@@ -1453,8 +1456,6 @@ export function tick(G, dt) {
     if (ch.darkT > 3) { ch.darkT = 0; safe(Combat.hurtHero, G, 5, { kind: 'dark', ignoreInv: true }); }
   }
   ch.enterT += live;
-  // boss defeat (deferred from the bus)
-  if (ch.bossDefeat) { const info = ch.bossDefeat; ch.bossDefeat = null; bossBeaten(G, info); if (run.over) return; }
   // waves
   if (!ch.cleared) {
     if (run.kind === 'boss') {
@@ -1767,7 +1768,14 @@ export function applyUrl(G, params) {
   return Promise.resolve(G.scene);
 }
 function selectHub(G) { if (!G.meta) loadProfile(G, G.profile); toHub(G, G.saveInfo && G.saveInfo.empty ? 'new' : 'continue'); }
-export function hub(G) { if (G.run && !G.run.over) { G.run.over = true; } toHub(G, 'quit'); return G.scene; }
+function flushBossDefeat(G) {
+  const ch = G.run && G.run.ch;
+  if (!ch || (!ch.bossDefeat && !ch.victoryInfo)) return;
+  if (ch.bossDefeat) { const info = ch.bossDefeat; ch.bossDefeat = null; bossBeaten(G, info); }
+  // leaving while Sable's last lines are pending still wins the run
+  if (ch.victoryInfo && G.run && !G.run.over) { const info = ch.victoryInfo; ch.victoryInfo = null; G.dialogue = null; G.storyQueue = null; victory(G, info); }
+}
+export function hub(G) { flushBossDefeat(G); if (G.run && !G.run.over) { G.run.over = true; } toHub(G, 'quit'); return G.scene; }
 export function menu(G) { return toTitle(G); }
 
 // ------------------------------------------------------------------ the UI api
