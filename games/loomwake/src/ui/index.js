@@ -10,7 +10,7 @@
 // #touch-stick [data-touch].
 
 import { h, toggle } from './dom.js';
-import { D, loadData, hasTouch } from './data.js';
+import { D, loadData, hasTouch, warmPortraits } from './data.js';
 import { moveFocus, ensureFocus, createPadNav, focusables, focusEl } from './nav.js';
 import { createLoading } from './loading.js';
 import { createTitle } from './title.js';
@@ -158,7 +158,7 @@ export function createUI(G, api = {}) {
     on('deathDefiance', () => cards.banner('Death Defied', 'defy'));
   }
 
-  loadData().then(() => { for (const k in screens) screens[k].dataReady?.(); });
+  loadData().then(() => { for (const k in screens) screens[k].dataReady?.(); warmPortraits(); });
 
   // ------------------------------------------------------------------ input
   const pad = createPadNav();

@@ -911,6 +911,8 @@ const base = new Map(); // 512 design renders per speaker+mood, downscaled per s
 export function hasPortrait(speaker) { return !!P[speaker]; }
 export const PORTRAIT_SPEAKERS = Object.keys(P);
 
+// every speaker with a painted portrait (the UI warms the dialogue size up in idle time)
+export function portraitIds() { return Object.keys(P); }
 export function getPortrait(speaker, mood = 'neutral', size = 256) {
   if (mood && typeof mood === 'object') { size = mood.size ?? 256; mood = mood.mood ?? 'neutral'; }
   if (typeof document === 'undefined') return null;

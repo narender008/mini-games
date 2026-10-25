@@ -88,6 +88,7 @@ export function createRenderer(G, canvas, opts = {}) {
     const eq = Q.tier === 'high' && Q.scale >= 0.95 ? Q.floorRes : Math.min(Q.floorRes, 0.94);
     if (envFor === ch && env && envTier === Q.tier && envQ === eq) return env;
     envFor = ch; envTier = Q.tier; envQ = eq;
+    if (Q.pause) Q.pause(1000);
     const paint = pick(M.env, 'paintChamber', 'paint');
     env = null;
     if (paint) { try { env = paint(ch, eq); } catch (err) { console.error('[loomwake] env painter failed', err); env = null; } }

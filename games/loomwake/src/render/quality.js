@@ -11,6 +11,7 @@
 //                  screen); returns true when settings changed (renderer resizes)
 //     Q.refresh   the display's typical frame interval (ms), Q.changes  how many times it has switched
 //     Q.set(tier)  force a tier
+//     Q.pause(ms)  stop judging for a while (the renderer calls it after repainting a chamber)
 export function createQuality({ pin = null, scale = null, touch = false } = {}) {
   const TIERS = {
     high: { dprCap: touch ? 1.5 : 2, maxPx: 2.4e6, particles: 2000, lights: 24, lightRes: 0.5, floorRes: 1, shadows: true, post: true, ambient: 1 },
@@ -21,7 +22,7 @@ export function createQuality({ pin = null, scale = null, touch = false } = {}) 
   apply();
   Q.set = (tier) => { if (TIERS[tier]) { Q.tier = tier; apply(); } };
   // Resolution steps are few and fixed (every new size rebuilds the screen-size caches, 50-200 ms on
-  // software raster; env/common.js screenCache keeps the last two). It reacts in about half a second
+  // software raster; env/common.js screenCache keeps the last three). It reacts in about half a second
   // and jumps two steps when frames run very long; it climbs back one step after a stretch of headroom.
   //
   // Judged against the display's own refresh (Q.refresh, the typical interval), not a fixed 60 Hz: a 50 Hz
@@ -34,6 +35,8 @@ export function createQuality({ pin = null, scale = null, touch = false } = {}) 
   const level = () => { let i = LEVELS.findIndex((l) => Q.scale >= l - 1e-6); return i < 0 ? LEVELS.length - 1 : i; };
   let hold = 0, sinceUp = Infinity, fastNeed = 5000, reversals = 0;
   Q.refresh = 16.7;
+  // a chamber repaint or a resize is a burst of one-off work: don't judge the frames right after it
+  Q.pause = (ms) => { hold = Math.max(hold, ms); Q.slowT = 0; Q.fastT = 0; };
   Q.work = 8;
   Q.frame = (ms, work) => {
     if (!(ms > 0) || ms > 250) return false;
