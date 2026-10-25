@@ -114,6 +114,73 @@ function botRun(sliceSec) {
     }
     return { move: { x: mx * ml, y: my * ml }, dash };
   };
+  // Finds a way round walls: chambers can be spirals or rings, so a straight
+  // line to the target may run into the outline. A 32 px grid of walkable
+  // cells is built once per chamber from its outline, pillars and hazards;
+  // a breadth-first distance field from the goal cell gives the next step.
+  const navTo = (s, p, tx, ty) => {
+    const c = lw.game && lw.game.chamber;
+    const dx0 = tx - p.x, dy0 = ty - p.y, d0 = Math.hypot(dx0, dy0) || 1;
+    const straight = { x: dx0 / d0, y: dy0 / d0 };
+    if (!c || !c.shape || c.shape.length < 3) return straight;
+    const key = `${s.region}:${s.chamber}:${c.template}`;
+    if (!B.nav || B.nav.key !== key) {
+      const sh = c.shape;
+      const inside = (x, y) => { let k = false; for (let i = 0, j = sh.length - 1; i < sh.length; j = i++) { const [xi, yi] = sh[i], [xj, yj] = sh[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) k = !k; } return k; };
+      const blocks = [...(c.obstacles || []), ...(c.hazards || [])];
+      const free = (x, y, m) => inside(x, y) && inside(x + m, y) && inside(x - m, y) && inside(x, y + m) && inside(x, y - m) && !blocks.some((o) => Math.hypot(o.x - x, o.y - y) < (o.r || 40) + m);
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const [x, y] of sh) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+      const S = 32, W = Math.ceil((x1 - x0) / S) + 1, H = Math.ceil((y1 - y0) / S) + 1;
+      const ok = new Uint8Array(W * H);
+      for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) ok[j * W + i] = free(x0 + i * S, y0 + j * S, 18) ? 1 : 0;
+      B.nav = { key, x0, y0, S, W, H, ok, inside, free, goal: -1, dist: null };
+    }
+    const N = B.nav;
+    // straight line clear? sample every 24 px
+    let clear = true;
+    for (let k = 24; k < d0; k += 24) { const x = p.x + straight.x * k, y = p.y + straight.y * k; if (!N.free(x, y, 14)) { clear = false; break; } }
+    if (clear) return straight;
+    const cell = (x, y) => { const i = Math.round((x - N.x0) / N.S), j = Math.round((y - N.y0) / N.S); return i < 0 || j < 0 || i >= N.W || j >= N.H ? -1 : j * N.W + i; };
+    const nearestOk = (ci) => { if (ci >= 0 && N.ok[ci]) return ci; let best = -1, bd = Infinity; const i0 = ci % N.W, j0 = (ci / N.W) | 0; for (let q = 0; q < N.ok.length; q++) if (N.ok[q]) { const dd = Math.abs((q % N.W) - i0) + Math.abs(((q / N.W) | 0) - j0); if (dd < bd) { bd = dd; best = q; } } return best; };
+    const g = nearestOk(cell(tx, ty));
+    if (g < 0) return straight;
+    if (N.goal !== g) {
+      const dist = new Int32Array(N.W * N.H).fill(-1);
+      const qu = [g]; dist[g] = 0;
+      for (let h = 0; h < qu.length; h++) {
+        const q = qu[h], i = q % N.W, j = (q / N.W) | 0;
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+          const ni = i + di, nj = j + dj;
+          if (ni < 0 || nj < 0 || ni >= N.W || nj >= N.H) continue;
+          const nq = nj * N.W + ni;
+          if (!N.ok[nq] || dist[nq] >= 0) continue;
+          if (di && dj && !(N.ok[j * N.W + ni] && N.ok[nj * N.W + i])) continue;
+          dist[nq] = dist[q] + 1; qu.push(nq);
+        }
+      }
+      N.goal = g; N.dist = dist;
+    }
+    const here = nearestOk(cell(p.x, p.y));
+    if (here < 0 || N.dist[here] < 0) return straight;
+    // look a few cells down the gradient and head for that point
+    let q = here;
+    for (let step = 0; step < 3; step++) {
+      const i = q % N.W, j = (q / N.W) | 0;
+      let best = q;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const ni = i + di, nj = j + dj;
+        if (ni < 0 || nj < 0 || ni >= N.W || nj >= N.H) continue;
+        const nq = nj * N.W + ni;
+        if (N.dist[nq] >= 0 && N.dist[nq] < N.dist[best]) best = nq;
+      }
+      if (best === q) break;
+      q = best;
+    }
+    const wx = N.x0 + (q % N.W) * N.S, wy = N.y0 + ((q / N.W) | 0) * N.S;
+    const dd = Math.hypot(wx - p.x, wy - p.y) || 1;
+    return { x: (wx - p.x) / dd, y: (wy - p.y) / dd, routed: true };
+  };
   let s = lw.state();
   const end = s.time + sliceSec;
   // the end screens may already have dropped the run (runTime 0, region
@@ -193,7 +260,7 @@ function botRun(sliceSec) {
         pk.sort((a2, b2) => Math.hypot(a2.x - p.x, a2.y - p.y) - Math.hypot(b2.x - p.x, b2.y - p.y));
         const q = pk[0], d = Math.hypot(q.x - p.x, q.y - p.y) || 1;
         const tick = Math.floor(s.runTime * 1000 / dt);
-        const st = steer(s, p, d > 8 ? { x: (q.x - p.x) / d, y: (q.y - p.y) / d } : { x: 0, y: 0 }, false);
+        const st = steer(s, p, d > 8 ? navTo(s, p, q.x, q.y) : { x: 0, y: 0 }, false);
         lw.input({ move: st.move, interact: d < 90 && tick % 6 < 3 });
         B.pickT = (B.pickT || 0) + dt;
         if (B.pickT < 15000) { s = lw.step(dt, { render: false }); continue; }
@@ -253,7 +320,7 @@ function botRun(sliceSec) {
       const reach = cfg.reach + (t.r || 20);
       inp.aim = { x: t.x + B.aimOff.x, y: t.y + B.aimOff.y };
       if (!move) {
-        if (d > reach * 0.9) move = { x: dx / d, y: dy / d };
+        if (d > reach * 0.9) { const n = navTo(s, p, t.x, t.y); move = { x: n.x, y: n.y }; if (n.routed) B.routed = (B.routed || 0) + 1; }
         else if (d < reach * 0.4) move = { x: -dx / d * 0.5, y: -dy / d * 0.5 };
         else { const sgn = (Math.floor(s.runTime / 2) % 2) ? 1 : -1; move = { x: -dy / d * 0.35 * sgn, y: dx / d * 0.35 * sgn }; }
       }

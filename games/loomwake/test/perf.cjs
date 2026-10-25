@@ -34,6 +34,7 @@ async function tier(browser, url, quality) {
   // keep the room full: the bench chamber should respawn, but top it up anyway
   const s0 = await lw('state');
   if (s0.enemies.length < 30) await lw('stress', { enemies: 40, particles: 5000, lights: 32 });
+  const foes0 = (await lw('state')).enemies.length;
   await new Promise((r) => setTimeout(r, 2500)); // warm-up, let the governor settle
   const m = await page.evaluate((secs) => new Promise((resolve) => {
     const iv = [];
@@ -44,7 +45,10 @@ async function tier(browser, url, quality) {
       // keep fighting so effects keep flowing
       const s = window.__lw.state();
       const e = s.enemies[0];
-      window.__lw.input({ move: { x: Math.sin(t / 700), y: Math.cos(t / 900) }, aim: e ? { x: e.x, y: e.y } : null, attack: (t / 120 | 0) % 2 === 0, special: (t / 1500 | 0) % 4 === 0, dash: false, call: s.hero.call >= 1 });
+      // swing at the air (effects, no kills) and keep the room full: the
+      // load is the point, so foes that die are topped up once a second
+      window.__lw.input({ move: { x: Math.sin(t / 700), y: Math.cos(t / 900) }, aim: e ? { x: s.hero.x * 2 - e.x, y: s.hero.y * 2 - e.y } : null, attack: (t / 120 | 0) % 2 === 0, special: false, dash: false, call: false });
+      if (s.enemies.length < 30 && t - (window.__topUp || 0) > 1000) { window.__topUp = t; window.__lw.stress({ enemies: 40, particles: 5000, lights: 32 }); }
       if (t < end) requestAnimationFrame(tick); else resolve({ iv: iv.slice(2), enemies: s.enemies.length });
     };
     requestAnimationFrame(tick);
@@ -55,7 +59,7 @@ async function tier(browser, url, quality) {
   // the sim alone: 2 seconds of sim with the stress load, no drawing
   const sim = await page.evaluate(() => { const lw = window.__lw; lw.freeze(); const t0 = performance.now(); lw.step(2000, { render: false }); const ms = performance.now() - t0; const n = lw.state().enemies.length; lw.thaw(); return { ms, enemies: n }; });
   const res = {
-    quality, frames: m.iv.length, enemies: m.enemies, fps: 1000 / (m.iv.reduce((a, b) => a + b, 0) / m.iv.length),
+    quality, foes0, frames: m.iv.length, enemies: m.enemies, fps: 1000 / (m.iv.reduce((a, b) => a + b, 0) / m.iv.length),
     p50: pct(m.iv, 0.5), p95: pct(m.iv, 0.95), p99: pct(m.iv, 0.99), jsP50: pct(js, 0.5), jsP95: pct(js, 0.95),
     simCostPerSec: sim.ms / 2000, simEnemies: sim.enemies, problems: page.problems.slice(0, 10),
   };
@@ -75,7 +79,7 @@ async function main() {
       tiers.push(r);
       console.log(`  ${q}: ${f(r.fps)} fps, p95 ${f(r.p95)} ms, p99 ${f(r.p99)} ms, JS p95 ${f(r.jsP95)} ms, sim ${f(r.simCostPerSec * 1000)} ms per sim second, ${r.enemies} foes`);
       if (r.problems.length) failures.push(`${q}: page problems: ${r.problems.join(' | ')}`);
-      if (r.enemies < 20) failures.push(`${q}: the bench chamber holds only ${r.enemies} foes`);
+      if (r.foes0 < 30) failures.push(`${q}: ?bench filled the chamber with only ${r.foes0} foes (want the plan's 40)`);
       if (r.simCostPerSec > SIM_MAX) failures.push(`${q}: the simulation costs ${f(r.simCostPerSec * 1000)} ms per sim second (max ${SIM_MAX * 1000})`);
     }
     const low = tiers.find((t) => t.quality === 'low');

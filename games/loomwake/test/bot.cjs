@@ -83,6 +83,19 @@ async function critical(browser, url) {
     const r = await playRun(page, lw, { ...BASE, ...SKILLS.sharp, seed: 31337, build: BUILDS[0] }, Date.now() + WALL_MIN * 60000);
     const s = await lw('state');
     out.end = r.log.end;
+    if (r.log.end !== 'won') {
+      // where it stalled, for the report
+      const z = await lw('state');
+      out.stall = { scene: z.scene, region: z.region, chamber: z.chamber, kind: z.chamberKind, cleared: z.cleared, foes: (z.enemies || []).map((e) => `${e.kind}@${e.x | 0},${e.y | 0} hp${e.hp}`), boss: z.boss, doors: z.doors, pickups: z.pickups, dialogue: z.dialogue, hero: z.hero && { x: z.hero.x, y: z.hero.y, state: z.hero.state, hp: z.hero.hp } };
+      out.stall.geometry = await page.evaluate(() => {
+        const c = window.__lw.game && window.__lw.game.chamber;
+        if (!c || !c.shape) return null;
+        const inside = (x, y) => { let k = false; for (let i = 0, j = c.shape.length - 1; i < c.shape.length; j = i++) { const [xi, yi] = c.shape[i], [xj, yj] = c.shape[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) k = !k; } return k; };
+        const g = window.__lw.game;
+        return { template: c.template, hero: inside(g.hero.x, g.hero.y), foes: g.foes.map((e) => inside(e.x, e.y)), obstacles: (c.obstacles || []).filter((o) => Math.hypot(o.x - g.hero.x, o.y - g.hero.y) < 400).map((o) => `${o.type}@${o.x | 0},${o.y | 0} r${o.r}`), hazards: (c.hazards || []).map((h) => `${h.type}@${h.x | 0},${h.y | 0} r${h.r}`) };
+      });
+      console.log(`  stalled at ${JSON.stringify(out.stall).slice(0, 1500)}`);
+    }
     out.minutes = r.s.runTime / 60;
     out.regions = Object.entries(r.log.regions).map(([id, x]) => ({ id, minutes: ((x.end ?? r.s.runTime) - x.start) / 60 }));
     out.bosses = r.log.bosses.map((b) => ({ id: b.id, secs: b.secs, won: b.won }));
