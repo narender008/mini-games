@@ -40,7 +40,7 @@ export const BASE_STATS = {
   rerollCost: 50,
   // ability ranks (0 = not owned) and cooldowns in seconds
   chain: 0, fire: 0, lightning: 0, kraken: 0,
-  cdChain: 8, cdFire: 10, cdLightning: 12, cdKraken: 24,
+  cdChain: 8, cdFire: 10, cdLightning: 12, cdKraken: 20,
   // ability strength (upgrades.js raises these with ranks and combos; combat.js and kraken.js read them)
   chainDmg: 2.5,        // chain shot damage, x dmg
   chainSlow: 0.4,       // fraction of speed lost while slowed
@@ -51,7 +51,7 @@ export const BASE_STATS = {
   lightningTargets: 3,  // ships one lightning bolt chains through
   lightningDmg: 40,
   stormBonus: 2,        // lightning damage multiplier in the storm biome
-  krakenDmg: 30,        // per second while a tentacle crushes
+  krakenDmg: 45,        // per second while a tentacle crushes
   krakenTentacles: 1,
   // combo flags (0 = off)
   lightningIgnites: 0,  // lightning sets targets on fire

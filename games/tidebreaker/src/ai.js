@@ -20,7 +20,7 @@ const STATION = { sloop: [680, 1000], brig: [740, 1090], galleon: [860, 1080], g
 const SPAWN_GAP = 1.3, MAX_ALIVE = 4;
 
 // enemy gun damage: gentle at first, rising with the stage and G.diff
-const dmgK = (G) => (0.5 + G.stage * 0.07) * Math.max(0.5, G.diff / (1 + G.stage * 0.16));
+const dmgK = (G) => (0.5 + G.stage * 0.04) * Math.max(0.5, G.diff / (1 + G.stage * 0.16));
 function gauss(r) { return (r() + r() + r() + r() - 2) * 1.73; }
 
 function planFleet(G) {

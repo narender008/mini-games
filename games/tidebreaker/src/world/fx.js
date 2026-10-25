@@ -84,6 +84,11 @@ export function spawn(G, type, x, y, opts = {}) {
     }
     case 'number': {
       const crit = !!opts.crit, size = (opts.size ?? 30) * (crit ? 1.25 : 1);
+      // stack numbers that land together instead of printing them over each other
+      for (let k = 0; k < 6; k++) {
+        if (!G.fx.some((q) => q.k === 'num' && q.t < 0.5 && Math.abs(q.x - x) < 60 && Math.abs(q.y - y) < size * 0.8)) break;
+        y -= size * 0.85;
+      }
       push(G, { k: 'num', layer: L || 'text', x: x + (R() - 0.5) * 16, y, text: String(opts.text ?? ''), col: opts.col || (crit ? '#ff6a3a' : '#ffe14a'), size, crit, life: crit ? 1.4 : 1.1, vy: -70 });
       break;
     }

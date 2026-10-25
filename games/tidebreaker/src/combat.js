@@ -53,6 +53,7 @@ export function applySlow(e, k, time) {
 function tickStatus(G, e, dt) {
   if (!e.alive) { e.burn = 0; e.slow = 0; return; }
   if (e.slow > 0) e.slow = Math.max(0, e.slow - dt);
+  if (e.held > 0) e.held = Math.max(0, e.held - dt);
   if (e.burn > 0) {
     e.burn = Math.max(0, e.burn - dt);
     const d = (e.burnDps || 0) * dt;

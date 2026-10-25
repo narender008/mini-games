@@ -143,7 +143,7 @@ window.MINI_GAMES = [
     description: 'A naval roguelite: captain a galleon through five seas from dawn to a crimson-moon night, trade broadsides with pirate fleets, storm sea forts, stack upgrade cards into combos and face the Mistcoil Serpent and the Drowned Leviathan.',
     path: 'games/tidebreaker/',
     image: 'games/tidebreaker/cover.jpg',
-    imageAlt: 'A white-sailed galleon fires a broadside across a purple and gold sunset sea at a burning black-sailed pirate ship, with a fortress island and a smoking volcano on the horizon',
+    imageAlt: 'A white-sailed galleon trades cannon fire with red-sailed pirate ships on a purple and gold sunset sea, with lighthouses on palm islands and a smoking volcano behind',
     tags: ['2D', 'Ages 10+', 'Mouse first'],
   },
 ];

@@ -75,7 +75,7 @@ export function blankInput() {
 export function newRun(G, opts = {}) {
   if (opts.seed != null) { G.seed = opts.seed | 0; }
   G.rng = rng(G.seed);
-  G.t = 0;
+  G.t = 0; G.vt = 0; // the swell (laneY) runs on vt, so a run must start from the same sea
   G.run = { gold: 0, score: 0, kills: 0, shots: 0, dmg: 0, upgrades: {}, picks: [], rerolls: 0, started: Date.now(), time: 0 };
   for (const [id, rank] of Object.entries(opts.upgrades || {})) for (let i = 0; i < rank; i++) applyUpgrade(G, id);
   G.stats = computeStats(G.run, G.meta);
@@ -96,6 +96,7 @@ function startNode(G, newLeg) {
   G.diff = 1 + G.stage * 0.16;
   if (newLeg) {
     world.setBiome(G, G.legDef.biome, G.t === 0);
+    if (G.t === 0) G.lane.t = 0;
     G.banner = { title: G.legDef.name, sub: `LEG ${G.leg + 1} OF ${LEGS.length}`, t: 0, life: 3.2 };
     emit('leg', { leg: G.leg, biome: G.legDef.biome, name: G.legDef.name });
   }
@@ -152,10 +153,12 @@ export function openCards(G) {
 function nextNode(G) {
   G.cards = null;
   // a little repair between fights
-  G.player.hp = Math.min(G.player.maxHp, G.player.hp + G.player.maxHp * 0.12);
+  G.player.hp = Math.min(G.player.maxHp, G.player.hp + G.player.maxHp * 0.2);
   let newLeg = false;
   G.node++;
   if (G.node > 2) { G.node = 0; G.leg++; newLeg = true; G.player.hp = Math.min(G.player.maxHp, G.player.hp + G.player.maxHp * 0.2); }
+  // the crew patches the hull properly before the final battle
+  if (LEGS[G.leg]?.nodes[G.node] === 'leviathan') G.player.hp = G.player.maxHp;
   G.scene = 'play';
   startNode(G, newLeg);
 }

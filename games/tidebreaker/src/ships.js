@@ -254,7 +254,7 @@ function baseShip(G, kind, styleId, s, x, dir) {
   return {
     kind, side: 'enemy', style: styleId, s, dir, x, y: laneY(G, x), ang: 0, vx: 0,
     cx: x, cy: 0, hp: 100, maxHp: 100, alive: true, gone: false, layer: 'lane', boss: false, bounty: 0,
-    burn: 0, burnDps: 0, slow: 0, slowK: 0, flash: 0, kick: 0, charge: 0, scorch: [], seed: (Math.random() * 1e4) | 0,
+    burn: 0, burnDps: 0, slow: 0, slowK: 0, flash: 0, kick: 0, charge: 0, scorch: [], seed: (G.rng() * 1e4) | 0,
     sinkT: 0, reveal: 1, t: 0,
     top: mastTop(st), mastsX: [ms[0][0], ms[ms.length - 1][0]],
     hitTest(px, py, r = 0) { return shipHit(this, px, py, r); },
@@ -288,7 +288,7 @@ function updateShip(G, e, dt) {
   e.flash = Math.max(0, e.flash - dt); e.kick = Math.max(0, e.kick - dt * 4);
   if (e.sinkT > 0) {
     e.sinkT += dt; e.vx *= 1 - dt * 0.8; e.x += e.vx * dt;
-    if (Math.random() < dt * 6) spawn(G, 'smoke', e.x + (Math.random() - 0.5) * e.s, laneY(G, e.x) - e.s * 0.3 * (1 - e.sinkT / 3.4), { size: e.s * 0.3, col: '#2a1a2a' });
+    if (e.sinkT < 2.4 && Math.random() < dt * 4) spawn(G, 'smoke', e.x + (Math.random() - 0.5) * e.s, laneY(G, e.x) - e.s * 0.3 * (1 - e.sinkT / 3.4), { size: e.s * 0.22, col: '#6a5468', a: 0.35, rise: 1.6, n: 3 });
     if (e.sinkT > 1.2 && Math.random() < dt * 8) spawn(G, 'spray', e.x + (Math.random() - 0.5) * e.s * 2, laneY(G, e.x), { n: 6, size: e.s / 90 });
     if (e.sinkT > 3.4) e.gone = true;
   } else if (e.alive) {
@@ -349,7 +349,7 @@ export function makeShip(G, kind, x, opts = {}) {
   e.hp = e.maxHp = Math.round(K.hp * (opts.hpMul ?? G.diff ?? 1));
   e.bounty = Math.round(K.bounty * (opts.bountyMul ?? 1));
   e.speed = K.speed; e.guns = K.guns; e.reloadT = K.reload; e.gunDmg = K.dmg;
-  e.reload = K.reload * (0.6 + Math.random() * 0.2);
+  e.reload = K.reload * (0.6 + G.rng() * 0.2);
   e.station = opts.station ?? x;
   e.layer = K.layer || 'lane';
   updateShip(G, e, 0);

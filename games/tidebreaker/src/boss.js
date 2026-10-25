@@ -48,9 +48,11 @@ function decor(layerName, draw, update) {
     hitTest: () => 0, update: update || (() => {}), draw };
 }
 const rnd = (G, a, b) => a + (b - a) * G.rng();
+// The finale hits a little softer than its numbers: players arrive worn down.
+const bossDmgK = (G) => (G.enc?.type === 'leviathan' ? 0.7 : 1);
 function hurtPlayer(G, amount, kind, x) {
   const p = G.player; if (!p || !p.alive) return;
-  damage(G, p, amount, { kind, x: x ?? p.x, y: p.cy ?? p.y - 50, src: 'boss' });
+  damage(G, p, amount * bossDmgK(G), { kind, x: x ?? p.x, y: p.cy ?? p.y - 50, src: 'boss' });
 }
 // Fire through combat.js. kind 'mortar' lobs onto the lane at tx (combat
 // draws its landing ring), anything else flies through (tx, ty). look: how
@@ -58,6 +60,7 @@ function hurtPlayer(G, amount, kind, x) {
 function shoot(G, B, x, y, tx, ty, opts) {
   const from = { x, y, cx: x, cy: y, kind: B.kind, side: 'enemy', dir: -1, boss: true };
   let out = [];
+  if (opts.dmg) opts = { ...opts, dmg: opts.dmg * bossDmgK(G) };
   try { out = enemyFire(G, from, tx, ty ?? laneY(G, tx), { x0: x, y0: y, ...opts }) || []; } catch (e) { console.error(e); }
   if (!Array.isArray(out)) out = [out];
   for (const s of out) {
@@ -100,7 +103,7 @@ function escortThink(G, e, dt) {
     if (e.charge <= 0) {
       e.charge = 0; e.kick = 1;
       const k = 1 + G.stage * 0.07, n = e.kind === 'sloop' ? 1 + (G.rng() < 0.5 ? 1 : 0) : (e.guns || 2);
-      enemyFire(G, e, p.cx + (p.vx || 0) * 0.5, p.cy - p.s * 0.1, { kind: 'ball', n, err: 40, spread: 30, dmg: (e.gunDmg || 5) * k * (e.ghost ? 0.6 : 1), delay: 0.06 });
+      enemyFire(G, e, p.cx + (p.vx || 0) * 0.5, p.cy - p.s * 0.1, { kind: 'ball', n, err: 40, spread: 30, dmg: (e.gunDmg || 5) * k * (e.ghost ? 0.45 : 1), delay: 0.06 });
     }
     return;
   }
@@ -466,7 +469,7 @@ function updateFortress(G, B, dt) {
     if (tw.charge > 0) tw.charge = Math.min(1, tw.charge + dt / 0.95);
     if (tw.fireT <= 0) {
       const x = B.x + tw.ox, y = B.ground - tw.h - 10;
-      shoot(G, B, x, y, tw.tx, null, { kind: 'mortar', T: 1.9, radius: LOB_R, dmg: Math.round(8 * Math.pow(G.diff, 0.8)) });
+      shoot(G, B, x, y, tw.tx, null, { kind: 'mortar', T: 1.9, radius: LOB_R, dmg: Math.round(8 * Math.pow(G.diff, 0.65)) });
       tw.charge = 0;
       tw.fireT = (5 + rnd(G, 0, 2)) * rate * (live.length === 1 ? 0.6 : 1);
     }
@@ -483,7 +486,7 @@ function updateFortress(G, B, dt) {
 
 // ================================================================ serpent
 function initSerpent(G, B) {
-  const hp = Math.round(4000 * G.diff);
+  const hp = Math.round(2600 * G.diff);
   B.sx = 830; B.rise = 0; B.mode = 'rise'; B.mt = 0; B.next = 2.2; B.diveT = 14;
   B.head = { x: 905, y: 206, tilt: 0.42, open: 0.3, s: 120 };
   B.reach = 0; B.target = [400, 480]; B.back = [0, 0]; B.wake = null; B.arch = null; B.lungeLayer = false;
@@ -621,7 +624,7 @@ function updateSerpent(G, B, dt) {
     else if (!B.fired) {
       B.fired = true;
       const mth = serpentHeadPoint(B.head.x, B.head.y, B.head.s, B.head.tilt, 0.95, 0.12);
-      for (const tx of B.spitX) shoot(G, B, mth[0], mth[1], tx, null, { kind: 'mortar', T: 1.25, radius: LOB_R, dmg: Math.round(9 * Math.pow(G.diff, 0.8)), look: 'venom' });
+      for (const tx of B.spitX) shoot(G, B, mth[0], mth[1], tx, null, { kind: 'mortar', T: 1.25, radius: LOB_R, dmg: Math.round(9 * Math.pow(G.diff, 0.65)), look: 'venom' });
       spawn(G, 'spray', mth[0], mth[1], { col: '#c8ff3a', n: 12 });
     } else if (B.mt > wind + 0.5) { B.back = [B.back[0] * 0.9, B.back[1] * 0.9]; if (B.mt > wind + 0.9) toIdle(G, B, 1.6); }
   } else if (m === 'lunge') {
@@ -633,7 +636,7 @@ function updateSerpent(G, B, dt) {
       if (B.reach >= 0.92 && !B.bit) {
         B.bit = true;
         spawn(G, 'splash', B.target[0], laneY(G, B.target[0]) - 6, { size: 36 }); emit('splash', { x: B.target[0], y: LANE_Y, size: 2 });
-        if (p && Math.abs(p.x - B.target[0]) < REACH) hurtPlayer(G, Math.round(17 * Math.pow(G.diff, 0.8)), 'bite', B.target[0]);
+        if (p && Math.abs(p.x - B.target[0]) < REACH) hurtPlayer(G, Math.round(17 * Math.pow(G.diff, 0.65)), 'bite', B.target[0]);
       }
     } else if (B.mt < wind + strike + hold) { B.reach = 1; B.head.open = 0.5; }
     else if (B.mt < wind + strike + hold + back) { B.reach = 1 - (B.mt - wind - strike - hold) / back; B.head.open = 0.4; }
@@ -657,7 +660,7 @@ function updateSerpent(G, B, dt) {
       if (!a.hit) {
         a.hit = true;
         spawn(G, 'splash', a.x, laneY(G, a.x) - 8, { size: 44 }); emit('splash', { x: a.x, y: LANE_Y, size: 3 });
-        if (p && Math.abs(p.x - a.x) < REACH) hurtPlayer(G, Math.round(16 * Math.pow(G.diff, 0.8)), 'coil', a.x);
+        if (p && Math.abs(p.x - a.x) < REACH) hurtPlayer(G, Math.round(16 * Math.pow(G.diff, 0.65)), 'coil', a.x);
       }
     } else if (B.mt < wind + 1.9) a.up = 1 - (B.mt - wind - 1.4) / 0.5;
     else { B.arch = null; toIdle(G, B, 1.2); }
@@ -694,7 +697,7 @@ const TENT = [
   { layer: 'front', r0: 40, base: [560, 580], p: [[470, 300], [270, 150], [340, 230]], reach: [120, 470] },
 ];
 function initLeviathan(G, B) {
-  const H = Math.round(2300 * G.diff), T = Math.round(H * 0.1);
+  const H = Math.round(1250 * G.diff), T = Math.round(H * 0.1);
   B.H = H; B.top = 700; B.rise = 0; B.eyes = [0.3, 0.3]; B.weak = 0; B.maw = 0; B.charge = 0; B.rage = 0;
   B.next = 3.2; B.lock = 0; B.atk = null; B.pull = 0; B.whirl = 0; B.beam = null; B.summons = 0; B.phantoms = [];
   B.tents = [];
@@ -902,7 +905,7 @@ function updateLeviathan(G, B, dt) {
     ph.t += dt;
     if (!ph.hit && ph.t >= ph.wind + 0.2) {
       ph.hit = true; spawn(G, 'splash', ph.tx, LANE_Y - 10, { size: 40 }); emit('splash', { x: ph.tx, y: LANE_Y, size: 3 });
-      if (p && Math.abs(p.x - ph.tx) < REACH) hurtPlayer(G, Math.round(15 * Math.pow(G.diff, 0.8)), 'slam', ph.tx);
+      if (p && Math.abs(p.x - ph.tx) < REACH) hurtPlayer(G, Math.round(15 * Math.pow(G.diff, 0.65)), 'slam', ph.tx);
     }
   }
   B.phantoms = B.phantoms.filter((ph) => ph.t < ph.end + 0.6);
@@ -936,7 +939,7 @@ function updateLeviathan(G, B, dt) {
       if (atk.t >= atk.wind && !atk.done) {
         atk.done = true;
         const [mx, my] = mawPos(B);
-        for (const tx of atk.xs) shoot(G, B, mx, my, tx, null, { kind: 'mortar', T: 1.2, radius: LOB_R, dmg: Math.round(9 * Math.pow(G.diff, 0.8)), look: 'bolt', col: '#ff6aa8' });
+        for (const tx of atk.xs) shoot(G, B, mx, my, tx, null, { kind: 'mortar', T: 1.2, radius: LOB_R, dmg: Math.round(9 * Math.pow(G.diff, 0.65)), look: 'bolt', col: '#ff6aa8' });
       }
       if (atk.t > atk.wind + 0.5) B.atk = null;
     } else if (atk.kind === 'spit') {
@@ -944,7 +947,7 @@ function updateLeviathan(G, B, dt) {
       if (atk.t >= atk.wind && !atk.done) {
         atk.done = true;
         const [mx, my] = mawPos(B);
-        shoot(G, B, mx, my, atk.tx, null, { kind: 'mortar', T: 1.5, radius: LOB_R + 4, dmg: Math.round(14 * Math.pow(G.diff, 0.8)), look: 'spit' });
+        shoot(G, B, mx, my, atk.tx, null, { kind: 'mortar', T: 1.5, radius: LOB_R + 4, dmg: Math.round(14 * Math.pow(G.diff, 0.65)), look: 'spit' });
       }
       if (atk.t > atk.wind + 0.4) B.atk = null;
     } else if (atk.kind === 'beam') {
@@ -955,7 +958,7 @@ function updateLeviathan(G, B, dt) {
         B.charge = 1;
         if (p) bm.x = clamp(bm.x + clamp(p.x - bm.x, -1, 1) * 70 * dt, p.x + 1, PLAYER_X.max + 60);
         bm.tick -= dt;
-        if (bm.tick <= 0) { bm.tick = 0.25; spawn(G, 'splash', bm.x, LANE_Y - 10, { size: 24 }); if (p && Math.abs(p.x - bm.x) < REACH) hurtPlayer(G, Math.round(5 * Math.pow(G.diff, 0.8)), 'beam', bm.x); }
+        if (bm.tick <= 0) { bm.tick = 0.25; spawn(G, 'splash', bm.x, LANE_Y - 10, { size: 24 }); if (p && Math.abs(p.x - bm.x) < REACH) hurtPlayer(G, Math.round(5 * Math.pow(G.diff, 0.65)), 'beam', bm.x); }
         if (bm.zone) { bm.zone.x = bm.x; bm.zone.t = 0; }
       } else { B.beam = null; B.charge = 0; B.atk = null; }
     }
@@ -1011,12 +1014,12 @@ function tentacleAct(G, B, tp) {
   else if (tp.st === 'slam' && s >= 0.2) {
     tp.st = 'hold'; tp.st_t = 0;
     spawn(G, 'splash', tp.tx, LANE_Y - 10, { size: 44 }); emit('splash', { x: tp.tx, y: LANE_Y, size: 3 }); emit('explode', { x: tp.tx, y: LANE_Y, size: 0.5 });
-    if (p && Math.abs(p.x - tp.tx) < REACH) hurtPlayer(G, Math.round(12 * Math.pow(G.diff, 0.8)), 'slam', tp.tx);
+    if (p && Math.abs(p.x - tp.tx) < REACH) hurtPlayer(G, Math.round(12 * Math.pow(G.diff, 0.65)), 'slam', tp.tx);
   } else if (tp.st === 'hold' && s >= 0.9) { tp.st = 'back'; tp.st_t = 0; }
   else if (tp.st === 'back' && s >= 0.7) { tp.st = 'idle'; tp.st_t = 0; if (B.lock === tp) B.lock = 0; }
   else if (tp.st === 'swwind' && s >= 1.55) { tp.st = 'sweep'; tp.st_t = 0; spawn(G, 'splash', tp.band[tp.dir > 0 ? 0 : 1], LANE_Y - 10, { size: 32 }); }
   else if (tp.st === 'sweep') {
-    if (!tp.hits && p && tp.sweepX != null && Math.abs(p.x - tp.sweepX) < REACH) { tp.hits = true; hurtPlayer(G, Math.round(12 * Math.pow(G.diff, 0.8)), 'sweep', tp.sweepX); }
+    if (!tp.hits && p && tp.sweepX != null && Math.abs(p.x - tp.sweepX) < REACH) { tp.hits = true; hurtPlayer(G, Math.round(12 * Math.pow(G.diff, 0.65)), 'sweep', tp.sweepX); }
     if (s >= 0.3 && ((s * 10) | 0) % 2 === 0 && tp.sweepX != null) spawn(G, 'spray', tp.sweepX, LANE_Y - 14, { n: 4 });
     if (s >= 0.75) { tp.st = 'back'; tp.st_t = 0; tp.tx = tp.sweepX ?? tp.band[0]; }
   }

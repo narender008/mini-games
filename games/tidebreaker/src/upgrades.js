@@ -38,7 +38,7 @@ const list = [
   { id: 'kraken', name: 'Kraken Ally', rarity: 'legendary', max: 3, art: 'kraken',
     desc: (r) => r === 1 ? ['Call a tentacle from the', 'deep to crush a ship.'] : ['The deep answers louder:', 'another arm rises.'],
     chips: (r) => r === 1 ? ['UNLOCKS F', `${30} DPS`] : [`${1 + (r - 1)} TENTACLES`, `${30 + 12 * (r - 1)} DPS`],
-    apply(s, r) { s.kraken = r; s.krakenTentacles += r - 1; s.krakenDmg += 12 * (r - 1); s.cdKraken -= 3 * (r - 1); } },
+    apply(s, r) { s.kraken = r; s.krakenTentacles += r - 1; s.krakenDmg += 15 * (r - 1); s.cdKraken -= 3 * (r - 1); } },
 
   // ---------------------------------------------------------------- guns
   { id: 'heavy', name: 'Heavy Shot', rarity: 'common', max: 5, art: 'heavy',
@@ -67,13 +67,13 @@ const list = [
   // ---------------------------------------------------------------- the ship
   { id: 'hull', name: 'Copper-bottomed Hull', rarity: 'common', max: 5, art: 'hull',
     desc: lines('Copper sheathing and', 'fresh oak planking.'), chips: () => ['+45 HULL'],
-    apply(s, r) { s.maxHull += 45 * r; } },
+    apply(s, r) { s.maxHull += 60 * r; } },
   { id: 'surgeon', name: "Ship's Surgeon", rarity: 'rare', max: 3, art: 'surgeon',
     desc: lines('Patches crew and hull', 'between the volleys.'), chips: () => ['+1.5 HULL/s'],
-    apply(s, r) { s.regen += 1.5 * r; } },
+    apply(s, r) { s.regen += 2.5 * r; } },
   { id: 'armor', name: 'Iron Plating', rarity: 'rare', max: 3, art: 'armor',
     desc: lines('Riveted iron along', 'the waterline.'), chips: () => ['-10% DMG TAKEN'],
-    apply(s, r) { s.armor = Math.min(0.6, s.armor + 0.1 * r); } },
+    apply(s, r) { s.armor = Math.min(0.6, s.armor + 0.12 * r); } },
   { id: 'rigging', name: 'Swift Rigging', rarity: 'common', max: 3, art: 'rigging',
     desc: lines('Taut lines and new', 'canvas catch every gust.'), chips: () => ['+15% SPEED'],
     apply(s, r) { s.speed *= 1 + 0.15 * r; } },
