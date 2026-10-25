@@ -1,0 +1,15 @@
+{
+  "name": "emberfall-tests",
+  "private": true,
+  "description": "Automated tests for Emberfall: browser smoke tests, world and physics checks, a critical-path bot playthrough with save/load, and scene screenshots.",
+  "scripts": {
+    "test": "node run.cjs",
+    "smoke": "node --test --test-reporter=spec smoke.test.cjs",
+    "world": "node --test --test-reporter=spec world.test.cjs",
+    "bot": "node bot.cjs",
+    "shots": "node screenshots.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
