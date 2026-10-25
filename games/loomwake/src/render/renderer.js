@@ -47,9 +47,17 @@ export function createRenderer(G, canvas, opts = {}) {
     world: (c) => c.setTransform(SCALE, 0, 0, SCALE, W / 2 - (cam.x + cam.sx) * SCALE, H / 2 - (cam.y + cam.sy) * SCALE),
   };
 
+  // The canvas is capped in pixels as well as in device-pixel ratio: a retina laptop (2880x1800) or a 4K
+  // monitor gave a 5-8 megapixel canvas plus a dozen screen-size layers (vignette, light layer, parallax
+  // caches) of the same size in CPU memory, which stalled every resize and could leave Chrome's canvas memory
+  // exhausted (a blank screen). Q.maxPx is the budget at scale 1.
+  let seenDpr = 0;
   R.resize = () => {
-    cssW = innerWidth; cssH = innerHeight;
-    DPR = Math.min(devicePixelRatio || 1, Q.dprCap) * Q.scale;
+    cssW = innerWidth; cssH = innerHeight; seenDpr = devicePixelRatio || 1;
+    let d = Math.min(seenDpr, Q.dprCap);
+    const px = cssW * cssH * d * d, cap = Q.maxPx || 2.4e6;
+    if (px > cap) d *= Math.sqrt(cap / px);
+    DPR = d * Q.scale;
     W = Math.max(2, Math.round(cssW * DPR)); H = Math.max(2, Math.round(cssH * DPR));
     if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
     BASE = Math.max(cssH / 640, cssW / 1180) * DPR; P.dpr = DPR;
@@ -57,8 +65,11 @@ export function createRenderer(G, canvas, opts = {}) {
     const v = VIG.getContext('2d'), g = v.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
     g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(2,2,12,0.7)'); v.fillStyle = g; v.fillRect(0, 0, W, H);
   };
-  addEventListener('resize', R.resize);
+  // window resizes and moves to a screen with another pixel ratio are picked up at the start of the next
+  // frame (R.draw), so the canvas is never cleared between a paint and its presentation
   R.resize();
+  // a lost 2D context (GPU reset, memory pressure) comes back empty: repaint the chamber layers from scratch
+  canvas.addEventListener('contextrestored', () => { envFor = null; R.resize(); });
 
   R.setModules = (m) => { Object.assign(M, m); P.weapons = M.weapons; if (m.env) envFor = null; };
 
@@ -77,6 +88,7 @@ export function createRenderer(G, canvas, opts = {}) {
     const eq = Q.tier === 'high' && Q.scale >= 0.95 ? Q.floorRes : Math.min(Q.floorRes, 0.94);
     if (envFor === ch && env && envTier === Q.tier && envQ === eq) return env;
     envFor = ch; envTier = Q.tier; envQ = eq;
+    if (Q.pause) Q.pause(1000);
     const paint = pick(M.env, 'paintChamber', 'paint');
     env = null;
     if (paint) { try { env = paint(ch, eq); } catch (err) { console.error('[loomwake] env painter failed', err); env = null; } }
@@ -238,7 +250,20 @@ export function createRenderer(G, canvas, opts = {}) {
   const PROF = R.prof = {};
   let pT = 0;
   const mark = (k) => { if (!R.profOn) return; if (R.profFlush) ctx.getImageData(0, 0, 1, 1); const n = performance.now(); PROF[k] = (PROF[k] || 0) * 0.95 + (n - pT) * 0.05; pT = n; };
+  // A painter that throws must cost only its own drawing, not the rest of the frame (lighting, overlays) and
+  // never the frames after it: each sorted actor and module painter runs guarded, and a throw that left
+  // save()s open (a clip, a transform) is unwound by resetting the context at the next frame's start.
+  let ctxDirty = false;
+  const seenErr = new Set();
+  const fail = (where, err) => {
+    ctxDirty = true;
+    const k = where + ':' + (err && err.message);
+    if (seenErr.size < 40 && !seenErr.has(k)) { seenErr.add(k); console.error('[loomwake] painter failed:', where, err); }
+  };
+  const guard = (where, f, ...a) => { if (!f) return; try { f(...a); } catch (err) { fail(where, err); } };
   R.draw = (G, dt) => {
+    if (ctxDirty) { ctxDirty = false; if (typeof ctx.reset === 'function') ctx.reset(); else { for (let i = 0; i < 64; i++) ctx.restore(); } }
+    if (innerWidth !== cssW || innerHeight !== cssH || (devicePixelRatio || 1) !== seenDpr) R.resize();
     if (R.profOn) pT = performance.now();
     t += dt; P.t = t; P.tier = Q.tier; view.t = t;
     cam.shakeMul = G.settings?.shake ?? 1;
@@ -256,7 +281,7 @@ export function createRenderer(G, canvas, opts = {}) {
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = '#05061a'; ctx.fillRect(0, 0, W, H);
     const camInfo = { x: cam.x, y: cam.y, scale: SCALE, w: W, h: H, sx: cam.sx, sy: cam.sy };
-    if (E && E.back) E.back(ctx, camInfo, t);
+    if (E && E.back) guard('env.back', E.back, ctx, camInfo, t);
     mark('back');
     P.world(ctx);
     if (E) {
@@ -266,10 +291,10 @@ export function createRenderer(G, canvas, opts = {}) {
     mark('floor');
     for (const z of G.zones) drawZone(ctx, z);
     const powers = pick(M.powers, 'drawPowers');
-    if (powers) powers(ctx, G, P, 'ground');
+    if (powers) guard('powers.ground', powers, ctx, G, P, 'ground');
     for (const tg of G.telegraphs) drawTelegraph(ctx, tg);
     const foeFx = pick(M.enemies, 'drawFoeFx');
-    if (foeFx) foeFx(ctx, G, P);
+    if (foeFx) guard('foeFx', foeFx, ctx, G, P);
     if (h) drawHeroGhosts(ctx, h, G, P);
     mark('ground');
     // ---- y-sorted world
@@ -293,17 +318,19 @@ export function createRenderer(G, canvas, opts = {}) {
     if (ch && ch.doors) { const dd = pick(M.env, 'drawDoor'); for (const d of ch.doors) push(d.y, () => (dd ? dd(ctx, d, ch, t, P) : drawFallbackDoor(ctx, d, ch, t, P)), 'door'); }
     for (const p of G.pickups) push(p.y, () => drawFallbackPickup(ctx, p, G, P), 'pickup');
     const npc = pick(M.npcs, 'drawNpc', 'drawNPC', 'draw', 'default');
-    if (npc && G.npcs) for (const n of G.npcs) push(n.y, () => { ctx.save(); ctx.translate(n.x, n.y); npc(ctx, n, G, P); ctx.restore(); }, 'npc');
+    if (npc && G.npcs) for (const n of G.npcs) push(n.y, () => { ctx.save(); try { ctx.translate(n.x, n.y); npc(ctx, n, G, P); } finally { ctx.restore(); } }, 'npc');
     const drawFoe = pick(M.enemies, 'drawFoe');
     const BP = M.bosses?.PAINTERS;
     for (const e of G.foes) {
       if (e.gone) continue;
       push(e.y, () => {
-        ctx.save(); ctx.translate(e.x, e.y - (e.z || 0));
-        if (e.boss && BP && BP[e.kind]) BP[e.kind](ctx, e, G, P);
-        else if (!e.fallback && drawFoe) drawFoe(ctx, e, G, P);
-        else drawFallbackFoe(ctx, e, G, P);
-        ctx.restore();
+        ctx.save();
+        try {
+          ctx.translate(e.x, e.y - (e.z || 0));
+          if (e.boss && BP && BP[e.kind]) BP[e.kind](ctx, e, G, P);
+          else if (!e.fallback && drawFoe) drawFoe(ctx, e, G, P);
+          else drawFallbackFoe(ctx, e, G, P);
+        } finally { ctx.restore(); }
       }, e.boss ? 'boss' : 'foe');
     }
     if (h && !h.hidden && G.scene !== 'title' && G.scene !== 'profiles') push(h.y, () => drawHero(ctx, h, G, P), 'hero');
@@ -315,7 +342,8 @@ export function createRenderer(G, canvas, opts = {}) {
     const PI = R.profItems;
     for (const it of L) {
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; if (ctx.filter !== 'none') ctx.filter = 'none';
-      if (PI) { const t0 = performance.now(); it.f(); ctx.getImageData(0, 0, 1, 1); PI[it.cat] = (PI[it.cat] || 0) + performance.now() - t0; } else it.f();
+      if (PI) { const t0 = performance.now(); it.f(); ctx.getImageData(0, 0, 1, 1); PI[it.cat] = (PI[it.cat] || 0) + performance.now() - t0; }
+      else { try { it.f(); } catch (err) { fail(it.cat, err); ctx.setTransform(1, 0, 0, 1, 0, 0); P.world(ctx); } }
     }
     for (const p of G.projectiles) if (isFoeOwn(p)) { try { M.enemies.drawFoeProjectile(ctx, p, G, P); } catch (err) { console.error('[loomwake] drawFoeProjectile', err); } }
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
@@ -324,10 +352,10 @@ export function createRenderer(G, canvas, opts = {}) {
     ctx.globalCompositeOperation = 'lighter';
     if (h && !h.hidden) drawHeroAdd(ctx, h, G, P);
     const dw = pick(M.weapons, 'drawWeaponFx');
-    if (dw && h) dw(ctx, h, G, P);
+    if (dw && h) guard('weaponFx', dw, ctx, h, G, P);
     for (const p of G.projectiles) drawProjectile(ctx, p);
     fx.drawAdd(ctx, P);
-    if (powers) powers(ctx, G, P, 'air');
+    if (powers) guard('powers.air', powers, ctx, G, P, 'air');
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
     // ---- lighting
     mark('add');
@@ -359,7 +387,7 @@ export function createRenderer(G, canvas, opts = {}) {
     } : null);
     mark('light');
     // ---- above the darkness
-    if (E && E.ambient) E.ambient(ctx, G, t);
+    if (E && E.ambient) guard('env.ambient', E.ambient, ctx, G, t);
     // swamped by effects (late builds): the telegraph edges again, above the effects and the darkness
     const clut = fx.clutter || 0;
     if (clut > 0.05) for (const tg of G.telegraphs) drawTelegraph(ctx, tg, 0.4 + 0.5 * clut);
@@ -376,13 +404,13 @@ export function createRenderer(G, canvas, opts = {}) {
       const xk = Math.max(xrayK, clut * 0.75);
       if (xk > 0.02) drawHeroXray(ctx, h, G, P, xk);
     }
-    const ov = pick(M.bosses, 'drawOverlay'); if (ov) ov(ctx, G, P);
+    const ov = pick(M.bosses, 'drawOverlay'); if (ov) guard('boss.overlay', ov, ctx, G, P);
     drawBars(ctx);
     fx.drawTop(ctx, P);
     mark('top');
     // ---- screen space
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (E && E.front) E.front(ctx, camInfo, t, dt);
+    if (E && E.front) guard('env.front', E.front, ctx, camInfo, t, dt);
     mark('front');
     doorArrows(G, dt);
     // (a full-screen soft-light pass: the high tier only)

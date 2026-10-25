@@ -162,7 +162,43 @@ function arenaTick(dt) {
 }
 
 // ---------------------------------------------------------------- loop
+// ---------------------------------------------------------------- render interpolation
+// The sim steps at 120 Hz but displays refresh at 60, 75, 144, 165 Hz with a wobbling clock, so a frame sees
+// 0, 1, 2 or 3 steps. Drawing the raw positions made Iri and every foe stutter against the smoothly following
+// camera. Each tick remembers where the movers were; a frame draws them blended between the last two ticks
+// (alpha = acc / DT) and puts the true positions back before anything else reads them. Render-only: the sim,
+// saves and the seeded replay never see the blend.
+const prevPos = new WeakMap();
+let lerpTick = 0;
+const MOVERS = ['foes', 'projectiles', 'pickups', 'npcs'];
+function snapOne(o) { if (!o) return; let p = prevPos.get(o); if (!p) { p = { x: 0, y: 0, t: -1, cx: 0, cy: 0, on: false }; prevPos.set(o, p); } p.x = o.x; p.y = o.y; p.t = lerpTick; }
+function snapshot() {
+  lerpTick++;
+  snapOne(G.hero);
+  for (const k of MOVERS) { const L = G[k]; if (L) for (let i = 0; i < L.length; i++) snapOne(L[i]); }
+}
+const blended = [];
+function blendOne(o, a) {
+  const p = o && prevPos.get(o);
+  if (!p || p.t !== lerpTick || !Number.isFinite(o.x) || !Number.isFinite(o.y)) return;
+  const dx = o.x - p.x, dy = o.y - p.y;
+  if (dx * dx + dy * dy > 160 * 160) return;   // a teleport (door, respawn, blink): no smear across the room
+  p.cx = o.x; p.cy = o.y; p.on = true;
+  o.x = p.x + dx * a; o.y = p.y + dy * a;
+  blended.push(o);
+}
+function blend(a) {
+  if (!(a > 0.001 && a < 0.999)) return;
+  blendOne(G.hero, a);
+  for (const k of MOVERS) { const L = G[k]; if (L) for (let i = 0; i < L.length; i++) blendOne(L[i], a); }
+}
+function unblend() {
+  for (let i = 0; i < blended.length; i++) { const o = blended[i], p = prevPos.get(o); if (p && p.on) { o.x = p.cx; o.y = p.cy; p.on = false; } }
+  blended.length = 0;
+}
+
 function tick() {
+  snapshot();
   input.sample(G);
   if (auto && MODS.bot && G.scene !== 'loading') { try { MODS.bot.botTick(G); } catch (err) { console.error('[loomwake] bot', err); auto = false; } }
   G.t += DT; G.frame++;
@@ -177,28 +213,37 @@ let last = performance.now(), acc = 0, errors = 0;
 // would otherwise buy more sim work for the next one)
 const MAX_STEPS = 6;
 function frame(now) {
+  // schedule the next frame first: an exception anywhere below must never stop the loop (a frozen picture)
+  requestAnimationFrame(frame);
   const t0 = performance.now();
-  const dtMs = now - last; last = now;
-  const dt = Math.min(0.1, Math.max(0, dtMs / 1000));
-  let n = 0, t1 = t0, t2 = t0;
+  // rAF's timestamp can run behind the previous one on some browsers (and after a tab switch): never negative
+  const dtMs = Math.max(0, now - last); last = Math.max(last, now);
+  const dt = Math.min(0.1, dtMs / 1000);
+  let n = 0, t1 = t0, t2 = t0, hx = null;
+  // the quality governor judges the last interval and may change the resolution: resizing clears the canvas,
+  // so it happens here, before this frame paints, never after (that showed a black frame)
+  if (!frozen && dtMs > 0 && quality.frame(dtMs, frameLog.length ? frameLog[frameLog.length - 1].js : -1)) renderer.resize();
   try {
     if (!frozen) {
       acc += dt * (G.slow ?? 1);
-      while (acc >= DT && n < MAX_STEPS) { tick(); acc -= DT; n++; }
-      if (n >= MAX_STEPS) acc = 0;
+      // a throwing step is still a step (the clock moves on) and never takes the frame's drawing with it
+      while (acc >= DT && n < MAX_STEPS) { acc -= DT; n++; try { tick(); } catch (err) { if (errors++ < 5 || errors % 600 === 0) console.error('[loomwake] sim step error', errors, err); } }
+      if (n >= MAX_STEPS) acc = Math.min(acc, DT * 0.99);
     }
     t1 = performance.now();
-    renderer.draw(G, frozen ? 0 : dt);
+    blend(frozen ? 0 : acc / DT);
+    try {
+      hx = G.hero ? G.hero.x : null;
+      renderer.draw(G, frozen ? 0 : dt);
+    } finally { unblend(); }
     t2 = performance.now();
     if (ui && ui.update) ui.update(G);
   } catch (err) {
     if (errors++ < 5) console.error('[loomwake] frame error', err);
   }
   const t3 = performance.now(), js = t3 - t0, r2 = (v) => Math.round(v * 100) / 100;
-  frameLog.push({ dt: r2(dtMs), js: r2(js), sim: r2(t1 - t0), draw: r2(t2 - t1), ui: r2(t3 - t2), steps: n });
+  frameLog.push({ dt: r2(dtMs), js: r2(js), sim: r2(t1 - t0), draw: r2(t2 - t1), ui: r2(t3 - t2), steps: n, hx });
   if (frameLog.length > 600) frameLog.splice(0, frameLog.length - 600);
-  if (!frozen && quality.frame(dtMs)) renderer.resize();
-  requestAnimationFrame(frame);
 }
 
 // ---------------------------------------------------------------- debug hook

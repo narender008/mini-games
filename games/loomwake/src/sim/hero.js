@@ -184,7 +184,7 @@ function updateSnare(G, h, dt) {
     if (s.t > c.lodge) { s.state = 'back'; s.d = Math.hypot(s.x - h.x, s.y - h.y); s.dx = (s.x - h.x) / (s.d || 1); s.dy = (s.y - h.y) / (s.d || 1); }
   } else if (s.state === 'pull') {
     const e = G.foes.find((f) => f.id === s.target);
-    if (!e || e.dead) { h.snare = null; return; }
+    if (!e || e.dead) { h.snare = null; if (h.state === 'snareRecall') endAction(h); return; }
     const dx = h.x - e.x, dy = h.y - e.y, d = Math.hypot(dx, dy) || 1;
     s.x = e.x; s.y = e.y;
     const reach = e.r + h.r + 26;

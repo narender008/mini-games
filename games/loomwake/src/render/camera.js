@@ -17,8 +17,8 @@ function bossHeight(B) { const d = BOSSES[B.kind] || BOSSES[B.id]; return d?.fra
 
 export function createCamera(G) {
   const cam = { x: 0, y: 0, zoom: 1, zoomTarget: 1, shake: 0, sx: 0, sy: 0, kx: 0, ky: 0, punchZ: 0, t: 0, shakeMul: 1 };
-  cam.addShake = (a) => { cam.shake = Math.min(1, cam.shake + a); };
-  cam.kick = (dx, dy, p) => { const l = Math.hypot(dx, dy) || 1; cam.kx += (dx / l) * p; cam.ky += (dy / l) * p; };
+  cam.addShake = (a) => { if (Number.isFinite(a)) cam.shake = Math.min(1, cam.shake + a); };
+  cam.kick = (dx, dy, p) => { if (!Number.isFinite(dx) || !Number.isFinite(dy) || !Number.isFinite(p)) return; const l = Math.hypot(dx, dy) || 1; cam.kx += (dx / l) * p; cam.ky += (dy / l) * p; };
   cam.snap = (x, y) => { cam.x = x; cam.y = y; cam.kx = cam.ky = 0; };
   cam.punch = (z) => { cam.punchZ = Math.max(cam.punchZ, z); };
   G.bus.on('shake', ({ a, x, y }) => { cam.addShake(a); const h = G.hero; if (h && x != null) cam.kick(x - h.x, y - h.y, a * 14); });
@@ -93,6 +93,7 @@ export function createCamera(G) {
     const sceneZoom = G.ui?.camZoom ?? (fit ? fit.zoom : baseZoom);
     cam.zoomTarget = sceneZoom;
     cam.zoom = lerp(cam.zoom, cam.zoomTarget + cam.punchZ, 1 - Math.exp(-dt * 6));
+    if (!(cam.zoom > 0) || !Number.isFinite(cam.zoom)) cam.zoom = baseZoom;
     cam.punchZ = Math.max(0, cam.punchZ - dt * 0.4);
     if (h) {
       let lead = c.lead;
@@ -104,6 +105,9 @@ export function createCamera(G) {
       else if (fit) { tx = fit.cx ? fit.x : lerp(tx, fit.x, 0.85); ty = fit.cy ? fit.y : lerp(ty, fit.y, 0.85); fitT.x = tx; fitT.y = ty; keepHero(fitT, h, cam.base * Math.min(cam.zoom, fit.zoom)); tx = fitT.x; ty = fitT.y; }
       const k = 1 - Math.exp(-dt * c.follow);
       cam.x = lerp(cam.x, tx, k); cam.y = lerp(cam.y, ty, k);
+      // a single non-finite target (a NaN hero position for one tick) would otherwise stick in the lerp forever
+      // and the whole world would vanish: start again from the target (the origin if that is bad too)
+      if (!Number.isFinite(cam.x) || !Number.isFinite(cam.y)) { cam.x = Number.isFinite(tx) ? tx : 0; cam.y = Number.isFinite(ty) ? ty : 0; }
       // soft clamp: keep the chamber from sliding fully off screen
       const ch = G.chamber;
       if (ch && ch.shape && ch.shape.length > 2 && !fit) {

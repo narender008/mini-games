@@ -382,7 +382,7 @@ function front(ctx, cam, t) {
   }
   // flakes of colour drifting up and greying
   for (let i = 0; i < 40; i++) {
-    const [x, y, fa] = drift(i, t, 7.7, W, H, Math.sin(t + i) * 12, -18 - (i % 5) * 6);
+    const dr = drift(i, t, 7.7, W, H, Math.sin(t + i) * 12, -18 - (i % 5) * 6), x = dr[0], y = dr[1], fa = dr[2];
     const fadeCol = mix(TH[i % TH.length], '#8a8494', y / H < 0.5 ? 0.8 : 0.2);
     ctx.globalAlpha = 0.55; ctx.fillStyle = fadeCol;
     ctx.save(); ctx.translate(x, y); ctx.rotate(t * (1 + fa) + i); ctx.fillRect(-3 * k, -1.5 * k, 6 * k, 3 * k); ctx.restore();
@@ -398,7 +398,7 @@ function makeAmbient(ch) {
     ctx.lineCap = 'round';
     // thread wisps drifting through the air
     for (let i = 0; i < 26; i++) {
-      const [x, y, fa] = drift(i, t, 5.5, W, H, 18 + (i % 4) * 6, -8 + Math.sin(i) * 6);
+      const dr = drift(i, t, 5.5, W, H, 18 + (i % 4) * 6, -8 + Math.sin(i) * 6), x = dr[0], y = dr[1], fa = dr[2];
       const px = v.x0 + x, py = v.y0 + y - 60, L = 24 + fa * 40, ph = t * 2 + i;
       ctx.strokeStyle = hexA(TH[i % TH.length], 0.6); ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(px, py); ctx.bezierCurveTo(px + L * 0.3, py + Math.sin(ph) * 8, px + L * 0.6, py - Math.sin(ph) * 8, px + L, py + Math.sin(ph + 1) * 5); ctx.stroke();

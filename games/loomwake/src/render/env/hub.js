@@ -768,7 +768,7 @@ function front(ctx, cam, t) {
   ctx.fillStyle = 'rgba(255,214,150,0.5)';
   ctx.beginPath();
   for (let i = 0; i < 46; i++) {
-    const [x, y, fa] = drift(i, t, 9.1, W, H, Math.sin(t * 0.3 + i) * 8, -4 - (i % 4) * 3);
+    const dr = drift(i, t, 9.1, W, H, Math.sin(t * 0.3 + i) * 8, -4 - (i % 4) * 3), x = dr[0], y = dr[1], fa = dr[2];
     const s = (1 + fa * 1.8) * k;
     ctx.rect(x, y, s, s);
   }

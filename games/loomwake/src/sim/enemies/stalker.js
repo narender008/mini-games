@@ -12,7 +12,7 @@ const M = {
     const d = heroDist(G, e);
     // when our attack is ready, close in; otherwise hold the ring and flank
     const want = e.cd <= 0.3 ? 110 : e.ring;
-    const [tx, ty] = ringPoint(G, e, want, dt, d < 260 ? 0.6 : 0.15);
+    const rp = ringPoint(G, e, want, dt, d < 260 ? 0.6 : 0.15), tx = rp[0], ty = rp[1];
     goTo(G, e, tx, ty, e.speed * (d > 400 ? 1.1 : 0.85), dt, 6);
     turn(e, heroAng(G, e), 6, dt);
     if (rnd(G)() < dt * 0.25) e.flank = -e.flank;

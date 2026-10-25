@@ -202,6 +202,14 @@ export function speaker(id, G) {
 }
 
 const PCACHE = new Map();
+// A first portrait costs 80-140 ms to paint: the dialogue size of each speaker is painted one per idle slot
+// after boot, so a conversation never opens on a hitch.
+export function warmPortraits(size = 320) {
+  const ids = (D.portraits?.portraitIds?.() || []).slice();
+  const idle = window.requestIdleCallback || ((f) => setTimeout(() => f({ timeRemaining: () => 8 }), 200));
+  const next = () => { const id = ids.shift(); if (!id) return; portrait(id, 'neutral', size); idle(next, { timeout: 3000 }); };
+  idle(next, { timeout: 3000 });
+}
 export function portrait(id, mood = 'neutral', size = 256) {
   if (!id || id === 'narrator') return null;
   const key = id + '|' + mood + '|' + size;

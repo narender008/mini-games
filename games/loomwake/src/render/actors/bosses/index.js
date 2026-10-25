@@ -23,6 +23,11 @@ const DIE = { veyl: 2.2, morrow: 2.0, aurum: 1.9, sable: 2.2 };   // keep in ste
 
 // A render clock per boss: while the sim is paused (a conversation over the intro or the defeat), the
 // painter still breathes and the intro still plays, on wall time added on top of G.t.
+// A clock only counts as stopped once it has stood still for STILL seconds of wall time: a frame drawn between
+// two sim ticks (any display faster than the 120 Hz sim, or slow motion) or a hit-stop is not a pause, and
+// counting those let the boss's poses run ahead of its real attack timing (17% fast at 144 Hz, more with every
+// hit-stop) and kept it moving through hit-stops. The first STILL seconds of a real pause are added back at once (never a hidden tab's gap).
+const STILL = 0.25;
 const nowS = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
 function clockFor(e, G) {
   const A = e.anim || (e.anim = {});
@@ -30,12 +35,12 @@ function clockFor(e, G) {
   const rdt = A._rw == null ? 0 : Math.min(0.05, Math.max(0, now - A._rw));
   A._rw = now;
   // G.t may keep running in some scenes while the boss is not stepped, so watch both clocks
-  const paused = A._gt === G.t, held = A._est === e.st;
-  A._gt = G.t;
-  if (A._st !== e.state) { A._st = e.state; A._stAdd = 0; }
-  else if (held) A._stAdd = (A._stAdd || 0) + rdt;
-  A._est = e.st;
-  if (paused) A._off = (A._off || 0) + rdt;
+  if (A._gt !== G.t || A._gtW == null) { A._gt = G.t; A._gtW = now; }
+  if (A._st !== e.state) { A._st = e.state; A._stAdd = 0; A._est = e.st; A._estW = now; A._held = false; }
+  else if (A._est !== e.st) { A._est = e.st; A._estW = now; A._held = false; }
+  const heldFor = now - A._estW, pausedFor = now - A._gtW;
+  if (heldFor > STILL) { A._stAdd = (A._stAdd || 0) + (A._held ? rdt : Math.min(heldFor, STILL + rdt)); A._held = true; }
+  if (pausedFor > STILL) { A._off = (A._off || 0) + (A._paused ? rdt : Math.min(pausedFor, STILL + rdt)); A._paused = true; } else A._paused = false;
   return A;
 }
 function wrap(id, paint) {

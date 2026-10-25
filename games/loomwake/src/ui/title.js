@@ -33,6 +33,9 @@ export function createTitle(ui) {
   const { call } = ui;
   const canvas = h('canvas', { class: 'ttl-bg', 'aria-hidden': 'true' });
   const art = createTitleArt(canvas);
+  // the art stops a moment after the title hides (it fades out first); coming back inside that moment must
+  // cancel the stop, or the title stands frozen
+  let stopT = 0;
   const bCont = h('button', { class: 'btn primary', id: 'btn-continue', type: 'button' }, h('span', { class: 'lb', text: 'Continue' }), h('span', { class: 'ar', html: icon('chevron') }));
   const bNew = h('button', { class: 'btn', id: 'btn-new', type: 'button' }, h('span', { class: 'lb', text: 'New Game' }), h('span', { class: 'ar', html: icon('chevron') }));
   const bSet = h('button', { class: 'btn', id: 'btn-settings', type: 'button' }, h('span', { html: icon('gear') }), 'Settings');
@@ -147,8 +150,8 @@ export function createTitle(ui) {
 
   return {
     el, modal: true,
-    show() { renderProfiles(); art.start(); refreshT = 0; if (ui.G.scene !== 'profiles') eyebrow.textContent = 'Choose your thread'; },
-    hide() { setTimeout(() => art.stop(), 400); },
+    show() { clearTimeout(stopT); renderProfiles(); art.start(); refreshT = 0; if (ui.G.scene !== 'profiles') eyebrow.textContent = 'Choose your thread'; },
+    hide() { clearTimeout(stopT); stopT = setTimeout(() => art.stop(), 400); },
     update(G, dt) {
       refreshT += dt;
       if (refreshT > 3) { refreshT = 0; const a = document.activeElement; if (!plist.contains(a)) renderProfiles(); }

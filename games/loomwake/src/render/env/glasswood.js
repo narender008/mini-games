@@ -8,6 +8,7 @@ import {
   noise2, worldCanvas, fillGrain, lip, markStart, mark, marks, drawDrift, strokes, innerShade, cliff, sprite, propOf, screenCache, parallax, compose, drawLayer, sparse, drawSparse, starfield, nebula, aurora, boltPath, drift, viewRect, lerp, clamp,
 } from './common.js';
 import { REGIONS } from '../../content/regions.js';
+import { pointInPoly } from '../../core/math.js';
 import { DOOR_GEOM, doorXform, archPath } from './doors.js';
 import { paintFeature, paintEntry, paintBakedLights, featureProps } from './features.js';
 
@@ -261,10 +262,11 @@ function paintFloor(ch, q) {
   const nx = Math.ceil(b.w / cw) + 3, ny = Math.ceil(b.h / chh) + 3;
   const V = [];
   for (let j = 0; j <= ny; j++) { V[j] = []; for (let i = 0; i <= nx; i++) V[j][i] = [b.x0 - cw + i * cw + (j % 2) * cw * 0.5 + r.range(-26, 26), b.y0 - chh + j * chh + r.range(-16, 16)]; }
+  const grown = offsetPoly(shape, 120);   // (once, not per tile)
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
     const p = [V[j][i], V[j][i + 1], V[j + 1][i + 1], V[j + 1][i]];
     const tcx = (p[0][0] + p[2][0]) / 2, tcy = (p[0][1] + p[2][1]) / 2;
-    if (!inPoly(tcx, tcy, offsetPoly(shape, 120))) continue;
+    if (!inPoly(tcx, tcy, grown)) continue;
     const ip = p.map((v) => [lerp(v[0], tcx, 0.07), lerp(v[1], tcy, 0.1)]);
     const glass = n(tcx / 300, tcy / 300) > 0.62 && r() < 0.7;
     polyPath(g, ip);
@@ -346,9 +348,10 @@ function paintFloor(ch, q) {
   }
   // rain puddles mirroring the sky
   const puddles = Math.round((b.w * b.h) / 220000);
+  const shrunk = offsetPoly(shape, -90);
   for (let i = 0; i < puddles; i++) {
     const x = r.range(b.x0 + 120, b.x1 - 120), y = r.range(b.y0 + 100, b.y1 - 100);
-    if (!inPoly(x, y, offsetPoly(shape, -90))) continue;
+    if (!inPoly(x, y, shrunk)) continue;
     if (ch.obstacles.some((o) => Math.hypot(o.x - x, o.y - y) < o.r + 90) || ch.hazards.some((h) => Math.hypot(h.x - x, h.y - y) < h.r + 80)) continue;
     const rx = r.range(50, 110), ry = rx * r.range(0.35, 0.5);
     const pg = g.createLinearGradient(x, y - ry, x, y + ry);
@@ -627,7 +630,7 @@ function front(ctx, cam, t) {
   for (const [n, sp, a, len, wd] of [[150, 1300, 0.12, 18, 1.1], [70, 1800, 0.2, 30, 1.6]]) {
     ctx.strokeStyle = `rgba(170,215,255,${a})`; ctx.lineWidth = wd * k * 1.4; ctx.beginPath();
     for (let i = 0; i < n; i++) {
-      const [x, y] = drift(i, t, n * 3.1, W + 200, H + 100, -sp * 0.22 * k, sp * k);
+      const dr = drift(i, t, n * 3.1, W + 200, H + 100, -sp * 0.22 * k, sp * k), x = dr[0], y = dr[1];
       const px = x - 100 - cam.x * 0.1 * cam.scale % 50, py = y - 50;
       ctx.moveTo(px, py); ctx.lineTo(px - len * 0.22 * k, py + len * k);
     }
@@ -651,15 +654,15 @@ function makeAmbient(ch) {
     ctx.beginPath();
     for (let i = 0; i < 22; i++) {
       const life = 0.45, ph = ((t + i * 0.137) % life) / life, cyc = Math.floor((t + i * 0.137) / life);
-      const [x, y] = drift(i * 31 + cyc * 7, 0, 5.1, W, H, 0, 0);
+      const dr = drift(i * 31 + cyc * 7, 0, 5.1, W, H, 0, 0), x = dr[0], y = dr[1];
       const wx = v.x0 + x, wy = v.y0 + y, rr = 2 + ph * 9;
-      if (!inPoly(wx, wy, ch.shape)) continue;
+      if (!pointInPoly(wx, wy, ch.shape)) continue;   // (per frame: core/math.js, no destructuring)
       ctx.moveTo(wx + rr, wy); ctx.ellipse(wx, wy, rr, rr * 0.4, 0, 0, TAU);
     }
     ctx.globalAlpha = 0.8; ctx.stroke(); ctx.globalAlpha = 1;
     // motes rising
     for (let i = 0; i < 40; i++) {
-      const [x, y, fa] = drift(i, t, 9.7, W, H, Math.sin(t * 0.5 + i) * 6, -22 - (i % 5) * 4);
+      const dr = drift(i, t, 9.7, W, H, Math.sin(t * 0.5 + i) * 6, -22 - (i % 5) * 4), x = dr[0], y = dr[1], fa = dr[2];
       const col = ['#8ff3ff', '#d2a6ff', '#ffe6a0'][i % 3];
       const tw = 0.5 + 0.5 * Math.sin(t * 3 + i * 1.7);
       drawGlow(ctx, v.x0 + x, v.y0 + y, 7 + fa * 6, col, 0.5 * tw);

@@ -680,7 +680,7 @@ function astarOn(nav, sx, sy, gx, gy) {
   gs[s] = 0; push(hfn(s), s);
   let found = false, it = 0;
   while (heap.length && it++ < N * 4) {
-    const [, k] = pop();
+    const k = pop()[1];
     if (shut[k]) continue;
     shut[k] = 1;
     if (k === g) { found = true; break; }

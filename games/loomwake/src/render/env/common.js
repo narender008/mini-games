@@ -97,7 +97,7 @@ export function offsetPoly(pts, d) {
 }
 export function bbox(pts) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const [x, y] of pts) { if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; }
+  for (let i = 0; i < pts.length; i++) { const x = pts[i][0], y = pts[i][1]; if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; }
   return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
 }
 // edge samples with outward normals
@@ -118,7 +118,7 @@ export function edgeSamples(pts, step) {
 export function inPoly(x, y, poly) {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    const pi = poly[i], pj = poly[j], xi = pi[0], yi = pi[1], xj = pj[0], yj = pj[1];
     if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
   }
   return inside;
@@ -212,7 +212,7 @@ export function screenCache(build) {
     let c = keep.get(k);
     if (c) { keep.delete(k); keep.set(k, c); return c; }
     c = build(Math.ceil(w * 1.35), Math.ceil(h * 1.35));
-    keep.set(k, c); if (keep.size > 2) keep.delete(keep.keys().next().value);
+    keep.set(k, c); if (keep.size > 3) keep.delete(keep.keys().next().value);
     return c;
   };
 }
@@ -273,13 +273,16 @@ export function boltPath(r, x0, y0, x1, y1, n = 12, jag = 40) {
   return pts;
 }
 
-// stateless drifting particles: position from time, no per-frame state
+// stateless drifting particles: position from time, no per-frame state. Returns one shared scratch array
+// [x, y, fa, fb] (read it at once: the next call overwrites it)
+const DRIFT = [0, 0, 0, 0];
 export function drift(i, t, seed, W, H, vx, vy) {
   const a = Math.sin(i * 127.1 + seed) * 43758.5453, b = Math.sin(i * 311.7 + seed * 1.7) * 24634.6345;
   const fa = a - Math.floor(a), fb = b - Math.floor(b);
   let x = (fa * W + vx * t) % W, y = (fb * H + vy * t) % H;
   if (x < 0) x += W; if (y < 0) y += H;
-  return [x, y, fa, fb];
+  DRIFT[0] = x; DRIFT[1] = y; DRIFT[2] = fa; DRIFT[3] = fb;
+  return DRIFT;
 }
 // visible world rect from the current ctx transform
 export function viewRect(ctx, pad = 0) {
@@ -312,7 +315,7 @@ export function grain(kind = 'stone', size = 256) {
   const strength = kind === 'metal' ? 0.5 : kind === 'cloth' ? 0.35 : kind === 'soft' ? 0.7 : 0.42;
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     let n = 0;
-    for (const [per, w] of oct) n += vn((x / size) * per, (y / size) * per, per) * w;
+    for (let o = 0; o < oct.length; o++) n += vn((x / size) * oct[o][0], (y / size) * oct[o][0], oct[o][0]) * oct[o][1];
     if (kind === 'cloth') n = n * 0.6 + 0.4 * (((x >> 1) + (y >> 1)) % 2 ? 0.62 : 0.38);
     const i = (y * size + x) * 4, v = (n - 0.5) * 2;
     const a = Math.min(1, Math.abs(v) * strength * 1.6);

@@ -64,8 +64,12 @@ function rimify(c, sc) {
   g.globalCompositeOperation = 'destination-over'; g.globalAlpha = 0.2; g.drawImage(rimT, 0, 0, w, h, 0, 0, w, h);
   g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
 }
+// Cached sprites are CPU canvases like the scratch and rim buffers they are built from (willReadFrequently,
+// set on the first getContext): a plain canvas is GPU-backed on a GPU browser, and rimify() drawing it into the
+// CPU rim buffer read it back from the GPU, a pipeline stall per pass on every cache miss.
 function sprite(bw, bh) {
-  const c = pool.pop() || document.createElement('canvas');
+  let c = pool.pop();
+  if (!c) { c = document.createElement('canvas'); c.getContext('2d', { willReadFrequently: true }); }
   if (c.width !== bw || c.height !== bh) { c.width = bw; c.height = bh; } else { const g = c.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, bw, bh); }
   return c;
 }

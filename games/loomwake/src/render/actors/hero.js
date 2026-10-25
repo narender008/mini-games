@@ -25,7 +25,10 @@ export const HERO_COL = PALETTE;
 const C = PALETTE;
 const STEP = 1 / 120;
 
-function mk(w, h) { const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h)); c.getContext('2d', { willReadFrequently: true }); return c; }
+// Iri's body, ink, rim, x-ray and afterimage canvases are repainted every frame (or copied from one that is)
+// and never read back: a plain context, so a GPU browser rasterises them on the GPU instead of on the main
+// thread plus a texture upload per frame (willReadFrequently would force CPU canvases).
+function mk(w, h) { const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h)); c.getContext('2d'); return c; }
 
 // ---------------------------------------------------------------- render-side animation
 export function resetHeroAnim(h) {

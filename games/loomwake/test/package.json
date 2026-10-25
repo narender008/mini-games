@@ -1,15 +1,20 @@
 {
   "name": "loomwake-tests",
   "private": true,
-  "description": "Automated tests for Loomwake: browser smoke, input, save-system and story tests, a bot playtest with a balance report, a performance bench and scene screenshots.",
+  "description": "Automated tests for Loomwake: browser smoke, input, save-system, story and painting tests, a bot playtest with a balance report, a performance bench and scene screenshots.",
   "scripts": {
     "test": "node run.cjs",
     "smoke": "node --test --test-reporter=spec smoke.test.cjs",
     "input": "node --test --test-reporter=spec input.test.cjs",
     "save": "node --test --test-reporter=spec save.test.cjs",
     "story": "node --test --test-reporter=spec story.test.cjs",
+    "frames": "node --test --test-reporter=spec --test-concurrency=1 frames.test.cjs",
+    "render": "node --test --test-reporter=spec render.test.cjs",
+    "freeze": "node --test --test-reporter=spec freeze.test.cjs",
+    "stress": "node stress.cjs",
     "bot": "node bot.cjs",
     "perf": "node perf.cjs",
+    "hitch": "node hitch.cjs",
     "shots": "node screenshots.cjs"
   },
   "devDependencies": {

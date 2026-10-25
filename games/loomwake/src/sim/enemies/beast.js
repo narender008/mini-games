@@ -9,7 +9,7 @@ const M = {
   update(G, e, dt) { run(G, e, dt, M, ATTACK_FNS); },
   move(G, e, dt) {
     const d = heroDist(G, e);
-    const [tx, ty] = ringPoint(G, e, e.ring, dt, 1.1);
+    const rp = ringPoint(G, e, e.ring, dt, 1.1), tx = rp[0], ty = rp[1];
     goTo(G, e, tx, ty, e.speed * (d < 160 ? 1.1 : 0.9), dt, 5);
     // face the way it runs, glancing at Iri
     const sp = Math.hypot(e.vx, e.vy);
