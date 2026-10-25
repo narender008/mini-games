@@ -84,16 +84,44 @@ function shoot(G, b, s, p, mul = 1) {
   }
 }
 
-function stepGuns(G, dt) {
+// Every harpoon/bastion building, whatever its state (derived; rebuilt when
+// buildings are added or removed: keyed on the array length and G.nextId).
+function gunList(G) {
+  const key = G.buildings.length + ':' + G.nextId;
+  const c = G.tmp.gunList;
+  if (c && c.key === key && c.arr === G.buildings) return c.list;
+  const list = [];
+  for (const b of G.buildings) if (b.type === 'harpoon' || b.type === 'bastion') list.push(b);
+  G.tmp.gunList = { key, arr: G.buildings, list };
+  return list;
+}
+
+function anyAlive(G) {
+  for (const p of G.pirates) if (p.state !== 'down' && p.state !== 'gone') return true;
+  return false;
+}
+
+function stepGuns(G, dt, any) {
   const guns = G.defend.guns;
-  const any = G.pirates.some(alive);
-  for (const b of G.buildings) {
-    if (!GUNS.includes(b.type)) continue;
-    const g = guns[b.id] || (guns[b.id] = { cd: 0, aim: -Math.PI / 2, fired: -99 });
+  const list = gunList(G);
+  if (!any) {
+    // nothing to shoot: barrels finish reloading and wait (no per-gun work)
+    if (G.defend.gunsIdle) return;
+    for (const b of list) { const g = guns[b.id]; if (g) g.cd = 0; }
+    G.defend.gunsIdle = true;
+    return;
+  }
+  G.defend.gunsIdle = false;
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i];
+    let g = guns[b.id];
+    if (!g) g = guns[b.id] = { cd: 0, aim: -Math.PI / 2, fired: -99 };
     if (!gunReady(b)) continue;
+    if (g.cd > 0) {
+      g.cd = Math.max(0, g.cd - dt * Math.max(0.35, staffing(b)));
+      if (g.cd > 0) continue;
+    }
     const s = gunStats(G, b);
-    g.cd = Math.max(0, g.cd - dt * Math.max(0.35, staffing(b)));
-    if (!any || g.cd > 0) continue;
     const m = muzzle(G, b);
     const p = nearestPirate(G, m.x, m.y, m.z, s.range);
     if (!p) continue;
@@ -182,11 +210,11 @@ function stepMilitia(G, dt) {
 }
 
 // ---------- abilities -----------------------------------------------------------------------
-function lockReason(G, id) {
+function lockReason(G, id, cnt = null) {
   const d = DEF(id);
   if (!hasTech(G, d.needs)) return 'research ' + d.needs;
   if (id === 'militia' && idleMilitia(G)) return null;
-  if (!built(G, d.requires).length) return 'build a ' + d.requires;
+  if (!(cnt ? cnt[d.requires] : built(G, d.requires).length)) return 'build a ' + d.requires;
   return null;
 }
 
@@ -360,14 +388,12 @@ export function defend(G, action, target) {
 
 // "Harpoon battery", "East battery", "Pinecrest battery", "Pinecrest north bastion"...
 const DIRS = ['East', 'North-east', 'North', 'North-west', 'West', 'South-west', 'South', 'South-east'];
-function gunName(G, b) {
-  const all = G.buildings.filter((x) => GUNS.includes(x.type) && (x.state === 'built' || x.state === 'ruin'));
+function gunName(G, b, all, perIsland) {
   const noun = b.type === 'bastion' ? 'bastion' : 'battery';
-  if (all.length === 1) return b.type === 'bastion' ? 'Flak bastion' : 'Harpoon battery';
+  if (all === 1) return b.type === 'bastion' ? 'Flak bastion' : 'Harpoon battery';
   const i = islandById(G, b.island);
-  const here = all.filter((x) => x.island === b.island);
   let dir = '';
-  if (i && here.length > 1) {
+  if (i && (perIsland[b.island] || 0) > 1) {
     const a = Math.atan2(b.v + 0.5 - i.h / 2, b.u + 0.5 - i.w / 2);
     dir = DIRS[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8];
   }
@@ -376,14 +402,21 @@ function gunName(G, b) {
 }
 
 // ---------- HUD summaries ------------------------------------------------------------------------
+const COUNTED = new Set(['harpoon', 'bastion', 'rod', 'shieldgen', 'mooring']);
 function summarize(G) {
   const out = [];
-  const ids = new Set(G.buildings.map((b) => String(b.id)));
+  const cnt = { harpoon: 0, bastion: 0, rod: 0, shieldgen: 0, mooring: 0 };
+  const owned = new Set(); for (const i of G.islands) if (i.owned) owned.add(i.id);
+  for (const b of G.buildings) if (b.state === 'built' && COUNTED.has(b.type) && owned.has(b.island)) cnt[b.type]++;
+  const list = gunList(G);
+  const ids = new Set(list.map((b) => String(b.id)));
   for (const id of Object.keys(G.defend.guns)) if (!ids.has(id)) delete G.defend.guns[id];
   const isl = (id) => islandById(G, id)?.name || id;
   const named = {};
-  for (const b of G.buildings) {
-    if (!GUNS.includes(b.type) || !(b.state === 'built' || b.state === 'ruin')) continue;
+  const shown = list.filter((b) => b.state === 'built' || b.state === 'ruin');
+  const perIsland = {};
+  for (const b of shown) perIsland[b.island] = (perIsland[b.island] || 0) + 1;
+  for (const b of shown) {
     const g = G.defend.guns[b.id];
     const s = gunStats(G, b);
     named[b.island] = (named[b.island] || 0) + 1;
@@ -394,7 +427,7 @@ function summarize(G) {
     else if (g && G.t - g.fired < 0.8) { status = 'Firing'; frac = 1; tone = 'good'; }
     else if (g && g.cd > 0.05) { status = 'Reload ' + Math.ceil(g.cd) + 's'; frac = 1 - g.cd / s.reload; tone = 'warn'; }
     else { status = 'Ready'; frac = 1; tone = 'good'; }
-    out.push({ id: b.id, type: b.type, name: gunName(G, b), island: b.island, status, frac, tone });
+    out.push({ id: b.id, type: b.type, name: gunName(G, b, shown.length, perIsland), island: b.island, status, frac, tone });
   }
   // the Defences card has room for about five rows: the busiest guns (or the
   // ones nearest a raider) first, at most three, then rods, shield and militia
@@ -410,11 +443,11 @@ function summarize(G) {
     out.length = 3;
     for (const r of out) delete r._k;
   }
-  if (built(G, 'rod').length) {
+  if (cnt.rod) {
     const c = G.defend.lash.charge;
     out.push({ id: 'rods', type: 'rod', name: 'Lightning rods', status: 'Charged ' + Math.round(c * 100) + '%', frac: c, tone: c >= 0.5 ? 'good' : 'info' });
   }
-  if (built(G, 'shieldgen').length) {
+  if (cnt.shieldgen) {
     const sh = G.defend.shield;
     const d = DEF('shield');
     out.push({ id: 'shield', type: 'shieldgen', name: 'Storm shield', status: sh.on ? isl(sh.island) : sh.cd > 0 ? 'Recharge ' + Math.ceil(sh.cd) + 's' : 'Ready',
@@ -425,7 +458,7 @@ function summarize(G) {
   const ab = {};
   for (const d of DEFENDS) {
     const st = G.defend[d.id];
-    const why = lockReason(G, d.id);
+    const why = lockReason(G, d.id, cnt);
     let ready = !why && st.cd <= 0;
     let need = null;
     if (ready && d.id === 'volley' && G.defend.volley.primed > 0) { ready = false; need = 'primed'; }
@@ -457,9 +490,11 @@ export function step(G, dt) {
     if (!G.pirates.some(alive)) d.volley.primed = 0;
     else if (fireVolley(G, d.volley.target)) { d.volley.primed = 0; d.volley.cd = DEF('volley').cd; }
   }
-  stepGuns(G, dt);
-  stepShield(G, dt);
-  stepMilitia(G, dt);
+  const any = anyAlive(G);
+  stepGuns(G, dt, any);
+  if (d.shield.on || d.shield.cd > 0) stepShield(G, dt);
+  if (d.fleet.length) stepMilitia(G, dt);
   // (the timer lives on G.defend so a loaded game summarizes on the same ticks)
-  if ((d.sumT = (d.sumT || 0) + dt) >= 0.2) { d.sumT = 0; summarize(G); }
+  const busy = any || d.shield.on || d.fleet.length || G.weather?.kind === 'storm' || G.raid;
+  if ((d.sumT = (d.sumT || 0) + dt) >= (busy ? 0.2 : 2)) { d.sumT = 0; summarize(G); }
 }
