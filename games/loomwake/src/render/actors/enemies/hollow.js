@@ -4,6 +4,20 @@
 // Local space: feet at 0,0, facing +x.
 import { begin, end, shadow, eyeSlit, threads, paint, limb, glow, smear, eliteAura, rgba, clamp, lerp, TAU, sprite, drawSprite } from './kit.js';
 
+// playtest2 P1-7: Hollows vanished on the dark Glasswood floor. The shroud is lifted a step toward a cool
+// slate (lift, cached per palette colour) and the hood, shroud and claws carry a cool moonlight rim.
+const LIFT = new Map();
+function lift(hex, k = 0.2, to = [118, 136, 196]) {
+  const key = hex + k;
+  let v = LIFT.get(key);
+  if (v) return v;
+  const n = parseInt(hex.slice(1), 16), c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((x, i) => Math.round(x + (to[i] - x) * k));
+  v = '#' + ((1 << 24) | (c[0] << 16) | (c[1] << 8) | c[2]).toString(16).slice(1);
+  LIFT.set(key, v);
+  return v;
+}
+const COOL = '#a8ecff';
+
 // three long hooked claws, cached per tint
 function clawSprite(S) {
   return sprite('claw|' + S.pal.bone + '|' + S.pal.rim, 40, 34, 4, 17, (g) => {
@@ -111,7 +125,9 @@ export function drawHollowBody(ctx, S, o = {}) {
     g.bezierCurveTo(10, -26, 6, -40, 4, -48);
     g.quadraticCurveTo(8, -52, 10, -58);
   };
-  paint(ctx, S, shroud, pal.cloth, { shade: pal.clothLo, rimA: 0.4, rimX: 1.6, rimY: 1.8 });
+  paint(ctx, S, shroud, lift(pal.cloth), { shade: pal.clothLo, rimColor: COOL, rimA: 0.6, rimX: 1.6, rimY: 1.8 });
+  // a faint cool outline all round, so the silhouette parts from a dark floor
+  ctx.beginPath(); shroud(ctx); ctx.closePath(); ctx.strokeStyle = rgba(COOL, 0.22 * (1 - S.dying)); ctx.lineWidth = 1.1; ctx.stroke();
   // folds and moth-eaten holes
   ctx.strokeStyle = S.c(pal.clothLo); ctx.lineWidth = 1.5; ctx.lineCap = 'round';
   ctx.beginPath();
@@ -141,7 +157,8 @@ export function drawHollowBody(ctx, S, o = {}) {
     g.quadraticCurveTo(hx + 13, hy + 2, hx + 9, hy + 9);
     g.quadraticCurveTo(hx - 2, hy + 12, hx - 16, hy + 6);
   };
-  paint(ctx, S, hood, pal.clothHi, { shade: pal.cloth, rimA: 0.55, rimX: 1.6, rimY: 2 });
+  paint(ctx, S, hood, lift(pal.clothHi, 0.16), { shade: lift(pal.cloth), rimColor: COOL, rimA: 0.85, rimX: 1.6, rimY: 2 });
+  ctx.beginPath(); hood(ctx); ctx.closePath(); ctx.strokeStyle = rgba(COOL, 0.3 * (1 - S.dying)); ctx.lineWidth = 1; ctx.stroke();
   if (!S.back) {
     // the face: a cowl of pure shadow, cut by one cold slit
     ctx.fillStyle = S.c('#010106');
@@ -153,10 +170,11 @@ export function drawHollowBody(ctx, S, o = {}) {
   }
 
   // front arm, long and thin, three hooked claws
-  arm(sh, elb, hand, pal.clothHi, 5.5);
-  ctx.strokeStyle = rgba(pal.rim, 0.4 * (1 - S.dying)); ctx.lineWidth = 0.9;
+  arm(sh, elb, hand, lift(pal.clothHi, 0.16), 5.5);
+  ctx.strokeStyle = rgba(COOL, 0.6 * (1 - S.dying)); ctx.lineWidth = 1.1;
   ctx.beginPath(); ctx.moveTo(sh[0], sh[1] - 2.4); ctx.lineTo(elb[0], elb[1] - 2.4); ctx.lineTo(hand[0], hand[1] - 2); ctx.stroke();
   drawSprite(ctx, S, clawSprite(S), hand[0], hand[1], cr);
+  if (p.wind <= 0.2) glow(ctx, hand[0] + 12, hand[1] + 4, 18, COOL, 0.22 * (1 - S.dying));
   if (p.wind > 0.2) {
     glow(ctx, hand[0] + 10, hand[1] + 2, 20 * p.wind, S.eye, 0.55 * p.wind);
     glow(ctx, handB[0] + 10, handB[1] + 2, 16 * p.wind, S.eye, 0.4 * p.wind);

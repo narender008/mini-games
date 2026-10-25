@@ -32,18 +32,21 @@ export function drawFoeFx(ctx, G, P) {
       ctx.beginPath(); ctx.arc(f.x, f.y, f.r + f.w * 0.3, 0, TAU); ctx.stroke();
       ctx.restore();
     } else if (f.kind === 'song') {
-      const a = clamp(1 - f.r / f.r1, 0, 1) * 0.8 + 0.2;
+      // a hostile hymn, in the danger language (playtest2 P1-5: it used to be pale blue, Maru's Tide colours):
+      // a dark band, a deep violet swell, a red crest on the leading edge, pale rose notes riding it
+      const a = clamp(1 - f.r / f.r1, 0, 1) * 0.8 + 0.2, col = f.color || '#8a3cff';
       ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      // drowning water: a blue band with a bright crest and pale notes riding it
-      ctx.lineWidth = f.w; ctx.strokeStyle = rgba(f.color || '#7fd0ff', 0.28 * a);
+      ctx.lineWidth = f.w; ctx.strokeStyle = rgba('#14041c', 0.5 * a);
       ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, TAU); ctx.stroke();
-      ctx.lineWidth = 3; ctx.strokeStyle = rgba('#e8fbff', 0.85 * a);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineWidth = f.w * 0.7; ctx.strokeStyle = rgba(col, 0.42 * a);
+      ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, TAU); ctx.stroke();
+      ctx.lineWidth = 3; ctx.strokeStyle = rgba('#ff3d5e', 0.95 * a);
       ctx.beginPath(); ctx.arc(f.x, f.y, f.r + f.w * 0.35, 0, TAU); ctx.stroke();
-      ctx.lineWidth = 1.5; ctx.strokeStyle = rgba('#ff7a9a', 0.6 * a);
-      ctx.beginPath(); ctx.arc(f.x, f.y, f.r - f.w * 0.4, 0, TAU); ctx.stroke();
+      ctx.lineWidth = 1.2; ctx.strokeStyle = rgba('#ffd0dc', 0.6 * a);
+      ctx.beginPath(); ctx.arc(f.x, f.y, f.r + f.w * 0.35, 0, TAU); ctx.stroke();
       const n = Math.max(6, Math.floor(f.r / 30));
-      ctx.fillStyle = rgba('#fff2c0', 0.8 * a);
+      ctx.fillStyle = rgba('#ffc0d4', 0.75 * a);
       for (let i = 0; i < n; i++) {
         const an = (i / n) * TAU + f.t * 0.6, x = f.x + Math.cos(an) * f.r, y = f.y + Math.sin(an) * f.r - 6 - Math.sin(t * 6 + i) * 4;
         ctx.beginPath(); ctx.ellipse(x, y, 3, 2.2, -0.4, 0, TAU); ctx.fill(); ctx.fillRect(x + 2, y - 9, 1.2, 9);
@@ -91,7 +94,7 @@ export function foeFxLights(G) {
   for (const f of L) {
     if (f.delay > 0) continue;
     if (f.kind === 'lob') out.push({ x: f.x, y: f.y - f.z, r: 140, color: '#ff8a2a', i: 0.8 });
-    else if (f.kind === 'song') out.push({ x: f.x, y: f.y, r: f.r + 60, color: '#7fd0ff', i: 0.35 * (1 - f.r / f.r1) });
+    else if (f.kind === 'song') out.push({ x: f.x, y: f.y, r: f.r + 60, color: f.color || '#8a3cff', i: 0.35 * (1 - f.r / f.r1) });
     else if (f.kind === 'shock') out.push({ x: f.x, y: f.y, r: f.r + 40, color: '#ff6a8a', i: 0.35 * (1 - f.r / f.r1) });
     else if (f.kind === 'snare') out.push({ x: f.x, y: f.y, r: 90, color: '#9a7cff', i: 0.6 });
   }

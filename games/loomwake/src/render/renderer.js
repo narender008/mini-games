@@ -13,7 +13,7 @@
 //     R.resize()                    (also on window resize)
 //     R.cam, R.fx, R.quality, R.light, R.P (painter helpers)
 //   Painter helpers P: { glow(ctx, x, y, r, color, a), shadow(ctx, x, y, rx, ry, a), hexA, mk(w, h), q (quality object),
-//     tier, t (render seconds), scale (canvas px per world unit), fx (see fx.js), palette, cam, screen(ctx) (identity transform),
+//     tier, t (render seconds), scale (canvas px per world unit), dpr (canvas px per css px), fx (see fx.js), palette, cam, screen(ctx) (identity transform),
 //     world(ctx) (back to world transform) }
 // G.view (for UI): { toScreen(x, y, z) -> {x, y} CSS px, toWorld(cssX, cssY) -> {x, y}, w, h, zoom, cam, t }
 import { TAU, clamp, hexA, lerp } from '../core/math.js';
@@ -52,7 +52,7 @@ export function createRenderer(G, canvas, opts = {}) {
     DPR = Math.min(devicePixelRatio || 1, Q.dprCap) * Q.scale;
     W = Math.max(2, Math.round(cssW * DPR)); H = Math.max(2, Math.round(cssH * DPR));
     if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
-    BASE = Math.max(cssH / 640, cssW / 1180) * DPR;
+    BASE = Math.max(cssH / 640, cssW / 1180) * DPR; P.dpr = DPR;
     VIG = mk(W, H);
     const v = VIG.getContext('2d'), g = v.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
     g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(2,2,12,0.7)'); v.fillStyle = g; v.fillRect(0, 0, W, H);
@@ -114,8 +114,11 @@ export function createRenderer(G, canvas, opts = {}) {
   // ---------------------------------------------------------------- telegraphs (red-pink language, white rim as the hit lands)
   // edge > 0: only the rim and the sweep front, at that strength (the readability pass above the darkness when
   // the additive layer is swamped, fx.clutter)
+  // fxRing: a foe's travelling shock/song ring mirrored into G.telegraphs (sim/enemies/attacks.js); the foe fx
+  // painter draws it, so only the readability edge pass touches it here, in the rim colour
   function drawTelegraph(c, tg, edge = 0) {
-    const max = tg.max || 0.5, k = tg.live ? 1 : clamp(1 - tg.t / max, 0, 1);
+    if (tg.fxRing && !edge) return;
+    const max = tg.max || 0.5, k = tg.fxRing ? 0.6 : tg.live ? 1 : clamp(1 - tg.t / max, 0, 1);
     const fired = tg.fired || tg.t <= 0;
     const fade = fired ? clamp(1 + tg.t / G.cfg.telegraphLinger, 0, 1) : 1;
     const col = tg.color || G.settings?.telegraphColor || PALETTE.danger;
@@ -336,7 +339,7 @@ export function createRenderer(G, canvas, opts = {}) {
     if (ch && ch.doors) for (const d of ch.doors) if (d.open) lp(d.x, d.y - 60, 200, '#ffd27a', 0.7);
     for (const e of G.foes) if (!e.gone && !(e.dead && (e.deadT || 0) > 0.6)) foeLightsOf(e, lp);
     for (const p of G.projectiles) lp(p.x, p.y - (p.z || 0), p.light?.r || 90, p.light?.color || p.color || (p.team === 'hero' ? '#ffd27a' : '#ff8ad8'), p.light?.i ?? 0.7);
-    for (const tg of G.telegraphs) if (!tg.fired) { const k = clamp(1 - tg.t / (tg.max || 0.5), 0, 1); const x = tg.kind === 'line' ? (tg.x + tg.x2) / 2 : tg.x, y = tg.kind === 'line' ? (tg.y + tg.y2) / 2 : tg.y; const r = tg.kind === 'line' ? Math.hypot(tg.x2 - tg.x, tg.y2 - tg.y) * 0.6 + 40 : (tg.r || 60) * 1.25; lp(x, y, r, '#ff4d6d', 0.45 + 0.4 * k, 0.3); }
+    for (const tg of G.telegraphs) if (!tg.fired && !tg.fxRing) { const k = clamp(1 - tg.t / (tg.max || 0.5), 0, 1); const x = tg.kind === 'line' ? (tg.x + tg.x2) / 2 : tg.x, y = tg.kind === 'line' ? (tg.y + tg.y2) / 2 : tg.y; const r = tg.kind === 'line' ? Math.hypot(tg.x2 - tg.x, tg.y2 - tg.y) * 0.6 + 40 : (tg.r || 60) * 1.25; lp(x, y, r, '#ff4d6d', 0.45 + 0.4 * k, 0.3); }
     for (const z of G.zones) if (!String(z.kind).startsWith('boss:')) lp(z.x, z.y, z.r * 1.4, z.color || ZCOL[z.element] || '#ffd27a', 0.4);
     for (const p of G.pickups) lp(p.x, p.y - 30, 120, p.color || '#ffd27a', 0.6);
     fx.lights(lp);

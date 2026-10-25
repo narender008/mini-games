@@ -20,7 +20,21 @@ import { FX as R, rng } from '../core/rng.js';
 import { drawGlow } from './light.js';
 import { BOSSES } from '../content/bosses.js';
 
+// soft scorch: one baked radial sprite (dark warm brown core, feathered to nothing), drawn squashed per decal
+const SCORCH_MAX = 70;
+let SCORCH = null;
+function scorchSprite() {
+  if (SCORCH) return SCORCH;
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(14,8,6,0.85)'); gr.addColorStop(0.35, 'rgba(14,8,8,0.6)'); gr.addColorStop(0.7, 'rgba(10,6,12,0.22)'); gr.addColorStop(1, 'rgba(10,6,12,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return (SCORCH = c);
+}
+
 const ELEM = { dawn: '#ffc35a', tide: '#5ec8ff', storm: '#a6f6ff', stone: '#d8a46a', shade: '#b48cff', wind: '#8ff5b0', gold: '#ffd27a' };
+
+const COVER = typeof location !== 'undefined' && new URLSearchParams(location.search).has('cover');
 
 export function createFx(G, Q) {
   const parts = [], decals = [], bolts = [], flashes = [], texts = [];
@@ -40,7 +54,7 @@ export function createFx(G, Q) {
   const embers = (x, y, z, color, n, speed = 120) => { for (let i = 0; i < n; i++) { const a = R() * TAU; part({ x: x + R.range(-8, 8), y, z, vx: Math.cos(a) * speed * R(), vy: Math.sin(a) * speed * R() * 0.6, vz: R.range(30, 140), g: -30, life: R.range(0.5, 1.1), size: R.range(2, 4), color, type: 'ember', drag: 2 }); } };
   const dust = fx.dust = (x, y, n, col = '#9fb4ff', spd = 60) => { for (let i = 0; i < n; i++) part({ x: x + R.range(-10, 10), y: y + R.range(-4, 4), z: 2, vx: R.range(-spd, spd), vy: R.range(-spd, spd) * 0.5, vz: R.range(10, 50), g: 40, life: R.range(0.35, 0.7), size: R.range(6, 14), color: col, type: 'dust', drag: 3, add: false }); };
   // rings: at most MAX_RINGS alive (the oldest go), and they dim as they stack (ringK, see drawPart)
-  const MAX_RINGS = 14;
+  const MAX_RINGS = 10;
   let ringN = 0, ringK = 1;
   const ring = fx.ring = (x, y, r0, r1, life, color, width = 4, squash = 0.62) => {
     if (ringN >= MAX_RINGS) { const k = parts.findIndex((p) => p.type === 'ring'); if (k >= 0) { parts.splice(k, 1); ringN--; } }
@@ -114,7 +128,7 @@ export function createFx(G, Q) {
     sparks(x, y, 30, eye, Math.round(14 * big), 460);
     ring(x, y, 10, 120 * big, 0.45, eye, 5);
     flash(x, y - 30, 260 * big, eye, 0.3, 1.1);
-    fx.decal({ type: 'scorch', x, y, r: 34 * big, life: 6, color: '#05030c' });
+    fx.decal({ type: 'scorch', x, y, r: Math.min(34 * big, SCORCH_MAX), life: 6, color: '#05030c' });
   });
   on('armorBreak', ({ e, x, y }) => {
     const top = (e.h ?? (e.r || 20) * 2.6);
@@ -143,7 +157,7 @@ export function createFx(G, Q) {
     ring(x, y, 20, r, 0.5, col, 10); ring(x, y, 10, r * 0.75, 0.38, '#fff1c4', 4);
     flash(x, y - 20, r * 2.2, col, 0.4, 1.2);
     for (let i = 0; i < 40; i++) { const a = (i / 40) * TAU; part({ x, y, z: 30, vx: Math.cos(a) * r * 2.6, vy: Math.sin(a) * r * 1.8, vz: R.range(40, 160), g: 300, life: 0.45, size: 3, color: col, type: 'spark', drag: 4 }); }
-    fx.decal({ type: 'scorch', x, y, r: r * 0.6, life: 3, color: '#120a04' });
+    fx.decal({ type: 'scorch', x, y, r: Math.min(r * 0.6, SCORCH_MAX), life: 3, color: '#120a04' });
   });
   on('spawn', ({ e }) => {
     const col = eyeOf(e);
@@ -207,7 +221,8 @@ export function createFx(G, Q) {
   fx.drawGround = (ctx, P) => {
     for (const d of decals) {
       const a = clamp(d.life / d.max, 0, 1);
-      if (d.type === 'scorch') { ctx.globalAlpha = Math.min(1, a * 2) * 0.45; ctx.fillStyle = d.color; ctx.beginPath(); ctx.ellipse(d.x, d.y, d.r, d.r * 0.5, 0, 0, TAU); ctx.fill(); ctx.globalAlpha = 1; }
+      // a soft-edged sprite, not a hard ellipse (playtest2 P2-1: a hard black disc read as a hole in the floor)
+      if (d.type === 'scorch') { ctx.globalAlpha = Math.min(1, a * 2) * 0.5; ctx.drawImage(scorchSprite(), d.x - d.r * 1.25, d.y - d.r * 0.625, d.r * 2.5, d.r * 1.25); ctx.globalAlpha = 1; }
       else if (d.type === 'crack') {
         ctx.globalAlpha = Math.min(1, a * 2) * 0.6; ctx.strokeStyle = '#0a0612'; ctx.lineWidth = 2;
         const r = rng(Math.floor(d.a * 1e5));
@@ -233,7 +248,7 @@ export function createFx(G, Q) {
   const drawPart = (ctx, p, P) => {
     const a = clamp(p.life / p.max, 0, 1) * (p.add && p.type !== 'mote' ? addK : 1);
     if (p.type === 'spark') { const vx = p.vx * 0.03, vy = (p.vy - p.vz) * 0.03; ctx.strokeStyle = p.color; ctx.globalAlpha = a; ctx.lineWidth = p.size; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(p.x, p.y - p.z); ctx.lineTo(p.x - vx, p.y - p.z - vy * 0.7); ctx.stroke(); ctx.globalAlpha = 1; }
-    else if (p.type === 'ring') { const t = 1 - a, r = lerp(p.size, p.r1, 1 - Math.pow(1 - t, 3)); ctx.strokeStyle = p.color; ctx.globalAlpha = a * ringK; ctx.lineWidth = p.width * a + 1; ctx.beginPath(); ctx.ellipse(p.x, p.y, Math.max(0.1, r), Math.max(0.1, r * p.squash), 0, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1; }
+    else if (p.type === 'ring') { const t = 1 - a, r = lerp(p.size, p.r1, 1 - Math.pow(1 - t, 3)); ctx.strokeStyle = p.color; ctx.globalAlpha = a * ringK * (p.r1 > 260 ? 0.65 : 1); ctx.lineWidth = (p.r1 > 260 ? 0.7 : 1) * p.width * a + 1; ctx.beginPath(); ctx.ellipse(p.x, p.y, Math.max(0.1, r), Math.max(0.1, r * p.squash), 0, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1; }
     else if (p.type === 'ember') drawGlow(ctx, p.x, p.y - p.z, p.size * 4, p.color, a);
     else if (p.type === 'impact') { const t = 1 - a; ctx.save(); ctx.translate(p.x, p.y - p.z); ctx.rotate(p.rot); ctx.globalAlpha = a; ctx.fillStyle = '#ffffff'; const L = p.r1 * (0.6 + t), W = p.size * a; ctx.beginPath(); ctx.moveTo(-L * 0.3, 0); ctx.lineTo(0, -W); ctx.lineTo(L, 0); ctx.lineTo(0, W); ctx.closePath(); ctx.fill(); ctx.restore(); ctx.globalAlpha = 1; }
     else if (p.type === 'shard') { ctx.save(); ctx.translate(p.x, p.y - p.z); ctx.rotate(p.rot); ctx.globalAlpha = Math.min(1, a * 2); ctx.fillStyle = p.color; ctx.beginPath(); ctx.moveTo(0, -p.size); ctx.lineTo(p.size * 0.45, 0); ctx.lineTo(0, p.size * 0.6); ctx.lineTo(-p.size * 0.45, 0); ctx.closePath(); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fillRect(-0.8, -p.size * 0.8, 1.6, p.size * 0.6); ctx.restore(); ctx.globalAlpha = 1; }
@@ -260,7 +275,8 @@ export function createFx(G, Q) {
     // telegraph edges above it)
     fx.clutter = clamp((n - 90) / 180, 0, 1);
     let rn = 0; for (const p of parts) if (p.type === 'ring') rn++;
-    ringN = rn; ringK = clamp(Math.sqrt(5 / Math.max(1, rn)), 0.45, 1);
+    // (playtest2 P1-4: a late fight stacked screen-wide white rings; they dim harder with count and clutter)
+    ringN = rn; ringK = clamp(Math.sqrt(4 / Math.max(1, rn)), 0.4, 1) * (1 - 0.4 * fx.clutter);
     for (const p of parts) if (p.add && !SORTED.has(p.type) && p.type !== 'mote') drawPart(ctx, p, P);
     for (const b of bolts) drawBolt(ctx, b);
   };
@@ -271,6 +287,7 @@ export function createFx(G, Q) {
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     // never over the boss bar / top HUD band (css y < 118)
     const minY = G.view && G.view.toWorld ? G.view.toWorld(0, G.boss ? 128 : 70).y : -1e9;
+    if (COVER) return;   // ?cover: no damage numbers or call-outs (playtest2 P2-12)
     for (const t of texts) {
       const a = clamp(t.life / 0.3, 0, 1), s = t.size * (1 + t.pop * 0.3);
       const y = Math.max(t.y, minY + s);

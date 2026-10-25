@@ -281,6 +281,7 @@ function paintFloor(ch, q) {
   g.save(); polyPath(g, shape); g.clip();
   ge.save(); polyPath(ge, shape); ge.clip();
   const depth = (x, y) => clamp((n(x / 560 + 7.3, y / 560 - 2.1) - 0.5) * 2.4, 0, 1); // 0 dry .. 1 drowned
+  const rd = rng(hashSeed('ch-slab-detail', ch.seed, ch.template));   // its own stream: the slab layout is unchanged
   const veinsL = new Path2D(), veinsD = new Path2D(), cracks = new Path2D();
   const longX = b.w >= b.h;
   const inAisle = (x, y) => (longX ? Math.abs(y) < 74 : Math.abs(x) < 84);
@@ -332,6 +333,7 @@ function paintFloor(ch, q) {
     if (r() < 0.07) { const [a, b2, c, d] = pts; g.fillStyle = 'rgba(0,4,16,0.4)'; g.beginPath(); g.moveTo(b2[0], b2[1]); g.lineTo(c[0], c[1]); g.lineTo((d[0] + c[0]) / 2, (d[1] + c[1]) / 2); g.closePath(); g.fill(); }
     // water standing on the drowned slabs
     if (dp > 0.35) { g.globalAlpha = dp * 0.35; g.drawImage(glow('#1a5a7a', 1), cx - w * 0.6, cy - h * 0.6, w * 1.2, h * 1.2); g.globalAlpha = 1; }
+    slabDetail(g, ge, pts, cx, cy, w, h, dp, pale, rd);
   }
   // cloudy marble: soft light and dark clouds drifting across the slabs
   for (let i = 0; i < (b.w * b.h) / 40000; i++) {
@@ -413,6 +415,7 @@ function paintFloor(ch, q) {
     g.restore();
   }
   polyPath(g, shape); fillGrain(g, 'soft', 0.25);
+  polyPath(g, shape); fillGrain(g, 'stone', 0.3);
   // wet sheen and silt: dark drifts in the corners, pale sand ripples
   for (let i = 0; i < 16; i++) {
     const x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1), rr = r.range(160, 380);
@@ -464,6 +467,71 @@ function paintFloor(ch, q) {
   for (const d of ch.doors) doorFrame(g, ge, d);
   mark('walls');
   return { W, E };
+}
+// Painted detail on one marble slab (playtest2 P2-9: the Choir floor read as flat blue slabs beside
+// Glasswood's art). Baked once per chamber. Carved inset borders, gold-inlaid rosettes and memorial script on
+// the tomb slabs, sea-light glowing up through cracks, barnacles in the corners, darker mottling.
+function slabDetail(g, ge, pts, cx, cy, w, h, dp, pale, r) {
+  const ins = (d) => pts.map(([x, y]) => [x + (cx - x) * (2 * d / w), y + (cy - y) * (2 * d / h)]);
+  // mottling: two or three soft dark and pale clouds inside the slab
+  g.save(); polyPath(g, pts); g.clip();
+  for (let k = 0; k < 5; k++) { const lite = r() < 0.4, rr = r.range(18, 52); g.globalAlpha = lite ? 0.13 : 0.28; g.drawImage(glow(lite ? '#c8d8ff' : '#01040e', 1), cx + r.range(-w * 0.4, w * 0.4) - rr, cy + r.range(-h * 0.35, h * 0.35) - rr * 0.6, rr * 2, rr * 1.2); }
+  g.globalAlpha = 1;
+  g.restore();
+  const big = w > 130 && h > 70, roll = r();
+  if (roll < 0.42) {
+    // a carved inset border: a dark groove with a lit lower lip
+    const p2 = ins(9);
+    polyPath(g, p2); g.strokeStyle = 'rgba(2,6,20,0.55)'; g.lineWidth = 2; g.stroke();
+    g.save(); g.translate(0.8, 1.2); polyPath(g, p2); g.strokeStyle = `rgba(190,215,255,${0.2 - dp * 0.1})`; g.lineWidth = 1; g.stroke(); g.restore();
+    if (big && r() < 0.35) {
+      // a gold-inlaid rosette: a ring, an eight-point star, a tiny centre boss (squashed to the floor)
+      const R = Math.min(w, h * 1.6) * 0.22;
+      g.save(); g.translate(cx, cy); g.scale(1, 0.62);
+      g.strokeStyle = hexA(GOLD, 0.55 - dp * 0.25); g.lineWidth = 1.6;
+      g.beginPath(); g.arc(0, 0, R, 0, TAU); g.moveTo(R * 0.72, 0); g.arc(0, 0, R * 0.72, 0, TAU); g.stroke();
+      g.beginPath();
+      for (let i = 0; i < 16; i++) { const a = (i / 16) * TAU, rr = i % 2 ? R * 0.3 : R * 0.68; i ? g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) : g.moveTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+      g.closePath(); g.fillStyle = hexA(GOLD, 0.16); g.fill(); g.stroke();
+      g.fillStyle = hexA(GOLD, 0.7); g.beginPath(); g.arc(0, 0, 2.5, 0, TAU); g.fill();
+      g.restore();
+      ge.globalCompositeOperation = 'lighter'; ge.globalAlpha = 0.35; ge.drawImage(glow('#ffd27a'), cx - R, cy - R * 0.62, R * 2, R * 1.24); ge.globalAlpha = 1; ge.globalCompositeOperation = 'source-over';
+    } else if (big || r() < 0.4) {
+      // memorial script: rows of worn carved letters
+      const rows = Math.max(2, Math.min(4, Math.floor((h - 30) / 14))), x0 = cx - w * 0.32, x1 = cx + w * 0.32;
+      g.lineCap = 'round';
+      for (let j = 0; j < rows; j++) {
+        const y = cy - (rows - 1) * 7 + j * 14;
+        g.beginPath();
+        for (let x = x0 + r.range(0, 8); x < x1 - (j === rows - 1 ? w * 0.2 : 0); x += r.range(5, 9)) {
+          if (r() < 0.12) { x += 6; continue; }   // a word gap
+          const t = r(); g.moveTo(x, y + 3); if (t < 0.4) g.lineTo(x, y - 3); else if (t < 0.7) g.lineTo(x + 3, y - 3); else g.quadraticCurveTo(x + 4, y - 4, x + 1, y);
+        }
+        g.strokeStyle = 'rgba(2,6,22,0.5)'; g.lineWidth = 1.4; g.stroke();
+        g.save(); g.translate(0.6, 0.9); g.strokeStyle = `rgba(200,220,255,${0.13 - dp * 0.06})`; g.lineWidth = 0.8; g.stroke(); g.restore();
+      }
+    }
+  } else if (roll < 0.6) {
+    // sea-light welling up through a crack (glow layer), with a dark lip on the floor
+    let x = cx + r.range(-w * 0.3, w * 0.3), y = cy + r.range(-h * 0.3, h * 0.3);
+    const path = new Path2D(); path.moveTo(x, y);
+    for (let k = 0; k < 4; k++) { x += r.range(-24, 24); y += r.range(-12, 12); path.lineTo(x, y); if (r() < 0.3) { path.lineTo(x + r.range(-12, 12), y + r.range(-8, 8)); path.moveTo(x, y); } }
+    g.strokeStyle = 'rgba(2,6,20,0.7)'; g.lineWidth = 2.2; g.lineCap = 'round'; g.stroke(path);
+    ge.globalCompositeOperation = 'lighter'; ge.lineCap = 'round';
+    ge.strokeStyle = hexA(r() < 0.75 ? '#7fd0ff' : '#9ff0d0', 0.55); ge.lineWidth = 2.4; ge.stroke(path);
+    ge.strokeStyle = 'rgba(230,250,255,0.5)'; ge.lineWidth = 0.9; ge.stroke(path);
+    ge.globalCompositeOperation = 'source-over';
+  }
+  // barnacles crusting a corner of the drowned slabs
+  if (r() < 0.1 + dp * 0.25) {
+    const [px, py] = pts[(r() * 4) | 0], ax = px + (cx - px) * 0.12, ay = py + (cy - py) * 0.12;
+    for (let k = 0; k < 7; k++) {
+      const x = ax + r.range(-12, 12), y = ay + r.range(-7, 7), s = r.range(1.6, 3.6);
+      g.fillStyle = r() < 0.5 ? '#7c94ac' : '#56688a'; g.beginPath(); g.ellipse(x, y, s, s * 0.75, 0, 0, TAU); g.fill();
+      g.fillStyle = '#0e1630'; g.beginPath(); g.arc(x, y - s * 0.15, s * 0.36, 0, TAU); g.fill();
+    }
+  }
+  void pale;
 }
 function floodedPit(g, ge, h, r) {
   voidHole(g, ge, h, r, '#1a4a8a', '#9fd0ff');

@@ -349,7 +349,7 @@ function fan(G, e, A, offset) {
   }
 }
 function ring(G, e, A, delay) {
-  fx(G, { kind: 'song', x: e.x, y: e.y, r: 20, r1: A.r, speed: A.speed, w: A.w, mul: 1, owner: e.id, src: e, hit: false, delay, color: e.elite ? '#ff5aa0' : '#7fd0ff' });
+  fx(G, { kind: 'song', x: e.x, y: e.y, r: 20, r1: A.r, speed: A.speed, w: A.w, mul: 1, owner: e.id, src: e, hit: false, delay, color: e.elite ? '#ff3a7a' : '#8a3cff' });
 }
 function burnWater(G, e, x, y, r, t) {
   if (!inside(G, x, y)) return;
@@ -365,6 +365,10 @@ export function updateFoeFx(G, dt) {
     f.t += dt;
     if (f.kind === 'shock' || f.kind === 'song') {
       f.r += f.speed * dt;
+      // the ring is also a live telegraph while it travels (bot, readability pass, anything reading G.telegraphs);
+      // painted by the foe fx painter, so the renderer skips it on the floor pass (fxRing)
+      if (!f.tg) f.tg = C.telegraph ? C.telegraph(G, { kind: 'ring', x: f.x, y: f.y, r: f.r, w: f.w, live: true, fxRing: true, owner: f.owner, color: f.color, sfx: false }) : null;
+      else f.tg.r = f.r;
       if (!f.hit && h && heroInRing(G, f.x, f.y, f.r, f.w)) { f.hit = true; hurt(G, f.src, f.mul, { x: f.x, y: f.y, kb: 360, kind: f.kind }); }
       if (f.r >= f.r1) f.done = true;
     } else if (f.kind === 'lob') {
@@ -404,5 +408,5 @@ export function updateFoeFx(G, dt) {
       } else if (f.state === 'snap') { f.snapT = (f.snapT || 0) + dt; if (f.snapT > 0.3) f.done = true; }
     } else if (f.t > (f.life || 2)) f.done = true;
   }
-  for (let i = L.length - 1; i >= 0; i--) if (L[i].done) L.splice(i, 1);
+  for (let i = L.length - 1; i >= 0; i--) if (L[i].done) { if (L[i].tg) L[i].tg.done = true; L.splice(i, 1); }
 }

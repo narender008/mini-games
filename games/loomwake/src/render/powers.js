@@ -270,12 +270,14 @@ const AIR = {
   },
   mud(c, p, G, P) { void c; void p; void P; },
   ring(c, p, G, P) {
-    const u = clamp(p.t / p.life, 0, 1), k = 1 - u;
+    // playtest2 P1-4: big rings stacked late in a fight washed the screen white; each ring is dimmer the more
+    // there are and the busier the screen is, and only the newest keeps its white core (ringRank, drawPowers)
+    const u = clamp(p.t / p.life, 0, 1), k = (1 - u) * ringDim * (ringRank > 1 ? 0.7 : 1) * (p.r > 300 ? 0.75 : 1);
     const col = p.style === 'quake' ? '#d8a46a' : p.style === 'tide' ? '#5ec8ff' : p.style === 'hymn' ? '#fff1c4' : EC[p.element] || EC[p.style] || '#ffd27a';
     c.save(); c.lineCap = 'round';
-    for (let i = 0; i < 3; i++) {
+    for (let i = ringRank > 1 ? 1 : 0; i < 3; i++) {
       const rr = p.r * (1 - i * 0.07);
-      c.strokeStyle = hexA(i ? col : '#ffffff', (i ? 0.55 : 0.45) * k); c.lineWidth = (p.style === 'tide' ? 14 : 9) * (1 - i * 0.3) * (0.4 + 0.6 * k);
+      c.strokeStyle = hexA(i ? col : '#ffffff', (i ? 0.5 : 0.32) * k); c.lineWidth = (p.style === 'tide' ? 14 : 9) * (1 - i * 0.3) * (0.4 + 0.6 * k);
       ell(c, p.x, p.y, rr); c.stroke();
     }
     if (p.style === 'tide') {
@@ -284,7 +286,7 @@ const AIR = {
       for (let i = 0; i < 28; i++) { const a = (i / 28) * TAU + p.seed; c.beginPath(); c.arc(p.x + Math.cos(a) * p.r, p.y + Math.sin(a) * p.r * SQ - 4, 4 + 3 * hash(p.seed + i), 0, TAU); c.fill(); }
     }
     c.restore();
-    P.glow(c, p.x, p.y, p.r * 1.1, col, 0.22 * k);
+    P.glow(c, p.x, p.y, p.r * 1.1, col, 0.16 * k);
   },
   strike(c, p, G, P) {
     const col = EC[p.element] || '#a6f6ff';
@@ -366,29 +368,34 @@ const AIR = {
     P.glow(c, h.x, hy, 120, '#b48cff', 0.5 * k);
   },
   cyclone(c, p, G, P) {
-    const k = fade(p, 0.2, 0.4), col = cyCol(p), r = p.r, H = r * 2.6, t = P.t;
-    c.save(); c.lineCap = 'round';
-    // the funnel's body: a soft column that widens as it climbs, swaying with the rings
+    // playtest2 P1-4: wisps, not a coil spring. A soft column, three helical strands of wind that wrap it
+    // (the back halves faint, the front halves brighter with a thin white core), broken into open wisps,
+    // all dimmed when the screen is busy.
+    const k = fade(p, 0.2, 0.4) * busyDim, col = cyCol(p), r = p.r, H = r * 2.6, t = P.t;
+    c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
     const sw = (u) => Math.sin(t * 3 + u * 4 + p.seed) * r * 0.25 * u, wd = (u) => r * (0.4 + 0.9 * u * u);
     const fg = c.createLinearGradient(0, p.y, 0, p.y - H);
-    fg.addColorStop(0, hexA(col, 0.22 * k)); fg.addColorStop(0.6, hexA(col, 0.1 * k)); fg.addColorStop(1, hexA(col, 0));
+    fg.addColorStop(0, hexA(col, 0.16 * k)); fg.addColorStop(0.6, hexA(col, 0.07 * k)); fg.addColorStop(1, hexA(col, 0));
     c.fillStyle = fg; c.beginPath();
     for (let j = 0; j <= 8; j++) { const u = j / 8; c.lineTo(p.x + sw(u) - wd(u), p.y - u * H); }
     for (let j = 8; j >= 0; j--) { const u = j / 8; c.lineTo(p.x + sw(u) + wd(u), p.y - u * H); }
     c.closePath(); c.fill();
-    // wind streaks spiralling up it
-    for (let j = 0; j < 5; j++) {
-      const ph = (t * 1.3 + j / 5) % 1, a = t * 10 + j * 2;
-      c.strokeStyle = hexA('#ffffff', 0.35 * k * Math.sin(Math.PI * ph)); c.lineWidth = 1.5;
-      c.beginPath(); c.ellipse(p.x + sw(ph), p.y - ph * H, wd(ph) * 1.05, wd(ph) * 0.3, 0, a, a + 1.4); c.stroke();
-    }
-    const N = 9;
-    for (let i = 0; i < N; i++) {
-      const u = i / (N - 1), y = p.y - u * H, rr = r * (0.28 + 0.9 * u * u + 0.12);
-      const sway = Math.sin(t * 3 + u * 4 + p.seed) * r * 0.25 * u;
-      const a = t * 9 - u * 3;
-      c.strokeStyle = hexA(i % 3 ? col : '#ffffff', (0.22 + 0.3 * (1 - u)) * k); c.lineWidth = 2.5 + 3 * (1 - u);
-      c.beginPath(); c.ellipse(p.x + sway, y, rr, rr * 0.3, 0, a, a + 4.2); c.stroke();
+    for (let j = 0; j < 3; j++) {
+      const ph = t * 7 + j * 2.094 + p.seed, rk = 0.78 + 0.14 * j, gap = (t * 0.9 + j * 0.37 + p.seed * 0.1) % 1;
+      for (let side = 0; side < 2; side++) {
+        c.beginPath();
+        let pen = false;
+        for (let s = 0; s <= WISP_N; s++) {
+          const u = s / WISP_N, a = ph - u * (8 + 2 * j);
+          // the strand breaks up: a drifting gap and only its front or back half on this pass
+          const on = (Math.sin(a) > 0) === (side === 1) && Math.abs(((u - gap + 1) % 1) - 0.5) < 0.38;
+          if (!on) { pen = false; continue; }
+          const w = wd(u) * rk * (1 + 0.14 * Math.sin(u * 7 + ph * 0.7)), x = p.x + sw(u) + Math.cos(a) * w, y = p.y - u * H + Math.sin(a) * w * 0.34 - Math.cos(a) * w * 0.12;
+          if (pen) c.lineTo(x, y); else { c.moveTo(x, y); pen = true; }
+        }
+        if (side === 0) { c.strokeStyle = hexA(col, 0.14 * k); c.lineWidth = 3; c.stroke(); }
+        else { c.strokeStyle = hexA(col, 0.2 * k); c.lineWidth = 5; c.stroke(); c.strokeStyle = hexA('#ffffff', 0.34 * k); c.lineWidth = 1.3; c.stroke(); }
+      }
     }
     c.restore();
     P.glow(c, p.x, p.y - H * 0.4, r * 2, col, 0.25 * k);
@@ -544,11 +551,22 @@ function heroAir(c, G, P) {
 }
 
 // ---------------------------------------------------------------- entry points
-const CAP_PER_KIND = 5, SEEN = {};
+const CAP_PER_KIND = 5, SEEN = {}, CAP_KIND = { ring: 3, cyclone: 4 };
+// busy-screen dimming (playtest2 P1-4), set once per frame on the 'air' pass: busyDim from the additive
+// clutter (fx.clutter), ringDim also from how many rings are up; ringRank is the painted ring's rank, newest = 1
+const WISP_N = 28;
+let busyDim = 1, ringDim = 1, ringRank = 0;
 export function drawPowers(ctx, G, P, layer) {
   if (!G) return;
   attach(G, P);
   if (layer === 'ground') frame(G, P);
+  else {
+    let nr = 0;
+    if (G.powers) for (const p of G.powers) if (p.kind === 'ring' && !p.dead && !(p.delay > 0)) nr++;
+    const cl = P.fx?.clutter || 0;
+    busyDim = 1 - 0.45 * cl;
+    ringDim = busyDim * clamp(Math.sqrt(1.5 / Math.max(1, nr)), 0.5, 1);
+  }
   const L = layer === 'ground' ? GROUND : AIR;
   const list = G.powers;
   // clutter cap (engine, playtest P1-13): at most CAP_PER_KIND of one kind are painted, the newest; a late
@@ -561,7 +579,8 @@ export function drawPowers(ctx, G, P, layer) {
       const f = L[p.kind];
       if (!f) continue;
       const n = (seen[p.kind] = (seen[p.kind] || 0) + 1);
-      if (n > CAP_PER_KIND) continue;
+      if (n > (CAP_KIND[p.kind] || CAP_PER_KIND)) continue;
+      ringRank = n;
       try { f(ctx, p, G, P); } catch (err) { once('draw.' + p.kind, err); }
     }
   }

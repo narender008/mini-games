@@ -29,9 +29,11 @@ export function createCamera(G) {
   G.bus.on('kill', ({ e }) => { if (e.boss) { cam.addShake(0.8); cam.punch(0.08); } });
   // Boss framing: the box around Iri (with a little room) and the whole boss, feet to crown (content height),
   // must fit in the band between the boss bar (top) and the HUD (bottom). Zoom out as far as needed (to 0.6),
-  // never in past 1.04. Returns the world point to centre on and the zoom.
+  // never in past 1.04; past that Iri keeps her place and the boss is cropped (keepHero). Returns the world
+  // point to centre on and the zoom.
   cam.viewW = 1280; cam.viewH = 720; cam.base = 1;   // css px, css px per world unit at zoom 1 (set by the renderer)
   const TOP = 120, BOT = 128, SIDE = 70;
+  const fitT = { x: 0, y: 0 };
   function frameBoss(G, B, h) {
     const H = bossHeight(B);
     const x0 = Math.min(h.x - 60, B.x - (B.r || 40) - 30), x1 = Math.max(h.x + 60, B.x + (B.r || 40) + 30);
@@ -43,7 +45,18 @@ export function createCamera(G) {
     // too tall to fit even at the widest zoom: the boss's crown stays just under the boss bar, the rest
     // of the band runs down toward Iri
     const y = zy < 0.6 ? y0 + (cam.viewH / 2 - TOP) / k : (y0 + y1) / 2 - ((TOP - BOT) / 2) / k;
-    return { zoom, x: (x0 + x1) / 2, y };
+    fitO.zoom = zoom; fitO.x = (x0 + x1) / 2; fitO.y = y;
+    return keepHero(fitO, h, k);
+  }
+  // playtest2 P1-6: Iri always stays in the band (with her own margin); when the boss is too big to fit too,
+  // the boss is cropped, never Iri. Moves the centre (o.x, o.y) the least distance that keeps her box inside.
+  const fitO = { zoom: 1, x: 0, y: 0, cx: false, cy: false };
+  function keepHero(o, h, k) {
+    const hx0 = h.x - 60, hx1 = h.x + 60, hy0 = h.y - (h.z || 0) - 120, hy1 = h.y + 40;
+    const halfW = (cam.viewW / 2 - SIDE) / k, up = (cam.viewH / 2 - TOP) / k, down = (cam.viewH / 2 - BOT) / k;
+    const x = clamp(o.x, hx1 - halfW, Math.max(hx1 - halfW, hx0 + halfW)), y = clamp(o.y, hy1 - down, Math.max(hy1 - down, hy0 + up));
+    o.cx = x !== o.x; o.cy = y !== o.y; o.x = x; o.y = y;
+    return o;
   }
   // Conversations: Iri and every speaker of the conversation who stands in the scene (hub NPCs) fit in the
   // band above the dialogue box (about 260 css px tall), so nobody is hidden behind it.
@@ -85,7 +98,8 @@ export function createCamera(G) {
       const lx = ad ? ad.x * lead : 0, ly = ad ? ad.y * lead * 0.6 : 0;
       let tx = h.x + lx, ty = h.y - (hubish ? HUB_LOOK : 30) + ly;
       if (G.ui?.camFocus) { tx = lerp(tx, G.ui.camFocus.x, 0.5); ty = lerp(ty, G.ui.camFocus.y, 0.5); }
-      else if (fit) { tx = lerp(tx, fit.x, 0.85); ty = lerp(ty, fit.y, 0.85); }
+      // (when Iri is what limits the framing, the frame sits exactly at that limit: the most boss that fits)
+      else if (fit) { tx = fit.cx ? fit.x : lerp(tx, fit.x, 0.85); ty = fit.cy ? fit.y : lerp(ty, fit.y, 0.85); fitT.x = tx; fitT.y = ty; keepHero(fitT, h, cam.base * Math.min(cam.zoom, fit.zoom)); tx = fitT.x; ty = fitT.y; }
       const k = 1 - Math.exp(-dt * c.follow);
       cam.x = lerp(cam.x, tx, k); cam.y = lerp(cam.y, ty, k);
       // soft clamp: keep the chamber from sliding fully off screen

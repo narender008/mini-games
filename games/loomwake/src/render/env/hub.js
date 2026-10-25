@@ -716,7 +716,20 @@ const backIsles = screenCache((W, H) => {
   isle(W * 0.33, H * 0.3, 0.7 * k, tone, (x, y, s) => { g.fillRect(x - 40 * s, y - 70 * s, 80 * s, 70 * s); g.beginPath(); g.moveTo(x - 20 * s, y - 70 * s); g.lineTo(x, y - 160 * s); g.lineTo(x + 20 * s, y - 70 * s); g.fill(); });
   isle(W * 0.72, H * 0.34, 0.8 * k, tone, (x, y, s) => { for (const dx of [-40, 0, 40]) g.fillRect(x + dx * s - 9 * s, y - r.range(80, 140) * s, 18 * s, 140 * s); });
   isle(W * 0.9, H * 0.46, 0.6 * k, tone, (x, y, s) => { g.strokeStyle = tone; g.lineWidth = 3 * s; for (let i = 0; i < 5; i++) { g.beginPath(); g.moveTo(x - 50 * s + i * 25 * s, y); g.quadraticCurveTo(x + i * 10 * s, y - 120 * s, x + 60 * s, y - 180 * s); g.stroke(); } });
-  for (let i = 0; i < 14; i++) { const x = r() * W, y = H * r.range(0.35, 0.8), s = r.range(0.1, 0.3) * k; g.fillStyle = '#3a1e3a'; g.beginPath(); g.moveTo(x - 60 * s, y); g.lineTo(x + 60 * s, y); g.lineTo(x, y + 90 * s); g.closePath(); g.fill(); }
+  // drifting rocks (playtest2 P2-14: flat dark triangles read as stray UI): small rough islets, a lit top
+  // with a sprig of grass, a ragged underside fading into the haze
+  for (let i = 0; i < 14; i++) {
+    const x = r() * W, y = H * r.range(0.35, 0.8), s = r.range(0.1, 0.3) * k;
+    const ug = g.createLinearGradient(0, y, 0, y + 64 * s); ug.addColorStop(0, '#3a1e3a'); ug.addColorStop(0.5, 'rgba(58,30,58,0.6)'); ug.addColorStop(1, 'rgba(58,30,58,0)');
+    g.fillStyle = ug; g.beginPath(); g.moveTo(x - 60 * s, y);
+    const n = 5 + (r() * 3 | 0);
+    for (let j = 1; j < n; j++) { const u = j / n; g.lineTo(x + (u - 0.5) * 120 * s + r.range(-8, 8) * s, y + Math.sin(u * Math.PI) * r.range(22, 50) * s + (j % 2) * r.range(0, 14) * s); }
+    g.lineTo(x + 60 * s, y); g.quadraticCurveTo(x + 30 * s, y - 14 * s, x, y - 10 * s); g.quadraticCurveTo(x - 34 * s, y - 16 * s, x - 60 * s, y); g.closePath(); g.fill();
+    g.fillStyle = 'rgba(150,96,140,0.55)'; g.beginPath(); g.moveTo(x - 60 * s, y); g.quadraticCurveTo(x - 34 * s, y - 16 * s, x, y - 10 * s); g.quadraticCurveTo(x + 30 * s, y - 14 * s, x + 60 * s, y); g.quadraticCurveTo(x, y + 6 * s, x - 60 * s, y); g.fill();
+    g.strokeStyle = 'rgba(120,150,110,0.6)'; g.lineWidth = Math.max(1, 3 * s); g.beginPath();
+    for (let j = 0; j < 4; j++) { const gx = x + r.range(-40, 40) * s; g.moveTo(gx, y - 6 * s); g.lineTo(gx + r.range(-6, 6) * s, y - r.range(16, 30) * s); }
+    g.stroke();
+  }
   // their own little lights
   g.globalCompositeOperation = 'lighter';
   for (const [fx, fy, col] of [[0.12, 0.4, '#7ff3ff'], [0.33, 0.27, '#f2c46b'], [0.72, 0.32, '#ff7a2a'], [0.9, 0.43, '#ff6aa8']]) g.drawImage(glow(col), fx * W - 60 * k, fy * H - 60 * k, 120 * k, 120 * k);

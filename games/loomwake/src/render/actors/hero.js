@@ -567,22 +567,27 @@ let xrayC = null;
 export function drawHeroXray(ctx, h, G, P, k = 1) {
   if (!bodyC || k <= 0.01 || !h.anim || h.state === 'dead') return;
   if (!xrayC || xrayC.width !== bodyC.width || xrayC.height !== bodyC.height) xrayC = mk(bodyC.width, bodyC.height);
-  // a thin bright outline (the silhouette grown by ~1.5 px, minus itself) over a faint ghost of Iri herself:
-  // reads as "Iri is here, behind", never as a flat cut-out
-  const g = xrayC.getContext('2d'), d = Math.max(1, Math.round(1.6 * sprScale));
+  // playtest2 P1-3: a 2-3 css px gold rim (the silhouette grown, minus itself) over a ~30% gold fill and a faint
+  // ghost of Iri herself: reads clearly through a boss's skirt, never as a flat cut-out. The rim width is set in
+  // screen px, so it holds at the wide boss zooms.
+  const g = xrayC.getContext('2d');
+  const d = clamp(2.6 * (P.dpr || 1) * sprScale / Math.max(0.3, P.scale || 1), 1.5, 8);
   g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, xrayC.width, xrayC.height);
   for (const [ox, oy] of XRAY_RING) g.drawImage(bodyC, ox * d, oy * d);
-  g.globalCompositeOperation = 'destination-out'; g.drawImage(bodyC, 0, 0);
-  g.globalCompositeOperation = 'source-in'; g.fillStyle = '#ffe6b0'; g.fillRect(0, 0, xrayC.width, xrayC.height);
-  g.globalCompositeOperation = 'source-over';
+  g.globalCompositeOperation = 'source-in'; g.fillStyle = '#ffc95a'; g.fillRect(0, 0, xrayC.width, xrayC.height);
+  // the interior keeps 30% of the gold: the fill
+  g.globalCompositeOperation = 'destination-out'; g.globalAlpha = 0.7; g.drawImage(bodyC, 0, 0);
+  g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
   const x = h.x, y = h.y - (h.z || 0);
   ctx.save();
-  blit(ctx, bodyC, x, y, 0.28 * k);
+  blit(ctx, inkC, x, y, 0.35 * k);
+  blit(ctx, bodyC, x, y, 0.22 * k);
+  blit(ctx, xrayC, x, y, 0.95 * k);
   ctx.globalCompositeOperation = 'lighter';
-  blit(ctx, xrayC, x, y, 0.9 * k);
+  blit(ctx, xrayC, x, y, 0.35 * k * (0.75 + 0.25 * Math.sin((P.t || 0) * 5)));
   ctx.restore();
 }
-const XRAY_RING = [[-1, 0], [1, 0], [0, -1], [0, 1], [-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]];
+const XRAY_RING = [[-1, 0], [1, 0], [0, -1], [0, 1], [-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7], [-0.5, 0], [0.5, 0], [0, -0.5], [0, 0.5]];
 
 export function heroLights(h, G, push) {
   if (!h || (h.state === 'dead' && h.st > 1.2)) return;
