@@ -1,0 +1,13 @@
+{
+  "name": "Emberfall",
+  "short_name": "Emberfall",
+  "description": "A 2D metroidvania: carry a lantern through lit caves, a glowing thicket, a drowned cloister and a volcanic core.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#07050a",
+  "theme_color": "#07050a",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

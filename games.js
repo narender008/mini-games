@@ -146,4 +146,13 @@ window.MINI_GAMES = [
     imageAlt: 'A white-sailed galleon trades cannon fire with red-sailed pirate ships on a purple and gold sunset sea, with lighthouses on palm islands and a smoking volcano behind',
     tags: ['2D', 'Ages 10+', 'Mouse first'],
   },
+  {
+    slug: 'emberfall',
+    name: 'Emberfall',
+    description: 'A lantern-lit metroidvania: explore 67 connected rooms of caves, a glowing fungal thicket, a drowned cloister and a volcanic core, earn five abilities and face four bosses.',
+    path: 'games/emberfall/',
+    image: 'games/emberfall/cover.jpg',
+    imageAlt: 'A hooded wanderer with a glowing lantern stands on a ledge in a forest of giant luminous pink and teal mushrooms under a beam of moonlight',
+    tags: ['2D', 'Ages 10+', 'Keyboard first'],
+  },
 ];
