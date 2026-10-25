@@ -66,19 +66,34 @@ export function rr(g, x, y, w, h, r) {
 }
 export function ell(g, x, y, rx, ry, rot = 0) { g.beginPath(); g.ellipse(x, y, Math.max(0.1, Math.abs(rx)), Math.max(0.1, Math.abs(ry)), rot, 0, TAU); }
 export function circ(g, x, y, r) { g.beginPath(); g.arc(x, y, Math.max(0.1, r), 0, TAU); }
+// Soft glows are cached radial images per colour, drawn scaled with
+// globalAlpha (the stops are linear in alpha, so this matches a gradient fill
+// and costs far less on CPU-rasterised canvases than a fresh gradient).
+const glowImgs = new Map();
+function glowImg(col, soft) {
+  const key = col + (soft ? '|s' : '');
+  let c = glowImgs.get(key);
+  if (c) return c;
+  c = layer(96, 96); const cg = c.getContext('2d'), gr = cg.createRadialGradient(48, 48, 0, 48, 48, 48);
+  if (soft) { gr.addColorStop(0, rgba(col, 1)); gr.addColorStop(1, rgba(col, 0)); }
+  else { gr.addColorStop(0, rgba(col, 1)); gr.addColorStop(0.35, rgba(col, 0.35)); gr.addColorStop(1, rgba(col, 0)); }
+  cg.fillStyle = gr; cg.fillRect(0, 0, 96, 96);
+  if (glowImgs.size > 200) glowImgs.clear();
+  glowImgs.set(key, c); return c;
+}
 export function glow(g, x, y, r, col, a = 1) {
-  if (r <= 0 || a <= 0) return;
-  const gr = g.createRadialGradient(x, y, 0, x, y, r);
-  gr.addColorStop(0, rgba(col, Math.min(1, a))); gr.addColorStop(0.35, rgba(col, Math.min(1, a) * 0.35)); gr.addColorStop(1, rgba(col, 0));
-  const op = g.globalCompositeOperation;
-  g.globalCompositeOperation = 'lighter'; g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
-  g.globalCompositeOperation = op;
+  if (r <= 0 || a <= 0.003) return;
+  const op = g.globalCompositeOperation, ga = g.globalAlpha;
+  g.globalCompositeOperation = 'lighter'; g.globalAlpha = ga * Math.min(1, a);
+  g.drawImage(glowImg(col, false), x - r, y - r, r * 2, r * 2);
+  g.globalCompositeOperation = op; g.globalAlpha = ga;
 }
 // soft glow without changing the blend mode (caller sets it)
 export function softDot(g, x, y, r, col, a = 1) {
-  const gr = g.createRadialGradient(x, y, 0, x, y, r);
-  gr.addColorStop(0, rgba(col, a)); gr.addColorStop(1, rgba(col, 0));
-  g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+  if (r <= 0 || a <= 0.003) return;
+  const ga = g.globalAlpha; g.globalAlpha = ga * Math.min(1, a);
+  g.drawImage(glowImg(col, true), x - r, y - r, r * 2, r * 2);
+  g.globalAlpha = ga;
 }
 export function vgrad(g, y0, y1, stops) { const gr = g.createLinearGradient(0, y0, 0, y1); for (const [o, c] of stops) gr.addColorStop(clamp(o, 0, 1), c); return gr; }
 export function hgrad(g, x0, x1, stops) { const gr = g.createLinearGradient(x0, 0, x1, 0); for (const [o, c] of stops) gr.addColorStop(clamp(o, 0, 1), c); return gr; }

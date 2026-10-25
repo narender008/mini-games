@@ -8,7 +8,7 @@ import { CFG } from '../config.js';
 export const TIERS = {
   high: { name: 'high', dprCap: 2, cacheCap: 2, particles: 1, blur: true, rays: true, distant: true, skyK: 2, rain: 900, agents: 1, grade: true },
   medium: { name: 'medium', dprCap: 1.5, cacheCap: 1.5, particles: 0.6, blur: true, rays: true, distant: true, skyK: 1.25, rain: 520, agents: 0.75, grade: true },
-  low: { name: 'low', dprCap: 1, cacheCap: 1, particles: 0.35, blur: false, rays: false, distant: false, skyK: 1, rain: 260, agents: 0.45, grade: true },
+  low: { name: 'low', dprCap: 1, cacheCap: 1, particles: 0.35, blur: false, rays: false, distant: false, skyK: 1, rain: 170, agents: 0.45, grade: true },
 };
 const ORDER = ['low', 'medium', 'high'];
 

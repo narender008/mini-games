@@ -144,11 +144,14 @@ export function createSky(Q) {
     } },
   };
 
-  function ensure(name, e, cssW, cssH, k) {
+  function ensure(name, e, cssW, cssH, k, exact = false) {
     const L = LAYERS[name], W = Math.ceil(Math.max(cssW, 1280) * 1.3), H = Math.ceil(Math.max(360, cssH * L.h));
     // far layers are painted at a fraction of the pixel ratio: upscaling softens
-    // them like aerial haze, for far less than a canvas blur filter
-    k = Math.max(0.35, +(k * (L.res ?? 1) * (Q().blur ? 1 : 0.85)).toFixed(2));
+    // them like aerial haze, for far less than a canvas blur filter. Layers of
+    // the composited sky are painted at the composite's own scale (exact), so
+    // they go in with whole-pixel 1:1 copies, which a CPU canvas does far
+    // faster than resampled ones.
+    k = exact ? k : Math.max(0.35, +(k * (L.res ?? 1) * (Q().blur ? 1 : 0.85)).toFixed(2));
     let s = strips[name];
     const key = name === 'stormtop' ? 'storm' : e.stripKey || e.key;
     if (s && s.key === key && s.W === W && s.H === H && s.k === k) return s;
@@ -164,15 +167,15 @@ export function createSky(Q) {
     g.scale(k, k);
     LAYERS[name].paint(g, W, H, e);
     const old = strips[name];
-    strips[name] = { canvas: c, key, W, H, k, prev: old && old.W === W && old.H === H ? old.canvas : null, fade: old ? 0 : 1 };
+    strips[name] = { canvas: c, key, W, H, k, prev: old && old.W === W && old.H === H && old.k === k ? old.canvas : null, fade: old ? 0 : 1 };
   }
 
   // gradient, moon, sun glow and rays: cached at half resolution per env key
   let bdc = null;
-  function backdrop(e, w, h) {
-    const key = e.key + '|' + w + 'x' + h + '|' + (Q().rays ? 1 : 0);
+  function backdrop(e, w, h, k = 0.5) {
+    const key = e.key + '|' + w + 'x' + h + '|' + k + '|' + (Q().rays ? 1 : 0);
     if (bdc && bdc.key === key) return bdc.canvas;
-    const k = 0.5, c = bdc && bdc.canvas.width === Math.ceil(w * k) && bdc.canvas.height === Math.ceil(h * k) ? bdc.canvas : layer(w * k, h * k), g = c.getContext('2d');
+    const c = bdc && bdc.canvas.width === Math.ceil(w * k) && bdc.canvas.height === Math.ceil(h * k) ? bdc.canvas : layer(w * k, h * k), g = c.getContext('2d');
     g.setTransform(k, 0, 0, k, 0, 0); g.globalCompositeOperation = 'source-over';
     g.fillStyle = vgrad(g, 0, h, SKY_AT.map((o, i) => [o, e.sky[i]])); g.fillRect(0, 0, w, h);
     if (e.moon.a > 0.02) {
@@ -209,10 +212,16 @@ export function createSky(Q) {
     if (!s) return;
     if (s.fade < 1) s.fade = Math.min(1, s.fade + dt * 1.5);
     const W = s.W, off = ((x % W) + W) % W;
+    const m = g.getTransform(), exact = m.b === 0 && m.c === 0 && Math.abs(m.a - s.k) < 1e-3 && Math.abs(m.d - s.k) < 1e-3;
     const blit = (c, a) => {
       if (a <= 0.003) return;
       g.globalAlpha = alpha * a;
-      for (let xx = -off; xx < size.w; xx += W) g.drawImage(c, xx, y, W, s.H);
+      if (exact) {
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        const yy = Math.round(y * m.d + m.f), x0 = Math.round(-off * m.a + m.e), step = c.width, lim = size.w * m.a + m.e;
+        for (let xx = x0; xx < lim; xx += step) g.drawImage(c, xx, yy);
+        g.setTransform(m);
+      } else for (let xx = -off; xx < size.w; xx += W) g.drawImage(c, xx, y, W, s.H);
     };
     const behind = g.globalCompositeOperation === 'destination-over';
     if (s.prev && s.fade < 1) { if (behind) { blit(s.canvas, s.fade); blit(s.prev, 1); } else { blit(s.prev, 1); blit(s.canvas, s.fade); } } else blit(s.canvas, 1);
@@ -220,14 +229,15 @@ export function createSky(Q) {
     g.globalAlpha = 1;
   }
 
-  function paintBack(g, e, v, t, dt, w, h) {
-      const k = Math.min(size.k, Q().skyK);
-      const ho = ensure('horizon', e, w, h, k);
+  function paintBack(g, e, v, t, dt, w, h, k) {
+      // hanging storm clouds (nearest, so first under destination-over)
+      if (e.storm >= 0.05) { const st = ensure('stormtop', e, w, h, k, true); drawStrip(g, st, t * 9 + v.px * 0.1, -v.py * 0.05 - 10, Math.min(1, e.storm * 1.2), dt); }
+      const ho = ensure('horizon', e, w, h, k, true);
       const hy = h * 0.6 - v.py * 0.28;
       if (hy + ho.H < h) { g.fillStyle = mix(e.cl[2], e.far[1], 0.5); g.fillRect(0, hy + ho.H - 1, w, h - hy - ho.H + 1); }
       drawStrip(g, ho, t * 2.5 + v.px * 0.3, hy, 1, dt);
-      if (Q().distant) { const di = ensure('distant', e, w, h, k); drawStrip(g, di, t * 1.5 + v.px * 0.18, h * 0.33 - v.py * 0.16, 1 - e.fog * 0.7, dt); }
-      const hi = ensure('high', e, w, h, k);
+      if (Q().distant) { const di = ensure('distant', e, w, h, k, true); drawStrip(g, di, t * 1.5 + v.px * 0.18, h * 0.33 - v.py * 0.16, 1 - e.fog * 0.7, dt); }
+      const hi = ensure('high', e, w, h, k, true);
       drawStrip(g, hi, t * 4 + v.px * 0.06, -v.py * 0.05 - 20, 1 - e.storm * 0.7, dt);
       if (e.stars > 0.02) {
         g.fillStyle = '#ffffff';
@@ -238,8 +248,8 @@ export function createSky(Q) {
         }
         g.globalAlpha = 1;
       }
-      const bd = backdrop(e, w, h);
-      g.drawImage(bd, 0, 0, w, h);
+      const bd = backdrop(e, w, h, k);
+      { const m = g.getTransform(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(bd, 0, 0); g.setTransform(m); }
     }
 
   let comp = null;
@@ -252,35 +262,36 @@ export function createSky(Q) {
     back(g, e, v, t, dt) {
       const { w, h } = size;
       if (queue.length) build(queue.shift());
-      // high tier layers the sky live; medium and low composite it into one
-      // canvas-sized image refreshed a few times a second (or on a pan) and
-      // drawn 1:1, which cuts the resampled full-screen draws that dominate
-      // software rendering
-      if (Q().name === 'high') { paintBack(g, e, v, t, dt, w, h); return; }
-      const cs = size.k;
-      const cw = Math.max(1, Math.round(w * cs)), ch = Math.max(1, Math.round(h * cs));
+      // The sky is composited into one image at a reduced resolution (it is
+      // all soft clouds and gradients) and re-composited at most a few times
+      // a second, or sooner after a real pan, then drawn behind the world in
+      // one call. Painting the layers live every frame cost most of a frame
+      // on CPU-rasterised canvases.
+      const tierK = { high: 0.62, medium: 0.52, low: 0.45 }[Q().name] || 0.52;
+      const cs = Math.max(0.35, Math.min(size.k, 1.5) * tierK);
+      const cw = Math.max(1, Math.ceil(w * cs)), ch = Math.max(1, Math.ceil(h * cs));
       let c = comp;
-      const fading = ['horizon', 'distant', 'high'].some((n) => strips[n]?.prev);
+      const fading = ['horizon', 'distant', 'high', 'stormtop'].some((n) => strips[n]?.prev);
       if (!c || c.canvas.width !== cw || c.canvas.height !== ch) { c = comp = { canvas: layer(cw, ch), t: -9 }; }
-      if (fading || c.key !== e.key || Math.abs(c.px - v.px) > 0.6 || Math.abs(c.py - v.py) > 0.6 || t - c.t > 0.25 || c.stars !== e.stars > 0.02) {
+      const age = t - c.t, moved = Math.abs(c.px - v.px) > 1.5 || Math.abs(c.py - v.py) > 1.5;
+      const minAge = Q().name === 'low' ? 0.18 : Q().name === 'medium' ? 0.12 : 0.1;
+      if (c.key !== e.key || c.stars !== e.stars > 0.02 || age < 0 || (age >= minAge && (fading || moved || age > 0.5))) {
         const cg = c.canvas.getContext('2d');
         cg.setTransform(1, 0, 0, 1, 0, 0); cg.globalCompositeOperation = 'source-over'; cg.clearRect(0, 0, cw, ch);
         cg.setTransform(cs, 0, 0, cs, 0, 0); cg.globalCompositeOperation = 'destination-over';
-        paintBack(cg, e, v, t, t - c.t > 1 ? 0 : t - c.t, w, h);
+        paintBack(cg, e, v, t, age > 1 || age < 0 ? 0 : age, w, h, cs);
         cg.globalCompositeOperation = 'source-over';
         Object.assign(c, { key: e.key, px: v.px, py: v.py, t, stars: e.stars > 0.02 });
       }
-      const m = g.getTransform(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(c.canvas, 0, 0); g.setTransform(m);
+      g.drawImage(c.canvas, 0, 0, w, h);
     },
     // hanging storm clouds at the top of the screen
     stormTop(g, e, v, t, dt) {
-      if (e.storm < 0.05) return;
-      const s = ensure('stormtop', e, size.w, size.h, Math.min(size.k, Q().skyK));
-      drawStrip(g, s, t * 9 + v.px * 0.1, -v.py * 0.05 - 10, Math.min(1, e.storm * 1.2), dt);
+      // now painted into the composited sky (see back)
     },
     // the near cloud bank in front of the world; y is its top in CSS px
     front(g, e, v, y, t, dt) {
-      const s = ensure('front', e, size.w, size.h, Math.min(size.k, Q().skyK));
+      const s = ensure('front', e, size.w, size.h, Math.min(size.k, Q().skyK), true);
       if (y > size.h + 10) return;
       drawStrip(g, s, t * 6 + v.px * 0.9, y, 1, dt);
       if (y + s.H < size.h) { g.fillStyle = mix(e.cl[2], e.cl[1], 0.35); g.fillRect(0, y + s.H - 1, size.w, size.h - y - s.H + 1); }

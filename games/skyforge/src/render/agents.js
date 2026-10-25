@@ -89,7 +89,7 @@ export function createAgents(app, quality) {
         const E = net.edges[w.e]; if (!E) continue;
         const [u, v] = qpt(E, w.f), [x, y] = local(u, v);
         const dirX = (E.b[0] - E.a[0] + (E.b[1] - E.a[1]) * 0.55) * w.dir;
-        out.push({ k: v, x: u, draw: (gg, ox, oy) => {
+        out.push({ k: v, x: u, px: x, py: y, draw: (gg, ox, oy) => {
           if (ART.drawSettler) ART.drawSettler(gg, ox + x, oy + y, { seed: w.seed, t: t + w.id, dir: dirX >= 0 ? 1 : -1, walk: w.pause <= 0, carry: w.carry, s: 1, night, lamp: night > 0.4 && !w.carry });
           else settler(gg, ox + x, oy + y, 1, ['#3f6fb0', '#b0503f', '#4f8f45', '#8a5ab0', '#d08a3a'][w.seed % 5], w.carry ? '#c08a4e' : null, t * 9 + w.id);
         } });

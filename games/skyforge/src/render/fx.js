@@ -15,6 +15,7 @@ const RES_COL = { wood: '#c08a4e', planks: '#d8a868', stone: '#c8bcae', grain: '
 const TXT_COL = { ore: '#ffc890', coal: '#e0d0e8', skystone: '#9ef0ff', aether: '#b8f8ff', coin: '#ffe27a', insight: '#dcc0ff', wood: '#ffd8a0', stone: '#e8e0d4', grain: '#ffe8a0', bread: '#ffd090', flour: '#fff4dc' };
 
 export function createFX(app, quality) {
+  let sheetG = null;   // cached rain-sheet gradient
   const parts = [];        // { k, x, y, vx, vy, life, max, r, col, a, grow }
   const booms = [];        // flashes and rings
   const bolts = [];        // lightning strikes in world px { pts, life, max, w }
@@ -275,11 +276,10 @@ export function createFX(app, quality) {
       // fog: drifting soft banks
       if (e.fog > 0.02) {
         g.fillStyle = rgba(e.haze, e.fog * 0.28); g.fillRect(0, 0, W, H);
-        for (let i = 0; i < 7; i++) {
+        const nb = quality.Q.name === 'low' ? 4 : 7, R0 = W * 0.35;
+        for (let i = 0; i < nb; i++) {
           const x = ((i * 0.37 + clock * 0.006 * (1 + i % 3)) % 1.4 - 0.2) * W, y = H * (0.25 + (i % 4) * 0.18);
-          const gr = g.createRadialGradient(x, y, 0, x, y, W * 0.35);
-          gr.addColorStop(0, rgba(e.haze, e.fog * 0.45)); gr.addColorStop(1, rgba(e.haze, 0));
-          g.save(); g.translate(x, y); g.scale(1, 0.32); g.translate(-x, -y); g.fillStyle = gr; g.fillRect(x - W * 0.35, y - W * 0.35, W * 0.7, W * 0.7); g.restore();
+          g.save(); g.translate(x, y); g.scale(1, 0.32); softDot(g, 0, 0, R0, e.haze, e.fog * 0.45); g.restore();
         }
       }
       // rain: slanted streaks plus a few heavier sheets
@@ -295,9 +295,11 @@ export function createFX(app, quality) {
           g.moveTo(x, y); g.lineTo(x - l * wind, y + l);
         }
         g.stroke();
-        if (e.storm > 0.2) for (let i = 0; i < 4; i++) {
+        if (e.storm > 0.2 && quality.Q.name !== 'low') for (let i = 0; i < 4; i++) {
           const x = ((i * 0.31 + clock * 0.04) % 1.3 - 0.15) * W;
-          g.fillStyle = vgrad(g, 0, H, [[0, rgba('#c8d4ec', 0)], [0.4, rgba('#c8d4ec', 0.06 * e.storm)], [1, rgba('#c8d4ec', 0)]]);
+          const sk = H + '|' + Math.round(e.storm * 10);
+          if (!sheetG || sheetG.k !== sk) sheetG = { k: sk, g: vgrad(g, 0, H, [[0, rgba('#c8d4ec', 0)], [0.4, rgba('#c8d4ec', 0.06 * Math.round(e.storm * 10) / 10)], [1, rgba('#c8d4ec', 0)]]) };
+          g.fillStyle = sheetG.g;
           g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 140, 0); g.lineTo(x + 140 - H * wind, H); g.lineTo(x - H * wind, H); g.fill();
         }
         g.restore();
