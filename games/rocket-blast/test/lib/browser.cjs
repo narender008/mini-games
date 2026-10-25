@@ -127,16 +127,40 @@ async function frameDiff(page, a, b) {
 }
 
 // Real touch input through the DevTools protocol (Playwright only offers
-// taps): a finger goes down, moves and lifts, in CSS pixels.
+// taps): a finger goes down, moves and lifts, in CSS pixels. Chromium lines
+// pointer moves up with animation frames, which SwiftShader makes slow, so
+// each call waits until the page has seen the pointer event it caused before
+// the test steps the game.
 async function touch(page) {
   const cdp = await page.context().newCDPSession(page);
+  await page.evaluate(() => {
+    if (window.__rbTouch) return;
+    window.__rbTouch = { x: NaN, y: NaN, type: '' };
+    for (const t of ['pointerdown', 'pointermove', 'pointerup']) addEventListener(t, (e) => { if (e.pointerType === 'touch') Object.assign(window.__rbTouch, { x: e.clientX, y: e.clientY, type: t }); }, true);
+  });
+  const seen = (type, x, y) => page.waitForFunction(([type, x, y]) => {
+    const t = window.__rbTouch;
+    return t.type === type && (x == null || (Math.abs(t.x - x) < 1.5 && Math.abs(t.y - y) < 1.5));
+  }, [type, x, y], { polling: 20 });
   const send = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y]) => ({ x, y, id: 1, radiusX: 4, radiusY: 4, force: 1 })) });
   return {
-    down: (x, y) => send('touchStart', [[x, y]]),
-    move: (x, y) => send('touchMove', [[x, y]]),
-    up: () => send('touchEnd', []),
+    down: async (x, y) => { await send('touchStart', [[x, y]]); await seen('pointerdown', x, y); },
+    move: async (x, y) => { await send('touchMove', [[x, y]]); await seen('pointermove', x, y); },
+    up: async () => { await send('touchEnd', []); await seen('pointerup'); },
     detach: () => cdp.detach().catch(() => {}),
   };
 }
 
-module.exports = { pw, launch, open, waitReady, close, canvasBox, frameStats, frameDiff, touch, GAME, ARGS };
+// Moves the mouse and waits until the page has seen it arrive (pointer moves
+// are lined up with animation frames, which are slow on SwiftShader).
+async function mouseTo(page, x, y) {
+  await page.evaluate(() => {
+    if (window.__rbMouse) return;
+    window.__rbMouse = { x: NaN, y: NaN };
+    addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') Object.assign(window.__rbMouse, { x: e.clientX, y: e.clientY }); }, true);
+  });
+  await page.mouse.move(x, y, { steps: 4 });
+  await page.waitForFunction(([x, y]) => Math.abs(window.__rbMouse.x - x) < 1.5 && Math.abs(window.__rbMouse.y - y) < 1.5, [x, y], { polling: 20 });
+}
+
+module.exports = { pw, launch, open, waitReady, close, canvasBox, frameStats, frameDiff, touch, mouseTo, GAME, ARGS };

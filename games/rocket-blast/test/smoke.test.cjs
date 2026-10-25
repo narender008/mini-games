@@ -8,7 +8,7 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { serve } = require('./lib/server.cjs');
-const { launch, open, close, frameStats, frameDiff, canvasBox, touch } = require('./lib/browser.cjs');
+const { launch, open, close, frameStats, frameDiff, canvasBox, touch, mouseTo } = require('./lib/browser.cjs');
 const G = require('./lib/game.cjs');
 
 let server, browser;
@@ -119,7 +119,7 @@ test('Little Pilot: plays, follows the mouse and the keyboard, auto-fires, back 
   const k0 = await G.kid(page);
   const target = { x: k0.rocket.x > 0 ? -6 : 6, y: -5 };
   const p = await G.toScreen(page, target.x, target.y);
-  await page.mouse.move(p.x, p.y, { steps: 4 });
+  await mouseTo(page, p.x, p.y);
   await rb('step', 1500);
   let k = await G.kid(page);
   assert.equal(k.pointer.type, 'mouse');
@@ -156,7 +156,7 @@ test('Big Kid: fires while held, waves advance through the boss, back to menu', 
   assert.equal(await page.evaluate(() => window.__fires), 0, 'Big Kid fired with nothing held');
   // mouse held on the field: fire
   const c = await G.toScreen(page, 0, -4);
-  await page.mouse.move(c.x, c.y);
+  await mouseTo(page, c.x, c.y);
   await page.mouse.down();
   await rb('step', 1000);
   await page.mouse.up();

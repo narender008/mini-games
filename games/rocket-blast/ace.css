@@ -2092,7 +2092,7 @@ body[data-mode='ace'] .ace-blurb {
 }
 
 .am-back {
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 16px 0 10px;
   margin-bottom: 14px;
   gap: 6px;
@@ -3183,8 +3183,13 @@ body[data-mode='ace'] .ace-blurb {
     height: 30px;
   }
 
+  /* the sector details run below the fold: keep LAUNCH in reach */
   .am-panel .launch {
+    position: sticky;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    z-index: 2;
     margin-top: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
   }
 
   .am-fighter {

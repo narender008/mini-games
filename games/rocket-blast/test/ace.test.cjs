@@ -10,7 +10,7 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { serve } = require('./lib/server.cjs');
-const { launch, open, close, frameStats, touch } = require('./lib/browser.cjs');
+const { launch, open, close, frameStats, touch, mouseTo } = require('./lib/browser.cjs');
 const G = require('./lib/game.cjs');
 
 const missing = G.aceMissing();
@@ -90,7 +90,7 @@ test('the fighter flies to the mouse and by keyboard', { skip }, async () => {
   const f = s.field;
   // mouse at 75% across, 80% down: world (0.5 halfW, -0.6 halfH)
   const tx = 0.5 * f.halfW, ty = -0.6 * f.halfH;
-  await page.mouse.move(1440 * 0.75, 900 * 0.8, { steps: 3 });
+  await mouseTo(page, 1440 * 0.75, 900 * 0.8);
   await page.evaluate(() => window.__rb.ace.step(1500, { render: false }));
   s = await G.aceState(page);
   assert.ok(Math.abs(s.player.x - tx) < 1.2 && Math.abs(s.player.y - ty) < 1.2, `fighter at (${s.player.x.toFixed(2)}, ${s.player.y.toFixed(2)}), mouse at (${tx.toFixed(2)}, ${ty.toFixed(2)})`);

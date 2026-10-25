@@ -100,9 +100,12 @@ async function waitVisible(page, sel, timeout = 30000) {
 // for ever.
 async function press(page, sel, { tap = false, timeout = 30000 } = {}) {
   await waitVisible(page, sel, timeout);
-  const loc = page.locator(sel).first();
-  await loc.scrollIntoViewIfNeeded();
-  const box = await loc.boundingBox();
+  // scrolled into view first if it is below the fold (a scrolling panel)
+  await page.evaluate((s) => {
+    const el = document.querySelector(s), r = el.getBoundingClientRect();
+    if (r.top < 0 || r.bottom > innerHeight || r.left < 0 || r.right > innerWidth) el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+  }, sel);
+  const box = await page.locator(sel).first().boundingBox();
   const x = box.x + box.width / 2, y = box.y + box.height / 2;
   if (tap) await page.touchscreen.tap(x, y);
   else await page.mouse.click(x, y);
