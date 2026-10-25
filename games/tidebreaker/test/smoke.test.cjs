@@ -155,7 +155,7 @@ test('a run reaches the boss through the debug hook', async () => {
     const tb = window.__tb;
     tb.freeze(); tb.god(true);
     let s = tb.state();
-    for (let i = 0; i < 2400 && !s.boss; i++) {
+    for (let i = 0; i < 2400 && !s.boss && s.scene !== 'won' && s.scene !== 'lost'; i++) {
       if (s.scene === 'cards') tb.choose(0);
       tb.kill();
       tb.step(500);

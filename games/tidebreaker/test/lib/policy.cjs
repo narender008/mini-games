@@ -71,7 +71,7 @@ function botRun(sliceSec) {
     const ability = t && s.abilities ? Object.keys(s.abilities).find((k) => s.abilities[k].ready) : undefined;
     if (ability) L.abilities[ability] = (L.abilities[ability] || 0) + 1;
     tb.input(t ? { fire: true, aim: { x: ax + B.aimOff.x, y: ay + B.aimOff.y }, move, ability } : { fire: false, move });
-    tb.step(dt);
+    tb.step(dt, { render: false });
     s = tb.state();
     if (s.time > cfg.maxSec) { L.end = 'timeout'; break; }
   }
