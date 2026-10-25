@@ -1,0 +1,14 @@
+{
+  "name": "tidebreaker-tests",
+  "private": true,
+  "description": "Automated tests for Tidebreaker: browser smoke tests, a bot playtest with a balance report, and scene screenshots.",
+  "scripts": {
+    "test": "node run.cjs",
+    "smoke": "node --test --test-reporter=spec smoke.test.cjs",
+    "bot": "node bot.cjs",
+    "shots": "node screenshots.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
