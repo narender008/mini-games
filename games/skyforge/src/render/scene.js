@@ -464,7 +464,8 @@ export function createRenderer(canvas, app) {
     g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, canvas.width, canvas.height);
     g.setTransform(dpr, 0, 0, dpr, shx * dpr, shy * dpr); applyCamera(g, cam);
     const lights = [];
-    drawWorld(g, G, lights);
+    const X = app.rdbg || {};
+    if (!X.noWorld) drawWorld(g, G, lights);
     fx.drawWorld(g, clock);
     // time-of-day grade over the world only (the sky is not drawn yet)
     if (env.grade[1] > 0.005) {
@@ -474,7 +475,7 @@ export function createRenderer(canvas, app) {
     }
     // lights and glow fx, additive, in world space
     g.setTransform(dpr, 0, 0, dpr, shx * dpr, shy * dpr); applyCamera(g, cam);
-    if (env.night > 0.08 || Q().name !== 'low') for (const f of lights) f();
+    if (!X.noLights && (env.night > 0.08 || Q().name !== 'low')) for (const f of lights) f();
     fx.drawGlow(g, G, clock);
     agents.drawBirds(g, env, clock);
     // the sky goes in behind everything drawn so far
@@ -482,10 +483,10 @@ export function createRenderer(canvas, app) {
     g.globalCompositeOperation = 'destination-over';
     sky.stormTop(g, env, v, clock, dt);
     fx.drawBack(g, env, W, H, clock);
-    sky.back(g, env, v, clock, dt);
+    if (!X.noSky) sky.back(g, env, v, clock, dt);
     g.globalCompositeOperation = 'source-over';
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    sky.front(g, env, v, frontBankY(G) + shy, clock, dt);
+    if (!X.noFront) sky.front(g, env, v, frontBankY(G) + shy, clock, dt);
     fx.drawScreen(g, env, W, H, clock, dt);
     // overlay in world space then screen space
     g.setTransform(dpr, 0, 0, dpr, shx * dpr, shy * dpr); applyCamera(g, cam);
@@ -493,7 +494,7 @@ export function createRenderer(canvas, app) {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     overlay.drawScreen(g, G, clock, W, H);
     fx.drawLabels(g, cam, W, H);
-    vignette(g);
+    if (!X.noVig) vignette(g);
   }
   let homeYc = null;
   function homeY(G) {
