@@ -119,7 +119,16 @@ export function createFleet(app) {
       h('div', { class: 'fl-row' }, iconImg('route', 30, { style: 'plain' }), h('b', null, r.name || `${nameOf(app, r.from)} - ${placeName(r.to)}`)),
       h('p', { class: 'fl-status' }, s ? `${s.name} · ${STATE[r.state] || humanize(r.state || '')}${r.eta ? ' · ' + clock(r.eta) : ''}` : 'No ship assigned'),
       orderChips(r),
-      h('div', { class: 'fl-row fl-stats' }, h('span', null, `${r.trips || 0} trip${r.trips === 1 ? '' : 's'}`), h('span', { class: (r.earned || r.profit || 0) < 0 ? 'neg' : 'pos', title: 'Net coin from this route' }, iconImg('coin', 16, { style: 'plain' }), ((r.earned || r.profit || 0) > 0 ? '+' : '') + fmt(Math.round(r.earned || r.profit || 0)))));
+      routeStats(r));
+  }
+  // Until a round trip is done the books are not settled (buying at the port is paid before the goods are home),
+  // so a new route says so instead of showing a loss. After that: trips, net coin, and the last trip's sales and purchases.
+  function routeStats(r) {
+    const trips = r.trips || 0, net = Math.round(r.earned ?? 0), last = r.last;
+    if (!trips) return h('div', { class: 'fl-row fl-stats' }, h('span', { class: 'fl-pending' }, 'No trips yet'), last && (last.coin || last.spent) ? h('span', { title: 'This trip so far' }, `sold ${fmt(last.coin || 0)} · bought ${fmt(last.spent || 0)}`) : null);
+    return h('div', { class: 'fl-row fl-stats' }, h('span', null, `${trips} trip${trips === 1 ? '' : 's'}`),
+      last ? h('span', { class: 'fl-last', title: 'Last trip' }, `last: sold ${fmt(last.coin || 0)}, bought ${fmt(last.spent || 0)}`) : null,
+      h('span', { class: net < 0 ? 'neg' : 'pos', title: 'Net coin from this route: sales less the goods bought for the colony' }, 'net ', iconImg('coin', 16, { style: 'plain' }), (net > 0 ? '+' : net < 0 ? '−' : '') + fmt(Math.abs(net))));
   }
   function routesCol() {
     const g = G(), col = ui.cols.routes;
@@ -204,13 +213,19 @@ export function createFleet(app) {
   }
   function contractCard(c) {
     const g = G(), active = c.state === 'active' || (c.accepted && c.state !== 'offered');
-    const left = c.due != null ? Math.max(0, (c.due > 1000 ? c.due / 300 : c.due) - (g?.day || 0)) : null;
+    // an offer shows how long you will have once accepted (and when the offer lapses); an accepted one counts down to its due day
+    const days = c.days ?? (c.due != null && c.at != null ? Math.round(c.due - Math.floor(c.at / 300) - 1) : null);
+    const left = active && c.due != null ? Math.floor(c.due - Math.floor(g?.day || 0)) : null;
+    const lapse = !active && c.expires != null && c.expires < 1e11 && g ? c.expires - g.t : null;
+    const when = active ? (left == null ? '' : left <= 0 ? 'due today' : `${left} day${left === 1 ? '' : 's'} left`)
+      : days != null ? `${days} day${days === 1 ? '' : 's'} to deliver` : '';
+    const ends = lapse != null && lapse > 0 ? `offer ends in ${dur(lapse)}` : '';
     const reward = typeof c.reward === 'number' ? { coin: c.reward } : c.reward || {};
     const open = contractSel === c.id;
     return h('li', { class: 'fl-contract' + (active ? ' active' : '') + (open ? ' open' : ''), 'data-contract': c.id, tabindex: 0, role: 'button', onclick: () => { contractSel = open ? null : c.id; sig.ports = ''; refresh(false); } },
       h('div', { class: 'fl-row' }, iconImg('contract', 34, { style: 'plain' }), h('div', { class: 'fl-main' },
         h('b', null, `${placeName(c.port)}: ${fmt(c.n)} ${resName(app, c.res).toLowerCase()}`),
-        h('small', null, left != null ? `${Math.ceil(left)} day${Math.ceil(left) === 1 ? '' : 's'} left` : '', ' · reward ', iconImg('coin', 14, { style: 'plain' }), fmt(reward.coin || 0), reward.rep ? ` · +${reward.rep} standing` : '')),
+        h('small', null, when ? h('span', null, when) : null, ends ? h('span', null, ends) : null, h('span', null, 'reward ', iconImg('coin', 14, { style: 'plain' }), fmt(reward.coin || 0)), reward.rep ? h('span', null, `+${reward.rep} standing`) : null)),
         iconImg(c.res, 30, { style: 'plain' })),
       active ? h('div', { class: 'fl-row' }, h('div', { class: 'sfp-bar' }, h('i', { style: { width: Math.round(100 * (c.delivered || 0) / Math.max(1, c.n)) + '%' } })), h('small', null, `${fmt(c.delivered || 0)} / ${fmt(c.n)}`)) : null,
       open && !active ? h('button', { id: 'btn-accept-contract', class: 'sfp-btn primary small', type: 'button', onclick: (e) => { e.stopPropagation(); const r = app.act.contract(c.id); msg.ports = r?.ok ? '' : r?.error || 'Cannot accept'; if (r?.ok) { contractSel = null; app.ev?.emit('ui:sfx', { kind: 'contract' }); } sig.ports = ''; refresh(false); } }, 'Accept contract') : null);

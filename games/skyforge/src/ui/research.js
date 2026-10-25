@@ -297,19 +297,20 @@ export function createResearch(app) {
   function fit() {
     if (!ui.scroll) return;
     ui.fitKey = `${ui.scroll.clientWidth}x${ui.scroll.clientHeight}`;
-    const narrow = innerWidth < 760 || innerWidth / innerHeight < 0.9;
+    const narrow = innerWidth < 760 || innerWidth / innerHeight < 0.9, short = !narrow && innerHeight < 500;
     const aw = ui.scroll.clientWidth || innerWidth * 0.7, ah = ui.scroll.clientHeight || innerHeight * 0.7;
-    k = narrow ? Math.max(0.6, Math.min(0.7, aw / SW)) : Math.max(0.42, Math.min(aw / SW, ah / SH, 1.35));
+    // short landscape phones: keep the side-by-side layout, but hold the board at a readable scale and let it pan
+    k = narrow ? Math.max(0.6, Math.min(0.7, aw / SW)) : short ? 0.55 : Math.max(0.42, Math.min(aw / SW, ah / SH, 1.35));
     ui.stage.style.transform = `scale(${k})`;
     ui.sizer.style.width = SW * k + 'px'; ui.sizer.style.height = SH * k + 'px';
     ui.board.style.width = SW + 'px'; ui.board.style.height = SH + 'px';
-    ui.scroll.classList.toggle('pan', narrow || SW * k > aw + 1);
-    ui.stage.classList.toggle('narrow', narrow);
+    ui.scroll.classList.toggle('pan', narrow || short || SW * k > aw + 1 || SH * k > ah + 1);
+    ui.stage.classList.toggle('narrow', narrow || short);
   }
   function scrollTo(id) { const p = L?.pos[id]; if (!p || !ui.scroll) return; ui.scroll.scrollLeft = Math.max(0, p.x * k - ui.scroll.clientWidth / 2); }
   function select(id, user = true) {
     if (!L || !L.pos[id]) return; sel = id; msg = ''; sig = ''; refresh(true); app.ev?.emit('ui:research-select', { id });
-    if (user && ui.stage?.classList.contains('narrow')) requestAnimationFrame(() => ui.card?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    if (user && (innerWidth < 760 || innerWidth / innerHeight < 0.9)) requestAnimationFrame(() => ui.card?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
   function begin() {
     const r = L.list.find((x) => x.id === sel); if (!r) return;

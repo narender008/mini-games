@@ -179,7 +179,8 @@ export function createChart(app) {
       const G = app.G;
       if (!sel || !island(sel)) sel = pickDefault();
       view = null; staticKey = ''; cardKey = ''; labelKey = ''; dirty = true;
-      requestAnimationFrame(() => { fit(); frame(); });
+      buildCard(true);
+      requestAnimationFrame(() => { fit(); buildCard(true); frame(); });
       // refit when the host changes size (late stylesheet, rotation, UI scale)
       if (typeof ResizeObserver === 'function') {
         ui.ro = new ResizeObserver(() => { if (view && ui.mapbox && `${ui.mapbox.clientWidth}x${ui.mapbox.clientHeight}` !== ui.fitKey) { fit(); frame(); } });
@@ -205,8 +206,9 @@ export function createChart(app) {
     const W = ui.mapbox?.clientWidth || innerWidth, H = ui.mapbox?.clientHeight || innerHeight;
     const narrow = W < 760 || W / H < 0.9;
     const cardW = narrow ? 0 : (ui.card?.offsetWidth || 380) + 24;
-    const cardH = narrow ? (ui.card?.classList.contains('min') ? 150 : H * 0.5) : 0;
-    return { W, H, x0: 0, y0: narrow ? 64 : 0, x1: W - cardW, y1: H - cardH, narrow };
+    const cardH = narrow ? (ui.card?.classList.contains('min') ? 150 : H * 0.56) : 0;
+    const head = P.el.querySelector('.ch-head'), hb = head ? head.offsetTop + head.offsetHeight + 6 : 0;
+    return { W, H, x0: 0, y0: Math.max(narrow ? 64 : 0, hb), x1: W - cardW, y1: H - cardH, narrow };
   }
   function fit() {
     if (!ui.canvas) return;
@@ -365,7 +367,7 @@ export function createChart(app) {
     // vignette and compass rose (screen-fixed)
     const vg = g.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75); vg.addColorStop(0, 'rgba(10,20,48,0)'); vg.addColorStop(1, 'rgba(10,20,48,0.38)'); g.fillStyle = vg; g.fillRect(0, 0, W, H);
     const A = area();
-    if (!A.narrow) compass(g, 84, H - 250, 46);
+    if (!A.narrow && H >= 560) compass(g, 84, H - 250, 46);
     placeLabels();
   }
   function dynamic(g, G) {
@@ -465,7 +467,11 @@ export function createChart(app) {
     // place the most important first; a label that would cover another moves below or above its spot
     const rank = (w) => (w.id === sel ? 0 : w.cls.includes('home') ? 1 : w.attr === 'data-island' ? (w.cls.includes('mini') ? 4 : 2) : w.attr === 'data-port' ? 3 : 5);
     want.sort((a, b) => rank(a) - rank(b));
-    const placed = [];
+    // the header, legend and island card are obstacles too (their boxes relative to the map)
+    const mb = ui.mapbox.getBoundingClientRect();
+    const placed = [...P.el.querySelectorAll('.ch-head, .ch-legend, .ch-card')].map((e) => e.getBoundingClientRect()).filter((r) => r.width && r.height)
+      .map((r) => ({ x0: r.left - mb.left, x1: r.right - mb.left, y0: r.top - mb.top, y1: r.bottom - mb.top }));
+    if (!area().narrow && mb.height >= 560) placed.push({ x0: 84 - 56, x1: 84 + 56, y0: mb.height - 250 - 72, y1: mb.height - 250 + 56 }); // compass rose
     for (const w of want) {
       let b = have.get(w.id);
       if (!b) {
@@ -475,13 +481,15 @@ export function createChart(app) {
       setText(b.lastChild, w.name);
       const [sx, sy] = toScr(w.x, w.y);
       const bw = b.offsetWidth || 120, bh = b.offsetHeight || 28, hidden = w.cls.includes('mini') && getComputedStyle(b).display === 'none';
-      const free = (y) => !placed.some((r) => sx - bw / 2 < r.x1 + 4 && sx + bw / 2 > r.x0 - 4 && y < r.y1 + 3 && y + bh > r.y0 - 3);
-      const dy = w.attr === 'data-feature' ? [0, -(bh + 6), -2 * (bh + 6)] : [0, bh + 6, -(bh + 6), 2 * (bh + 6)];
-      let y = sy, ok = hidden;
-      if (!hidden) for (const d of dy) if (free(sy + d)) { y = sy + d; ok = true; break; }
-      if (!hidden && ok) placed.push({ x0: sx - bw / 2, x1: sx + bw / 2, y0: y, y1: y + bh });
-      b.classList.toggle('crowd', !ok);
-      b.style.transform = `translate(${Math.round(sx)}px, ${Math.round(y)}px) translate(-50%, 0)`;
+      const free = (x, y) => !placed.some((r) => x - bw / 2 < r.x1 + 4 && x + bw / 2 > r.x0 - 4 && y < r.y1 + 3 && y + bh > r.y0 - 3);
+      const v = bh + 6, sd = bw * 0.5 + 10;
+      const tries = w.attr === 'data-feature' ? [[0, 0], [0, -v], [0, v], [sd, 0], [-sd, 0], [0, 2 * v]]
+        : [[0, 0], [0, v], [0, -v], [sd, v * 0.5], [-sd, v * 0.5], [sd, -v * 0.5], [-sd, -v * 0.5], [0, 2 * v], [0, -2 * v]];
+      let x = sx, y = sy, ok = hidden;
+      if (!hidden) for (const [dx, d] of tries) if (free(sx + dx, sy + d)) { x = sx + dx; y = sy + d; ok = true; break; }
+      if (!hidden && ok) placed.push({ x0: x - bw / 2, x1: x + bw / 2, y0: y, y1: y + bh });
+      b.classList.toggle('crowd', !ok && sel !== w.id);
+      b.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, 0)`;
       b.classList.toggle('sel', sel === w.id);
     }
     for (const b of have.values()) b.remove();
