@@ -122,7 +122,10 @@ export function createFx(G, Q) {
       fx.number(e, h.dmg, armour ? '#d8e4ff' : h.crit ? '#ffe27a' : h.element ? col : '#ffffff', h.crit ? 28 : 22, { top, crit: h.crit, tick: h.quiet || h.kind === 'status' || h.kind === 'dot' });
     }
   });
-  on('kill', ({ e, x, y }) => {
+  // a boss (and the minions it takes with it) is killed without x/y on the event: its own place stands in,
+  // else every burst below would sit at NaN and the death would show nothing
+  on('kill', ({ e, x = e?.x, y = e?.y }) => {
+    if (!e || !Number.isFinite(x) || !Number.isFinite(y)) return;
     const eye = eyeOf(e), big = e.boss ? 3 : e.elite ? 1.6 : (e.r || 20) > 30 ? 1.3 : 1;
     threads(x, y, Math.round(12 * big), '#0b0716', eye, big);
     sparks(x, y, 30, eye, Math.round(14 * big), 460);
@@ -140,7 +143,8 @@ export function createFx(G, Q) {
   on('heroHurt', ({ x, y }) => { flash(x, y - 30, 220, '#ff5a7a', 0.22, 1); sparks(x, y, 30, '#ff8aa0', 12, 400); G.ui._hurtT = 0.3; });
   on('dodge', ({ x, y }) => { ring(x, y, 10, 50, 0.25, '#a6e8ff', 2); });
   on('deathDefiance', ({ x, y }) => { ring(x, y, 10, 260, 0.7, '#ffd27a', 8); flash(x, y, 600, '#ffd27a', 0.6, 1.3); text(x, y - 100, 'The thread holds', '#ffd27a', 28, { life: 1.6, vy: -30 }); });
-  on('heroDeath', ({ x, y }) => {
+  on('heroDeath', ({ x = G.hero?.x, y = G.hero?.y } = {}) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     flash(x, y - 30, 420, '#ffd27a', 0.6, 1.2);
     for (let i = 0; i < 40; i++) part({ x: x + R.range(-14, 14), y, z: R.range(10, 70), vx: R.range(-40, 40), vy: R.range(-20, 20), vz: R.range(40, 160), g: -40, life: R.range(1.2, 2.4), size: R.range(8, 16), color: '#ffd27a', eye: '#fff1c4', type: 'gthread', rot: R() * TAU, vr: R.range(-4, 4), drag: 1.5, add: true, curl: R.range(0.6, 1.4) });
   });
@@ -149,7 +153,7 @@ export function createFx(G, Q) {
   on('dashEnd', ({ x, y }) => dust(x, y, 6));
   on('swing', ({ x, y, heavy }) => { if (heavy) dust(x, y, 6, '#ffd8a0'); });
   on('special', ({ x, y }) => { ring(x, y, 20, 150, 0.35, '#ffd27a', 5); dust(x, y, 10, '#ffd8a0', 140); });
-  on('snareHit', ({ x, y }) => { flash(x, y - 26, 170, '#ffd27a', 0.2); sparks(x, y, 26, '#ffd27a', 10, 300); });
+  on('snareHit', ({ x, y }) => { if (x == null) return; flash(x, y - 26, 170, '#ffd27a', 0.2); sparks(x, y, 26, '#ffd27a', 10, 300); });
   on('snareBind', ({ x, y }) => { ring(x, y, 50, 14, 0.35, '#ffd27a', 4); sparks(x, y, 26, '#fff1c4', 14, 380); flash(x, y - 26, 200, '#ffd27a', 0.2); });
   on('call', ({ x, y }) => { flash(x, y - 40, 700, '#ffd27a', 0.6, 1.4); });
   on('explode', ({ x, y, r = 120, element }) => {
