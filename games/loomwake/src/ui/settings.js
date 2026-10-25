@@ -1,6 +1,6 @@
 // Settings: Audio, Display, Accessibility, Controls (key rebinding + gamepad
-// map), Save Data (#btn-export download + text copy, #btn-import file input,
-// import from pasted text). Values go through api.setSetting (dotted keys).
+// map), Save Data (text copy, import from pasted text). #btn-export (download) and #btn-import
+// (file input) sit in the sheet's footer on every tab, so a backup is one click away. Values go through api.setSetting (dotted keys).
 import { h, icon, corners } from './dom.js';
 import { keyLabel } from './hud.js';
 
@@ -13,10 +13,17 @@ export function createSettings(ui) {
   const tabs = h('div', { class: 'tabs', role: 'tablist' });
   const body = h('div', { class: 'sheet-body' });
   const bClose = h('button', { class: 'btn sm', id: 'btn-close-settings', type: 'button' }, 'Done', h('kbd', { class: 'hk', text: 'Esc' }));
+  // save backup controls, built once and kept in the footer
+  const saveNote = h('span', { class: 'note', 'aria-live': 'polite' });
+  let saveText = null; // the Save Data tab's textarea while that tab is open
+  const bExport = h('button', { class: 'btn sm', id: 'btn-export', type: 'button' }, h('span', { html: icon('download') }), 'Export save');
+  const fileIn = h('input', { type: 'file', id: 'btn-import', accept: '.json,application/json,text/plain', 'aria-label': 'Import save file' });
+  const bImport = h('label', { class: 'btn sm filebtn', for: 'btn-import' }, h('span', { html: icon('upload') }), 'Import file', fileIn);
+  const saveFoot = h('div', { class: 'save-actions' }, bExport, bImport, saveNote);
   const sheet = h('div', { class: 'panel sheet', role: 'dialog', 'aria-label': 'Settings' }, corners(),
     h('div', { class: 'sheet-h' }, h('span', { class: 'ic', html: icon('gear') }), h('div', {}, h('h2', { text: 'Settings' }), h('div', { class: 'sub', text: 'Saved on this device, apart from your profiles' })), h('div', { class: 'sp' }), bClose),
     tabs, body,
-    h('div', { class: 'sheet-foot' }, h('div', { class: 'hint', html: '<span><kbd>Q</kbd><kbd>E</kbd> Tabs</span><span><kbd>&#8592;</kbd><kbd>&#8594;</kbd> Adjust</span><span><kbd>Esc</kbd> Done</span>' })));
+    h('div', { class: 'sheet-foot' }, saveFoot, h('div', { class: 'hint', html: '<span><kbd>Q</kbd><kbd>E</kbd> Tabs</span><span><kbd>&#8592;</kbd><kbd>&#8594;</kbd> Adjust</span><span><kbd>Esc</kbd> Done</span>' })));
   const el = h('section', { class: 'scr scr-settings modal', hidden: true }, h('div', { class: 'scrim' }), h('div', { class: 'sheet-wrap' }, sheet));
   bClose.addEventListener('click', close);
 
@@ -73,6 +80,7 @@ export function createSettings(ui) {
   function render() {
     renderTabs();
     stopListen();
+    saveText = null;
     body.innerHTML = '';
     const B = body;
     if (tab === 'audio') {
@@ -152,47 +160,50 @@ export function createSettings(ui) {
     setTimeout(() => body.querySelector(`[data-bind="${act}"][data-slot="${slot}"]`)?.focus(), 20);
   }
 
+  const say = (ok, text) => { for (const n of [saveNote, saveText && saveText.note]) if (n) { n.className = 'note ' + (ok ? 'ok' : 'err'); n.textContent = text; } };
+  function exportText() { return call(['exportSave']); }
+  bExport.addEventListener('click', () => {
+    const s = exportText();
+    if (!s) { say(false, 'Nothing to export yet: choose a profile first.'); return; }
+    if (saveText) saveText.ta.value = s;
+    const prof = ui.G.profile ?? 0;
+    try {
+      const blob = new Blob([s], { type: 'application/json' });
+      const a = h('a', { href: URL.createObjectURL(blob), download: `loomwake-profile-${prof + 1}-${new Date().toISOString().slice(0, 10)}.json` });
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch { /* the text is still there to copy */ }
+    say(true, 'Exported. Keep the file somewhere safe.');
+  });
+  function doImport(str) {
+    const r = call(['importSave'], str);
+    if (r && r.ok) { say(true, 'Imported. Your thread is restored.'); ui.toast('Save imported', 'ok'); }
+    else say(false, 'Could not import: ' + (r?.error || 'that does not look like a Loomwake save.'));
+  }
+  fileIn.addEventListener('change', () => {
+    const f = fileIn.files && fileIn.files[0];
+    if (!f) return;
+    f.text().then((t) => { if (saveText) saveText.ta.value = t; doImport(t); }).catch(() => say(false, 'That file could not be read.'));
+    fileIn.value = '';
+  });
+
   function renderSave(B) {
     const note = h('div', { class: 'note' });
     const ta = h('textarea', { class: 'exp', spellcheck: 'false', placeholder: 'Your exported save appears here. Paste a save here to import it.', 'aria-label': 'Save as text' });
-    const bExport = h('button', { class: 'btn', id: 'btn-export', type: 'button' }, h('span', { html: icon('download') }), 'Export save');
-    const fileIn = h('input', { type: 'file', id: 'btn-import', accept: '.json,application/json,text/plain', 'aria-label': 'Import save file' });
-    const bImport = h('label', { class: 'btn filebtn', for: 'btn-import' }, h('span', { html: icon('upload') }), 'Import file', fileIn);
+    saveText = { ta, note };
     const bCopy = h('button', { class: 'btn sm', type: 'button' }, h('span', { html: icon('copy') }), 'Copy text');
     const bPaste = h('button', { class: 'btn sm', type: 'button' }, h('span', { html: icon('upload') }), 'Import pasted text');
     const prof = ui.G.profile ?? 0;
-    bExport.addEventListener('click', () => {
-      const s = call(['exportSave']);
-      if (!s) { note.className = 'note err'; note.textContent = 'Nothing to export yet: choose a profile first.'; return; }
-      ta.value = s;
-      try {
-        const blob = new Blob([s], { type: 'application/json' });
-        const a = h('a', { href: URL.createObjectURL(blob), download: `loomwake-profile-${prof + 1}-${new Date().toISOString().slice(0, 10)}.json` });
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-      } catch { /* the text is still there to copy */ }
-      note.className = 'note ok'; note.textContent = 'Exported. Keep the file somewhere safe, or copy the text below.';
-    });
-    const doImport = (str) => {
-      const r = call(['importSave'], str);
-      if (r && r.ok) { note.className = 'note ok'; note.textContent = 'Imported. Your thread is restored.'; ui.toast('Save imported', 'ok'); }
-      else { note.className = 'note err'; note.textContent = 'Could not import: ' + (r?.error || 'that does not look like a Loomwake save.'); }
-    };
-    fileIn.addEventListener('change', () => {
-      const f = fileIn.files && fileIn.files[0];
-      if (!f) return;
-      f.text().then((t) => { ta.value = t; doImport(t); }).catch(() => { note.className = 'note err'; note.textContent = 'That file could not be read.'; });
-      fileIn.value = '';
-    });
     bCopy.addEventListener('click', () => {
-      if (!ta.value) bExport.click();
+      if (!ta.value) { const s = exportText(); if (s) ta.value = s; }
       ta.select();
       (navigator.clipboard?.writeText(ta.value) || Promise.reject()).then(() => { note.className = 'note ok'; note.textContent = 'Copied to the clipboard.'; }).catch(() => { try { document.execCommand('copy'); } catch { /* */ } });
     });
     bPaste.addEventListener('click', () => { if (ta.value.trim()) doImport(ta.value.trim()); });
     B.append(h('div', { class: 'h3', text: `Profile ${['I', 'II', 'III'][prof] || ''}` }),
       h('p', { class: 'note', text: 'Your progress saves itself at every chamber door and whenever you leave the page. Export a copy to move it to another device or to keep a backup: browsers can clear site data after a long absence.' }),
-      h('div', { class: 'save-box' }, h('div', { class: 'save-actions' }, bExport, bImport), ta, h('div', { class: 'save-actions' }, bCopy, bPaste), note));
+      h('p', { class: 'note', text: 'Export save and Import file are at the bottom of this panel. The text box below holds the same save as text.' }),
+      h('div', { class: 'save-box' }, ta, h('div', { class: 'save-actions' }, bCopy, bPaste), note));
   }
 
   return {

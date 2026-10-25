@@ -544,6 +544,8 @@
 .lw-ui .sheet-foot { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
 .lw-ui .sheet-foot .sp { flex: 1; }
 .lw-ui .sheet-foot .hint { font-size: 12px; color: var(--dim); display: flex; gap: 12px; align-items: center; }
+.lw-ui .sheet-foot .save-actions { flex: 1; align-items: center; gap: 8px; }
+.lw-ui .sheet-foot .save-actions .note { font-size: 12px; margin: 0; }
 
 .lw-ui .set-row { display: grid; grid-template-columns: minmax(150px, 220px) 1fr auto; align-items: center; gap: 16px; padding: 10px 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
 .lw-ui .set-row .lb { font: 400 14.5px var(--serif); color: var(--ink); }

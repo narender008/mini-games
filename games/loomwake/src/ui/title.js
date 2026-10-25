@@ -41,7 +41,8 @@ export function createTitle(ui) {
   const logo = h('div', { class: 'logo' }, h('div', { html: logoSVG() }), h('div', { class: 'tag', text: 'Descend the dream. Wake the Weaver.' }));
   const col = h('div', { class: 'ttl-col' }, logo, menu);
   const plist = h('div', { class: 'ttl-plist' });
-  const profiles = h('section', { class: 'ttl-profiles', 'aria-label': 'Profiles' }, h('div', { class: 'eyebrow', text: 'Choose your thread' }), plist);
+  const eyebrow = h('div', { class: 'eyebrow', text: 'Choose your thread' });
+  const profiles = h('section', { class: 'ttl-profiles', 'aria-label': 'Profiles' }, eyebrow, plist);
   const foot = h('div', { class: 'ttl-foot' },
     h('span', { html: '<kbd>&#8593;&#8595;</kbd> Choose' }), h('span', { html: '<kbd>Enter</kbd> Confirm' }), h('span', { html: '<kbd>Esc</kbd> Back' }), h('span', { text: 'v' + (ui.G.version || '1.0') }));
   const el = h('section', { class: 'scr scr-title modal', hidden: true, 'aria-label': 'Title' }, canvas, h('div', { class: 'ttl-shade' }), col, profiles, foot);
@@ -109,10 +110,20 @@ export function createTitle(ui) {
     else call(['selectProfile', 'setProfile'], i);
   }
   function go() { const p = selected(); if (p.empty) startNew(); else call(['continueRun', 'continue', 'play'], sel); }
-  // New Game: the selected slot if empty, else the first empty slot, else offer to erase the selected one.
+  // New Game: the selected slot if empty. Otherwise the profile picker opens (scene 'profiles') with the
+  // first empty slot selected, so the player chooses where the new thread goes; New Game pressed again
+  // there takes that free slot, or offers to erase the selected one when every slot is spun.
   function startNew() {
     const p = selected();
     if (p.empty) { call(['newGame', 'newProfile', 'startNew'], sel); return; }
+    if (ui.G.scene === 'title' && ui.has('toProfiles')) {
+      const free = rows.find((r) => r.empty);
+      call('toProfiles');
+      if (free) pick(free.i);
+      eyebrow.textContent = 'Choose a thread for the new game';
+      setTimeout(() => plist.querySelector(`[data-profile="${sel}"]`)?.focus(), 30);
+      return;
+    }
     const free = rows.find((r) => r.empty);
     if (free) { pick(free.i); call(['newGame', 'newProfile', 'startNew'], free.i); return; }
     ui.confirm({
@@ -136,14 +147,14 @@ export function createTitle(ui) {
 
   return {
     el, modal: true,
-    show() { renderProfiles(); art.start(); refreshT = 0; },
+    show() { renderProfiles(); art.start(); refreshT = 0; if (ui.G.scene !== 'profiles') eyebrow.textContent = 'Choose your thread'; },
     hide() { setTimeout(() => art.stop(), 400); },
     update(G, dt) {
       refreshT += dt;
       if (refreshT > 3) { refreshT = 0; const a = document.activeElement; if (!plist.contains(a)) renderProfiles(); }
       
     },
-    back() { return false; },
+    back() { if (ui.G.scene === 'profiles') { eyebrow.textContent = 'Choose your thread'; call('toTitle'); return true; } return false; },
     onKey(e) {
       if (/^[1-3]$/.test(e.key) && !e.ctrlKey && !e.metaKey) { enter(+e.key - 1); return true; }
       if (e.key === 'Delete') { const p = selected(); if (!p.empty) askDelete(sel); return true; }

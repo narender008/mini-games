@@ -60,7 +60,7 @@ function part(ctx, build, o) {
   if (o.rim) {
     const rw = o.rimW ?? 6, rc = mix(o.rim, ELEM, 0.45);
     ctx.translate(-rw * 0.8, rw * 0.25); ctx.beginPath(); build(ctx);
-    ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = hexA(rc, (o.rimA ?? 0.75) * 0.3); ctx.lineWidth = rw * 3.2; ctx.stroke();
+    ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = hexA(rc, (o.rimA ?? 0.75) * 0.25); ctx.lineWidth = rw * 2.6; ctx.stroke();
     ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = hexA(rc, o.rimA ?? 0.75); ctx.lineWidth = rw; ctx.stroke();
   }
   ctx.restore();
@@ -240,7 +240,7 @@ function face(ctx, o, ex) {
   const { cx, cy, w, h } = o;
   const jaw = o.jaw ?? 0.82;
   const build = (c) => curve(c, [[cx, cy - h], [cx + w * 0.82, cy - h * 0.78], [cx + w, cy - h * 0.2], [cx + w * 0.92, cy + h * 0.35], [cx + w * 0.55 * jaw, cy + h * 0.82], [cx, cy + h], [cx - w * 0.55 * jaw, cy + h * 0.82], [cx - w * 0.92, cy + h * 0.35], [cx - w, cy - h * 0.2], [cx - w * 0.82, cy - h * 0.78]]);
-  part(ctx, build, { base: o.skin, box: [cx - w, cy - h, cx + w * 1.2, cy + h * 1.1], edge: w * 0.18, hl: [cx - w * 0.35, cy - h * 0.35, w * 0.9], hlA: 0.4, rim: o.rim, rimW: 5, rimA: 0.6, bounceA: 0.35 });
+  part(ctx, build, { base: o.skin, box: [cx - w, cy - h, cx + w * 1.2, cy + h * 1.1], edge: w * 0.18, hl: [cx - w * 0.35, cy - h * 0.35, w * 0.9], hlA: 0.4, rim: o.rim, rimW: 4, rimA: 0.5, bounceA: 0.35 });
   // planes of the face: temple and cheekbone shadow on the far side, a lit forehead and cheek on the near side
   ctx.save(); ctx.beginPath(); build(ctx); ctx.clip();
   blob(ctx, cx + w * 0.82, cy - h * 0.1, w * 0.55, shade(o.skin, 0.55), 0.3);
@@ -338,9 +338,9 @@ function finish(ctx, color) {
   const k = ctx.createLinearGradient(0, 0, D, D); k.addColorStop(0, 'rgba(255,220,170,0.10)'); k.addColorStop(1, hexA(color, 0.12)); ctx.fillStyle = k; ctx.fillRect(0, 0, D, D);
   // fade to transparent at the edges (an oval wider than tall, so hands and props at the lower corners stay)
   ctx.globalCompositeOperation = 'destination-in';
-  ctx.translate(256, 0); ctx.scale(1.22, 1); ctx.translate(-256, 0);
-  const m = ctx.createRadialGradient(256, 240, 210, 256, 262, 350); m.addColorStop(0, 'rgba(0,0,0,1)'); m.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = m; ctx.fillRect(-120, 0, D + 240, D);
+  ctx.translate(256, 250); ctx.scale(1.28, 1.12); ctx.translate(-256, -250);
+  const m = ctx.createRadialGradient(256, 250, 215, 256, 262, 345); m.addColorStop(0, 'rgba(0,0,0,1)'); m.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = m; ctx.fillRect(-120, -60, D + 240, D + 120);
   ctx.restore();
 }
 
@@ -368,7 +368,7 @@ P.iri = (ctx, ex) => {
   // hair fringe
   neck(ctx, skin, 256, 330, 30);
   const fb = face(ctx, { cx: 256, cy: 238, w: 84, h: 98, skin, iris_c: '#7a4a2a', brow: '#5a2a1a', lash: '#2a1018', lashes: true, freckles: true, rim: '#ffd27a', cheek: '#f08070' }, ex);
-  part(ctx, (c) => curve(c, [[170, 190], [200, 140], [256, 128], [318, 140], [346, 196], [320, 176], [292, 186], [262, 168], [236, 186], [206, 176]]), { base: '#6a2a1a', edge: 8, hl: [230, 150, 50], tex: (c) => strands(c, [[180, 180], [230, 140], [300, 150], [340, 190]], 26, 30, '#c07040', 1.5, 3, 0.5) });
+  part(ctx, (c) => curve(c, [[170, 190], [200, 140], [256, 128], [318, 140], [346, 196], [320, 176], [292, 186], [262, 168], [236, 186], [206, 176]]), { base: '#6a2a1a', edge: 8, hl: [230, 150, 50], rim: '#ffd27a', rimW: 3, tex: (c) => { strands(c, [[180, 180], [230, 140], [300, 150], [340, 190]], 70, 34, '#c07040', 1.5, 3, 0.55); strands(c, [[196, 160], [246, 142], [300, 150]], 18, 10, '#ffc890', 1.2, 4, 0.6); } });
   // golden scarf around the neck, trailing
   part(ctx, (c) => curve(c, [[150, 360], [256, 400], [362, 362], [372, 400], [256, 450], [140, 404]]), { base: '#f2a93b', rim: '#fff0b0', edge: 14, hl: [210, 380, 80], hlA: 0.7 });
   part(ctx, (c) => curve(c, [[330, 400], [380, 420], [440, 470], [470, 520], [420, 520], [370, 470], [320, 440]]), { base: '#ff9a3a', rim: '#fff0b0', edge: 12 });
@@ -376,6 +376,11 @@ P.iri = (ctx, ex) => {
   thread(ctx, [[340, 420], [400, 450], [455, 510]], '#ffe19a', 1.6, 0.6);
   // gold trim on the hood edge
   ctx.save(); ctx.strokeStyle = '#f2c46b'; ctx.lineWidth = 4; ctx.beginPath(); curve(ctx, [[256, 118], [330, 140], [358, 220], [350, 310]], false); ctx.stroke(); ctx.restore();
+  // her hand, holding up the golden thread she follows home
+  const [px, py] = handPoint(132, 448, 1.05, -0.22, 'pinch');
+  thread(ctx, [[px + 6, py + 90], [px, py], [px - 16, py - 60], [px + 12, py - 120], [px - 14, py - 190], [px - 44, py - 250]], '#ffd27a', 2.4, 0.95);
+  hand(ctx, 132, 448, 1.05, -0.22, 'pinch', { color: skin, rim: '#ffd27a', cuff: cloak, cuffRim: '#ffb0a0' });
+  glow(ctx, px, py, 30, '#fff0b0', 0.85);
   return fb;
 };
 
@@ -441,7 +446,10 @@ P.orrin = (ctx, ex) => {
   ctx.beginPath(); ctx.moveTo(240, 290 - ex.smile * 4); ctx.quadraticCurveTo(256, 292 + ex.smile * 8 + ex.open * 8, 272, 290 - ex.smile * 4 - (ex.smirk ?? 0) * 6); ctx.stroke(); ctx.restore();
   // quill in hand and an open book at the bottom edge
   part(ctx, (c) => { c.moveTo(120, 512); c.lineTo(160, 440); c.lineTo(256, 462); c.lineTo(352, 440); c.lineTo(392, 512); c.closePath(); }, { base: '#efe4c8', edge: 6, rim: null, tex: (c) => { c.strokeStyle = 'rgba(60,40,30,0.35)'; c.lineWidth = 1.5; for (let i = 0; i < 6; i++) { c.beginPath(); c.moveTo(180, 470 + i * 7); c.lineTo(245, 480 + i * 7); c.moveTo(267, 480 + i * 7); c.lineTo(335, 470 + i * 7); c.stroke(); } } });
-  ctx.save(); ctx.strokeStyle = '#2a1a30'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(330, 470); ctx.lineTo(420, 330); ctx.stroke(); part(ctx, (c) => curve(c, [[420, 330], [440, 300], [446, 360], [408, 350]]), { base: '#f6f0e0', edge: 4 }); ctx.restore();
+  ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = '#2a1a30'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(350, 486); ctx.lineTo(436, 300); ctx.stroke(); ctx.restore();
+  blob(ctx, 350, 488, 8, '#1a0e2a', 0.9);
+  part(ctx, (c) => curve(c, [[430, 312], [450, 250], [480, 196], [476, 240], [452, 300]]), { base: '#f6f0e0', edge: 4, rim: '#ffffff', rimW: 3, box: [420, 190, 482, 320], tex: (c) => { strands(c, [[436, 306], [462, 240], [478, 200]], 16, 18, '#c8b890', 1, 61, 0.6); } });
+  hand(ctx, 372, 440, 0.95, 0.43, 'fist', { color: '#cdb486', rim: '#fff0c8', cuff: '#5a3a24', cuffRim: '#e8c890' });
 };
 
 // ---------------------------------------------------------------- Sir Thimbleby
@@ -456,6 +464,7 @@ P.thimbleby = (ctx, ex) => {
   // needle lance
   ctx.save(); const lg = ctx.createLinearGradient(420, 520, 470, 40); lg.addColorStop(0, '#8090a0'); lg.addColorStop(1, '#ffffff'); ctx.strokeStyle = lg; ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(410, 520); ctx.lineTo(470, 40); ctx.stroke(); ctx.lineWidth = 3; ctx.strokeStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(406, 520); ctx.lineTo(466, 44); ctx.stroke(); ctx.restore();
   ctx.save(); ctx.strokeStyle = '#2a3040'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(462, 110, 4, 12, 0.12, 0, TAU); ctx.stroke(); ctx.restore(); glow(ctx, 470, 44, 30, '#ffffff', 0.7);
+  hand(ctx, 425, 400, 0.95, 0.124, 'fist', { color: '#c8d0dc', rim: '#ffffff', cuff: '#a8b0bc' });
   // head: a big thimble helm
   const helm = (c) => { c.moveTo(150, 360); c.lineTo(166, 150); c.quadraticCurveTo(170, 96, 256, 92); c.quadraticCurveTo(342, 96, 346, 150); c.lineTo(362, 360); c.quadraticCurveTo(256, 384, 150, 360); c.closePath(); };
   part(ctx, helm, { base: silver, rim: '#ffffff', edge: 22, hl: [205, 170, 100], hlA: 0.75, tex: dimples(256, 220, 92, 130) });
@@ -529,6 +538,12 @@ P.pell = (ctx, ex) => {
     ctx.save(); ctx.strokeStyle = '#8a3a14'; ctx.lineWidth = 6; ctx.lineCap = 'round'; const up = ex.lift * 12 + (ex.browUp && s > 0 ? 8 : 0);
     ctx.beginPath(); ctx.moveTo(x - s * 22, y - 30 + ex.brow * 8 - up); ctx.quadraticCurveTo(x, y - 40 - up, x + s * 24, y - 34 - ex.brow * 4 - up); ctx.stroke(); ctx.restore();
   }
+  // a paw held up with a button in it, to show you
+  hand(ctx, 104, 452, 1, -0.12, 'open', { color: '#d07038', rim: '#ffd0a0', cuff: coat, cuffRim: '#d0a0ff' });
+  const [bx, by] = handPoint(104, 452, 1, -0.12, 'open');
+  glow(ctx, bx, by, 44, '#8ff5b0', 0.6);
+  part(ctx, (c) => c.arc(bx, by, 22, 0, TAU), { base: '#3ab070', edge: 5, hl: [bx - 7, by - 8, 14], hlA: 0.9, rim: '#d0ffe0', rimW: 3, box: [bx - 22, by - 22, bx + 22, by + 22] });
+  ctx.fillStyle = 'rgba(0,30,10,0.55)'; for (const [dx, dy] of [[-6, -6], [6, -6], [-6, 6], [6, 6]]) { ctx.beginPath(); ctx.arc(bx + dx, by + dy, 3, 0, TAU); ctx.fill(); }
 };
 
 // ---------------------------------------------------------------- Nell Halfspun
@@ -551,6 +566,10 @@ P.nell = (ctx, ex) => {
   const r = prng(31); g.lineCap = 'round'; for (let i = 0; i < 46; i++) { const x = 300 + r() * 200, y = 330 + r() * 180; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = 1 + r() * 2.5; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + 30, y + 4, x + 60 + r() * 40, y + 14 + r() * 20); g.stroke(); }
   g.restore();
   ctx.drawImage(lay, 0, 0);
+  // her hand, holding her ribbon: the one thing she brought from the waking world
+  const [rx, ry] = handPoint(156, 446, 0.95, -0.15, 'pinch');
+  part(ctx, (c) => curve(c, [[rx - 4, ry], [rx - 30, ry + 40], [rx - 10, ry + 90], [rx - 40, ry + 150], [rx - 22, ry + 150], [rx + 8, ry + 92], [rx - 12, ry + 40], [rx + 6, ry]]), { base: '#d04060', edge: 5, rim: '#ffd0e0', rimW: 3, hl: [rx - 20, ry + 50, 30], hlA: 0.6, box: [rx - 40, ry, rx + 10, ry + 150] });
+  hand(ctx, 156, 446, 0.95, -0.15, 'pinch', { color: skin, rim: '#d0f4ff', cuff: '#6a8aa0', cuffRim: '#d0f4ff' });
   // loose threads trailing away
   const rr = prng(32);
   for (let i = 0; i < 16; i++) { const x = 290 + rr() * 110, y = 260 + rr() * 200; thread(ctx, [[x, y], [x + 40 + rr() * 30, y + 10 + rr() * 30], [x + 90 + rr() * 60, y + 30 + rr() * 50]], '#bff0ff', 1, 0.5); }
@@ -572,54 +591,100 @@ P.weaver = (ctx, ex) => {
   for (let i = 0; i < 9; i++) { const a = Math.PI * (1.15 + i * 0.0875); const x = 256 + Math.cos(a) * 100, y = 240 + Math.sin(a) * 120; glow(ctx, x, y, 18, '#fff4d0', 0.8); }
   // hair crown
   part(ctx, (c) => curve(c, [[256, 118], [330, 130], [356, 200], [340, 180], [300, 150], [256, 146], [212, 150], [172, 180], [156, 200], [182, 130]]), { base: '#d8c8a8', edge: 10, rim: '#ffffff', hl: [230, 130, 60] });
+  // a ball of every thread, glowing on her open palm
+  hand(ctx, 122, 446, 1, -0.1, 'open', { color: skin, rim: '#ffffff', cuff: '#e8dcc8' });
+  { const [bx, by] = handPoint(122, 446, 1, -0.1, 'open'); glow(ctx, bx, by, 60, '#fff2c8', 0.8); const rb = prng(44); for (let i = 0; i < 16; i++) { const a0 = rb() * TAU; ctx.save(); ctx.translate(bx, by); ctx.rotate(a0); thread(ctx, [[-22, -6], [0, -24 + rb() * 10], [22, -4]], cols[i % cols.length], 1.2, 0.8); ctx.restore(); } }
   // the veil over everything
   ctx.save(); for (let i = 0; i < 7; i++) { const x = 40 + i * 72; const g = ctx.createLinearGradient(x, 0, x + 60, 0); g.addColorStop(0, 'rgba(255,248,230,0)'); g.addColorStop(0.5, 'rgba(255,248,230,0.13)'); g.addColorStop(1, 'rgba(255,248,230,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x, 0); ctx.quadraticCurveTo(x + 40, 256, x + 10, D); ctx.lineTo(x + 70, D); ctx.quadraticCurveTo(x + 100, 256, x + 60, 0); ctx.fill(); } ctx.restore();
 };
 
 // ---------------------------------------------------------------- Sable (masked) and Sable (unmasked)
-function sableCloak(ctx) {
-  const r = prng(51);
-  for (let i = 0; i < 40; i++) { const x = 60 + r() * 400; thread(ctx, [[x, 330 + r() * 60], [x + (r() - 0.5) * 80, 430], [x + (r() - 0.5) * 140, 540]], '#6a5aaa', 1, 0.35); }
-  part(ctx, bust(200, 330), { base: '#120c20', rim: '#a898ff', edge: 30, hl: [170, 380, 120], hlA: 0.25 });
-  part(ctx, (c) => curve(c, [[256, 70], [356, 104], [396, 210], [392, 330], [350, 410], [256, 430], [162, 410], [120, 330], [116, 210], [156, 104]]), { base: '#16102a', rim: '#a898ff', edge: 36, hl: [190, 140, 130], hlA: 0.2, rimW: 8, tex: (c) => strands(c, [[150, 120], [256, 80], [360, 120]], 40, 300, '#3a2a6a', 1.5, 52, 0.5) });
-  part(ctx, (c) => curve(c, [[256, 116], [332, 140], [360, 222], [352, 312], [256, 362], [160, 312], [152, 222], [180, 140]]), { base: '#05030a', edge: 30, rim: null, lightA: 0 });
+// Matches render/actors/bosses/sable.js: a porcelain mask split by one red slit, stitched across; black thread
+// for hair; a narrow cuirass of black thread; a long needle with a red thread through its eye. Unmasked he is
+// Iri's dark mirror: a black hood lined with violet, magenta eyes, thread tear-tracks and a black scarf.
+const SC = { ink: '#07040c', coat: '#161021', coat2: '#221a33', hi: '#3a2f55', edge: '#5a4688', thread: '#8a4dff', threadHi: '#c9a6ff', magenta: '#ff4fd8', red: '#ff3d5e', redHi: '#ffd0d8', porcelain: '#f1ebf4', porcelain2: '#b9aeca', faceSh: '#6e6088', lining: '#3b1d6e' };
+function sableBody(ctx, seed) {
+  const r = prng(seed);
+  // black thread hair, falling behind the shoulders
+  ctx.save(); ctx.lineCap = 'round';
+  for (let i = 0; i < 80; i++) { const x = 168 + r() * 176, L = 220 + r() * 170, sw = (r() - 0.5) * 120; ctx.strokeStyle = r() < 0.7 ? SC.ink : SC.hi; ctx.lineWidth = 2 + r() * 4; ctx.beginPath(); curve(ctx, [[x, 130 + r() * 30], [x + sw * 0.3 + (x - 256) * 0.45, 270], [x + sw + (x - 256) * 1.0, 140 + L]], false); ctx.stroke(); }
+  ctx.restore();
+  for (let i = 0; i < 14; i++) { const x = 60 + r() * 400; thread(ctx, [[x, 350 + r() * 60], [x + (r() - 0.5) * 80, 440], [x + (r() - 0.5) * 140, 540]], SC.thread, 0.9, 0.3); }
+  part(ctx, bust(196, 340), { base: SC.coat, rim: SC.thread, edge: 30, hl: [170, 390, 120], hlA: 0.25, tex: (c) => { c.strokeStyle = 'rgba(138,77,255,0.4)'; c.lineWidth = 2; for (let y = 392; y < 520; y += 22) for (let x = 110 + ((y / 22) % 2) * 13; x < 410; x += 26) { c.beginPath(); c.moveTo(x - 5, y - 5); c.lineTo(x + 5, y + 5); c.moveTo(x + 5, y - 5); c.lineTo(x - 5, y + 5); c.stroke(); } } });
+}
+function sableNeedle(ctx, gx, gy, top, ex) {
+  // a long tapered needle held upright before him; a red thread runs through its eye below the grip
+  const nb = ctx.createLinearGradient(gx - 9, 0, gx + 9, 0); nb.addColorStop(0, '#ffffff'); nb.addColorStop(0.45, '#d9d6ee'); nb.addColorStop(1, '#5d5878');
+  ctx.save(); ctx.fillStyle = nb; ctx.beginPath(); ctx.moveTo(gx - 8, gy + 70); ctx.lineTo(gx - 6, gy - 20); ctx.lineTo(gx - 1, top); ctx.lineTo(gx + 1, top); ctx.lineTo(gx + 6, gy - 20); ctx.lineTo(gx + 8, gy + 70); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = SC.ink; ctx.lineWidth = 2; ctx.stroke();
+  ctx.strokeStyle = 'rgba(93,88,120,0.9)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(gx, gy - 30); ctx.lineTo(gx, top + 60); ctx.stroke();
+  ctx.fillStyle = SC.ink; ctx.beginPath(); ctx.ellipse(gx, gy + 52, 3, 10, 0, 0, TAU); ctx.fill();
+  ctx.restore();
+  glow(ctx, gx, top + 4, 22, '#ffffff', 0.6);
+  thread(ctx, [[gx, gy + 52], [gx - 30, gy + 70], [gx - 50, gy + 40], [gx - 90, gy + 60 + (ex.brow < -0.5 ? 30 : 0)], [gx - 130, gy + 110]], SC.red, 1.8, 0.85);
 }
 P.sable = (ctx, ex) => {
-  backdrop(ctx, '#8a7cff', { seed: 8 });
-  sableCloak(ctx);
-  // porcelain mask, tilted by mood
-  const tilt = ex.brow * 0.05 + (ex.smirk ? -0.08 : 0) + (ex.brow < -0.5 ? 0.06 : 0);
-  ctx.save(); ctx.translate(256, 236); ctx.rotate(tilt); ctx.translate(-256, -236);
-  const mask = (c) => curve(c, [[256, 142], [318, 160], [338, 226], [326, 290], [292, 330], [256, 342], [220, 330], [186, 290], [174, 226], [194, 160]]);
-  part(ctx, mask, { base: '#e4e0f0', edge: 18, hl: [225, 190, 70], hlA: 0.8, rim: '#c0b0ff', box: [174, 142, 338, 342] });
-  // a hairline crack
-  ctx.strokeStyle = 'rgba(40,30,70,0.6)'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(300, 160); ctx.lineTo(288, 196); ctx.lineTo(296, 214); ctx.lineTo(282, 250); ctx.stroke();
-  // eye slits glowing violet; shape carries the mood
-  for (const s of [-1, 1]) {
-    const x = 256 + s * 38, y = 228, w = 26, h = 6 * Math.min(1.4, Math.max(0.5, ex.eye)), slope = ex.brow * 0.25 * -s;
-    ctx.save(); ctx.translate(x, y); ctx.rotate(slope);
-    ctx.fillStyle = '#05030a'; ctx.beginPath(); ctx.ellipse(0, 0, w, h + 2, 0, 0, TAU); ctx.fill();
-    glow(ctx, 0, 0, 30, '#9a7cff', 0.9); ctx.fillStyle = '#e0d4ff'; ctx.beginPath(); ctx.ellipse(0, 0, w * 0.55, h * 0.45, 0, 0, TAU); ctx.fill();
-    ctx.restore();
-  }
-  // mouth line, barely there
-  ctx.strokeStyle = 'rgba(60,40,90,0.45)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(236, 300); ctx.quadraticCurveTo(256, 302 + ex.smile * 4, 276, 300 - (ex.smirk ?? 0) * 4); ctx.stroke();
+  backdrop(ctx, SC.thread, { seed: 8, a: 0.45 });
+  sableBody(ctx, 51);
+  // the high collar
+  part(ctx, (c) => curve(c, [[178, 404], [174, 320], [204, 286], [256, 298], [308, 286], [338, 320], [334, 404], [256, 376]]), { base: SC.coat2, rim: SC.threadHi, edge: 16, hl: [210, 320, 50], hlA: 0.3 });
+  // the head in shadow behind the mask
+  part(ctx, (c) => c.ellipse(256, 222, 100, 118, 0, 0, TAU), { base: SC.ink, edge: 0, rim: SC.edge, rimW: 5, lightA: 0.12, box: [156, 104, 356, 340] });
+  const heat = ex.tear ? 0.5 : ex.brow > 1 ? 1.45 : ex.lift > 0.5 ? 1.15 : 1;
+  const tilt = ex.brow * 0.035 + (ex.smirk ? -0.08 : 0);
+  ctx.save(); ctx.translate(256, 236); ctx.rotate(tilt); ctx.scale(0.86, 0.86); ctx.translate(-256, -232);
+  const mask = (c) => { c.moveTo(256, 116); c.bezierCurveTo(320, 116, 342, 180, 338, 236); c.bezierCurveTo(334, 292, 302, 336, 262, 344); c.bezierCurveTo(212, 338, 180, 292, 174, 240); c.bezierCurveTo(170, 176, 198, 116, 256, 116); c.closePath(); };
+  part(ctx, mask, { base: '#e6dfec', edge: 22, hl: [222, 168, 70], hlA: 0.85, rim: SC.threadHi, rimW: 5, box: [174, 116, 338, 344], shadeA: 0.9, bounceA: 0.3 });
+  ctx.save(); ctx.beginPath(); mask(ctx); ctx.clip();
+  // shallow sockets under a brow ridge: no eyes, but the shadows set like a frown or a sorrow
+  for (const s of [-1, 1]) { const x = 256 + s * 42, y = 212 - ex.lift * 10; ctx.save(); ctx.translate(x, y); ctx.rotate(ex.brow * 0.38 * -s); ctx.scale(1.4, 0.75); blob(ctx, 0, 0, 30, SC.faceSh, 0.45 + Math.max(0, ex.brow) * 0.2); ctx.restore(); }
+  ctx.fillStyle = hexA(SC.porcelain2, 0.6); ctx.beginPath(); ctx.moveTo(178, 246); ctx.quadraticCurveTo(198, 314, 262, 344); ctx.quadraticCurveTo(222, 300, 214, 248); ctx.closePath(); ctx.fill();
   ctx.restore();
+  // the slit: one long cut from brow to chin, set to his right, burning red
+  const sw = 7 + Math.max(0, ex.brow) * 3 + (ex.open ?? 0) * 3;
+  ctx.fillStyle = SC.ink; ctx.beginPath(); ctx.moveTo(282, 138); ctx.lineTo(282 + sw, 140); ctx.lineTo(280 + sw * 0.75, 328); ctx.lineTo(276, 326); ctx.closePath(); ctx.fill();
+  ctx.save(); ctx.translate(283, 232); ctx.scale(0.32, 1); glow(ctx, 0, 0, 110 * Math.min(1.2, heat), SC.red, 0.55 * heat); ctx.restore();
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = hexA(SC.red, Math.min(1, 0.95 * heat)); ctx.beginPath(); ctx.moveTo(283, 148); ctx.lineTo(281 + sw * 0.8, 150); ctx.lineTo(279 + sw * 0.6, 318); ctx.lineTo(278, 316); ctx.closePath(); ctx.fill(); ctx.fillStyle = hexA(SC.redHi, 0.75 * heat); ctx.fillRect(282, 176, 1.8, 110); ctx.restore();
+  // stitched across, as if it had once been sewn shut
+  ctx.strokeStyle = 'rgba(7,4,12,0.85)'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; for (let y = 158; y <= 312; y += 22) { ctx.beginPath(); ctx.moveTo(266, y - 6); ctx.lineTo(298 + sw, y + 6); ctx.stroke(); }
+  // a hairline crack across the other cheek
+  ctx.strokeStyle = hexA(SC.faceSh, 0.95); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(212, 136); ctx.lineTo(222, 176); ctx.lineTo(208, 198); ctx.lineTo(218, 238); ctx.lineTo(206, 262); ctx.stroke();
+  // in sorrow a black thread runs from the slit like a tear; in mirth the slit's glow rises
+  if (ex.tear) { ctx.strokeStyle = SC.ink; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.moveTo(279, 326); ctx.quadraticCurveTo(286, 360, 274, 400); ctx.stroke(); }
+  if (ex.smile > 0.5) glow(ctx, 283, 160, 40, SC.redHi, 0.4);
+  // black thread hair falling over the top of the mask, shadowing the brow
+  { const sh = ctx.createLinearGradient(0, 110, 0, 210); sh.addColorStop(0, 'rgba(7,4,12,0.85)'); sh.addColorStop(1, 'rgba(7,4,12,0)'); ctx.save(); ctx.beginPath(); mask(ctx); ctx.clip(); ctx.fillStyle = sh; ctx.fillRect(160, 100, 200, 120); ctx.restore();
+    const r = prng(57); ctx.save(); ctx.lineCap = 'round'; for (let i = 0; i < 26; i++) { const x = 176 + r() * 160, L = 40 + r() * 90; ctx.strokeStyle = r() < 0.75 ? SC.ink : SC.hi; ctx.lineWidth = 2 + r() * 3.5; ctx.beginPath(); curve(ctx, [[x + (x - 256) * 0.1, 100], [x + (r() - 0.5) * 16, 100 + L * 0.5], [x + (x - 256) * 0.25 + (r() - 0.5) * 20, 100 + L]], false); ctx.stroke(); } ctx.restore(); }
+  ctx.restore();
+  glow(ctx, 256, 470, 120, SC.red, 0.18 * heat);
+  // the needle, held upright before the slit in a black-gloved hand
+  sableNeedle(ctx, 392, 420, 70, ex);
+  hand(ctx, 392, 420, 1, 0, 'fist', { color: '#1c1430', rim: SC.thread, cuff: SC.coat, cuffRim: SC.threadHi });
 };
 P.sable_bare = (ctx, ex) => {
-  backdrop(ctx, '#b3a8ff', { seed: 9 });
-  sableCloak(ctx);
-  const skin = '#d8cce0';
-  neck(ctx, skin, 256, 330, 30, '#c0b0ff');
-  face(ctx, { cx: 256, cy: 238, w: 82, h: 100, skin, iris_c: '#8a6aff', glowEye: '#8a7cff', brow: '#1a1028', lash: '#0a0612', lashes: true, rim: '#c0b0ff', cheek: '#a080c0', jaw: 0.7, tilt: 0.14 }, ex);
-  // the scar of the cut, a thin line across the face
-  ctx.save(); ctx.strokeStyle = 'rgba(120,90,200,0.7)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(196, 180); ctx.quadraticCurveTo(250, 236, 318, 300); ctx.stroke(); glow(ctx, 256, 240, 40, '#8a7cff', 0.15); ctx.restore();
-  // black thread hair
-  part(ctx, (c) => curve(c, [[160, 236], [164, 156], [220, 120], [304, 122], [354, 166], [352, 238], [328, 186], [292, 172], [258, 190], [222, 168], [190, 188]]), { base: '#0e0a1a', edge: 10, hl: [230, 140, 60], hlA: 0.2, rim: '#a898ff', tex: (c) => strands(c, [[170, 200], [240, 130], [340, 170]], 40, 40, '#5a4a9a', 1.2, 53, 0.6) });
-  // black scarf, mirror of Iri's
-  part(ctx, (c) => curve(c, [[150, 362], [256, 402], [362, 364], [372, 402], [256, 452], [140, 406]]), { base: '#1a1030', rim: '#a898ff', edge: 14, hl: [210, 380, 80], hlA: 0.3 });
-  part(ctx, (c) => curve(c, [[182, 400], [132, 420], [72, 470], [42, 520], [92, 520], [142, 470], [192, 440]]), { base: '#140c26', rim: '#a898ff', edge: 12 });
-  thread(ctx, [[150, 382], [256, 424], [362, 384]], '#8a7cff', 1.6, 0.6);
+  backdrop(ctx, '#b38aff', { seed: 9 });
+  sableBody(ctx, 52);
+  // Iri's hood, inverted: black, violet-lined, its point trailing behind
+  part(ctx, (c) => curve(c, [[256, 70], [356, 104], [396, 210], [392, 330], [350, 410], [256, 430], [162, 410], [120, 330], [116, 210], [140, 120], [90, 80], [170, 86]]), { base: SC.coat, rim: SC.threadHi, edge: 36, hl: [190, 140, 130], hlA: 0.2, rimW: 8, tex: (c) => strands(c, [[150, 120], [256, 80], [360, 120]], 40, 300, SC.hi, 1.5, 52, 0.5) });
+  part(ctx, (c) => curve(c, [[256, 116], [332, 140], [360, 222], [352, 312], [256, 362], [160, 312], [152, 222], [180, 140]]), { base: SC.lining, edge: 30, rim: null, lightA: 0.1 });
+  const skin = '#cfc4dc';
+  neck(ctx, skin, 256, 330, 30, SC.threadHi);
+  const e2 = { ...ex, shape: ex.shape === 'flat' ? 'smirk' : ex.shape };
+  face(ctx, { cx: 256, cy: 238, w: 82, h: 100, skin, iris_c: SC.magenta, glowEye: SC.magenta, brow: '#1a1028', lash: SC.ink, lashes: true, freckles: true, rim: SC.threadHi, cheek: '#a080c0', lip: '#5a3a70', tilt: 0.12 }, e2);
+  // dark thread tear-tracks under both eyes
+  ctx.save(); ctx.strokeStyle = 'rgba(7,4,12,0.7)'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+  for (const s of [-1, 1]) { const x = 256 + s * 35, y = 246; ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + s * 3, y + 26, x - s * 2, y + 52); ctx.stroke(); }
+  ctx.restore();
+  // black thread hair under the hood
+  part(ctx, (c) => curve(c, [[166, 232], [170, 160], [220, 128], [300, 128], [346, 168], [350, 232], [330, 190], [300, 176], [262, 186], [230, 172], [196, 190]]), { base: '#0e0a1a', edge: 10, hl: [230, 146, 60], hlA: 0.25, rim: SC.threadHi, rimW: 3, tex: (c) => { strands(c, [[180, 200], [240, 140], [330, 170]], 60, 34, '#5a4a9a', 1.3, 53, 0.6); } });
+  // the black scarf, mirror of Iri's gold, trailing the other way
+  part(ctx, (c) => curve(c, [[150, 362], [256, 402], [362, 364], [372, 402], [256, 452], [140, 406]]), { base: '#1a1030', rim: SC.magenta, edge: 14, hl: [210, 380, 80], hlA: 0.3 });
+  part(ctx, (c) => curve(c, [[182, 400], [132, 420], [72, 470], [42, 520], [92, 520], [142, 470], [192, 440]]), { base: '#140c26', rim: SC.magenta, edge: 12 });
+  thread(ctx, [[150, 382], [256, 424], [362, 384]], SC.magenta, 1.6, 0.6);
+  // a gloved hand, open, black thread unravelling from the fingers
+  hand(ctx, 396, 456, 1, 0.12, 'open', { color: '#1c1430', rim: SC.magenta, cuff: SC.coat, cuffRim: SC.threadHi });
+  const [hx, hy] = handPoint(396, 456, 1, 0.12, 'open');
+  for (let i = 0; i < 5; i++) thread(ctx, [[hx - 20 + i * 10, hy + 20], [hx - 30 + i * 16, hy - 30 - i * 6], [hx - 10 + i * 22, hy - 90 - i * 10]], i % 2 ? SC.magenta : SC.thread, 1.2, 0.7);
 };
 
 // ---------------------------------------------------------------- patrons (luminous, each in their element)
@@ -631,16 +696,25 @@ function patronBase(ctx, ex, o) {
   if (o.hairBack) part(ctx, o.hairBack, { base: o.hair, edge: 18, rim: tint(o.color, 0.6), hl: [210, 150, 80] });
   face(ctx, { cx: 256, cy: 232, w: 80, h: 98, skin: o.skin, iris_c: o.iris, glowEye: o.color, brow: o.brow ?? shade(o.hair, 0.3), lash: shade(o.hair, 0.6), lashes: o.lashes, rim: tint(o.color, 0.5), cheek: o.cheek ?? '#e08080', jaw: o.jaw, tilt: o.tilt }, ex);
   if (o.front) o.front(ctx);
+  if (o.hold) {
+    const pose = o.pose ?? 'open', hx = o.hx ?? 392, hy = o.hy ?? 454, rot = o.hrot ?? 0.1;
+    if (o.under) o.under(ctx, ...handPoint(hx, hy, 1, rot, pose));
+    hand(ctx, hx, hy, 1, rot, pose, { color: o.handC ?? o.skin, rim: tint(o.color, 0.5), cuff: o.robe, cuffRim: tint(o.color, 0.5) });
+    o.hold(ctx, ...handPoint(hx, hy, 1, rot, pose));
+  }
 }
-P.solenne = (ctx, ex) => patronBase(ctx, ex, { color: '#ffc35a', seed: 11, robe: '#c08a2a', skin: '#f6dcb0', hair: '#f0c060', iris: '#c07a10', jaw: 0.72, lashes: true,
+P.solenne = (ctx, ex) => patronBase(ctx, ex, { color: '#ffc35a', seed: 11,
+  hold: (c, x, y) => { glow(c, x, y - 6, 70, '#ffd27a', 0.9); part(c, (k) => k.arc(x, y - 6, 20, 0, TAU), { base: '#fff0b0', edge: 4, hl: [x - 6, y - 12, 14], hlA: 1, rim: '#ffffff', box: [x - 20, y - 26, x + 20, y + 14] }); for (let i = 0; i < 12; i++) { const a = i / 12 * TAU; thread(c, [[x + Math.cos(a) * 26, y - 6 + Math.sin(a) * 26], [x + Math.cos(a) * 44, y - 6 + Math.sin(a) * 44]], '#ffd27a', 1.4, 0.8); } }, robe: '#c08a2a', skin: '#f6dcb0', hair: '#f0c060', iris: '#c07a10', jaw: 0.72, lashes: true,
   behind: (c) => { for (let i = 0; i < 24; i++) { const a = (i / 24) * TAU; c.save(); c.translate(256, 200); c.rotate(a); const g = c.createLinearGradient(0, 0, 230, 0); g.addColorStop(0, 'rgba(255,220,120,0.6)'); g.addColorStop(1, 'rgba(255,220,120,0)'); c.fillStyle = g; c.beginPath(); c.moveTo(90, -6); c.lineTo(230 + (i % 2) * 40, 0); c.lineTo(90, 6); c.fill(); c.restore(); } glow(c, 256, 200, 160, '#ffd27a', 0.5); },
   hairBack: (c) => curve(c, [[256, 106], [336, 124], [362, 210], [350, 320], [320, 360], [300, 300], [212, 300], [192, 360], [162, 320], [150, 210], [176, 124]]),
   front: (c) => { part(c, (k) => curve(k, [[176, 156], [216, 112], [256, 100], [296, 112], [336, 156], [300, 142], [256, 134], [212, 142]]), { base: '#ffe080', edge: 6, rim: '#ffffff', hl: [240, 116, 40], hlA: 0.8 }); glow(c, 256, 116, 30, '#ffffff', 0.8); } });
-P.maru = (ctx, ex) => patronBase(ctx, ex, { color: '#5ec8ff', seed: 12, robe: '#1a5a8a', skin: '#a8d8f0', hair: '#2a7ac0', iris: '#0a4a8a', jaw: 0.9, cheek: '#80a0e0',
+P.maru = (ctx, ex) => patronBase(ctx, ex, { color: '#5ec8ff', seed: 12,
+  hold: (c, x, y) => { glow(c, x, y - 8, 56, '#5ec8ff', 0.5); part(c, (k) => k.arc(x, y - 8, 26, 0, TAU), { base: '#3aa0e0', edge: 8, hl: [x - 8, y - 18, 16], hlA: 1, rim: '#d0f4ff', box: [x - 26, y - 34, x + 26, y + 18], tex: (k) => { k.strokeStyle = 'rgba(220,250,255,0.6)'; k.lineWidth = 2; k.beginPath(); k.arc(x, y - 2, 18, 0.2, Math.PI - 0.2); k.stroke(); } }); }, robe: '#1a5a8a', skin: '#a8d8f0', hair: '#2a7ac0', iris: '#0a4a8a', jaw: 0.9, cheek: '#80a0e0',
   hairBack: (c) => curve(c, [[256, 104], [350, 130], [392, 230], [400, 360], [360, 420], [330, 340], [182, 340], [152, 420], [112, 360], [120, 230], [162, 130]]),
   robeTex: (c) => { c.strokeStyle = 'rgba(200,240,255,0.35)'; c.lineWidth = 3; for (let i = 0; i < 5; i++) { c.beginPath(); for (let x = 60; x <= 460; x += 20) { const y = 380 + i * 26 + Math.sin(x * 0.05 + i) * 7; x === 60 ? c.moveTo(x, y) : c.lineTo(x, y); } c.stroke(); } },
   front: (c) => { part(c, (k) => curve(k, [[170, 210], [176, 150], [222, 118], [300, 120], [344, 160], [350, 210], [326, 176], [290, 164], [256, 180], [222, 164], [190, 178]]), { base: '#3a90d8', edge: 8, rim: '#c0f0ff', hl: [230, 130, 50], tex: (k) => { k.strokeStyle = 'rgba(220,250,255,0.5)'; k.lineWidth = 2.5; for (let i = 0; i < 4; i++) { k.beginPath(); k.arc(200 + i * 40, 160, 16, Math.PI, 0); k.stroke(); } } }); glow(c, 256, 330, 16, '#ffffff', 0.9); c.fillStyle = '#f0f8ff'; c.beginPath(); c.arc(256, 330, 7, 0, TAU); c.fill(); } });
-P.veyra = (ctx, ex) => patronBase(ctx, ex, { color: '#a6f6ff', seed: 13, robe: '#2a3a6a', skin: '#e0e8f8', hair: '#60d8f0', iris: '#2ab0d0', jaw: 0.78, lashes: true, tilt: 0.12,
+P.veyra = (ctx, ex) => patronBase(ctx, ex, { color: '#a6f6ff', seed: 13, hrot: -0.18,
+  hold: (c, x, y) => { glow(c, x, y, 60, '#a6f6ff', 0.7); c.save(); c.globalCompositeOperation = 'lighter'; c.strokeStyle = 'rgba(230,255,255,0.95)'; c.lineWidth = 2.4; const r = prng(19); for (let b = 0; b < 5; b++) { let px = x, py = y + 10; c.beginPath(); c.moveTo(px, py); for (let i = 0; i < 5; i++) { px += (r() - 0.5) * 40; py -= 16 + r() * 10; c.lineTo(px, py); } c.stroke(); } c.restore(); }, robe: '#2a3a6a', skin: '#e0e8f8', hair: '#60d8f0', iris: '#2ab0d0', jaw: 0.78, lashes: true, tilt: 0.12,
   hairBack: (c) => curve(c, [[256, 80], [330, 70], [400, 120], [420, 220], [380, 300], [330, 280], [182, 280], [132, 300], [92, 220], [112, 120], [182, 70]]),
   front: (c) => { part(c, (k) => curve(k, [[160, 220], [150, 150], [196, 96], [256, 84], [330, 96], [366, 160], [356, 220], [330, 170], [296, 150], [256, 168], [222, 150], [186, 172]]), { base: '#80e8ff', edge: 8, rim: '#ffffff', hl: [230, 110, 60], hlA: 0.7 });
     c.save(); c.globalCompositeOperation = 'lighter'; c.strokeStyle = 'rgba(220,255,255,0.9)'; c.lineWidth = 2.5; const r = prng(14); for (let b = 0; b < 4; b++) { let x = 120 + r() * 280, y = 60 + r() * 40; c.beginPath(); c.moveTo(x, y); for (let i = 0; i < 6; i++) { x += (r() - 0.5) * 50; y += 24; c.lineTo(x, y); } c.stroke(); } c.restore(); glow(c, 140, 120, 60, '#a6f6ff', 0.5); glow(c, 390, 160, 60, '#a6f6ff', 0.5); } });
@@ -657,15 +731,18 @@ P.ossian = (ctx, ex) => {
   for (const s of [-1, 1]) { const x = 256 + s * 54, y = 226, h = 7 * Math.max(0.3, Math.min(1.4, ex.eye)); ctx.fillStyle = '#1a1208'; ctx.beginPath(); ctx.ellipse(x, y, 24, h + 3, 0, 0, TAU); ctx.fill(); glow(ctx, x, y, 34, '#ffb040', 0.9); ctx.fillStyle = '#ffd890'; ctx.beginPath(); ctx.ellipse(x, y, 12, h * 0.7, 0, 0, TAU); ctx.fill(); }
   // nose slab and mouth crack
   part(ctx, (c) => { c.moveTo(256, 216); c.lineTo(282, 290); c.lineTo(256, 300); c.lineTo(234, 290); c.closePath(); }, { base: shade(stone, 0.05), edge: 6, hl: [248, 250, 30], rim: null });
+  hand(ctx, 120, 452, 1.15, -0.1, 'fist', { color: '#8a7a6a', rim: '#f0d0a0', cuff: '#5a4a3a' }); glow(ctx, 120, 440, 40, '#ffb040', 0.25);
   ctx.save(); ctx.strokeStyle = '#1a1208'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(214, 330 - ex.smile * 8); ctx.lineTo(240, 334 + ex.smile * 3); ctx.lineTo(272, 332 + ex.smile * 3); ctx.lineTo(298, 330 - ex.smile * 8 - (ex.smirk ?? 0) * 6); ctx.stroke(); if (ex.open > 0.2) glow(ctx, 256, 336, 30, '#ffb040', 0.5); ctx.restore();
 };
-P.ilu = (ctx, ex) => patronBase(ctx, ex, { color: '#b07cff', seed: 16, robe: '#2a1a4a', skin: '#c8b8e8', hair: '#3a2060', iris: '#7a40d0', jaw: 0.74, lashes: true, cheek: '#b080d0', tilt: 0.16,
+P.ilu = (ctx, ex) => patronBase(ctx, ex, { color: '#b07cff', seed: 16, pose: 'pinch',
+  hold: (c, x, y) => { glow(c, x, y - 18, 50, '#c0a0ff', 0.6); c.save(); c.fillStyle = 'rgba(240,232,255,0.97)'; c.beginPath(); c.arc(x, y - 24, 22, 0.75, 0.75 + 4.6, false); c.arc(x + 10, y - 30, 19, 0.75 + 4.25, 0.95, true); c.closePath(); c.fill(); c.restore(); }, robe: '#2a1a4a', skin: '#c8b8e8', hair: '#3a2060', iris: '#7a40d0', jaw: 0.74, lashes: true, cheek: '#b080d0', tilt: 0.16,
   behind: (c) => { c.save(); c.fillStyle = 'rgba(230,220,255,0.75)'; c.beginPath(); c.arc(340, 110, 60, 0, TAU); c.fill(); c.globalCompositeOperation = 'destination-out'; c.beginPath(); c.arc(362, 96, 56, 0, TAU); c.fill(); c.restore(); glow(c, 330, 120, 90, '#c0a0ff', 0.4); },
   hairBack: (c) => curve(c, [[256, 100], [346, 120], [380, 230], [376, 400], [330, 380], [300, 300], [212, 300], [182, 380], [136, 400], [132, 230], [166, 120]]),
   front: (c) => { part(c, (k) => curve(k, [[168, 260], [164, 160], [220, 116], [300, 116], [348, 160], [354, 214], [320, 170], [270, 150], [230, 168], [200, 210]]), { base: '#3a2060', edge: 10, rim: '#d0b0ff', hl: [250, 130, 50], hlA: 0.3 });
     // half the face in shadow
     c.save(); const g = c.createLinearGradient(200, 0, 300, 0); g.addColorStop(0, 'rgba(20,8,40,0.55)'); g.addColorStop(1, 'rgba(20,8,40,0)'); c.fillStyle = g; c.beginPath(); curve(c, [[256, 136], [256, 340], [176, 300], [170, 200]]); c.fill(); c.restore(); } });
-P.kestrel = (ctx, ex) => patronBase(ctx, ex, { color: '#8ff5b0', seed: 17, robe: '#2a6a4a', skin: '#e8e0c8', hair: '#4a8a5a', iris: '#2a9a5a', jaw: 0.74, lashes: true, tilt: 0.16,
+P.kestrel = (ctx, ex) => patronBase(ctx, ex, { color: '#8ff5b0', seed: 17, pose: 'pinch', hrot: 0.15,
+  hold: (c, x, y) => { glow(c, x + 10, y - 50, 50, '#8ff5b0', 0.5); part(c, (k) => curve(k, [[x, y], [x - 12, y - 50], [x + 4, y - 110], [x + 22, y - 60]]), { base: '#a8f0c0', edge: 5, rim: '#ffffff', rimW: 3, box: [x - 14, y - 110, x + 22, y], tex: (k) => { k.strokeStyle = 'rgba(20,60,30,0.5)'; k.lineWidth = 1.4; k.beginPath(); k.moveTo(x, y); k.lineTo(x + 2, y - 104); k.stroke(); strands(k, [[x - 8, y - 30], [x + 4, y - 90]], 12, 20, '#ffffff', 1, 9, 0.4); } }); }, robe: '#2a6a4a', skin: '#e8e0c8', hair: '#4a8a5a', iris: '#2a9a5a', jaw: 0.74, lashes: true, tilt: 0.16,
   behind: (c) => { const r = prng(18); c.save(); for (let i = 0; i < 9; i++) { c.strokeStyle = `rgba(200,255,220,${0.2 + r() * 0.3})`; c.lineWidth = 2 + r() * 3; c.beginPath(); const y = 80 + i * 40; c.moveTo(0, y); c.bezierCurveTo(160, y - 40, 340, y + 40, 512, y - 10); c.stroke(); } c.restore(); },
   hairBack: (c) => curve(c, [[256, 100], [336, 110], [366, 190], [356, 280], [320, 300], [192, 300], [156, 280], [146, 190], [176, 110]]),
   front: (c) => { // feathered crest
@@ -687,6 +764,13 @@ P.veyl = (ctx, ex) => {
   part(ctx, (c) => curve(c, [[160, 260], [164, 160], [216, 120], [300, 120], [350, 160], [354, 260], [330, 200], [300, 168], [256, 160], [212, 168], [184, 200]]), { base: glass, edge: 8, rim: '#ffffff', hl: [230, 136, 60], hlA: 0.8, tex: (c) => { c.strokeStyle = 'rgba(255,255,255,0.6)'; c.lineWidth = 1.5; for (let i = 0; i < 8; i++) { c.beginPath(); c.moveTo(180 + i * 22, 140); c.lineTo(170 + i * 24, 240); c.stroke(); } } });
   // thorns at the collar
   for (let i = 0; i < 7; i++) { const x = 170 + i * 29; ctx.fillStyle = '#bff8ee'; ctx.beginPath(); ctx.moveTo(x - 6, 350); ctx.lineTo(x, 316 - (i % 2) * 10); ctx.lineTo(x + 6, 350); ctx.fill(); }
+  // a glass rose on a thorned stem, held up like a verdict
+  const [rx, ry] = handPoint(118, 458, 1, -0.2, 'pinch');
+  ctx.save(); ctx.strokeStyle = '#4aa8a0'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(rx + 6, ry + 70); ctx.quadraticCurveTo(rx - 6, ry, rx + 4, ry - 50); ctx.stroke();
+  ctx.fillStyle = '#bff8ee'; for (const t of [0.2, 0.5, 0.8]) { const yy = ry + 70 - t * 120, xx = rx + (t < 0.5 ? 2 : 0); ctx.beginPath(); ctx.moveTo(xx, yy); ctx.lineTo(xx - 10, yy - 4); ctx.lineTo(xx, yy - 6); ctx.fill(); } ctx.restore();
+  glow(ctx, rx + 4, ry - 66, 50, '#9ff0e0', 0.7);
+  for (let i = 0; i < 6; i++) { const a = i / 6 * TAU; part(ctx, (c) => curve(c, [[rx + 4, ry - 62], [rx + 4 + Math.cos(a) * 22, ry - 66 + Math.sin(a) * 18], [rx + 4 + Math.cos(a + 0.5) * 18, ry - 70 + Math.sin(a + 0.5) * 16]]), { base: i % 2 ? '#9ff0e0' : '#d0fff4', edge: 3, rim: '#ffffff', rimW: 2, box: [rx - 20, ry - 90, rx + 28, ry - 44] }); }
+  hand(ctx, 118, 458, 1, -0.2, 'pinch', { color: '#c8ece4', rim: '#ffffff', cuff: '#1a4a50', cuffRim: '#d0fff4' });
 };
 P.morrow = (ctx, ex) => {
   backdrop(ctx, '#7fb0ff', { seed: 23 });
@@ -698,6 +782,7 @@ P.morrow = (ctx, ex) => {
   for (const [x, y] of [[196, 270], [322, 300]]) { ctx.fillStyle = 'rgba(200,230,255,0.8)'; ctx.beginPath(); ctx.ellipse(x, y, 3, 5, 0, 0, TAU); ctx.fill(); }
   // lantern glow beside him
   glow(ctx, 430, 300, 90, '#bfe0ff', 0.7); ctx.strokeStyle = '#1a2440'; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(440, 520); ctx.lineTo(430, 330); ctx.stroke(); part(ctx, (c) => { c.rect(410, 260, 40, 60); }, { base: '#e8f4ff', edge: 8, rim: null });
+  hand(ctx, 435, 430, 0.95, -0.05, 'fist', { color: '#b8c8d8', rim: '#a0c8ff', cuff: '#1a2440', cuffRim: '#a0c8ff' });
 };
 P.aurum = (ctx, ex) => {
   backdrop(ctx, '#ffb347', { seed: 26 });
@@ -711,6 +796,7 @@ P.aurum = (ctx, ex) => {
   for (const s of [-1, 1]) { const x = 256 + s * 56, y = 230, h = 8 * Math.max(0.3, Math.min(1.4, ex.eye)); ctx.fillStyle = '#2a1004'; ctx.beginPath(); ctx.ellipse(x, y, 26, h + 3, 0, 0, TAU); ctx.fill(); glow(ctx, x, y, 40, '#ff8020', 1); ctx.fillStyle = '#fff0a0'; ctx.beginPath(); ctx.ellipse(x, y, 12, h * 0.6, 0, 0, TAU); ctx.fill(); }
   // beard of gold bars
   part(ctx, (c) => curve(c, [[180, 290], [256, 300], [332, 290], [340, 360], [300, 430], [256, 446], [212, 430], [172, 360]]), { base: '#e8b050', edge: 12, hl: [230, 320, 60], hlA: 0.8, rim: '#fff0c0', tex: (c) => { c.strokeStyle = 'rgba(120,60,10,0.5)'; c.lineWidth = 3; for (let i = 0; i < 7; i++) { c.beginPath(); c.moveTo(190 + i * 22, 300); c.lineTo(200 + i * 18, 440); c.stroke(); } } });
+  hand(ctx, 112, 450, 1.2, 0.12, 'fist', { color: '#d8a040', rim: '#fff0c0', cuff: '#7a4a18', cuffRim: '#ffe0a0' }); glow(ctx, 112, 430, 46, '#ff8020', 0.55);
   ctx.save(); ctx.strokeStyle = '#2a1004'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(220, 300 - ex.smile * 8); ctx.quadraticCurveTo(256, 308 + ex.smile * 6 + ex.open * 12, 292, 300 - ex.smile * 8 - (ex.smirk ?? 0) * 6); ctx.stroke(); if (ex.open > 0.2) glow(ctx, 256, 306, 30, '#ff9030', 0.7); ctx.restore();
 };
 
@@ -728,7 +814,11 @@ P.hob = (ctx, ex) => {
   for (const s of [-1, 1]) { const x = 256 + s * 46, y = 216, h = 14 * Math.max(0.3, Math.min(1.3, ex.eye)); ctx.fillStyle = '#2a1a08'; ctx.beginPath(); ctx.ellipse(x, y, 16, h, s * ex.brow * 0.2, 0, TAU); ctx.fill(); glow(ctx, x, y, 22, '#ffd27a', 0.7); ctx.strokeStyle = '#6a4a20'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(x - s * 20, y - 26 + ex.brow * 8 - ex.lift * 10); ctx.lineTo(x + s * 18, y - 30 - ex.lift * 10 - ex.brow * 3); ctx.stroke(); }
   ctx.save(); ctx.strokeStyle = '#2a1a08'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(220, 284 - ex.smile * 10); ctx.quadraticCurveTo(256, 296 + ex.smile * 10 + ex.open * 10, 292, 284 - ex.smile * 10); ctx.stroke();
   ctx.lineWidth = 1.5; for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(226 + i * 12, 280 + Math.abs(i - 2.5) * 2); ctx.lineTo(226 + i * 12, 296 + Math.abs(i - 2.5) * 2); ctx.stroke(); } ctx.restore();
-  glow(ctx, 430, 360, 70, '#ffd27a', 0.6);
+  ctx.save(); ctx.strokeStyle = '#5a4020'; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(422, 430); ctx.lineTo(420, 352); ctx.stroke(); ctx.restore();
+  glow(ctx, 420, 320, 80, '#ffd27a', 0.8);
+  part(ctx, (c) => { c.roundRect ? c.roundRect(398, 296, 44, 56, 8) : c.rect(398, 296, 44, 56); }, { base: '#ffe6a0', edge: 8, rim: '#ffffff', hl: [412, 310, 20], hlA: 1, box: [398, 296, 442, 352] });
+  ctx.strokeStyle = '#3a2a10'; ctx.lineWidth = 3; ctx.strokeRect(398, 296, 44, 56); ctx.beginPath(); ctx.moveTo(420, 296); ctx.lineTo(420, 352); ctx.stroke();
+  hand(ctx, 422, 452, 0.95, 0, 'fist', { color: '#8a6a3a', rim: '#f0f8c0', cuff: '#6a5a30' });
 };
 P.lisle = (ctx, ex) => {
   backdrop(ctx, '#8fd0ff', { seed: 33 });
@@ -739,6 +829,10 @@ P.lisle = (ctx, ex) => {
   // halo and bubbles
   ctx.save(); ctx.strokeStyle = 'rgba(255,248,220,0.9)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.ellipse(256, 128, 80, 18, 0, 0, TAU); ctx.stroke(); ctx.restore(); glow(ctx, 256, 128, 90, '#fff4d0', 0.4);
   const r = prng(34); for (let i = 0; i < 10; i++) { const x = 230 + r() * 120, y = 300 - i * 26, rr = 4 + r() * 8; ctx.strokeStyle = 'rgba(230,248,255,0.7)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, rr, 0, TAU); ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.arc(x - rr * 0.3, y - rr * 0.3, rr * 0.25, 0, TAU); ctx.fill(); }
+  hand(ctx, 390, 458, 0.95, 0.1, 'open', { color: '#c8d8e8', rim: '#ffffff', cuff: '#d8e4f0' });
+  const [bx, by] = handPoint(390, 458, 0.95, 0.1, 'open');
+  ctx.strokeStyle = 'rgba(230,248,255,0.85)'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(bx, by - 8, 26, 0, TAU); ctx.stroke(); glow(ctx, bx, by - 8, 40, '#d0f0ff', 0.4);
+  ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.ellipse(bx - 9, by - 18, 6, 4, -0.6, 0, TAU); ctx.fill();
 };
 P.gilt = (ctx, ex) => {
   backdrop(ctx, '#ffcf6a', { seed: 35 });
@@ -752,6 +846,10 @@ P.gilt = (ctx, ex) => {
   blob(ctx, 300, 260, 40, '#3a2a20', 0.35);
   for (const s of [-1, 1]) { const x = 256 + s * 42, y = 222; const h = 18 * Math.max(0.35, Math.min(1.3, ex.eye)); ctx.fillStyle = '#fff8e0'; ctx.beginPath(); ctx.ellipse(x, y, 18, h, 0, 0, TAU); ctx.fill(); ctx.fillStyle = '#3a2a10'; ctx.beginPath(); ctx.arc(x + ex.look[0] * 4, y + 2, 9, 0, TAU); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x - 3, y - 3, 3, 0, TAU); ctx.fill(); ctx.strokeStyle = '#7a4a10'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x - s * 18, y - 28 + ex.brow * 8 - ex.lift * 10); ctx.lineTo(x + s * 18, y - 32 - ex.lift * 10 - ex.brow * 3 - (ex.browUp && s > 0 ? 6 : 0)); ctx.stroke(); }
   mouth(ctx, 256, 290, 24, ex, { skin: '#c89040', lip: '#7a4a10' });
+  ctx.save(); ctx.strokeStyle = '#5a3a18'; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(394, 500); ctx.lineTo(394, 372); ctx.stroke(); ctx.restore();
+  part(ctx, (c) => { c.rect(364, 344, 62, 30); }, { base: '#7a7a88', edge: 6, rim: '#fff0b0', hl: [376, 350, 20], hlA: 0.8, box: [364, 344, 426, 374] });
+  glow(ctx, 426, 360, 20, '#ffb040', 0.6);
+  hand(ctx, 394, 446, 0.95, 0, 'fist', { color: '#c89040', rim: '#fff4c0', cuff: '#8a6020' });
 };
 P.ash = (ctx, ex) => {
   backdrop(ctx, '#c9c9d6', { seed: 37, motes: 6, a: 0.4 });
@@ -760,6 +858,8 @@ P.ash = (ctx, ex) => {
   part(g, bust(150, 340), { base: '#7a7a88', rim: '#ffffff', edge: 24, hl: [180, 380, 100] });
   face(g, { cx: 256, cy: 236, w: 78, h: 96, skin: '#b0b0bc', iris_c: '#8a8a98', brow: '#6a6a78', lash: '#4a4a58', rim: '#ffffff', cheek: '#a0a0b0', jaw: 0.78 }, ex);
   part(g, (c) => curve(c, [[170, 230], [176, 160], [226, 130], [292, 130], [340, 166], [344, 230], [318, 180], [256, 170], [196, 182]]), { base: '#8a8a96', edge: 8, rim: '#ffffff' });
+  hand(g, 384, 458, 0.95, 0.1, 'pinch', { color: '#b0b0bc', rim: '#ffffff', cuff: '#7a7a88' });
+  { const [cx2, cy2] = handPoint(384, 458, 0.95, 0.1, 'pinch'); g.save(); g.translate(cx2, cy2); g.rotate(0.5); g.fillStyle = '#f4f4f8'; g.fillRect(-5, -30, 10, 34); g.restore(); }
   // smudged into the void like chalk in rain
   g.save(); g.globalCompositeOperation = 'destination-out'; const r = prng(38);
   for (let i = 0; i < 70; i++) { const x = r() * D, y = (i < 12 ? 120 : 320) + r() * 200; const gr = g.createLinearGradient(x, y, x, y + 80); gr.addColorStop(0, i < 12 ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.5)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x, y, 2 + r() * 6, 80); }
@@ -772,7 +872,10 @@ const MENACE = new Set(['veyl', 'morrow', 'aurum', 'sable']);
 function paint(ctx, speaker, painter, ex) {
   const color = SPEAKERS[speaker]?.color ?? '#f2c46b';
   ELEM = color;
-  const ml = ex.light ?? color, menace = MENACE.has(speaker);
+  const menace = MENACE.has(speaker);
+  if (menace && ex === EXPR.neutral) ex = { ...ex, brow: 0.45, lid: 0.4, squint: 0.15, shape: 'pressed', look: [0, 0] };
+  else if (menace && ex === EXPR.happy) ex = { ...EXPR.wry, brow: 0.5, lid: 0.38, lidR: -0.1, squint: 0.3, shape: 'smirk', light: '#ff9040' };
+  const ml = ex.light ?? color;
   // an aura behind the figure, in the element colour pulled toward the mood
   const auraC = mix(color, ml, ex.light ? 0.55 : 0);
   const ag = ctx.createRadialGradient(256, 230, 30, 256, 250, 300);
@@ -791,10 +894,10 @@ function paint(ctx, speaker, painter, ex) {
   }
   if (ex.light) {
     const k = { happy: 0.14, warm: 0.14, wry: 0.1, sad: 0.24, grave: 0.32, angry: 0.2, surprised: 0.12, afraid: 0.22 };
-    const a = k[Object.keys(EXPR).find((n) => EXPR[n] === ex)] ?? 0.12;
+    const a = k[Object.keys(EXPR).find((n) => EXPR[n].light === ex.light)] ?? 0.12;
     let g;
-    if (ex === EXPR.angry) { g = ctx.createLinearGradient(0, D, 0, 120); g.addColorStop(0, hexA(ml, a * 1.6)); g.addColorStop(1, hexA(ml, 0)); }
-    else if (ex === EXPR.sad || ex === EXPR.grave) { g = ctx.createLinearGradient(0, 0, 0, D); g.addColorStop(0, hexA(ml, a * 1.4)); g.addColorStop(1, hexA(ml, a * 0.5)); }
+    if (ex.light === EXPR.angry.light) { g = ctx.createLinearGradient(0, D, 0, 120); g.addColorStop(0, hexA(ml, a * 1.6)); g.addColorStop(1, hexA(ml, 0)); }
+    else if (ex.light === EXPR.sad.light || ex.light === EXPR.grave.light) { g = ctx.createLinearGradient(0, 0, 0, D); g.addColorStop(0, hexA(ml, a * 1.4)); g.addColorStop(1, hexA(ml, a * 0.5)); }
     else { g = ctx.createLinearGradient(0, 0, D, D); g.addColorStop(0, hexA(ml, a * 1.3)); g.addColorStop(1, hexA(ml, 0)); }
     ctx.fillStyle = g; ctx.fillRect(0, 0, D, D);
   }

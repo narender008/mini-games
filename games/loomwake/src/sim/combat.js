@@ -107,8 +107,8 @@ export function damageFoe(G, e, dmg, opts = {}) {
   const hpDmg = d > 0 ? Math.max(1, Math.round(d)) : 0;
   e.hp -= hpDmg;
   // hit flash: damage-over-time ticks don't flash, and big targets (bosses, armoured elites) flash at most
-  // every 0.22 s so a boon storm doesn't bleach them white
-  if (!opts.quiet && (!(e.boss || e.r >= 40) || !(G.t - (e._flashT ?? -9) < 0.22))) { e.flash = 0.1; e._flashT = G.t; }
+  // every 0.22 s (others every 0.15 s) so a boon storm doesn't bleach them white
+  if (!opts.quiet && !(G.t - (e._flashT ?? -9) < (e.boss || e.r >= 40 ? 0.22 : 0.15))) { e.flash = 0.1; e._flashT = G.t; }
   // knockback
   if (ctx.kb) {
     let dx = opts.dx ?? 0, dy = opts.dy ?? 0;

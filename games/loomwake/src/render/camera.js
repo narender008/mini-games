@@ -30,7 +30,7 @@ export function createCamera(G) {
   // must fit in the band between the boss bar (top) and the HUD (bottom). Zoom out as far as needed (to 0.6),
   // never in past 1.04. Returns the world point to centre on and the zoom.
   cam.viewW = 1280; cam.viewH = 720; cam.base = 1;   // css px, css px per world unit at zoom 1 (set by the renderer)
-  const TOP = 104, BOT = 128, SIDE = 70;
+  const TOP = 120, BOT = 128, SIDE = 70;
   function frameBoss(G, B, h) {
     const H = bossHeight(B);
     const x0 = Math.min(h.x - 60, B.x - (B.r || 40) - 30), x1 = Math.max(h.x + 60, B.x + (B.r || 40) + 30);
