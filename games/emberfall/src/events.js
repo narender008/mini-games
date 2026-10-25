@@ -12,6 +12,8 @@
 //   pickup { kind: 'ability'|'vessel'|'shard'|'lore', id, x, y }  ability { id }
 //   shard { n, x, y }  save { room } (rested at a brazier)  gate { id, open }
 //   room { id, biome, from }  biome { id, name }
+//   enemy-wake { kind, x, y }  enemy-shoot { kind, x, y }  shot-die { x, y, kind }  slam { x, y }  bell { x, y }
+//   boss-tell { id, kind }  boss-attack { id, kind }
 //   boss-spawn { id }  boss-phase { id, phase }  boss-roar { id }  boss-dead { id }
 //   shake { amp, t }  flash { color, a }
 //   won {}  ui { action }  hover { id }
