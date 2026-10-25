@@ -28,7 +28,7 @@ const list = [
     chips: (r) => r === 1 ? ['UNLOCKS Q', 'SLOW 40%'] : [`x${(2.5 + 0.75 * (r - 1)).toFixed(2).replace(/0$/, '')} DMG`, `SLOW ${pct(0.4 + 0.1 * (r - 1))}`],
     apply(s, r) { s.chain = r; s.chainDmg += 0.75 * (r - 1); s.chainSlow += 0.1 * (r - 1); s.slowTime += 1 * (r - 1); s.cdChain -= 1.2 * (r - 1); } },
   { id: 'fire', name: 'Fire Barrels', rarity: 'epic', max: 3, art: 'fire',
-    desc: (r) => r === 1 ? ['Drop burning barrels in', 'your wake. Pirates ignite.'] : ['More barrels, hotter pitch.', 'E comes back sooner.'],
+    desc: (r) => r === 1 ? ['Lob burning barrels at the', 'enemy. Pirates ignite.'] : ['More barrels, hotter pitch.', 'E comes back sooner.'],
     chips: (r) => r === 1 ? ['UNLOCKS E', 'BURN 6s'] : [`${3 + (r - 1)} BARRELS`, `${6 + 4 * (r - 1)} DPS`],
     apply(s, r) { s.fire = r; s.barrels += r - 1; s.burnDps += 4 * (r - 1); s.burnTime += r - 1; s.cdFire -= 1.5 * (r - 1); } },
   { id: 'lightning', name: 'Lightning Masts', rarity: 'legendary', max: 3, art: 'bolt',
