@@ -62,7 +62,7 @@ const input = createInput(canvas, {
 // The title screen shows the galleon riding the swell.
 function showcase() {
   G.player = makePlayer(G);
-  G.player.x = 640;
+  G.player.x = 430;
 }
 
 function doAct(action, arg) {
@@ -127,6 +127,7 @@ function buttons() {
   const list = [];
   if (s === 'play') list.push(...hudButtons(G));
   if (s === 'cards' && G.scene === 'cards') list.push(...cardButtons(G));
+  if (s === 'cards' && G.scene === 'paused') list.push(...hudButtons(G).filter((b) => b.id === 'btn-mute'));
   if (G.scene !== 'play' && G.scene !== 'cards') list.push(...screenButtons(G));
   return list;
 }
