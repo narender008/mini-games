@@ -130,6 +130,7 @@ test('research nodes show, one starts by clicks and completes', async () => {
   const { page, sf } = await env.debug();
   // research needs scholars at an academy: the 'mid' preset has one
   let s = await G.freshColony(page, sf, { preset: 'mid' });
+  await sf('cancelResearch'); // the preset may be mid-project: start from an idle Academy
   await sf('thaw');
   await G.clickOr(page, [SEL.research], G.KEYS.research);
   await G.waitScene(sf, 'research', 4000);
