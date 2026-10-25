@@ -17,6 +17,7 @@ const OUT = path.join(__dirname, 'out');
 const SEEDS = +(process.env.TB_SEEDS || 3);
 const MIN = +(process.env.TB_MIN || 8), MAX = +(process.env.TB_MAX || 17);
 const CONC = +(process.env.TB_CONC || 3);
+const WALL_MIN = +(process.env.TB_WALL_MIN || 6); // per run, real minutes
 
 // Builds pick the first offered card in their list (ids from src/upgrades.js),
 // else one they already own; the generic rules play every card path.
@@ -33,7 +34,8 @@ const BUILDS = [
 const SKILLS = { sharp: { aimNoise: 8, reactionMs: 250, dodge: true }, casual: { aimNoise: 40, reactionMs: 600, dodge: false } };
 
 async function runOne(browser, url, build, seed, skill) {
-  const page = await open(browser, url, `debug&seed=${seed}`);
+  // quality=low and step(ms, { render: false }) keep the sim off the renderer's clock
+  const page = await open(browser, url, `debug&seed=${seed}&quality=low`);
   try {
     const tb = await hook(page);
     const has = await page.evaluate(() => Object.keys(window.__tb));
@@ -45,7 +47,7 @@ async function runOne(browser, url, build, seed, skill) {
     const wall = Date.now();
     do {
       r = await page.evaluate(botRun, 60);
-      if (Date.now() - wall > 8 * 60 * 1000) { r.log.end = r.log.end || 'wall-timeout'; break; }
+      if (Date.now() - wall > WALL_MIN * 60 * 1000) { r.log.end = r.log.end || 'wall-timeout'; break; }
     } while (!r.done);
     if (page.problems.length) r.log.problems = page.problems.slice(0, 10);
     return { build: build.name, seed, skill, result: r.log.end, minutes: r.s.time / 60, bossAtMin: r.log.bossAt == null ? null : r.log.bossAt / 60, waveReached: r.s.stage ?? r.s.wave, leg: r.s.leg, bosses: r.log.bosses, hpLow: r.log.hpLow === Infinity ? null : r.log.hpLow, hpEnd: r.s.maxHp ? r.s.hp / r.s.maxHp : null, score: r.s.score, shots: r.s.shots, hits: r.s.hits, upgrades: r.s.upgrades, picks: r.log.picks.map((p) => p.id), abilityUses: r.log.abilities, waves: r.log.waves, problems: r.log.problems || [], wallSec: (Date.now() - wall) / 1000 };
