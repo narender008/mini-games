@@ -7,7 +7,7 @@
 // spread, and floods every few seconds.
 import { TAU, clamp, wrapAng } from '../../core/math.js';
 import { BOSSES } from '../../content/bosses.js';
-import { stage, once, choose, summon, aliveSummons, walkTo, face, tele, hazard, hitHero, inLine, dHero, aHero, arena, clampToArena, shot, bark, arenaPoint, hazardsOf } from './common.js';
+import { stage, once, choose, summon, aliveSummons, walkTo, face, tele, hazard, hitHero, inLine, dHero, aHero, arena, clampToArena, shot, bark, arenaPoint, hazardsOf, coneArc } from './common.js';
 
 export default {
   id: 'morrow',
@@ -66,7 +66,7 @@ export default {
         a.dir = G.rng.ai() < 0.5 ? 1 : -1;
         a.a0 = h - a.dir * m.arc / 2; a.a1 = h + a.dir * m.arc / 2;
         e.aim = a.a0;
-        a.tg = tele(G, e, { kind: 'cone', x: e.x, y: e.y, r: m.len, angle: h, arc: m.arc, max: a.W, color: '#ff5a6e' });
+        a.tg = tele(G, e, { kind: 'cone', x: e.x, y: e.y, r: m.len, angle: h, arc: coneArc(m.arc) + 0.05, max: a.W, color: '#ff5a6e' });
       },
       update(G, e, a, dt, m) {
         const s = stage(G, e, a, m);
@@ -77,13 +77,17 @@ export default {
           const ease = k * k * (3 - 2 * k);
           e.aim = a.a0 + (a.a1 - a.a0) * ease;
           if (!a.beam) a.beam = hazard(G, e, 'beam', { x: e.x, y: e.y, ang: e.aim, len: m.len, w: m.w, on: true, life: a.A + 0.2 });
+          // while the beam is live the floor still shows what it has left to cross: a held cone from the
+          // beam to the end of its swing, narrowing as it goes
+          if (!a.lv) { if (a.tg) a.tg.done = true; a.lv = tele(G, e, { kind: 'cone', live: true, x: e.x, y: e.y, r: m.len, angle: e.aim, arc: 0.1, max: a.A, color: '#ff5a6e' }); }
+          a.lv.x = e.x; a.lv.y = e.y; a.lv.angle = (e.aim + a.a1) / 2; a.lv.arc = Math.abs(a.a1 - e.aim) / 2 + 0.1;
           a.beam.x = e.x; a.beam.y = e.y - 0; a.beam.ang = e.aim;
           const x2 = e.x + Math.cos(e.aim) * m.len, y2 = e.y + Math.sin(e.aim) * m.len;
           if (!a.hit && inLine(G, e.x, e.y, x2, y2, m.w)) { if (hitHero(G, e, m.dmg, G.hero.x, G.hero.y, { kb: 300, status: ['burn', 1.5, 1] })) a.hit = true; }
-        } else if (a.beam) { a.beam.on = false; }
+        } else { if (a.beam) a.beam.on = false; if (a.lv) a.lv.done = true; }
         return s === 'done';
       },
-      abort(G, e, a) { if (a.beam) a.beam.life = 0; },
+      abort(G, e, a) { if (a.beam) a.beam.life = 0; if (a.lv) a.lv.done = true; },
     },
     notes: {
       update(G, e, a, dt, m) {

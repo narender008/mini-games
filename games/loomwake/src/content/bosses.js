@@ -100,19 +100,19 @@ export const BOSSES = {
 
   morrow: {
     id: 'morrow', name: 'Cantor Morrow', title: 'the Drowned Choirmaster', region: 'choir',
-    r: 48, height: 230, hp: 8400, armor: 800, mass: 30, speed: 150,
+    r: 48, height: 230, hp: 8000, armor: 800, mass: 30, speed: 150,
     phases: [0.6, 0.28], stagger: 1.8, armorRegrow: 5,
     music: 'boss-morrow', color: '#8fd6ff', lantern: '#ffd890',
     lore: 'He kept the hymnals of the Choir and the name of every singer. When the water came he went on conducting. He has not stopped.',
     moves: {
-      ring:     { wind: 0.8, act: 1.6, rec: 0.65, dmg: 12, n: 2, gap: 0.55, speed: 330, w: 34, maxR: 1250, cd: 2.2 },
-      sweep:    { wind: 0.85, act: 1.3, rec: 0.75, dmg: 14, len: 720, w: 54, arc: 2.2, cd: 3.2 },
+      ring:     { wind: 0.8, act: 1.6, rec: 0.65, dmg: 11, n: 2, gap: 0.55, speed: 330, w: 34, maxR: 1250, cd: 2.2 },
+      sweep:    { wind: 1.0, act: 1.5, rec: 0.75, dmg: 12, len: 660, w: 54, arc: 2.2, cd: 3.2 },
       notes:    { wind: 0.65, act: 0.9, rec: 0.5, dmg: 10, n: 5, speed: 220, homing: 1.4, life: 4.2, cd: 3 },
       summon:   { wind: 0.9, act: 0.5, rec: 0.6, n: 2, kind: 'chorister', cd: 20, max: 2 },
       sink:     { wind: 0.6, act: 1.0, rec: 0.5, dmg: 0, cd: 7 },
-      choir:    { wind: 0.7, act: 2.6, rec: 0.7, dmg: 14, speed: 300, w: 30, cd: 4.5 },
-      flood:    { wind: 1.1, act: 3.6, rec: 0, dmg: 6, tick: 0.35, slow: 0.45, cd: 7.5 },
-      requiem:  { wind: 0.9, act: 3.4, rec: 0.9, dmg: 16, rings: 4, gaps: 3, gapArc: 0.62, speed: 260, w: 36, cd: 7 },
+      choir:    { wind: 0.75, act: 2.6, rec: 0.7, dmg: 12, speed: 300, w: 30, cd: 4.5 },
+      flood:    { wind: 1.1, act: 3.6, rec: 0, dmg: 5, tick: 0.35, slow: 0.45, cd: 7.5 },
+      requiem:  { wind: 0.9, act: 3.4, rec: 0.9, dmg: 14, rings: 4, gaps: 3, gapArc: 0.62, speed: 260, w: 36, cd: 7 },
     },
     lines: {
       intro: [

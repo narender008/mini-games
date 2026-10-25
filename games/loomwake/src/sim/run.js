@@ -780,7 +780,7 @@ function applyReward(G, rw, p = null) {
     case 'boon': openOffer(G, { kind: 'boon', patron: rw.patron, rarity: rw.rarity, back: 'run', main: !!(p && p.main) }); break;
     case 'knot': openOffer(G, { kind: 'knot', back: 'run', main: !!(p && p.main) }); break;
     case 'temper': openOffer(G, { kind: 'temper', back: 'run', main: !!(p && p.main) }); break;
-    case 'heal': { const n = Math.round((h ? h.maxHp : 100) * 0.3); safe(Combat.healHero, G, n); emit(G, 'reward', { kind: 'heal', n }); break; }
+    case 'heal': { const n = Math.round((h ? h.maxHp : 100) * 0.35); safe(Combat.healHero, G, n); emit(G, 'reward', { kind: 'heal', n }); break; }
     case 'run': { const n = Math.round(r.int(40, 65) * (1 + run.regionIndex * 0.25) * glintMult(G)); run.currency += n; emit(G, 'reward', { kind: 'run', n }); break; }
     case 'lumen': { const n = Math.round(r.int(14, 24) * (1 + run.regionIndex * 0.3) * mul); bank(G, 'lumen', n); emit(G, 'reward', { kind: 'lumen', n }); break; }
     case 'key': { bank(G, 'keys', 1); emit(G, 'reward', { kind: 'key', n: 1 }); break; }
@@ -788,7 +788,7 @@ function applyReward(G, rw, p = null) {
     case 'boss': {
       const n = Math.round((40 + run.regionIndex * 25) * mul);
       bank(G, 'lumen', n); bank(G, 'keys', 1); bank(G, 'shards', 2);
-      safe(Combat.healHero, G, Math.round((h ? h.maxHp : 100) * 0.25));
+      safe(Combat.healHero, G, Math.round((h ? h.maxHp : 100) * 0.3));
       emit(G, 'reward', { kind: 'boss', lumen: n, keys: 1, shards: 2 });
       break;
     }

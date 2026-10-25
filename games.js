@@ -147,6 +147,15 @@ window.MINI_GAMES = [
     tags: ['2D', 'Ages 10+', 'Mouse first'],
   },
   {
+    slug: 'emberfall',
+    name: 'Emberfall',
+    description: 'A lantern-lit metroidvania: explore 67 connected rooms of caves, a glowing fungal thicket, a drowned cloister and a volcanic core, earn five abilities and face four bosses.',
+    path: 'games/emberfall/',
+    image: 'games/emberfall/cover.jpg',
+    imageAlt: 'A hooded wanderer with a glowing lantern stands on a ledge in a forest of giant luminous pink and teal mushrooms under a beam of moonlight',
+    tags: ['2D', 'Ages 10+', 'Keyboard first'],
+  },
+  {
     slug: 'loomwake',
     name: 'Loomwake',
     description: 'A hand-painted action roguelite: as Iri, the last golden thread, dive into a sleeping goddess\'s dream through four regions and four bosses, stack powers from six patrons into Braids, and learn run by run who the masked Unweaver really is. Saves at every door.',

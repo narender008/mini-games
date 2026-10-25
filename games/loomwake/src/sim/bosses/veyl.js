@@ -6,7 +6,7 @@
 // Verdict: the whole floor erupts in a checkerboard, wave after wave.
 import { TAU, clamp } from '../../core/math.js';
 import { BOSSES } from '../../content/bosses.js';
-import { stage, once, choose, summon, aliveSummons, walkTo, face, tele, hazard, hitHero, inArc, inCircle, dHero, aHero, arena, arenaPoint, clampToArena, shot, bark, insideArena, hazardsOf } from './common.js';
+import { stage, once, choose, summon, aliveSummons, walkTo, face, tele, hazard, hitHero, inArc, inCircle, dHero, aHero, arena, arenaPoint, clampToArena, shot, bark, insideArena, hazardsOf, coneArc } from './common.js';
 
 const lead = (G, t) => ({ x: G.hero.x + (G.hero.vx || 0) * t, y: G.hero.y + (G.hero.vy || 0) * t });
 
@@ -79,7 +79,7 @@ export default {
         if (s === 'wind') {
           // track Iri for most of the wind-up, then commit
           if (a.t < a.W * 0.7) { e.aim = aHero(G, e.x, e.y); e.facing = e.aim; }
-          if (once(a, 'tg')) a.tg = tele(G, e, { kind: 'cone', x: e.x, y: e.y, r: m.r, angle: e.aim, arc: m.arc, max: a.W });
+          if (once(a, 'tg')) a.tg = tele(G, e, { kind: 'cone', x: e.x, y: e.y, r: m.r, angle: e.aim, arc: coneArc(m.arc), max: a.W });
           a.tg.angle = e.aim; a.tg.x = e.x; a.tg.y = e.y;
           e.vx = e.vy = 0;
         } else if (s === 'act') {

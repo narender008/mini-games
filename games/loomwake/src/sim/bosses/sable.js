@@ -10,7 +10,7 @@
 // for the choice (runner: 'bossChoice', resolveBossChoice(G, 'braid'|'cut')).
 import { TAU, clamp, wrapAng, segDist } from '../../core/math.js';
 import { SABLE_MIRRORS } from '../../content/bosses.js';
-import { stage, once, choose, summon, aliveSummons, walkTo, face, tele, hazard, hitHero, inArc, inCircle, inLine, dHero, aHero, arena, clampToArena, shot, bark, insideArena, pushHero, hazardsOf } from './common.js';
+import { stage, once, choose, summon, aliveSummons, walkTo, face, tele, hazard, hitHero, inArc, inCircle, inLine, dHero, aHero, arena, clampToArena, shot, bark, insideArena, pushHero, hazardsOf, coneArc } from './common.js';
 
 const lead = (G, t) => ({ x: G.hero.x + (G.hero.vx || 0) * t, y: G.hero.y + (G.hero.vy || 0) * t });
 
@@ -285,7 +285,7 @@ function comboMove() {
         const d = dHero(G, e.x, e.y);
         if (t < W * 0.6) { e.aim = aHero(G, e.x, e.y); e.facing = e.aim; }
         if (d > m.reach * 0.75) { e.vx = Math.cos(e.aim) * e.speed * 1.1; e.vy = Math.sin(e.aim) * e.speed * 1.1; } else { e.vx = e.vy = 0; }
-        if (once(a, 'tg' + a.i)) a.tg = tele(G, e, { kind: 'cone', x: e.x, y: e.y, r: m.reach, angle: e.aim, arc: m.arc, max: W - t });
+        if (once(a, 'tg' + a.i)) a.tg = tele(G, e, { kind: 'cone', x: e.x, y: e.y, r: m.reach, angle: e.aim, arc: coneArc(m.arc), max: W - t });
         a.tg.x = e.x; a.tg.y = e.y; if (t < W * 0.6) a.tg.angle = e.aim;
       } else if (t < W + A) {
         e.pose = 'act'; e.pt = (t - W) / A;
@@ -351,7 +351,7 @@ const MIRRORS = {
   wind(G, e, a, m) {
     // Cutting Wind: three crescent gusts, loosed after their warning
     const base = aHero(G, e.x, e.y);
-    tele(G, e, { kind: 'cone', x: e.x, y: e.y, r: 700, angle: base, arc: 1.0, max: 0.6 });
+    tele(G, e, { kind: 'cone', x: e.x, y: e.y, r: 700, angle: base, arc: 0.55, max: 0.6 });
     a.later = (a.later || []).concat([{ at: a.t + 0.6, fn: () => {
       for (const off of [-0.35, 0, 0.35]) {
         const ang = base + off;

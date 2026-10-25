@@ -13,7 +13,7 @@ export const REGIONS = ['glasswood', 'choir', 'forge', 'unwoven'];
 // hp, dmg multipliers per region (applied by spawn unless opts.scale is given)
 export const REGION_SCALE = {
   glasswood: { hp: 1.1, dmg: 0.85, speed: 1 },
-  choir: { hp: 1.4, dmg: 1.0, speed: 1.04 },
+  choir: { hp: 1.4, dmg: 0.95, speed: 1.04 },
   forge: { hp: 1.8, dmg: 1.2, speed: 1.08 },
   unwoven: { hp: 2.3, dmg: 1.45, speed: 1.12 },
 };
@@ -146,14 +146,14 @@ export const KINDS = {
 export const ATTACKS = {
   clawLunge: { wind: 0.45, act: 0.22, rec: 0.55, range: 175, cd: [0.6, 1.6], reach: 150, w: 54, speed: 760 },
   twinRake: { wind: 0.4, act: 0.2, rec: 0.6, range: 175, cd: [0.8, 1.8], reach: 150, w: 54, speed: 760, chain: 2 },
-  overheadSlam: { wind: 0.7, act: 0.16, rec: 0.75, range: 200, cd: [1.2, 2.2], reach: 210, w: 76, wave: 200 },
-  doubleSlam: { wind: 0.6, act: 0.16, rec: 0.8, range: 210, cd: [1.4, 2.4], reach: 210, w: 76, wave: 220, chain: 2 },
+  overheadSlam: { wind: 0.7, act: 0.16, rec: 0.75, range: 200, cd: [1.2, 2.2], reach: 210, w: 76, wave: 150 },
+  doubleSlam: { wind: 0.6, act: 0.16, rec: 0.8, range: 210, cd: [1.4, 2.4], reach: 210, w: 76, wave: 180, chain: 2 },
   shardSlam: { wind: 0.7, act: 0.16, rec: 0.75, range: 220, cd: [1.4, 2.4], reach: 210, w: 76, shards: 7 },
   backSweep: { wind: 0.5, act: 0.18, rec: 0.6, range: 150, cd: [1.0, 1.8], r: 150, arc: 2.6 },
-  needleFan: { wind: 0.55, act: 0.12, rec: 0.5, range: 640, cd: [1.8, 2.8], n: 5, spread: 0.6, speed: 460 },
+  needleFan: { wind: 0.55, act: 0.12, rec: 0.5, range: 640, cd: [2.0, 3.0], n: 5, spread: 0.6, speed: 440 },
   needleStorm: { wind: 0.6, act: 0.4, rec: 0.6, range: 640, cd: [2.4, 3.4], n: 5, spread: 0.7, speed: 450, volleys: 2 },
-  songRing: { wind: 0.7, act: 1.4, rec: 0.7, range: 480, cd: [2.8, 3.8], r: 360, w: 24, speed: 250 },
-  canon: { wind: 0.7, act: 2.0, rec: 0.8, range: 480, cd: [3.4, 4.4], r: 380, w: 24, speed: 260, rings: 2 },
+  songRing: { wind: 0.7, act: 1.4, rec: 0.7, range: 480, cd: [2.8, 3.8], r: 340, w: 20, speed: 220 },
+  canon: { wind: 0.7, act: 2.0, rec: 0.8, range: 480, cd: [3.4, 4.4], r: 360, w: 20, speed: 230, rings: 2 },
   leap: { wind: 0.42, act: 0.42, rec: 0.6, range: 420, min: 150, cd: [1.4, 2.4], r: 64 },
   doubleLeap: { wind: 0.4, act: 0.42, rec: 0.7, range: 420, min: 120, cd: [2.0, 3.0], r: 64, chain: 2 },
   bite: { wind: 0.36, act: 0.16, rec: 0.45, range: 95, cd: [0.6, 1.2], reach: 100, arc: 1.4 },

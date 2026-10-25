@@ -76,6 +76,9 @@ export function tele(G, e, o) {
   try { pushTelegraph(G, tg); } catch (err) { G.telegraphs.push(tg); }
   return tg;
 }
+// Engine cones take a HALF angle (combat.js inShape); boss moves are written with the full swing, so
+// convert here, with the same 0.12 rad slack inArc gives the hit.
+export function coneArc(full) { return full / 2 + 0.12; }
 export function clearTeles(G, e) {
   if (!G.telegraphs) return;
   for (let i = G.telegraphs.length - 1; i >= 0; i--) if (G.telegraphs[i].owner === e.id) G.telegraphs.splice(i, 1);

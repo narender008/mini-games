@@ -6,7 +6,7 @@
 // Phase 3 (22%): the Last Pour: molten cracks race out from him in every
 // direction, wave after turning wave.
 import { TAU, clamp } from '../../core/math.js';
-import { stage, once, choose, walkTo, face, tele, hazard, hitHero, inArc, inCircle, dHero, aHero, arena, arenaPoint, clampToArena, shot } from './common.js';
+import { stage, once, choose, walkTo, face, tele, hazard, hitHero, inArc, inCircle, dHero, aHero, arena, arenaPoint, clampToArena, shot, coneArc } from './common.js';
 
 const lead = (G, t) => ({ x: G.hero.x + (G.hero.vx || 0) * t, y: G.hero.y + (G.hero.vy || 0) * t });
 
@@ -56,7 +56,7 @@ export default {
         e.vx = e.vy = 0;
         if (s === 'wind') {
           if (a.t < a.W * 0.65) { e.aim = aHero(G, e.x, e.y); e.facing = e.aim; }
-          if (once(a, 'tg')) a.tg = tele(G, e, { kind: 'cone', x: e.x, y: e.y, r: m.r, angle: e.aim, arc: m.arc, max: a.W });
+          if (once(a, 'tg')) a.tg = tele(G, e, { kind: 'cone', x: e.x, y: e.y, r: m.r, angle: e.aim, arc: coneArc(m.arc), max: a.W });
           a.tg.angle = e.aim;
         } else if (s === 'act' && once(a, 'hit')) {
           if (inArc(G, e.x, e.y, m.r, e.aim, m.arc)) hitHero(G, e, m.dmg, e.x, e.y, { kb: 820 });
@@ -93,7 +93,7 @@ export default {
       },
     },
     breath: {
-      start(G, e, a, m) { stage(G, e, a, m); e.aim = aHero(G, e.x, e.y); a.tg = tele(G, e, { kind: 'cone', x: e.x, y: e.y, r: 600, angle: e.aim, arc: m.arc, max: a.W }); },
+      start(G, e, a, m) { stage(G, e, a, m); e.aim = aHero(G, e.x, e.y); a.tg = tele(G, e, { kind: 'cone', x: e.x, y: e.y, r: 600, angle: e.aim, arc: coneArc(m.arc), max: a.W }); },
       update(G, e, a, dt, m) {
         const s = stage(G, e, a, m);
         e.vx = e.vy = 0;
@@ -103,6 +103,9 @@ export default {
           const want = aHero(G, e.x, e.y);
           let d = want - e.aim; while (d > Math.PI) d -= TAU; while (d < -Math.PI) d += TAU;
           e.aim += clamp(d, -0.5 * dt, 0.5 * dt);
+          // the stream's cone stays on the floor while it pours, turning with it
+          if (!a.lv) { if (a.tg) a.tg.done = true; a.lv = tele(G, e, { kind: 'cone', live: true, x: e.x, y: e.y, r: 600, angle: e.aim, arc: coneArc(m.arc), max: a.A }); }
+          a.lv.angle = e.aim;
           a.acc = (a.acc || 0) + dt;
           while (a.acc >= m.rate) {
             a.acc -= m.rate;
@@ -111,9 +114,10 @@ export default {
             const mx = e.x + Math.cos(e.aim) * 70, my = e.y + Math.sin(e.aim) * 50;
             shot(G, e, { kind: 'boss:spark', x: mx, y: my, z: 120, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r: 10, dmg: m.dmg, life: 1.25, element: 'fire', burn: 2 });
           }
-        }
+        } else if (a.lv) { a.lv.done = true; }
         return s === 'done';
       },
+      abort(G, e, a) { if (a.lv) a.lv.done = true; },
     },
     heat: {
       start(G, e, a, m) {
