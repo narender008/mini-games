@@ -358,7 +358,11 @@ class App {
 
   // Ace Pilot is loaded the first time it is played
   loadAce() {
-    this.aceLoad ??= import('./ace/ace.js').then(({ AceMode }) => (this.ace = new AceMode(this)));
+    this.aceLoad ??= import('./ace/ace.js').then(({ AceMode }) => {
+      this.ace = new AceMode(this);
+      if (DEBUG && window.__rb) window.__rb.ace = this.ace.debugApi();
+      return this.ace;
+    });
     return this.aceLoad;
   }
 
@@ -716,7 +720,7 @@ class App {
       MEGA_EVERY,
     };
     // the Ace Pilot hook, loaded on first use: await __rb.loadAce() once
-    window.__rb.loadAce = () => this.loadAce().then((ace) => (window.__rb.ace = ace.debugApi()));
+    window.__rb.loadAce = () => this.loadAce().then(() => window.__rb.ace);
     if (this.sel.mode === 'ace' || QUERY.get('mode') === 'ace') window.__rb.loadAce();
   }
 }

@@ -366,3 +366,45 @@ test('back to the menu from the sector map; kids\' modes still work after Ace', 
   clean(page);
   await close(page);
 });
+
+test('phone portrait 390x844: map, launch, touch flight and HUD buttons', { skip }, async () => {
+  const W = 390, H = 844;
+  const page = await open(browser, server.url, 'debug&mode=ace&seed=5', { width: W, height: H, touch: true, mobile: true });
+  const rb = await G.hook(page);
+  await rb('freeze');
+  await G.press(page, '#play', { tap: true });
+  await G.waitVisible(page, '#ace-map', 60000);
+  await G.ace(page);
+  const box = (sel) => page.evaluate((s) => { const b = document.querySelector(s).getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom, w: b.width, h: b.height }; }, sel);
+  assert.ok((await page.evaluate(() => document.documentElement.scrollWidth)) <= W, 'map scrolls sideways');
+  await G.press(page, '.ace-sector[data-id="belt"]', { tap: true });
+  await G.press(page, '#ace-launch', { tap: true });
+  await G.waitVisible(page, '#ace-hud');
+  let s = await G.aceState(page);
+  assert.equal(s.screen, 'play');
+  for (const sel of ['#ace-emp', '#ace-pause']) {
+    const b = await box(sel);
+    assert.ok(b.l >= 0 && b.r <= W && b.t >= 0 && b.b <= H, `${sel} off screen: ${JSON.stringify(b)}`);
+    assert.ok(b.w >= 44 && b.h >= 44, `${sel} touch target under 44px: ${JSON.stringify(b)}`);
+  }
+  s = await G.aceUntil(page, (S) => S.phase === 'wave', { maxSec: 20, sliceMs: 100 });
+  const f = s.field;
+  const t = await touch(page);
+  const fx = W / 2, fy = H * 0.85;
+  await t.down(fx, fy);
+  await page.evaluate(() => window.__rb.ace.step(100, { render: false }));
+  const a = await G.aceState(page);
+  for (let i = 1; i <= 5; i++) { await t.move(fx - i * 24, fy); await page.evaluate(() => window.__rb.ace.step(80, { render: false })); }
+  await page.evaluate(() => window.__rb.ace.step(1000, { render: false }));
+  await t.up();
+  await t.detach();
+  const b = await G.aceState(page);
+  const want = a.player.x - (120 / W) * 2 * f.halfW;
+  assert.ok(Math.abs(b.player.x - want) < 1, `finger moved 120px left: fighter ${a.player.x.toFixed(2)} -> ${b.player.x.toFixed(2)}, wanted ${want.toFixed(2)}`);
+  await G.press(page, '#ace-pause', { tap: true });
+  await G.waitVisible(page, '#ace-paused', 5000);
+  const r = await box('#ace-resume');
+  assert.ok(r.w >= 44 && r.h >= 44 && r.b <= H, `resume button: ${JSON.stringify(r)}`);
+  clean(page);
+  await close(page);
+});

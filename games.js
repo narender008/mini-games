@@ -23,11 +23,11 @@ window.MINI_GAMES = [
   {
     slug: 'rocket-blast',
     name: 'Rocket Blast',
-    description: 'Fly a happy toy rocket and blast googly-eyed toys into showers of stars and sweets. No losing, ever.',
+    description: 'Fly a happy toy rocket and blast googly-eyed toys into showers of stars and sweets, no losing ever. Older kids (12+) get Ace Pilot: five sectors of machine fleets, bullet patterns and bosses.',
     path: 'games/rocket-blast/',
     image: 'games/rocket-blast/cover.jpg',
     imageAlt: 'A smiling toy rocket firing golden bolts at googly-eyed toy blocks bursting into stars and sweets in a blue sky',
-    tags: ['3D', 'Ages 2+', 'Touch friendly'],
+    tags: ['3D', 'Ages 2+', 'Ace Pilot 12+', 'Touch friendly'],
   },
   {
     slug: 'garden-grow',

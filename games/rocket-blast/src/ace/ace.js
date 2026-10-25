@@ -98,7 +98,7 @@ export class AceMode {
     this.audio.setIntensity(0.25);
     const p = this.progress;
     this.ui.showMap({
-      current: Math.min(p.unlocked, SECTORS.length),
+      current: SECTORS[Math.min(p.unlocked, SECTORS.length) - 1].id,
       sectors: SECTORS.map((s, i) => ({
         id: s.id,
         n: i + 1,

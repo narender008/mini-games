@@ -100,7 +100,9 @@ async function waitVisible(page, sel, timeout = 30000) {
 // for ever.
 async function press(page, sel, { tap = false, timeout = 30000 } = {}) {
   await waitVisible(page, sel, timeout);
-  const box = await page.locator(sel).first().boundingBox();
+  const loc = page.locator(sel).first();
+  await loc.scrollIntoViewIfNeeded();
+  const box = await loc.boundingBox();
   const x = box.x + box.width / 2, y = box.y + box.height / 2;
   if (tap) await page.touchscreen.tap(x, y);
   else await page.mouse.click(x, y);

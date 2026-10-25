@@ -164,7 +164,9 @@ async function ace(browser, base) {
     await page.waitForFunction(() => { const a = window.__rb.app; return a.world === a.worlds[a.worldId]; }, null, { timeout: 60000 });
     await step(page, 300);
     await shot(page, phone[0]);
+    await G.press(page, '.ace-sector[data-id="belt"]', { tap: true });
     await G.press(page, '#ace-launch', { tap: true });
+    if ((await page.evaluate(() => window.__rb.ace.screen())) !== 'play') throw new Error('Launch on the sector map did not start the sector');
     await page.evaluate(() => { const A = window.__rb.ace; A.god(true); A.auto(true); });
     await page.waitForFunction(() => { const a = window.__rb.app; return a.world === a.worlds[a.worldId]; }, null, { timeout: 60000 });
     await aceStep(page, 12000, false);
