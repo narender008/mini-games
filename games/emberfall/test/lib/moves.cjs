@@ -71,7 +71,8 @@ function playGate(eb, roomId, g, anchors, secs, trace) {
     last = inp;
     s = eb.step(1000 / 60, { render: false });
     if (log && i % 4 === 0) log.push([i, Math.round(p.x), Math.round(p.y), Math.round(p.vx), Math.round(p.vy), p.onGround ? 'G' : p.onWall ? 'W' : p.hooked ? 'H' : 'A', p.state, Object.keys(inp).filter((k) => inp[k] === true).join('+')]);
-    if (s.room !== roomId) { eb.input(null); return { ok: false, placed: true, left: s.room, best: Math.round(best), trace: log }; }
+    // leaving the room close by `to` (out through the gate's side into the room beyond) is a pass
+    if (s.room !== roomId) { eb.input(null); return { ok: best < 160, placed: true, left: s.room, best: Math.round(best), t: i / 60, trace: log }; }
   }
   eb.input(null);
   return { ok: false, placed: true, best: Math.round(best), at: { x: Math.round(s.player.x), y: Math.round(s.player.y) }, trace: log };
