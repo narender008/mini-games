@@ -89,6 +89,8 @@ export function createHUD(ui) {
   let vigA = 0;
   const barkQ = [];
   let barkT = 0, barkOn = false, curBark = null;
+  const narrQ = [];
+  const bossUp = (G) => !!(G && G.boss && !G.boss.dead && !G.boss.gone);
   const arrows = [];
   let lastDepthKey = '';
 
@@ -202,7 +204,12 @@ export function createHUD(ui) {
     bark(p) {
       if (p && (p.mode === 'dialogue' || p.kind === 'dialogue')) return; // it plays as a conversation
       const lines = p.lines || (p.text ? [{ speaker: p.speaker, text: p.text, mood: p.mood }] : []);
-      for (const l of lines.slice(0, 3)) if (l && l.text) barkQ.push({ speaker: l.speaker || p.speaker, text: l.text, mood: l.mood, kind: p.kind, at: performance.now() });
+      for (const l of lines.slice(0, 3)) if (l && l.text) {
+        const item = { speaker: l.speaker || p.speaker, text: l.text, mood: l.mood, kind: p.kind, at: performance.now() };
+        // (engine seam fix) narration waits while a boss bar is up and plays after the fight
+        if (item.speaker === 'narrator' && bossUp(ui.G)) { narrQ.push(item); while (narrQ.length > 3) narrQ.shift(); continue; }
+        barkQ.push(item);
+      }
       while (barkQ.length > 4) barkQ.shift();
       if (!barkOn && !ui.cardsBusy?.()) showBark();
     },
@@ -240,6 +247,10 @@ export function createHUD(ui) {
       const showFps = !!G.settings?.showFps;
       fps.hidden = !showFps;
       if (showFps && (fpsT -= dt) <= 0) { fpsT = 0.5; const ms = G.engine?.quality?.ema; fps.textContent = ms > 0 ? `${Math.round(1000 / ms)} fps · ${ms.toFixed(1)} ms` : '— fps'; }
+      if (bossUp(G)) {
+        if (barkOn && curBark && curBark.speaker === 'narrator') { narrQ.push({ ...curBark }); bark.classList.remove('on'); barkOn = false; curBark = null; }
+        for (let i = barkQ.length - 1; i >= 0; i--) if (barkQ[i].speaker === 'narrator') narrQ.unshift(barkQ.splice(i, 1)[0]);
+      } else if (narrQ.length && !G.dialogue) { const now = performance.now(); for (const b of narrQ.splice(0)) barkQ.push({ ...b, at: now }); }
       if (barkOn && ui.cardsBusy?.()) {
         // a title card took the stage: step aside, and say it again after unless it was idle narration
         if (curBark && curBark.kind !== 'line' && !curBark.again) barkQ.unshift({ ...curBark, at: performance.now(), again: true });

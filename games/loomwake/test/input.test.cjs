@@ -129,8 +129,11 @@ test('touch: the floating stick moves the hero and the buttons attack and dash o
   await press(atk);
   assert.ok((await watch(lw, (s) => /attack|swing|combo|strike/i.test(String(s.hero.state)))).ok, 'touch attack button did nothing');
   await sleep(400);
+  // the dash lasts 0.15 s of game time and the 110 ms press plus a slow page can outlast it, so a spent
+  // dash charge counts as well as catching the dash in flight (engine note: the press itself always lands)
+  const c0 = (await lw('state')).hero.dashCharges;
   await press(dsh);
-  assert.ok((await watch(lw, (s) => s.hero.dashing)).ok, 'touch dash button did nothing');
+  assert.ok((await watch(lw, (s) => s.hero.dashing || s.hero.dashCharges < c0)).ok, 'touch dash button did nothing');
   clean(page);
   await B.close(page);
 });

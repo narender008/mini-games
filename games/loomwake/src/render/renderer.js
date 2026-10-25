@@ -132,10 +132,23 @@ export function createRenderer(G, canvas, opts = {}) {
     if (fired) {
       c.globalAlpha = fade * 0.75; c.fillStyle = '#ffffff'; pathShape(1); c.fill('evenodd');
     } else {
-      // base wash, then the fill grows to the full shape as the hit approaches
-      c.globalAlpha = 0.16 + 0.1 * k; c.fillStyle = col; pathShape(1); c.fill('evenodd');
-      c.globalAlpha = 0.28 + 0.3 * k; pathShape(tg.kind === 'ring' ? 1 : Math.max(0.02, k)); c.fill('evenodd');
-      c.globalAlpha = 0.55 + 0.45 * k; c.strokeStyle = k > 0.8 ? '#ffffff' : (tg.rim || PALETTE.dangerRim); c.lineWidth = 2 + k * 2.5; pathShape(1); c.stroke();
+      // One language for every size: a faint wash, the swept part filled a little stronger as the hit
+      // approaches, a bright edge, and a bright progress line at the sweep front. Big shapes (a cone across
+      // half the arena) keep their fills faint so the fight stays visible under them.
+      const area = tg.kind === 'line' ? Math.hypot(tg.x2 - tg.x, tg.y2 - tg.y) * (tg.w || 20) : tg.kind === 'cone' ? tg.r * tg.r * (tg.arc || 0.5) : tg.kind === 'ring' ? TAU * (tg.r || 60) * (tg.w || 30) : Math.PI * (tg.r || 60) * (tg.r || 60);
+      const big = clamp((area - 8000) / 60000, 0, 1);
+      c.fillStyle = col;
+      c.globalAlpha = lerp(0.16, 0.08, big) + lerp(0.1, 0.04, big) * k; pathShape(1); c.fill('evenodd');
+      if (tg.kind !== 'ring') { c.globalAlpha = lerp(0.28, 0.12, big) + lerp(0.3, 0.12, big) * k; pathShape(Math.max(0.02, k)); c.fill('evenodd'); }
+      c.globalAlpha = 0.6 + 0.4 * k; c.strokeStyle = k > 0.8 ? '#ffffff' : (tg.rim || PALETTE.dangerRim); c.lineWidth = 2 + k * 2.5; pathShape(1); c.stroke();
+      if (tg.kind !== 'ring' && k > 0.02 && k < 0.999) {
+        // the sweep front
+        c.globalAlpha = 0.55 + 0.4 * k; c.strokeStyle = k > 0.8 ? '#ffffff' : (tg.rim || PALETTE.dangerRim); c.lineWidth = 2 + k * 1.5; c.beginPath();
+        if (tg.kind === 'circle') c.arc(tg.x, tg.y, Math.max(1, tg.r * k), 0, TAU);
+        else if (tg.kind === 'cone') c.arc(tg.x, tg.y, Math.max(1, tg.r * k), tg.angle - tg.arc, tg.angle + tg.arc);
+        else if (tg.kind === 'line') { const dx = tg.x2 - tg.x, dy = tg.y2 - tg.y, L = Math.hypot(dx, dy) || 1, nx = -dy / L * (tg.w || 20) / 2, ny = dx / L * (tg.w || 20) / 2, ex = tg.x + dx * k, ey = tg.y + dy * k; c.moveTo(ex + nx, ey + ny); c.lineTo(ex - nx, ey - ny); }
+        c.stroke();
+      }
       // pulsing inner edge for extra readability on bright floors
       c.globalAlpha = 0.35 * (0.5 + 0.5 * Math.sin(t * 20)); c.strokeStyle = '#2a0008'; c.lineWidth = 1.5; pathShape(1); c.stroke();
     }
@@ -312,7 +325,7 @@ export function createRenderer(G, canvas, opts = {}) {
     if (ch && ch.doors) for (const d of ch.doors) if (d.open) lp(d.x, d.y - 60, 200, '#ffd27a', 0.7);
     for (const e of G.foes) if (!e.gone && !(e.dead && (e.deadT || 0) > 0.6)) foeLightsOf(e, lp);
     for (const p of G.projectiles) lp(p.x, p.y - (p.z || 0), p.light?.r || 90, p.light?.color || p.color || (p.team === 'hero' ? '#ffd27a' : '#ff8ad8'), p.light?.i ?? 0.7);
-    for (const tg of G.telegraphs) if (!tg.fired) { const k = clamp(1 - tg.t / (tg.max || 0.5), 0, 1); const x = tg.kind === 'line' ? (tg.x + tg.x2) / 2 : tg.x, y = tg.kind === 'line' ? (tg.y + tg.y2) / 2 : tg.y; const r = tg.kind === 'line' ? Math.hypot(tg.x2 - tg.x, tg.y2 - tg.y) * 0.6 + 40 : (tg.r || 60) * 1.25; lp(x, y, r, '#ff4d6d', 0.45 + 0.4 * k); }
+    for (const tg of G.telegraphs) if (!tg.fired) { const k = clamp(1 - tg.t / (tg.max || 0.5), 0, 1); const x = tg.kind === 'line' ? (tg.x + tg.x2) / 2 : tg.x, y = tg.kind === 'line' ? (tg.y + tg.y2) / 2 : tg.y; const r = tg.kind === 'line' ? Math.hypot(tg.x2 - tg.x, tg.y2 - tg.y) * 0.6 + 40 : (tg.r || 60) * 1.25; lp(x, y, r, '#ff4d6d', 0.45 + 0.4 * k, 0.3); }
     for (const z of G.zones) if (!String(z.kind).startsWith('boss:')) lp(z.x, z.y, z.r * 1.4, z.color || ZCOL[z.element] || '#ffd27a', 0.4);
     for (const p of G.pickups) lp(p.x, p.y - 30, 120, p.color || '#ffd27a', 0.6);
     fx.lights(lp);

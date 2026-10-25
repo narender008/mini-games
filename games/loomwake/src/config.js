@@ -25,7 +25,7 @@ export const FEEL = {
   dash: {
     time: 0.15,           // s
     dist: 200,            // px (speed = dist / time)
-    inv: 0.1,             // i-frames from the start of the dash (s)
+    inv: 0.16,            // i-frames from the start of the dash (s): the whole dash
     charges: 2,
     recharge: 0.45,       // s per charge, starts after a dash ends
     chainAt: 0.6,         // fraction of the dash after which the next dash may start

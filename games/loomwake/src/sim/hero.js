@@ -104,6 +104,8 @@ export function startDash(G, h) {
   if (h.state === 'attack' || h.state === 'special' || h.state === 'dashAttack') getWeapon(h.weapon).cancel?.(G, h);
   h.dashDir = { x: dx / l, y: dy / l };
   h.state = 'dash'; h.st = 0; h.dashing = true; h.cancel = false;
+  // presses from before the dash never cancel it (a mashed attack would otherwise turn it into a standing strike)
+  h.buf.attack = 0; h.buf.special = 0;
   h.dashCharges--; if (h.dashCd <= 0) h.dashCd = (h.stats.dashRecharge ?? c.recharge) * (h.stats.dashCd ?? 1);
   h.inv = Math.max(h.inv, c.inv);
   h.facing = Math.atan2(h.dashDir.y, h.dashDir.x);
@@ -245,7 +247,8 @@ export function updateHero(G, dt) {
   }
   const canAct = h.state === 'move' || h.state === 'snare' && h.st > 0.08 || h.state === 'snareRecall' || ((h.state === 'attack' || h.state === 'special' || h.state === 'dashAttack') && h.cancel);
   if (h.buf.special > 0 && canAct) { if (W.special(G, h)) h.buf.special = 0; }
-  if (h.buf.attack > 0 && (canAct || h.state === 'dash')) {
+  // a dash becomes a dash-strike only once it has covered most of its distance (the press stays buffered)
+  if (h.buf.attack > 0 && (canAct || (h.state === 'dash' && h.st >= c.dash.time * c.dash.chainAt))) {
     if (h.state === 'dash') endDash(G, h);
     if (W.attack(G, h)) h.buf.attack = 0;
   }
