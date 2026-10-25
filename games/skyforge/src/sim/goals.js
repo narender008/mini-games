@@ -17,6 +17,7 @@ import { CHAPTERS, SKYFORGE_STAGES } from '../content/goals.js';
 import { EVENTS } from '../content/events.js';
 import { ACHIEVEMENTS } from '../content/achievements.js';
 import { RESEARCH } from '../content/research.js';
+import { BUILDINGS } from '../content/buildings.js';
 import { CFG, DAY } from '../config.js';
 import * as research from './research.js';
 import * as trade from './trade.js';
@@ -25,10 +26,11 @@ import * as islands from './islands.js';
 import * as economy from './economy.js';
 import * as weather from './weather.js';
 import * as raids from './raids.js';
-import { pay, payOn, missingOn, gain, missing, rootOf, homeRoot, notify, islandById, owned, bump, costText } from './ledger.js';
+import { every, pay, payOn, missingOn, gain, missing, rootOf, homeRoot, notify, islandById, owned, bump, costText } from './ledger.js';
 
 const C = () => CFG.progression.goals;
 const EV = Object.fromEntries(EVENTS.map((e) => [e.id, e]));
+const C_BUILDINGS = Object.fromEntries(BUILDINGS.map((b) => [b.id, b]));
 
 export function init(G) {
   G.goals = { chapter: 1, steps: {}, done: [], flags: {}, won: false, wonAt: null, achievements: [], meta: null };
@@ -51,13 +53,15 @@ export function hydrate(G) {
   G.goals.steps = G.goals.steps || {}; G.goals.flags = G.goals.flags || {}; G.goals.achievements = G.goals.achievements || [];
   ensureMeta(G);
   G.colony.boosts = G.colony.boosts || [];
-  G.tmp.goalT = 0; G.tmp.hints = {}; G.tmp.hintT = 0;
+  settle(G, C().quietAfterLoad);
+  G.tmp.hints = {};
+  refreshHints(G);
   G.tmp.skyforgeProgress = forgeProgress(G);
   refreshSteps(G);
 }
 
 // ---- step checks ------------------------------------------------------------------------
-const builtCount = (G, type) => G.buildings.filter((b) => b.type === type && b.state === 'built').length;
+const builtCount = (G, type, island = null) => G.buildings.filter((b) => b.type === type && b.state === 'built' && (!island || b.island === island)).length;
 const skyforge = (G) => G.buildings.find((b) => b.type === 'skyforge' && b.state === 'built') || null;
 export const forgeStage = (G) => (skyforge(G) ? skyforge(G).level || 0 : 0);
 
@@ -68,7 +72,7 @@ function anyStock(G, res) {
 
 export function check(G, c) {
   const T = G.stats.totals || {};
-  if (c.built) return builtCount(G, c.built.type) >= (c.built.n || 1);
+  if (c.built) return builtCount(G, c.built.type, c.built.island) >= (c.built.n || 1);
   if (c.pop != null) return (G.colony.pop || 0) >= c.pop;
   if (c.popCap != null) return (G.colony.popCap || 0) >= c.popCap;
   if (c.owned != null) return owned(G).length >= c.owned;
@@ -91,6 +95,14 @@ function resolveHint(G, h) {
   if (!h) return null;
   const out = { text: h.text, island: h.island || null, u: null, v: null, type: h.type || null, open: h.open || null, tech: h.tech || null, target: h.target || null };
   const i = h.island ? islandById(G, h.island) : null;
+  // the hint follows the colony: an island not yet owned must be claimed first
+  if (i && !i.owned && h.type && h.type !== 'bridge' && h.type !== 'cable') {
+    out.text = h.unowned || `Claim ${i.name} from the Sky Chart first. ${h.text}`;
+    out.open = 'chart'; out.target = i.id;
+  }
+  // a building gated by research points at the research first
+  const bd = h.type ? C_BUILDINGS[h.type] : null;
+  if (bd && bd.needs && !G.research.done.includes(bd.needs) && !h.tech) out.tech = bd.needs;
   if (h.type && i) {
     const ex = G.buildings.find((b) => b.type === h.type && b.island === i.id);
     let spot = ex ? [ex.u, ex.v] : null;
@@ -139,10 +151,14 @@ function giveReward(G, reward) {
   for (const [res, n] of Object.entries(reward || {})) gain(G, res, n, homeRoot(G));
 }
 
-function checkGoals(G) {
+// One check per call: steps of the current chapter only, at most one newly met
+// step a check (so the list ticks off visibly), and a chapter closes no sooner than
+// minDwell seconds after it began (each chapter's banner and steps are seen).
+// force (the win cheat) runs every chapter through at once.
+function checkGoals(G, force = false) {
   const meta = ensureMeta(G);
   let guard = 0;
-  while (!G.goals.won && guard++ < 10) {
+  while (!G.goals.won && guard++ < (force ? 10 : 1)) {
     const ch = CHAPTERS[G.goals.chapter - 1];
     if (!ch) break;
     for (const s of ch.steps) {
@@ -150,10 +166,11 @@ function checkGoals(G) {
       if (check(G, s.check)) {
         G.goals.steps[s.id] = true; meta.stepAt[s.id] = G.t;
         G.bus.emit('goal:step', { id: s.id, chapter: ch.n });
-        G.tmp.hintT = 0;
+        if (!force) break;
       }
     }
     if (!ch.steps.every((s) => G.goals.steps[s.id])) break;
+    if (!force && G.t - (meta.chapterAt[ch.n] ?? 0) < C().minDwell) break;
     // chapter complete
     if (!G.goals.done.includes(ch.id)) G.goals.done.push(ch.id);
     giveReward(G, ch.reward);
@@ -215,7 +232,7 @@ export function win(G) {
   G.goals.flags.finalRaid = true;
   G.goals.flags.dreadnoughtDown = true;
   G.goals.flags.stormSurvived = true; G.goals.flags.raidSurvived = true;
-  checkGoals(G);
+  checkGoals(G, true);
   if (!G.goals.won) victory(G);
   G.tmp.skyforgeProgress = 1;
   refreshSteps(G);
@@ -230,7 +247,7 @@ export function forgeInfo(G, b = skyforge(G)) {
   return {
     stage: lvl, stages: SKYFORGE_STAGES.length, next, forge: b.forge || null,
     progress: forgeProgress(G),
-    missing: next ? missingOn(G, b.island, next.cost) : [],
+    missing: next ? missingOn(G, b.island, next.cost, { convoy: true }) : [],
     locked: next && next.needs && !research.has(G, next.needs) ? next.needs : null,
   };
 }
@@ -243,9 +260,9 @@ export function forgeUpgrade(G, b) {
   if (b.forge) return { ok: false, error: `Stage ${b.forge.stage} is still being raised` };
   const st = SKYFORGE_STAGES[lvl];
   if (st.needs && !research.has(G, st.needs)) return { ok: false, error: `Stage ${st.n} needs ${research.BY_ID[st.needs].name}` };
-  const miss = missingOn(G, b.island, st.cost);
+  const miss = missingOn(G, b.island, st.cost, { convoy: true });
   if (miss.length) return { ok: false, error: `Stage ${st.n} needs ${costText(st.cost)} in ${islandById(G, b.island)?.name || 'its'} stores`, missing: miss };
-  if (!payOn(G, b.island, st.cost)) return { ok: false, error: 'Could not pay' };
+  if (!payOn(G, b.island, st.cost, { convoy: true })) return { ok: false, error: 'Could not pay' };
   b.forge = { stage: st.n, t: 0, time: st.time };
   G.bus.emit('forge:stage', { b, stage: st.n });
   // the last stage lights the forge: the Crimson Gale's Dreadnought sees it coming
@@ -386,6 +403,16 @@ function eligible(G, e) {
 
 function optionOk(G, o) { return !o.cost || missing(G, o.cost, homeRoot(G)).length === 0; }
 
+// No card is pending, and none comes for `quiet` game seconds (after a load, a preset,
+// a new colony): the player first sees the colony, not a modal. A card left open at
+// save time is put back in the deck (it may come again later).
+export function settle(G, quiet = C().quietAfterLoad) {
+  const m = ensureMeta(G);
+  if (G.event) { delete m.seen[G.event.id]; G.event = null; }
+  m.nextEvent = Math.max(m.nextEvent ?? 0, G.t + quiet);
+  return { ok: true };
+}
+
 export function showEvent(G, id) {
   const e = EV[id]; if (!e) return { ok: false, error: `Unknown event ${id}` };
   G.event = {
@@ -468,6 +495,9 @@ function sample(G) {
   const S = G.stats.samples || (G.stats.samples = []);
   const home = homeRoot(G);
   const rates = (G.tmp.rates && G.tmp.rates[home]) || {};
+  const madeR = (G.tmp.made && G.tmp.made[home]) || {};
+  const made = {};
+  for (const [k, v] of Object.entries(madeR)) if (v) made[k] = Math.round(v * 10) / 10;
   const res = (G.pools[home] && G.pools[home].res) || {};
   const prod = {}, stock = {};
   for (const [k, v] of Object.entries(rates)) prod[k] = Math.round(v * 10) / 10;
@@ -475,7 +505,7 @@ function sample(G) {
   S.push({
     t: Math.round(G.t), day: G.day, pop: Math.round(G.colony.pop || 0), popCap: G.colony.popCap || 0,
     coin: Math.round(G.colony.coin || 0), insight: Math.round(G.colony.insight || 0),
-    happiness: Math.round((G.colony.happiness || 0) * 100) / 100, prod, stock,
+    happiness: Math.round((G.colony.happiness || 0) * 100) / 100, prod, made, stock,
     islands: owned(G).length, buildings: G.buildings.filter((b) => b.state === 'built').length, ships: G.ships.length, chapter: G.goals.chapter,
   });
   // keep at most ~720: thin the older half 2:1
@@ -486,16 +516,14 @@ function sample(G) {
 export function step(G, dt) {
   stepForge(G, dt);
   stepFinale(G);
-  G.tmp.goalT = (G.tmp.goalT || 0) - dt;
-  if (G.tmp.goalT <= 0) {
-    G.tmp.goalT = C().hintEvery;
+  if (every(G, C().hintEvery, dt)) {
     poll(G);
+    const n0 = Object.keys(G.goals.steps).length, c0 = G.goals.chapter;
     checkGoals(G);
-    if (G.tmp.hintT <= 0) { refreshHints(G); G.tmp.hintT = 5; }
-    G.tmp.hintT -= C().hintEvery;
+    // hints look for legal spots (costly): every 5 s, and at once when a step or chapter changes
+    if (every(G, 5, dt) || Object.keys(G.goals.steps).length !== n0 || G.goals.chapter !== c0) refreshHints(G);
     refreshSteps(G);
-    G.tmp.achT = (G.tmp.achT || 0) - C().hintEvery;
-    if (G.tmp.achT <= 0) { G.tmp.achT = 2; checkAchievements(G); }
+    if (every(G, 2, dt)) checkAchievements(G);
     rollEvent(G);
   }
   if (G.t >= (G.goals.meta.nextSample ?? 0)) { G.goals.meta.nextSample = Math.floor(G.t / 60) * 60 + 60; sample(G); }

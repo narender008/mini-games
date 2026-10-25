@@ -27,7 +27,7 @@ export const CHAPTERS = [
       { id: 'c2_farm', text: 'Plant a Farm on fertile soil', check: { built: { type: 'farm', n: 1 } }, hint: { text: 'Farms need dark fertile soil. Millbrook has the best fields.', type: 'farm', island: 'hearthrock' } },
       { id: 'c2_windmill', text: 'Build a Windmill', check: { built: { type: 'windmill', n: 1 } }, hint: { text: 'The windmill grinds grain into flour.', type: 'windmill', island: 'hearthrock' } },
       { id: 'c2_bakery', text: 'Build a Bakery', check: { built: { type: 'bakery', n: 1 } }, hint: { text: 'Bread keeps settlers happy and lets cottages grow into townhouses.', type: 'bakery', island: 'hearthrock' } },
-      { id: 'c2_claim', text: 'Claim a neighbouring islet', check: { owned: 2 }, hint: { text: 'Open the Sky Chart and claim Millbrook or Pinecrest.', open: 'chart', target: 'millbrook' } },
+      { id: 'c2_claim', text: 'Claim a neighbouring islet', check: { owned: 2 }, hint: { text: 'Open the Sky Chart and claim Millbrook or Orespur.', open: 'chart', target: 'millbrook' } },
       { id: 'c2_bridge', text: 'Bridge it to Hearthrock', check: { link: { kind: 'bridge', n: 1 } }, hint: { text: 'Bridges join islands into one network that shares its stores.', type: 'bridge', island: 'hearthrock' } },
       { id: 'c2_pop', text: 'Grow to 30 settlers', check: { pop: 30 }, hint: { text: 'More cottages, more bread. A tavern helps them stay.' } },
     ],
@@ -39,11 +39,11 @@ export const CHAPTERS = [
     steps: [
       { id: 'c3_academy', text: 'Open an Academy', check: { built: { type: 'academy', n: 1 } }, hint: { text: 'Scholars at the academy turn curiosity into insight for research.', type: 'academy', island: 'hearthrock' } },
       { id: 'c3_research', text: 'Research the Bellows Forge', check: { tech: 'bellows' }, hint: { text: 'Open Research and begin the Bellows Forge.', open: 'research', tech: 'bellows' } },
-      { id: 'c3_mine', text: 'Sink a Mine into iron ore', check: { built: { type: 'mine', n: 1 } }, hint: { text: 'Orespur is seamed with ore. Claim and bridge it, then sink a mine.', type: 'mine', island: 'orespur' } },
+      { id: 'c3_mine', text: 'Sink a Mine into iron ore', check: { built: { type: 'mine', n: 1 } }, hint: { text: 'Orespur is seamed with ore: sink a mine on the dark seams.', unowned: 'Orespur is seamed with ore. Claim it from the Sky Chart and bridge it to Hearthrock, then sink a mine.', type: 'mine', island: 'orespur' } },
       { id: 'c3_coal', text: 'Dig a Coal Pit', check: { built: { type: 'coalpit', n: 1 } }, hint: { text: 'Coal seams show black in the rock.', type: 'coalpit', island: 'orespur' } },
       { id: 'c3_smelter', text: 'Fire up a Smelter', check: { built: { type: 'smelter', n: 1 } }, hint: { text: 'Ore and coal into iron. On a heat vent it needs no coal at all.', type: 'smelter', island: 'hearthrock' } },
       { id: 'c3_workshop', text: 'Open a Workshop', check: { built: { type: 'workshop', n: 1 } }, hint: { text: 'Iron and planks into brass parts, the backbone of everything airborne.', type: 'workshop', island: 'hearthrock' } },
-      { id: 'c3_contract', text: 'Fulfil a contract for Port Halcyon', check: { contracts: { port: 'porthalcyon', n: 1 } }, hint: { text: 'Open the Fleet ledger, accept Port Halcyon\'s contract and sell them the goods.', open: 'fleet' } },
+      { id: 'c3_contract', text: 'Fulfil a contract for Port Halcyon', check: { contracts: { port: 'porthalcyon', n: 1 } }, hint: { text: 'Open the Fleet ledger and accept Port Halcyon\'s contract, then press Quick Sell: a courier carries the goods. (Trade routes need Cargo Holds research.)', open: 'fleet' } },
     ],
     reward: { coin: 300, iron: 15, insight: 40 },
   },
@@ -53,7 +53,7 @@ export const CHAPTERS = [
     steps: [
       { id: 'c4_mooring', text: 'Build a Mooring on an island edge', check: { built: { type: 'mooring', n: 1 } }, hint: { text: 'Moorings sit on the cliff edge. Airships dock, trade and carry settlers here.', type: 'mooring', island: 'hearthrock' } },
       { id: 'c4_ship', text: 'Build a cargo ship', check: { ships: { kind: 'cargo', n: 1 } }, hint: { text: 'Research Cargo Holds, then build a cargo ship at the mooring.', open: 'research', tech: 'cargoholds' } },
-      { id: 'c4_route', text: 'Run a trade route to a foreign port', check: { trips: 1 }, hint: { text: 'In the Fleet ledger, give your cargo ship a route: load at home, sell at a port, buy on the way back.', open: 'fleet' } },
+      { id: 'c4_route', text: 'Run a trade route to a foreign port', check: { trips: 1 }, hint: { text: 'In the Fleet ledger (routes need Cargo Holds), give your cargo ship a route: load at home, sell at a port, buy on the way back.', open: 'fleet' } },
       { id: 'c4_cable', text: 'String a cable car to a far islet', check: { link: { kind: 'cable', n: 1 } }, hint: { text: 'Steam Turbines power cable stations. Put one on each island\'s edge, then link them.', tech: 'turbines', type: 'cablestation', island: 'hearthrock' } },
       { id: 'c4_pop', text: 'Grow to 80 settlers', check: { pop: 80 }, hint: { text: 'Townhouses hold more families: keep bread and parts flowing.' } },
     ],
@@ -63,8 +63,9 @@ export const CHAPTERS = [
     id: 'ch5', n: 5, name: 'Storm Season', target: 130, icon: 'storm',
     desc: 'The sky turns. Lightning walks the islands and the Crimson Gale comes looking for plunder.',
     steps: [
-      { id: 'c5_harpoon', text: 'Mount a Harpoon Battery', check: { built: { type: 'harpoon', n: 1 } }, hint: { text: 'Batteries guard everything in their ring. Cover the moorings first.', type: 'harpoon', island: 'hearthrock', tech: 'harpoons' } },
-      { id: 'c5_rod', text: 'Raise a Lightning Rod', check: { built: { type: 'rod', n: 1 } }, hint: { text: 'Rods draw lightning away from roofs and store a charge for the lash.', type: 'rod', island: 'hearthrock', tech: 'rods' } },
+      { id: 'c5_obs', text: 'Build an Observatory to watch the weather', check: { built: { type: 'observatory', n: 1 } }, hint: { text: 'Astronomers see storms and red sails coming from far off. Pinecrest\'s peak is perfect.', type: 'observatory', island: 'pinecrest' } },
+      { id: 'c5_harpoon', text: 'Mount 2 Harpoon Batteries', check: { built: { type: 'harpoon', n: 2 } }, hint: { text: 'Batteries guard everything in their ring. Cover the moorings and the granaries first.', type: 'harpoon', island: 'hearthrock', tech: 'harpoons' } },
+      { id: 'c5_rod', text: 'Raise 2 Lightning Rods', check: { built: { type: 'rod', n: 2 } }, hint: { text: 'Rods draw lightning away from roofs and store a charge for the lash.', type: 'rod', island: 'hearthrock', tech: 'rods' } },
       { id: 'c5_storm', text: 'Weather a storm', check: { flag: 'stormSurvived' }, hint: { text: 'Keep wells close to wooden buildings and rods on every island.' } },
       { id: 'c5_raid', text: 'Drive off a pirate raid', check: { flag: 'raidSurvived' }, hint: { text: 'When the warning sounds use Volley (Q) and Lash (W) on the raiders.' } },
       { id: 'c5_ember', text: 'Claim Emberrock', check: { island: 'emberrock' }, hint: { text: 'Scout Emberrock from the Sky Chart, then send a claim expedition with settlers.', open: 'chart', target: 'emberrock' } },
@@ -102,9 +103,9 @@ export const CHAPTERS = [
 // The Skyforge's five stages (the building itself is ECONOMY's; stage 0 = built).
 // Paid from the Skyforge island's pool; time in game seconds at full staff.
 export const SKYFORGE_STAGES = [
-  { n: 1, name: 'Foundation Ring', cost: { stone: 200, planks: 120, iron: 60 }, time: 300, needs: null, desc: 'A ring of dressed stone and iron bands around the ancient hearth.' },
-  { n: 2, name: 'Bellows Hall', cost: { iron: 120, parts: 60, coal: 80 }, time: 360, needs: null, desc: 'Great bellows of oiled hide that breathe for the whole forge.' },
-  { n: 3, name: 'Skystone Crucible', cost: { skystone: 80, iron: 100, parts: 60 }, time: 420, needs: 'foundry', desc: 'A crucible cast from skystone, the only vessel that can hold aether fire.' },
-  { n: 4, name: 'Aether Lens', cost: { aether: 50, skystone: 60, parts: 80 }, time: 480, needs: 'beacon', desc: 'A lens of pure aether that gathers starlight into the crucible.' },
-  { n: 5, name: 'Skyforge Alight', cost: { aether: 80, parts: 100, iron: 100 }, time: 540, needs: 'beacon', desc: 'The forge breathes, the lens turns and the islands rise. The Crimson Gale will see it from the edge of the sky.' },
+  { n: 1, name: 'Foundation Ring', cost: { stone: 300, planks: 180, iron: 90, coin: 600 }, time: 270, needs: null, desc: 'A ring of dressed stone and iron bands around the ancient hearth.' },
+  { n: 2, name: 'Bellows Hall', cost: { iron: 180, parts: 90, coal: 120, coin: 1200 }, time: 330, needs: null, desc: 'Great bellows of oiled hide that breathe for the whole forge.' },
+  { n: 3, name: 'Skystone Crucible', cost: { skystone: 120, iron: 150, parts: 90, coin: 1800 }, time: 390, needs: 'foundry', desc: 'A crucible cast from skystone, the only vessel that can hold aether fire.' },
+  { n: 4, name: 'Aether Lens', cost: { aether: 75, skystone: 90, parts: 120, coin: 2400 }, time: 450, needs: 'beacon', desc: 'A lens of pure aether that gathers starlight into the crucible.' },
+  { n: 5, name: 'Skyforge Alight', cost: { aether: 110, parts: 150, iron: 150, coin: 3000 }, time: 510, needs: 'beacon', desc: 'The forge breathes, the lens turns and the islands rise. The Crimson Gale will see it from the edge of the sky.' },
 ];

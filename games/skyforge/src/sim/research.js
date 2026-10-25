@@ -8,7 +8,7 @@
 // costOf(id), timeOf(id), eta(G, id), plus the action API and the unlock cheat.
 import { RESEARCH } from '../content/research.js';
 import { CFG } from '../config.js';
-import { pay, gain, missing, homeRoot, notify, builtOf, bump } from './ledger.js';
+import { every, pay, gain, missing, homeRoot, notify, builtOf, bump } from './ledger.js';
 
 const C = () => CFG.progression.research;
 export const BY_ID = Object.fromEntries(RESEARCH.map((r) => [r.id, r]));
@@ -175,16 +175,17 @@ function complete(G, id, quiet = false) {
   if (!quiet) notify(G, `Research complete: ${BY_ID[id].name}`, 'good', BY_ID[id].icon);
 }
 
+// Work happens once a game second (keyed to G.t, which is saved, so a reloaded
+// colony advances on the same ticks); the bar in G.tmp.researchProgress is smooth.
 export function step(G, dt) {
   const R = G.research;
   const T = G.tmp;
-  const sch = scholars(G);
-  const sp = speedFor(G, sch);
-  if (!R.current && R.queue.length) {
-    // begin the next queued project when it can be paid (check twice a second)
-    T.rqT = (T.rqT || 0) - dt;
-    if (T.rqT <= 0) {
-      T.rqT = 0.5;
+  const tr = T.research || (T.research = { scholars: 0, speed: 0, eta: 0, stall: null, missing: [] });
+  if (every(G, 1, dt)) {
+    const sch = scholars(G);
+    const sp = speedFor(G, sch);
+    if (!R.current && R.queue.length) {
+      // begin the next queued project when it can be paid
       const next = R.queue[0];
       const r = BY_ID[next];
       if (!r || R.done.includes(next)) R.queue.shift();
@@ -193,19 +194,19 @@ export function step(G, dt) {
         else R.stall = 'cost';
       }
     }
-  }
-  if (R.current) {
-    if (sp <= 0) R.stall = 'scholars';
-    else {
-      if (R.stall) R.stall = null;
-      R.progress += (dt * sp) / Math.max(1, timeOf(R.current));
-      if (R.progress >= 1) complete(G, R.current);
+    if (R.current) {
+      if (sp <= 0) R.stall = 'scholars';
+      else {
+        if (R.stall) R.stall = null;
+        R.progress += sp / Math.max(1, timeOf(R.current));
+        if (R.progress >= 1) complete(G, R.current);
+      }
     }
+    tr.scholars = sch; tr.speed = sp; tr.eta = eta(G); tr.stall = R.stall;
+    tr.missing = R.stall === 'cost' && R.queue[0] ? missing(G, costOf(R.queue[0]), homeRoot(G)) : [];
   }
-  T.researchProgress = R.current ? Math.min(1, R.progress) : 0;
-  const tr = T.research || (T.research = {});
-  tr.scholars = sch; tr.speed = sp; tr.eta = eta(G); tr.stall = R.stall;
-  tr.missing = R.stall === 'cost' && R.queue[0] ? missing(G, costOf(R.queue[0]), homeRoot(G)) : [];
+  const frac = G.t - Math.floor(G.t + 1e-9);
+  T.researchProgress = R.current ? Math.min(1, R.progress + (tr.speed || 0) * frac / Math.max(1, timeOf(R.current))) : 0;
 }
 
 // Cheat/test hook: unlock one project (with its prerequisites) or 'all'.

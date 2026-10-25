@@ -17,7 +17,7 @@ import { CFG, DAY } from '../config.js';
 import { clamp } from '../core/math.js';
 import { bonus, isUnlocked } from './research.js';
 import * as fleet from './fleet.js';
-import { gain, have, room, rootOf, homeRoot, notify, islandById, bump } from './ledger.js';
+import { every, gain, have, room, rootOf, homeRoot, notify, islandById, bump } from './ledger.js';
 
 const C = () => CFG.progression.trade;
 const PORT = Object.fromEntries(PORTS.map((p) => [p.id, p]));
@@ -169,7 +169,7 @@ export function offerContract(G, port, res = null, n = null, days = null) {
   days = days || R.int(d0, d1);
   const coin = Math.round(n * VALUE[res] * C().contractPremium * (1 + bonus(G, 'contractReward')));
   const c = {
-    id: G.nextId++, port, res, n, delivered: 0, days, due: G.day + days,
+    id: G.nextId++, port, res, n, delivered: 0, days, due: null,
     reward: { coin, rep: C().contractRep }, accepted: false, state: 'offered', expires: G.t + 2 * DAY, at: G.t,
   };
   G.contracts.push(c);
@@ -379,7 +379,7 @@ function tradeAtPort(G, r, s) {
     G.bus.emit('trade:buy', { port: r.to, res: o.res, n: k, coin: cost });
   }
   r.last = { coin, spent, t: G.t };
-  r.earned += coin - spent;
+  r.pending = coin - spent;   // booked into r.earned when the trip ends
 }
 
 function tradeAtIsland(G, r, s) {
@@ -414,8 +414,9 @@ function stepRoute(G, r, dt) {
   if (s.state === 'defend' || s.state === 'building') return;
   r.cargo = s.cargo;
   const dockT = CFG.progression.fleet.dockTime;
-  const home = G.buildings.find((b) => b.id === r.dock);
-  if (!fleet.isDock(home)) {
+  let home = null;
+  if (every(G, 1, dt) || r.state === 'loading' || r.state === 'unloading') home = G.buildings.find((b) => b.id === r.dock);
+  if (home !== null && !fleet.isDock(home)) {
     const d = findDock(G, r.from);
     if (!d) { r.state = 'nodock'; return; }
     r.dock = d.id;
@@ -463,44 +464,50 @@ function stepRoute(G, r, dt) {
       if (r.t >= dockT) {
         fleet.unloadAll(G, s, rootOf(G, r.from));
         r.trips++; bump(G, 'trips');
+        r.earned += r.pending || 0; r.pending = 0;
         G.bus.emit('route:trip', { r });
         r.state = 'loading'; r.t = 0;
       }
       break;
     default: r.state = 'positioning';
   }
-  // eta: seconds until the ship is back home
+  // eta: seconds until the ship is back home (twice a second)
+  if (!every(G, 0.5, dt)) return;
+  if (!home) home = G.buildings.find((b) => b.id === r.dock);
   if (s.state === 'flying' && s.dest) {
     const there = fleet.flightTime(G, s, s.dest.x, s.dest.y);
-    const back = r.state === 'outbound' ? (() => { const a = destPoint(G, r), b = home ? fleet.dockPos(G, home) : a; return a && b ? fleet.flightTime(G, { ...s, x: a.x, y: a.y }, b.x, b.y) + dockT * 2 : 0; })() : dockT;
+    let back = dockT;
+    if (r.state === 'outbound') { const a = destPoint(G, r), b = home ? fleet.dockPos(G, home) : a; back = a && b ? Math.hypot(b.x - a.x, b.y - a.y) / Math.max(0.05, fleet.speedOf(G, s)) + 2 + dockT * 2 : 0; }
     r.eta = Math.round(there + back);
   } else r.eta = r.state === 'loading' || r.state === 'unloading' || r.state === 'trading' ? Math.round(Math.max(0, dockT - r.t)) : null;
 }
 
+// Keyed to G.t (saved), so a reloaded colony steps prices and contracts on the same ticks.
+const RES_KEYS = Object.keys(VALUE);
 export function step(G, dt) {
   const c = C();
-  // prices: recover toward their (drifting) base, port stock regrows
-  const k = 1 - Math.exp(-(c.recover / 60) * dt);
-  for (const p of G.ports) {
-    for (const r of Object.keys(p.mult)) {
-      const base = baseMult(p.id, r) * (p.trend[r] || 1);
-      p.mult[r] += (base - p.mult[r]) * k;
+  if (every(G, 1, dt)) {
+    // prices recover toward their (drifting) base, port stock regrows: once a game second
+    const k = 1 - Math.exp(-c.recover / 60);
+    for (const p of G.ports) {
+      const P = PORT[p.id];
+      for (const r of RES_KEYS) {
+        const base = (P.buys[r] ?? 0.75) * (p.trend[r] || 1);
+        p.mult[r] += (base - p.mult[r]) * k;
+        const sb = P.sells[r];
+        if (sb == null) continue;
+        p.sell[r] += (sb * (p.trend[r] || 1) - p.sell[r]) * k;
+        p.stock[r] = Math.min(c.stockMax, (p.stock[r] || 0) + c.stockPerMin / 60);
+      }
     }
-    for (const r of Object.keys(p.sell)) {
-      const base = PORT[p.id].sells[r] * (p.trend[r] || 1);
-      p.sell[r] += (base - p.sell[r]) * k;
-      p.stock[r] = Math.min(c.stockMax, (p.stock[r] || 0) + (c.stockPerMin / 60) * dt);
-    }
+    stepContracts(G);
+    refreshPrices(G);
   }
-  if (G.tmp.tradeDay !== G.day) {
+  if (every(G, DAY, dt)) {
     // once a day, every price wanders a little (seeded)
-    if (G.tmp.tradeDay != null) for (const p of G.ports) for (const r of Object.keys(p.mult)) p.trend[r] = clamp((p.trend[r] || 1) * (1 + G.rng.econ.range(-c.drift, c.drift)), 0.8, 1.25);
-    G.tmp.tradeDay = G.day;
+    for (const p of G.ports) for (const r of RES_KEYS) p.trend[r] = clamp((p.trend[r] || 1) * (1 + G.rng.econ.range(-c.drift, c.drift)), 0.8, 1.25);
   }
-  for (const r of G.routes) stepRoute(G, r, dt);
-  stepContracts(G);
-  G.tmp.tradeT = (G.tmp.tradeT || 0) - dt;
-  if (G.tmp.tradeT <= 0) { G.tmp.tradeT = 1; refreshPrices(G); }
+  for (let i = 0; i < G.routes.length; i++) stepRoute(G, G.routes[i], dt);
 }
 
 export { TRADABLE };

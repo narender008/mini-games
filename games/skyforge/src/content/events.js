@@ -155,4 +155,30 @@ export const EVENTS = [
       { label: 'Keep them at work', desc: 'Nothing changes', effects: { text: 'Grumbling, they go back to their benches.' } },
     ],
   },
+  {
+    id: 'monument', title: 'A Monument to the Founders', art: 'townhall', weight: 2, cooldown: 12, needs: { chapter: 4 },
+    text: 'The settlers want something to remember the first landing by. The masons have drawn up plans, from modest to magnificent.',
+    options: [
+      { label: 'A bronze colossus', desc: '-900 coin, happy settlers for 5 days', cost: { coin: 900 }, effects: { happiness: { v: 0.1, days: 5 }, growth: { v: 0.25, days: 5 }, text: 'The founders gaze out over the clouds in bronze. Visitors come from every port.' } },
+      { label: 'A stone plaque', desc: '-150 coin, a little pride', cost: { coin: 150 }, effects: { happiness: { v: 0.04, days: 2 }, text: 'A neat plaque by the town hall door. People touch it for luck.' } },
+      { label: 'Not now', desc: 'Nothing changes', effects: { text: 'The plans go into a drawer.' } },
+    ],
+  },
+  {
+    id: 'skyfair', title: 'The Sky Fair', art: 'coin', weight: 2, cooldown: 10, needs: { chapter: 4, building: 'market' },
+    text: 'The guilds ask whether your colony will host this season\'s Sky Fair: pavilions, races and merchants from all three ports.',
+    options: [
+      { label: 'Host it in style', desc: '-700 coin, standing with every port, new settlers', cost: { coin: 700 }, effects: { rep: { port: null, n: 10 }, growth: { v: 0.3, days: 2 }, happiness: { v: 0.06, days: 2 }, production: { v: -0.05, days: 1 }, text: 'Bunting on every bridge. The ports talk of nothing else.' } },
+      { label: 'A small market day', desc: '-200 coin, a happy day', cost: { coin: 200 }, effects: { happiness: { v: 0.05, days: 1 }, text: 'Stalls, music and a greasy-pole contest.' } },
+      { label: 'Let another town host', desc: 'Nothing changes', effects: { text: 'The fair goes to Verdant Drift this year.' } },
+    ],
+  },
+  {
+    id: 'bonds', title: 'Guild Bonds', art: 'scroll', weight: 2, cooldown: 9, needs: { chapter: 3 },
+    text: 'The Brass Reach foundry guild is selling bonds to build a new furnace. They promise a fat return, if the furnace holds.',
+    options: [
+      { label: 'Buy 1,000 coin of bonds', desc: 'Most likely a profit, and the guild\'s favour', cost: { coin: 1000 }, effects: { rep: { port: 'brassreach', n: 8 }, chance: { p: 0.65, win: { coin: 1350, text: 'The furnace roars. The guild pays out with interest.' }, lose: { coin: 400, text: 'The furnace cracked. The guild pays back what it can.' } } } },
+      { label: 'Decline', desc: 'Nothing changes', effects: { text: 'The guild finds other investors.' } },
+    ],
+  },
 ];

@@ -17,7 +17,7 @@ export const PORTS = [
     id: 'porthalcyon', name: 'Port Halcyon', x: -40, y: 112, z: 6, icon: 'coin', color: '#d8a040',
     desc: 'A busy free city on a cluster of terraced isles. Its shipwrights pay well for iron and brass parts.',
     buys: { iron: 1.45, parts: 1.4, planks: 1.05, stone: 1.0, bread: 0.95 },
-    sells: { stone: 1.2, planks: 1.25, ore: 1.3 },
+    sells: { stone: 1.2, planks: 1.25, ore: 1.3, aether: 1.7 },
     wants: ['iron', 'planks', 'parts', 'stone'],
   },
   {
@@ -31,7 +31,7 @@ export const PORTS = [
     id: 'brassreach', name: 'Brass Reach', x: 44, y: -112, z: 7, icon: 'gear', color: '#c07a3a',
     desc: 'A smoky guild-city of foundries hanging under a single vast rock. It trades coal and parts for skystone and aether.',
     buys: { skystone: 1.45, aether: 1.5, iron: 1.1, bread: 1.05 },
-    sells: { coal: 1.1, parts: 1.25, iron: 1.3, ore: 1.15 },
+    sells: { coal: 1.1, parts: 1.25, iron: 1.3, ore: 1.15, skystone: 1.5 },
     wants: ['bread', 'iron', 'skystone', 'aether'],
   },
 ];

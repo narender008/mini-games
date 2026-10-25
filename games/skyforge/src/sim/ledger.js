@@ -90,16 +90,23 @@ export function bump(G, key, n = 1) {
 
 // Pay for something on island `island`: ECONOMY's payFor when present (it may
 // ship goods from the home network by airship freight), else the island's pool.
-export function payOn(G, island, cost) {
-  if (typeof economy.payFor === 'function') { const r = economy.payFor(G, island, cost); return !!(r && r.ok); }
+export function payOn(G, island, cost, opts = {}) {
+  if (typeof economy.payFor === 'function') { const r = economy.payFor(G, island, cost, opts); return !!(r && r.ok); }
   return pay(G, cost, rootOf(G, island));
 }
-export function missingOn(G, island, cost) {
+export function missingOn(G, island, cost, opts = {}) {
   if (typeof economy.payPlan === 'function') {
-    const p = economy.payPlan(G, island, cost);
+    const p = economy.payPlan(G, island, cost, opts);
     if (p.ok) return [];
     const root = rootOf(G, island);
     return p.missing.map((res) => ({ res, need: cost[res], have: have(G, res, root) }));
   }
   return missing(G, cost, rootOf(G, island));
+}
+
+// True on the step where G.t crosses a multiple of `period`. Periodic work keyed
+// to G.t (which is saved) instead of a timer on G.tmp, so a reloaded colony runs
+// its checks on exactly the same ticks as the original.
+export function every(G, period, dt) {
+  return Math.floor(G.t / period + 1e-9) !== Math.floor((G.t - dt) / period + 1e-9);
 }

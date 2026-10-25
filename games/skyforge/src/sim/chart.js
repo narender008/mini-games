@@ -14,7 +14,7 @@ import { has, isUnlocked, bonus } from './research.js';
 import * as fleet from './fleet.js';
 import * as economy from './economy.js';
 import * as links from './links.js';
-import { pay, missing, homeRoot, rootOf, notify, islandById, islandCentre, owned, bump, builtOf, costText } from './ledger.js';
+import { every, pay, missing, homeRoot, rootOf, notify, islandById, islandCentre, owned, bump, builtOf, costText } from './ledger.js';
 
 const C = () => CFG.progression.chart;
 const ISL = () => Object.fromEntries(ISLANDS.map((i) => [i.id, i]));
@@ -34,7 +34,7 @@ export function init(G) {
   }
 }
 
-export function hydrate(G) { G.tmp.chart = {}; G.tmp.chartT = 0; refreshInfo(G); }
+export function hydrate(G) { G.tmp.chart = {}; refreshInfo(G); }
 
 // ---- geometry and dangers ------------------------------------------------------------
 // Edge-to-edge gap (tiles) between two islands' rectangles.
@@ -370,9 +370,7 @@ export function step(G, dt) {
     G.expeditions = [...done, ...keep];
   }
   for (const i of G.islands) if (i.drift) stepDrift(G, i, dt);
-  G.tmp.chartT = (G.tmp.chartT || 0) - dt;
-  if (G.tmp.chartT <= 0) {
-    G.tmp.chartT = 2;
+  if (every(G, 2, dt)) {
     // observatories reveal the sky around the colony
     if (builtOf(G, 'observatory').length) {
       const h = islandById(G, 'hearthrock');

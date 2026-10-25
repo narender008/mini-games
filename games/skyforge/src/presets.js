@@ -76,6 +76,7 @@ export function applyPreset(G, name, app, opts = {}) {
   G.tod = name === 'storm' ? 0.72 : (tod ?? 0.42);
   G.raid = null; G.pirates = []; G.shots = [];
   G.bus = bus;
+  MODULES.goals.settle?.(G);              // no event card waiting when the preset opens (PROGRESSION)
   G.log = (G.log || []).slice(-6);
   if (name !== 'storm') MODULES.weather.setWeather?.(G, 'clear', 0);
   if (name === 'storm') MODULES.weather.startStorm?.(G, 0.85);

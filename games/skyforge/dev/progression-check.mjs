@@ -322,13 +322,16 @@ section('goals, events, achievements, the Skyforge');
     up = act.upgrade(sf.id);
     ok(up.ok, `stage ${k} begins`, up.error);
     if (k === 5) ok(G.goals.flags.finalRaid && (G.raid?.final || G.threat?.finalPending), 'stage 5 calls the Dreadnought', JSON.stringify(G.raid && G.raid.phase));
+    if (k === 5) { G.raid = null; G.pirates.length = 0; if (G.threat) G.threat.finalPending = false; G.goals.meta.finalAt = G.t; }
     ok(runUntil(G, () => sf.level === k, 3000), `stage ${k} raised`);
   }
   ok(!G.goals.won, 'no victory while the Dreadnought flies');
   G.goals.flags.dreadnoughtDown = true;
   for (const ch of C.CHAPTERS) for (const s of ch.steps) G.goals.steps[s.id] = true;
   let won = 0; G.bus.on('won', () => won++);
-  run(G, 3);
+  run(G, 2);
+  ok(!G.goals.won, 'chapters close one at a time, not all in one tick');
+  run(G, 7 * 50);
   ok(G.goals.won && won === 1 && G.goals.wonAt != null, 'victory when the forge is lit and the Dreadnought down');
   ok(G.goals.achievements.includes('forgelit'), 'achievement on victory');
   // win() cheat from a fresh colony
