@@ -39,6 +39,31 @@ let scratch = null, sg = null;
 // later ones paint straight into a box that size plus PAD px; every RELEARN-th one is scanned again
 const BOUNDS = new Map();
 const LEARN = 4, RELEARN = 24, PAD = 6;
+// Rim light (engine, playtest P1-17): dark foes vanished on dark floors. Each cached sprite gets a faint
+// cool outline just outside its silhouette and a thin moonlit band along its top edges, baked once per
+// sprite (no per-frame cost).
+let rimT = null, rg = null;
+function rimify(c, sc) {
+  const w = c.width, h = c.height;
+  if (w < 4 || h < 4) return;
+  if (!rimT) { rimT = document.createElement('canvas'); rg = rimT.getContext('2d', { willReadFrequently: true }); }
+  if (rimT.width < w || rimT.height < h) { rimT.width = Math.max(rimT.width, w); rimT.height = Math.max(rimT.height, h); }
+  const d = Math.max(1, Math.round(1.4 * sc)), g = c.getContext('2d');
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  // top band: the sprite minus itself moved down
+  rg.setTransform(1, 0, 0, 1, 0, 0); rg.globalAlpha = 1; rg.globalCompositeOperation = 'source-over'; rg.clearRect(0, 0, w, h);
+  rg.drawImage(c, 0, 0); rg.globalCompositeOperation = 'destination-out'; rg.drawImage(c, 0, d + 1);
+  rg.globalCompositeOperation = 'source-in'; rg.fillStyle = '#cfdcff'; rg.fillRect(0, 0, w, h);
+  g.globalCompositeOperation = 'source-atop'; g.globalAlpha = 0.32; g.drawImage(rimT, 0, 0, w, h, 0, 0, w, h);
+  // outline: the sprite grown by d, minus itself
+  rg.globalCompositeOperation = 'source-over'; rg.clearRect(0, 0, w, h);
+  rg.drawImage(c, -d, 0); rg.drawImage(c, d, 0); rg.drawImage(c, 0, -d); rg.drawImage(c, 0, d);
+  rg.globalCompositeOperation = 'destination-out'; rg.drawImage(c, 0, 0);
+  rg.globalCompositeOperation = 'source-in'; rg.fillStyle = '#9fb4ff'; rg.fillRect(0, 0, w, h);
+  rg.globalCompositeOperation = 'source-over';
+  g.globalCompositeOperation = 'destination-over'; g.globalAlpha = 0.2; g.drawImage(rimT, 0, 0, w, h, 0, 0, w, h);
+  g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+}
 function sprite(bw, bh) {
   const c = pool.pop() || document.createElement('canvas');
   if (c.width !== bw || c.height !== bh) { c.width = bw; c.height = bh; } else { const g = c.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, bw, bh); }
@@ -120,6 +145,7 @@ export function drawFoe(ctx, e, G, P) {
       g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
       c.__b = [x0, y0, bw, bh, sc];
     }
+    if (!(P && P.noFoeRim)) rimify(c, sc);
     c.__W = W; c.__H = H;
     CACHE.set(key, c); COARSE.set(ck, c);
     while (CACHE.size > CAP) { const k0 = CACHE.keys().next().value; const old = CACHE.get(k0); CACHE.delete(k0); if (pool.length < 32) pool.push(old); }

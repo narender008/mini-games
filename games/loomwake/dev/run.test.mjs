@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { makeSim, step as rawStep } from './sim-harness.mjs';
 import * as Run from '../src/sim/run.js';
 import { memoryStore } from '../src/save/save.js';
+import * as Combat from '../src/sim/combat.js';
 
 let pass = 0, fail = 0;
 async function test(name, fn) {
@@ -262,6 +263,34 @@ await test('a Memory Thread plays every line of every panel, each with its speak
   for (let k = 0; k < 80 && G.dialogue && G.dialogue.queue.length; k++) { Run.advance(G); got.push(G.dialogue.text); }
   assert.deepEqual(got, want);
   assert.equal(G.dialogue.panel, m.panels.length - 1);
+});
+
+await test('true ending: Sable kneels to the choice, braid is answered, his lines come before victory', () => {
+  const G = makeSim(5);
+  Run.newGame(G, 0, { wipe: true }); settle(G);
+  Run.boss(G, 'sable'); settle(G);
+  G.run.trueEnding = true;
+  const lines = []; G.bus.on('line', (p) => lines.push(p.lineId));
+  const live = (n) => { for (let i = 0; i < n && G.scene === 'run'; i++) { G.hero.hp = G.hero.maxHp; rawStep(G, 1, false); } };
+  live(240);
+  for (let k = 0; k < 60 && G.scene !== 'victory'; k++) {
+    if (G.scene === 'dialogue') {
+      const d = G.dialogue;
+      if (d.choices && !d.queue.length) Run.answer(G, d.choices.findIndex((c) => (c.choice || c.id) === 'braid'));
+      else Run.advance(G);
+      continue;
+    }
+    const b = G.boss;
+    if (b && b.state !== 'defeated' && !b.dying && b.state !== 'choice' && b.state !== 'braided') {
+      if (b.phase < b.phases) Run.bossKill(G);
+      else { b.armor = 0; b.hp = Math.max(30, b.maxHp * 0.06); Combat.damageFoe(G, b, 20, { kind: 'debug', pierce: true }); }
+    }
+    live(480);
+  }
+  assert.equal(G.scene, 'victory');
+  assert.equal(G.meta.ending, 'true'); assert.equal(G.meta.flags.endingChoice, 'braid');
+  assert.ok(lines.includes('sableboss_defeat_true'), 'the choice conversation was told');
+  assert.ok(!lines.some((id) => /^sableboss_defeat_(first|again)/.test(id)), 'no second defeat speech after the braid');
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

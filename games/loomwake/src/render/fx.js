@@ -39,7 +39,14 @@ export function createFx(G, Q) {
   };
   const embers = (x, y, z, color, n, speed = 120) => { for (let i = 0; i < n; i++) { const a = R() * TAU; part({ x: x + R.range(-8, 8), y, z, vx: Math.cos(a) * speed * R(), vy: Math.sin(a) * speed * R() * 0.6, vz: R.range(30, 140), g: -30, life: R.range(0.5, 1.1), size: R.range(2, 4), color, type: 'ember', drag: 2 }); } };
   const dust = fx.dust = (x, y, n, col = '#9fb4ff', spd = 60) => { for (let i = 0; i < n; i++) part({ x: x + R.range(-10, 10), y: y + R.range(-4, 4), z: 2, vx: R.range(-spd, spd), vy: R.range(-spd, spd) * 0.5, vz: R.range(10, 50), g: 40, life: R.range(0.35, 0.7), size: R.range(6, 14), color: col, type: 'dust', drag: 3, add: false }); };
-  const ring = fx.ring = (x, y, r0, r1, life, color, width = 4, squash = 0.62) => part({ x, y, life, size: r0, r1, color, type: 'ring', width, squash });
+  // rings: at most MAX_RINGS alive (the oldest go), and they dim as they stack (ringK, see drawPart)
+  const MAX_RINGS = 14;
+  let ringN = 0, ringK = 1;
+  const ring = fx.ring = (x, y, r0, r1, life, color, width = 4, squash = 0.62) => {
+    if (ringN >= MAX_RINGS) { const k = parts.findIndex((p) => p.type === 'ring'); if (k >= 0) { parts.splice(k, 1); ringN--; } }
+    ringN++;
+    return part({ x, y, life, size: r0, r1, color, type: 'ring', width, squash });
+  };
   const flash = fx.flash = (x, y, r, color, life = 0.12, i = 1) => { flashes.push({ x, y, r, color, life, max: life, i }); };
   // Text call-outs. Words ("BROKEN", "STONE") show once per target/place per second; damage numbers merge
   // (see fx.number); at most MAX_TEXT on screen, the oldest go first.
@@ -160,7 +167,14 @@ export function createFx(G, Q) {
     G.bus.emit('shake', { a: 0.22 * p, x, y });
   });
   on('fall', ({ x, y }) => { dust(x, y, 10, '#6060a0'); });
-  on('heal', ({ x, y, n }) => { embers(x, y, 20, '#8ff5b0', 14); text(x, y - 90, '+' + n, '#8ff5b0', 22); });
+  // heals merge into one rising "+N" over Iri (regen ticks and boon heals were "+3 +4 +3" spam)
+  on('heal', ({ x, y, n }) => {
+    for (const t of texts) if (t.kind === 'heal' && clock - t.lastAdd < 1.2 && t.life > 0.25) {
+      t.n += n; t.s = '+' + Math.round(t.n); t.lastAdd = clock; t.life = t.max; t.pop = 1; t.x = x; return;
+    }
+    embers(x, y, 20, '#8ff5b0', 10);
+    addText({ x, y: y - 90, s: '+' + Math.round(n), n, color: '#8ff5b0', size: 22, life: 0.9, max: 0.9, vy: -60, pop: 1, kind: 'heal', lastAdd: clock });
+  });
   on('wardHit', ({ x, y }) => ring(x, y, 20, 40, 0.25, '#d8a46a', 4));
   on('pickup', (o) => { if (o && o.x != null) { embers(o.x, o.y, 20, o.color || '#ffd27a', 16); flash(o.x, o.y - 20, 160, o.color || '#ffd27a', 0.3); } });
   on('bossPhase', ({ id } = {}) => { const b = G.boss; if (b) { ring(b.x, b.y, 30, 420, 0.8, '#ffffff', 8); flash(b.x, b.y - 60, 700, '#ffffff', 0.5, 1.2); } });
@@ -219,7 +233,7 @@ export function createFx(G, Q) {
   const drawPart = (ctx, p, P) => {
     const a = clamp(p.life / p.max, 0, 1) * (p.add && p.type !== 'mote' ? addK : 1);
     if (p.type === 'spark') { const vx = p.vx * 0.03, vy = (p.vy - p.vz) * 0.03; ctx.strokeStyle = p.color; ctx.globalAlpha = a; ctx.lineWidth = p.size; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(p.x, p.y - p.z); ctx.lineTo(p.x - vx, p.y - p.z - vy * 0.7); ctx.stroke(); ctx.globalAlpha = 1; }
-    else if (p.type === 'ring') { const t = 1 - a, r = lerp(p.size, p.r1, 1 - Math.pow(1 - t, 3)); ctx.strokeStyle = p.color; ctx.globalAlpha = a; ctx.lineWidth = p.width * a + 1; ctx.beginPath(); ctx.ellipse(p.x, p.y, Math.max(0.1, r), Math.max(0.1, r * p.squash), 0, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1; }
+    else if (p.type === 'ring') { const t = 1 - a, r = lerp(p.size, p.r1, 1 - Math.pow(1 - t, 3)); ctx.strokeStyle = p.color; ctx.globalAlpha = a * ringK; ctx.lineWidth = p.width * a + 1; ctx.beginPath(); ctx.ellipse(p.x, p.y, Math.max(0.1, r), Math.max(0.1, r * p.squash), 0, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1; }
     else if (p.type === 'ember') drawGlow(ctx, p.x, p.y - p.z, p.size * 4, p.color, a);
     else if (p.type === 'impact') { const t = 1 - a; ctx.save(); ctx.translate(p.x, p.y - p.z); ctx.rotate(p.rot); ctx.globalAlpha = a; ctx.fillStyle = '#ffffff'; const L = p.r1 * (0.6 + t), W = p.size * a; ctx.beginPath(); ctx.moveTo(-L * 0.3, 0); ctx.lineTo(0, -W); ctx.lineTo(L, 0); ctx.lineTo(0, W); ctx.closePath(); ctx.fill(); ctx.restore(); ctx.globalAlpha = 1; }
     else if (p.type === 'shard') { ctx.save(); ctx.translate(p.x, p.y - p.z); ctx.rotate(p.rot); ctx.globalAlpha = Math.min(1, a * 2); ctx.fillStyle = p.color; ctx.beginPath(); ctx.moveTo(0, -p.size); ctx.lineTo(p.size * 0.45, 0); ctx.lineTo(0, p.size * 0.6); ctx.lineTo(-p.size * 0.45, 0); ctx.closePath(); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fillRect(-0.8, -p.size * 0.8, 1.6, p.size * 0.6); ctx.restore(); ctx.globalAlpha = 1; }
@@ -242,6 +256,11 @@ export function createFx(G, Q) {
     n += flashes.length * 4 + bolts.length * 6;
     addK = clamp(Math.sqrt(160 / Math.max(1, n)), 0.5, 1);
     if (P) P.addK = addK;
+    // clutter 0..1: how swamped the additive layer is (the renderer then lifts Iri's outline and the
+    // telegraph edges above it)
+    fx.clutter = clamp((n - 90) / 180, 0, 1);
+    let rn = 0; for (const p of parts) if (p.type === 'ring') rn++;
+    ringN = rn; ringK = clamp(Math.sqrt(5 / Math.max(1, rn)), 0.45, 1);
     for (const p of parts) if (p.add && !SORTED.has(p.type) && p.type !== 'mote') drawPart(ctx, p, P);
     for (const b of bolts) drawBolt(ctx, b);
   };

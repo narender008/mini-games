@@ -31,7 +31,7 @@ export default {
     if (e.phase === 2) return choose(G, e, [['choir', 3], ['ring', 1.6], ['sweep', 2], ['notes', 1.6], ['flood', floods ? 0 : 2.6], ['summon', aliveSummons(G, e) < 2 ? 1.2 : 0], ['sink', d < 240 ? 3 : 0.4]]);
     return choose(G, e, [['requiem', 3.2], ['choir', 2], ['sweep', 1.6], ['notes', 1.2], ['flood', floods ? 0 : 3.2], ['sink', d < 240 ? 3 : 0.4]]);
   },
-  phaseStart(G, e, n) { e.tempo = n === 2 ? 1.1 : 1.18; },
+  phaseStart(G, e, n) { e.tempo = n === 2 ? 1.08 : 1.14; },
   phase(G, e, n, def) {
     if (n === 2) {
       // the drowned choir rises around the edge of the nave

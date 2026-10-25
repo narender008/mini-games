@@ -127,7 +127,9 @@ export const WAVE_MIX = {
 // Points for one wave. depth = chamber index in the region (0..11), wave = 0..2.
 export function waveBudget(region, depth = 0, wave = 0, kind = 'combat') {
   const ri = Math.max(0, REGIONS.indexOf(region));
-  let b = 4 + ri * 2.2 + depth * 0.75 + wave * 1.6;
+  // balance 2026-10-25: a new region eases in (its first chambers sit closer to the last region's end)
+  // and every wave carries a little more than before, for 25-40 s fights
+  let b = (4 + ri * Math.min(2.2, 1.3 + depth * 0.1) + depth * 0.75 + wave * 1.6) * 1.12;
   if (kind === 'elite') b *= 1.25;
   return Math.min(b, 24);
 }

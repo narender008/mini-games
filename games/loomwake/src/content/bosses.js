@@ -100,13 +100,13 @@ export const BOSSES = {
 
   morrow: {
     id: 'morrow', name: 'Cantor Morrow', title: 'the Drowned Choirmaster', region: 'choir',
-    r: 48, height: 230, hp: 8000, armor: 800, mass: 30, speed: 150,
+    r: 48, height: 230, hp: 8400, armor: 800, mass: 30, speed: 150,
     phases: [0.6, 0.28], stagger: 1.8, armorRegrow: 5,
     music: 'boss-morrow', color: '#8fd6ff', lantern: '#ffd890',
     lore: 'He kept the hymnals of the Choir and the name of every singer. When the water came he went on conducting. He has not stopped.',
     moves: {
-      ring:     { wind: 0.75, act: 1.6, rec: 0.6, dmg: 14, n: 2, gap: 0.55, speed: 330, w: 34, maxR: 1250, cd: 2.2 },
-      sweep:    { wind: 0.8, act: 1.3, rec: 0.7, dmg: 16, len: 720, w: 54, arc: 2.2, cd: 3.2 },
+      ring:     { wind: 0.8, act: 1.6, rec: 0.65, dmg: 12, n: 2, gap: 0.55, speed: 330, w: 34, maxR: 1250, cd: 2.2 },
+      sweep:    { wind: 0.85, act: 1.3, rec: 0.75, dmg: 14, len: 720, w: 54, arc: 2.2, cd: 3.2 },
       notes:    { wind: 0.65, act: 0.9, rec: 0.5, dmg: 10, n: 5, speed: 220, homing: 1.4, life: 4.2, cd: 3 },
       summon:   { wind: 0.9, act: 0.5, rec: 0.6, n: 2, kind: 'chorister', cd: 16, max: 3 },
       sink:     { wind: 0.6, act: 1.0, rec: 0.5, dmg: 0, cd: 7 },
@@ -167,7 +167,7 @@ export const BOSSES = {
 
   aurum: {
     id: 'aurum', name: 'Aurum', title: 'the Gilded Colossus', region: 'forge',
-    r: 86, height: 320, hp: 10500, armor: 1100, mass: 80, speed: 105,
+    r: 86, height: 320, hp: 12500, armor: 1200, mass: 80, speed: 105,
     phases: [0.55, 0.22], stagger: 2.2, armorRegrow: 6,
     music: 'boss-aurum', color: '#ffb54a', molten: '#ff7a1c',
     lore: 'The finest smith the dream ever held. He forged the shears for a mother who asked, and has hammered every day since to beat the memory flat.',
@@ -229,20 +229,20 @@ export const BOSSES = {
 
   sable: {
     id: 'sable', name: 'Sable', title: 'the Unweaver', region: 'unwoven',
-    r: 22, height: 100, hp: 12000, armor: 650, mass: 6, speed: 360,
+    r: 22, height: 100, hp: 18000, armor: 850, mass: 6, speed: 360,
     phases: [0.52], stagger: 1.6, armorRegrow: 4.5,
     music: 'boss-sable', color: '#c86bff', eye: '#ff3d7a',
     choiceAt: 0.12, // true-ending mode: the fight stops for the choice here
     lore: 'The Weaver\'s first child. His thread had a knot in it, and so it was cut. He has been pulling at the loose end ever since.',
     moves: {
-      lunge:   { wind: 0.55, act: 0.16, rec: 0.55, dmg: 18, len: 440, w: 44, cd: 1.4 },
-      combo:   { wind: 0.42, act: 0.75, rec: 0.6, dmg: 11, reach: 135, arc: 1.9, hits: 3, cd: 1.2 },
+      lunge:   { wind: 0.55, act: 0.16, rec: 0.55, dmg: 21, len: 440, w: 44, cd: 1.4 },
+      combo:   { wind: 0.42, act: 0.75, rec: 0.6, dmg: 13, reach: 135, arc: 1.9, hits: 3, cd: 1.2 },
       snare:   { wind: 0.6, act: 1.1, rec: 0.45, dmg: 8, speed: 1100, range: 620, pull: 520, cd: 4 },
       echoes:  { wind: 0.9, act: 0.5, rec: 0.6, n: 2, kind: 'echo', cd: 15, max: 2 },
       riposte: { wind: 0.4, act: 0.9, rec: 0.4, dmg: 22, cd: 7 },
       dash:    { wind: 0.36, act: 0.15, rec: 0.25, dist: 260, cd: 0.9 },
-      storm:   { wind: 1.0, act: 3.2, rec: 0.8, dmg: 16, lines: 12, warn: 0.75, gap: 0.24, w: 34, cd: 9 },
-      mirror:  { wind: 0.6, act: 0.6, rec: 0.6, dmg: 18, cd: 3 },
+      storm:   { wind: 1.0, act: 3.2, rec: 0.8, dmg: 19, lines: 12, warn: 0.75, gap: 0.24, w: 34, cd: 9 },
+      mirror:  { wind: 0.6, act: 0.6, rec: 0.6, dmg: 21, cd: 3 },
     },
     lines: {
       intro: [

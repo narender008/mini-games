@@ -482,11 +482,12 @@ function ensurePlan(G, region) {
 // reloaded checkpoint builds the same waves.
 export const PACING = {
   entry: 2,
-  combat: [[0, 2, 3], [3, 3, 3], [7, 3, 4]],   // [from chamber index, min, max]
+  combat: [[0, 2, 3], [3, 3, 3], [6, 3, 4]],   // [from chamber index, min, max]
   elite: [3, 4],
   miniboss: 2,                                  // the miniboss with its escort, then reinforcements
   deeper: 2,                                    // from this region index on, combat chambers roll one band later
 };
+const MINIBOSS_HP = 1.8;  // the miniboss elite's health and armour on top of the elite rules (a 30-45 s fight)
 const REGION_MEND = 0.35; // share of max health restored on entering regions 2-4 (after the boss's own 25%)
 function waveCount(run, kind, seed) {
   const r = makeRng(hashSeed(seed, 'waves'));
@@ -681,6 +682,7 @@ function startWave(G, w) {
     const elite = !!s.elite || (mods.eliteChance > 0 && er() < mods.eliteChance);
     const o = { elite, miniboss: !!s.miniboss, region: run.region, delay: s.delay || 0 };
     if ((mods.foeHp || 1) !== 1) o.scale = sc.hp * mods.foeHp;
+    if (s.miniboss) o.scale = (o.scale ?? sc.hp) * MINIBOSS_HP;
     const e = Enemies.spawn ? safe(Enemies.spawn, G, s.kind, s.x, s.y, o) : null;
     if (e) {
       if ((mods.foeDmg || 1) !== 1) e.dmg = Math.round(e.dmg * mods.foeDmg);
@@ -1307,7 +1309,9 @@ function bossBeaten(G, info) {
   inc(st.bossWins, id);
   if (!run.stats.bosses.includes(id)) run.stats.bosses.push(id);
   emit(G, 'flushBarks', { why: 'bossDefeat' });
-  story(G, 'bossDefeat', { id, first, ending: info.ending, choice: info.choice });
+  const said = story(G, 'bossDefeat', { id, first, ending: info.ending, choice: info.choice });
+  // after the braid / cut choice, that conversation was Sable's last word: no second defeat speech
+  if (id === 'sable' && info.choice && G.storyQueue) G.storyQueue = G.storyQueue.filter((e) => !said.includes(e));
   run.ch.releaseT = 1.0; // the least time the beaten boss kneels, even with nothing to say
   if (id === 'sable' || run.regionIndex >= REGION_IDS.length - 1) {
     // the choice was already made on his last stand: drop a second copy of it

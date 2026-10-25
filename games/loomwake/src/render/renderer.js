@@ -112,7 +112,9 @@ export function createRenderer(G, canvas, opts = {}) {
   };
 
   // ---------------------------------------------------------------- telegraphs (red-pink language, white rim as the hit lands)
-  function drawTelegraph(c, tg) {
+  // edge > 0: only the rim and the sweep front, at that strength (the readability pass above the darkness when
+  // the additive layer is swamped, fx.clutter)
+  function drawTelegraph(c, tg, edge = 0) {
     const max = tg.max || 0.5, k = tg.live ? 1 : clamp(1 - tg.t / max, 0, 1);
     const fired = tg.fired || tg.t <= 0;
     const fade = fired ? clamp(1 + tg.t / G.cfg.telegraphLinger, 0, 1) : 1;
@@ -129,6 +131,7 @@ export function createRenderer(G, canvas, opts = {}) {
     };
     c.save();
     if (fired) {
+      if (edge) { c.restore(); return; }
       c.globalAlpha = fade * 0.75; c.fillStyle = '#ffffff'; pathShape(1); c.fill('evenodd');
     } else {
       // One language for every size: a faint wash, the swept part filled a little stronger as the hit
@@ -136,20 +139,25 @@ export function createRenderer(G, canvas, opts = {}) {
       // half the arena) keep their fills faint so the fight stays visible under them.
       const area = tg.kind === 'line' ? Math.hypot(tg.x2 - tg.x, tg.y2 - tg.y) * (tg.w || 20) : tg.kind === 'cone' ? tg.r * tg.r * (tg.arc || 0.5) : tg.kind === 'ring' ? TAU * (tg.r || 60) * (tg.w || 30) : Math.PI * (tg.r || 60) * (tg.r || 60);
       const big = clamp((area - 8000) / 60000, 0, 1);
-      c.fillStyle = col;
-      c.globalAlpha = lerp(0.16, 0.08, big) + lerp(0.1, 0.04, big) * k; pathShape(1); c.fill('evenodd');
-      if (tg.kind !== 'ring') { c.globalAlpha = lerp(0.28, 0.12, big) + lerp(0.3, 0.12, big) * k; pathShape(Math.max(0.02, k)); c.fill('evenodd'); }
-      c.globalAlpha = 0.6 + 0.4 * k; c.strokeStyle = k > 0.8 ? '#ffffff' : (tg.rim || PALETTE.dangerRim); c.lineWidth = 2 + k * 2.5; pathShape(1); c.stroke();
+      const em = edge || 1;
+      if (!edge) {
+        c.fillStyle = col;
+        c.globalAlpha = lerp(0.16, 0.08, big) + lerp(0.1, 0.04, big) * k; pathShape(1); c.fill('evenodd');
+        if (tg.kind !== 'ring') { c.globalAlpha = lerp(0.28, 0.15, big) + lerp(0.3, 0.14, big) * k; pathShape(Math.max(0.02, k)); c.fill('evenodd'); }
+      }
+      c.globalAlpha = (0.6 + 0.4 * k) * em; c.strokeStyle = k > 0.8 ? '#ffffff' : (tg.rim || PALETTE.dangerRim); c.lineWidth = 2 + k * 2.5; pathShape(1); c.stroke();
       if (tg.kind !== 'ring' && k > 0.02 && k < 0.999) {
-        // the sweep front
-        c.globalAlpha = 0.55 + 0.4 * k; c.strokeStyle = k > 0.8 ? '#ffffff' : (tg.rim || PALETTE.dangerRim); c.lineWidth = 2 + k * 1.5; c.beginPath();
+        // the sweep front: a wide soft band under a bright line (big shapes need it most: it is what tells
+        // the player how long is left)
+        c.beginPath();
         if (tg.kind === 'circle') c.arc(tg.x, tg.y, Math.max(1, tg.r * k), 0, TAU);
         else if (tg.kind === 'cone') c.arc(tg.x, tg.y, Math.max(1, tg.r * k), tg.angle - tg.arc, tg.angle + tg.arc);
         else if (tg.kind === 'line') { const dx = tg.x2 - tg.x, dy = tg.y2 - tg.y, L = Math.hypot(dx, dy) || 1, nx = -dy / L * (tg.w || 20) / 2, ny = dx / L * (tg.w || 20) / 2, ex = tg.x + dx * k, ey = tg.y + dy * k; c.moveTo(ex + nx, ey + ny); c.lineTo(ex - nx, ey - ny); }
-        c.stroke();
+        c.globalAlpha = (0.22 + 0.2 * k) * em; c.strokeStyle = tg.rim || PALETTE.dangerRim; c.lineWidth = (8 + 6 * big) + k * 4; c.stroke();
+        c.globalAlpha = (0.75 + 0.25 * k) * em; c.strokeStyle = k > 0.8 ? '#ffffff' : (tg.rim || PALETTE.dangerRim); c.lineWidth = 3 + k * 2.5 + big * 1.5; c.stroke();
       }
       // pulsing inner edge for extra readability on bright floors
-      c.globalAlpha = 0.35 * (0.5 + 0.5 * Math.sin(t * 20)); c.strokeStyle = '#2a0008'; c.lineWidth = 1.5; pathShape(1); c.stroke();
+      if (!edge) { c.globalAlpha = 0.35 * (0.5 + 0.5 * Math.sin(t * 20)); c.strokeStyle = '#2a0008'; c.lineWidth = 1.5; pathShape(1); c.stroke(); }
     }
     c.restore();
   }
@@ -349,6 +357,9 @@ export function createRenderer(G, canvas, opts = {}) {
     mark('light');
     // ---- above the darkness
     if (E && E.ambient) E.ambient(ctx, G, t);
+    // swamped by effects (late builds): the telegraph edges again, above the effects and the darkness
+    const clut = fx.clutter || 0;
+    if (clut > 0.05) for (const tg of G.telegraphs) drawTelegraph(ctx, tg, 0.4 + 0.5 * clut);
     // Iri behind a boss or a big foe: warm x-ray silhouette (fades in/out)
     if (h && !h.hidden && h.state !== 'dead') {
       let hid = false;
@@ -358,7 +369,9 @@ export function createRenderer(G, canvas, opts = {}) {
         if (Math.abs(h.x - e.x) < e.r * 1.25 + 10 && h.y > e.y - (e.z || 0) - H * 0.85) { hid = true; break; }
       }
       xrayK += ((hid ? 1 : 0) - xrayK) * Math.min(1, dt / 0.12);
-      if (xrayK > 0.02) drawHeroXray(ctx, h, G, P, xrayK);
+      // also when the effects swamp the field: her outline rides above them
+      const xk = Math.max(xrayK, clut * 0.75);
+      if (xk > 0.02) drawHeroXray(ctx, h, G, P, xk);
     }
     const ov = pick(M.bosses, 'drawOverlay'); if (ov) ov(ctx, G, P);
     drawBars(ctx);
@@ -368,6 +381,7 @@ export function createRenderer(G, canvas, opts = {}) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (E && E.front) E.front(ctx, camInfo, t, dt);
     mark('front');
+    doorArrows(G, dt);
     // (a full-screen soft-light pass: the high tier only)
     if (E && E.tint && Q.tier === 'high') { ctx.globalCompositeOperation = 'soft-light'; ctx.globalAlpha = 0.35; ctx.fillStyle = E.tint; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
     // (the vignette is drawn inside the light layer's composite)
@@ -378,6 +392,40 @@ export function createRenderer(G, canvas, opts = {}) {
     mark('post');
   };
 
+  // Off-screen open doors (playtest P1-18): after a clear, an arrow at the screen edge points to each open
+  // door that is out of view, with the door's reward icon. Screen space, canvas px; fades in and out.
+  let arrowK = 0;
+  function doorArrows(G, dt) {
+    const ch = G.chamber, open = G.scene === 'run' && ch && ch.doors && ch.doors.some((d) => d.open);
+    arrowK = clamp(arrowK + (open ? dt : -dt) * 3, 0, 1);
+    if (arrowK <= 0.01 || !ch || !ch.doors) return;
+    const icon = pick(M.env, 'drawRewardIcon'), info = pick(M.env, 'rewardInfo');
+    const u = DPR, cx = W / 2, cy = H / 2, mx = 54 * u, top = 165 * u, bot = H - 130 * u;   // clear of the top bark and the bottom HUD
+    for (const d of ch.doors) {
+      if (!d.open) continue;
+      const sx = cx + (d.x - (cam.x + cam.sx)) * SCALE, sy = cy + (d.y - 70 - (cam.y + cam.sy)) * SCALE;
+      if (sx > 20 * u && sx < W - 20 * u && sy > 40 * u && sy < H - 40 * u) continue;   // on screen: the door shows itself
+      // where the ray from the screen centre to the door leaves the inset box
+      const dx = sx - cx, dy = sy - cy;
+      const kx = dx > 0 ? (W - mx - cx) / dx : dx < 0 ? (mx - cx) / dx : Infinity;
+      const ky = dy > 0 ? (bot - cy) / dy : dy < 0 ? (top - cy) / dy : Infinity;
+      const k = Math.min(kx, ky, 1), ax = cx + dx * k, ay = cy + dy * k, ang = Math.atan2(dy, dx);
+      const col = (info && d.reward && info(d.reward)?.color) || '#f2c46b';
+      const bob = Math.sin(t * 4 + d.i) * 3 * u;
+      ctx.save();
+      ctx.globalAlpha = arrowK;
+      ctx.translate(ax + Math.cos(ang) * bob, ay + Math.sin(ang) * bob);
+      ctx.fillStyle = 'rgba(8,6,22,0.72)'; ctx.beginPath(); ctx.arc(0, 0, 25 * u, 0, TAU); ctx.fill();
+      ctx.strokeStyle = col; ctx.lineWidth = 2 * u; ctx.stroke();
+      ctx.rotate(ang);
+      ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(38 * u, 0); ctx.lineTo(27 * u, -9 * u); ctx.lineTo(27 * u, 9 * u); ctx.closePath(); ctx.fill();
+      ctx.rotate(-ang);
+      if (icon && d.reward) icon(ctx, d.reward, 0, 0, 17 * u, t, 1);
+      else { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(0, 0, 6 * u, 0, TAU); ctx.fill(); }
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  }
   // chromatic flash: red and cyan fringes at the screen edges, baked once per size at quarter resolution
   // (it used to copy the whole frame twice, a mid-frame read-back of the main canvas: ~2 ms per flash frame)
   let CHR = null;

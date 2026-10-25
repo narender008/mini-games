@@ -544,16 +544,26 @@ function heroAir(c, G, P) {
 }
 
 // ---------------------------------------------------------------- entry points
+const CAP_PER_KIND = 5, SEEN = {};
 export function drawPowers(ctx, G, P, layer) {
   if (!G) return;
   attach(G, P);
   if (layer === 'ground') frame(G, P);
   const L = layer === 'ground' ? GROUND : AIR;
   const list = G.powers;
-  if (list) for (const p of list) {
-    if (p.dead || (p.delay > 0)) continue;
-    const f = L[p.kind];
-    if (f) { try { f(ctx, p, G, P); } catch (err) { once('draw.' + p.kind, err); } }
+  // clutter cap (engine, playtest P1-13): at most CAP_PER_KIND of one kind are painted, the newest; a late
+  // build stacks a dozen white rings over Iri and the telegraphs otherwise (the sim still runs them all)
+  if (list) {
+    const seen = SEEN; for (const k in seen) seen[k] = 0;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const p = list[i];
+      if (p.dead || (p.delay > 0)) continue;
+      const f = L[p.kind];
+      if (!f) continue;
+      const n = (seen[p.kind] = (seen[p.kind] || 0) + 1);
+      if (n > CAP_PER_KIND) continue;
+      try { f(ctx, p, G, P); } catch (err) { once('draw.' + p.kind, err); }
+    }
   }
   for (const e of G.foes || []) {
     if (e.dead || e.gone || !e.status) continue;
@@ -689,7 +699,7 @@ function attach(G, P) {
       }
       case 'thorns': fx.sparks(x, y, 30, '#d8a46a', 10, 360); fx.ring(x, y, 8, 50, 0.22, '#d8a46a', 4); break;
       case 'thimble': fx.ring(x, y, 10, 90, 0.35, '#ffd27a', 5); fx.flash(x, y - 40, 240, '#ffd27a', 0.3, 1); fx.text(x, y - 110, 'Thimble', '#ffd27a', 20, { life: 1 }); break;
-      case 'miss': fx.text(x, y - 100, 'miss', e.element === 'shade' ? '#d8bfff' : '#fff1c4', 18, { life: 0.6 }); fx.ring(x, y - 30, 10, 40, 0.2, c, 2, 1); break;
+      case 'miss': fx.ring(x, y - 30, 10, 40, 0.2, c, 2, 1); break;   // (no 'miss' text: clutter, playtest P1-13)
       case 'sunpulse': fx.ring(x, y, (e.r || 76) * 0.3, (e.r || 76) * 1.1, 0.4, '#ffc35a', 6); fx.flash(x, y - 10, (e.r || 76) * 2.4, '#ffc35a', 0.2, 1); break;
       case 'wave': fx.dust(x, y, 10, '#9fdcff', 140); fx.flash(x, y - 20, 220, '#5ec8ff', 0.2, 0.9); break;
       case 'phantom': burstOf(x, y, e.r || 120, '#b48cff', 20, 40); fx.threads(x, y, 6, '#1a0830', '#b48cff', 0.6); break;
