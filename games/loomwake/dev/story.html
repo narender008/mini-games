@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loomwake story bench</title>
+<style>
+  :root { --ink: #f3ead8; --gold: #f2c46b; --muted: rgba(225,230,255,0.7); --panel: rgba(10,9,28,0.78); --display: 'Marcellus', 'Cinzel', 'Palatino Linotype', 'Book Antiqua', Georgia, serif; --ui: 'Segoe UI', system-ui, sans-serif; color-scheme: dark; }
+  body { margin: 0; background: #070818; color: var(--ink); font-family: var(--ui); }
+  h2 { font-family: var(--display); color: var(--gold); letter-spacing: 0.2em; font-weight: 400; margin: 28px 20px 10px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 14px; padding: 0 20px; }
+  .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(242,196,107,0.25); border-radius: 10px; padding: 8px; text-align: center; }
+  .card .nm { font-family: var(--display); color: var(--gold); font-size: 13px; letter-spacing: 0.08em; }
+  .card .row { display: flex; gap: 2px; }
+  .card small { color: var(--muted); font-size: 10px; display: block; }
+  canvas { display: block; }
+  .dlg { display: flex; gap: 14px; align-items: flex-end; margin: 10px 20px; padding: 12px 16px; background: var(--panel); border: 1px solid rgba(242,196,107,0.45); border-radius: 12px; max-width: 900px; }
+  .dlg .who { font-family: var(--display); color: var(--gold); letter-spacing: 0.12em; }
+  .dlg .who small { color: var(--muted); font-family: var(--ui); letter-spacing: 0.04em; margin-left: 8px; }
+  .dlg .txt { font-size: 17px; line-height: 1.45; margin-top: 4px; }
+  .dlg .tag { font-size: 10px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+  .narr { margin: 6px 20px; font-style: italic; color: #e8dcc0; font-family: var(--display); font-size: 17px; max-width: 900px; }
+  .vig { position: relative; margin: 0 20px; width: 960px; max-width: calc(100vw - 40px); }
+  .vig .cap { position: absolute; left: 0; right: 0; bottom: 18px; text-align: center; font-family: var(--display); font-size: 20px; color: #fff4dc; text-shadow: 0 2px 8px #000, 0 0 2px #000; padding: 0 60px; }
+  .vig .ttl { position: absolute; left: 24px; top: 18px; font-family: var(--display); letter-spacing: 0.25em; color: var(--gold); text-shadow: 0 2px 6px #000; }
+  #stage { background: #120e22; border-radius: 10px; margin: 0 20px; }
+</style>
+</head>
+<body>
+<section id="s-portraits"><h2>PORTRAITS</h2><div class="grid" id="portraits"></div></section>
+<section id="s-npcs"><h2>LOOMHALL &amp; REVERIE SPRITES</h2><canvas id="stage" width="1400" height="420"></canvas></section>
+<section id="s-dialogue"><h2>A SAMPLE OF THE STORY</h2><div id="dialogue"></div></section>
+<section id="s-memory"><h2>MEMORY THREAD</h2><div id="memory"></div></section>
+<script type="module">
+import { getPortrait, PORTRAIT_SPEAKERS } from '../src/render/portraits.js';
+import { SPEAKERS } from '../src/content/dialogue/speakers.js';
+import { MEMORIES, paintMemoryPanel } from '../src/content/memories.js';
+import { ENDINGS, paintEndingPanel } from '../src/content/dialogue/endings.js';
+import * as story from '../src/sim/story.js';
+
+const q = new URLSearchParams(location.search);
+const only = q.get('sheet');
+for (const s of ['portraits', 'npcs', 'dialogue', 'memory']) if (only && only !== s) document.getElementById('s-' + s).remove();
+const MOODS = (q.get('moods') ?? 'neutral,happy,sad,angry').split(',');
+const PSIZE = Number(q.get('psize') ?? 150);
+
+// ---------------------------------------------------------------- portraits
+if (!only || only === 'portraits') {
+  const host = document.getElementById('portraits');
+  const list = q.get('who') ? q.get('who').split(',') : PORTRAIT_SPEAKERS;
+  for (const sp of list) {
+    const card = document.createElement('div'); card.className = 'card';
+    card.innerHTML = `<div class="nm">${SPEAKERS[sp]?.name || sp}</div><small>${SPEAKERS[sp]?.title || ''}</small>`;
+    const row = document.createElement('div'); row.className = 'row';
+    for (const m of MOODS) { const c = getPortrait(sp, m, PSIZE); if (c) { const k = document.createElement('div'); c.style.width = PSIZE + 'px'; k.appendChild(c); const l = document.createElement('small'); l.textContent = m; k.appendChild(l); row.appendChild(k); } }
+    card.appendChild(row); host.appendChild(card);
+  }
+}
+
+// ---------------------------------------------------------------- NPC sprites
+let npcs = null;
+try { npcs = await import('../src/render/actors/npcs.js'); } catch (e) { console.warn('npcs.js not ready', e); }
+if (npcs && (!only || only === 'npcs')) {
+  const cv = document.getElementById('stage'), ctx = cv.getContext('2d');
+  const ids = ['orrin', 'thimbleby', 'pell', 'nell', 'weaver', 'sable', 'hob', 'lisle', 'gilt', 'ash'];
+  const ents = ids.map((id, i) => ({ id: i + 1, art: 'npc', npc: id, x: 0, y: 0, z: 0, facing: Math.PI / 2, anim: {} }));
+  const G = { t: 0, meta: {}, hero: { x: 700, y: 330 } };
+  story.ensureStoryMeta(G);
+  let t0 = performance.now();
+  const frame = (now) => {
+    G.t = q.has('t') ? Number(q.get('t')) : (now - t0) / 1000;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const bg = ctx.createLinearGradient(0, 0, 0, cv.height); bg.addColorStop(0, '#1a1430'); bg.addColorStop(1, '#3a2a40'); ctx.fillStyle = bg; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = 'rgba(242,196,107,0.08)'; for (let x = 0; x < cv.width; x += 40) ctx.fillRect(x, 330, 20, 90);
+    ents.forEach((e, i) => {
+      const x = 70 + i * 133, y = e.npc === 'weaver' ? 360 : 340;
+      ctx.save(); ctx.translate(x, y); const s = e.npc === 'weaver' ? 0.42 : 0.9; ctx.scale(s, s);
+      try { npcs.default(ctx, e, G, {}); } catch (err) { console.error(e.npc, err); }
+      ctx.restore();
+      ctx.fillStyle = '#f2c46b'; ctx.font = '13px Georgia'; ctx.textAlign = 'center'; ctx.fillText(SPEAKERS[e.npc]?.name || e.npc, x, 405);
+    });
+    if (!q.has('t')) requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
+
+// ---------------------------------------------------------------- a sample run of the story through story.js
+if (!only || only === 'dialogue') {
+  const host = document.getElementById('dialogue');
+  const G = { t: 0, meta: {}, bus: { emit() {} } };
+  const m = story.ensureStoryMeta(G), st = m.stats;
+  const show = (rs) => { for (const r of rs) for (const l of r.lines) {
+    if (l.speaker === 'narrator') { const d = document.createElement('div'); d.className = 'narr'; d.textContent = l.text; host.appendChild(d); continue; }
+    const info = story.speakerInfo(G, l.speaker);
+    const d = document.createElement('div'); d.className = 'dlg';
+    const pc = getPortrait(l.speaker, l.mood, 96); if (pc) { pc.style.width = '96px'; d.appendChild(pc); }
+    const b = document.createElement('div'); b.innerHTML = `<div class="tag">${r.kind} · ${r.id} · ${l.mood}</div><div class="who">${info.name}<small>${info.title}</small></div><div class="txt"></div>`;
+    b.querySelector('.txt').textContent = l.text; d.appendChild(b); host.appendChild(d);
+  } };
+  const steps = (q.get('story') ?? 'intro').split(',');
+  for (const s of steps) {
+    if (s === 'intro') { show(story.onEvent(G, 'hubEnter', { from: 'new' })); }
+    if (s === 'death1') { st.started = 1; story.onEvent(G, 'runStart', { weapon: 'blade' }); show(story.onEvent(G, 'waveStart', { wave: 0 })); st.runs = 1; st.deaths = 1; st.lastRun = { result: 'death', region: 'glasswood', killer: 'hollow' }; show(story.onEvent(G, 'death', { killer: 'hollow', region: 'glasswood' })); show(story.onEvent(G, 'hubEnter', { from: 'death' })); }
+    if (s === 'veyl') { st.started = 2; story.onEvent(G, 'runStart', {}); st.bossMeets.veyl = 1; show(story.onEvent(G, 'bossIntro', { id: 'veyl' })); st.bossWins.veyl = 1; show(story.onEvent(G, 'bossDefeat', { id: 'veyl', first: true })); show(story.onEvent(G, 'regionEnter', { region: 'choir' })); }
+    if (s === 'aurum') { st.bossMeets.aurum = 1; show(story.onEvent(G, 'bossIntro', { id: 'aurum' })); st.bossWins.aurum = 1; show(story.onEvent(G, 'bossDefeat', { id: 'aurum', first: true })); }
+    if (s === 'hub') { for (const n of ['orrin', 'thimbleby', 'pell', 'nell']) { const r = story.hubTalk(G, n); if (r) show([r]); } }
+    if (s === 'patrons') { for (const p of ['solenne', 'maru', 'veyra', 'ossian', 'ilu', 'kestrel']) { const l = story.patronLine(G, p, 'x'); if (l) show([{ id: l.id, kind: 'patron', lines: [l] }]); } }
+  }
+}
+
+// ---------------------------------------------------------------- a Memory Thread vignette (or an ending)
+if (!only || only === 'memory') {
+  const host = document.getElementById('memory');
+  const kind = q.get('ending');
+  const seq = kind ? ENDINGS[kind] : MEMORIES.find((x) => x.id === (q.get('mem') ?? 'cutting'));
+  const panels = q.get('panel') != null ? [Number(q.get('panel'))] : seq.panels.map((_, i) => i);
+  const W = Number(q.get('w') ?? 960), H = Math.round(W * 9 / 16);
+  for (const i of panels) {
+    const wrap = document.createElement('div'); wrap.className = 'vig'; wrap.style.marginBottom = '14px';
+    const c = document.createElement('canvas'); c.width = W; c.height = H; c.style.width = '100%'; wrap.appendChild(c);
+    const p = seq.panels[i];
+    wrap.insertAdjacentHTML('beforeend', `<div class="ttl">${seq.title.toUpperCase()} · ${i + 1}/${seq.panels.length}</div><div class="cap"></div>`);
+    wrap.querySelector('.cap').textContent = p.lines.map((l) => (l.speaker === 'narrator' ? '' : (SPEAKERS[l.speaker]?.name || l.speaker) + ': ') + l.text).join('  —  ');
+    host.appendChild(wrap);
+    const T = Number(q.get('t') ?? 2.5);
+    const draw = () => { const g = c.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, W, H); p.paint(g, W, H, T); };
+    draw();
+  }
+}
+window.__ready = true;
+</script>
+</body>
+</html>

@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loomwake World Dev</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05051a; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; color: #f3ead8; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #info { position: fixed; left: 12px; top: 10px; font-size: 13px; letter-spacing: 0.06em; text-shadow: 0 1px 2px #000; pointer-events: none; }
+  #info b { font-family: 'Marcellus', 'Palatino Linotype', Georgia, serif; font-size: 18px; color: #fff1c4; letter-spacing: 0.15em; font-weight: normal; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="info"></div>
+<script type="module">
+// Dev page for the environment painters: cycles every region template and the hub.
+// Keys: left/right = previous/next template, F = fit whole chamber, D = debug overlay, WASD moves the hero dot.
+// URL: ?t=<templateId> ?hub ?fit ?debug ?time=<s> ?q=<quality> ?cam=x,y ?open ?still (no animation loop)
+import { TEMPLATES } from '../src/content/regions.js';
+import { makeChamber, setDoorRewards } from '../src/sim/chamber.js';
+import { makeHub } from '../src/sim/hub.js';
+import { paintChamber, drawDoor } from '../src/render/env/index.js';
+
+const Q = new URLSearchParams(location.search);
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const info = document.getElementById('info');
+const ids = ['hub', ...Object.keys(TEMPLATES)];
+let cur = Q.has('hub') ? 'hub' : Q.get('t') || ids[1];
+let fit = Q.has('fit'), dbg = Q.has('debug');
+let ch = null, P = null;
+const hero = { x: 0, y: 0 };
+const keys = {};
+let LIGHT = null, lctx = null, VIG = null;
+const hole = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.45, 'rgba(255,255,255,0.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return c; })();
+const glowC = new Map();
+function glow(col) { let c = glowC.get(col); if (c) return c; c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, col); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.globalAlpha = 1; g.fillStyle = gr; g.fillRect(0, 0, 128, 128); glowC.set(col, c); return c; }
+
+function resize() {
+  const DPR = Math.min(devicePixelRatio || 1, 2);
+  cv.width = Math.round(innerWidth * DPR); cv.height = Math.round(innerHeight * DPR);
+  LIGHT = document.createElement('canvas'); LIGHT.width = cv.width / 2; LIGHT.height = cv.height / 2; lctx = LIGHT.getContext('2d');
+  VIG = document.createElement('canvas'); VIG.width = cv.width; VIG.height = cv.height;
+  const v = VIG.getContext('2d'), g = v.createRadialGradient(cv.width / 2, cv.height / 2, Math.min(cv.width, cv.height) * 0.35, cv.width / 2, cv.height / 2, Math.max(cv.width, cv.height) * 0.75);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(2,2,12,0.7)'); v.fillStyle = g; v.fillRect(0, 0, cv.width, cv.height);
+}
+addEventListener('resize', resize); resize();
+
+const REW = ['boon:solenne', 'boon:veyra', 'heal', 'boon:maru', 'lumen', 'knot', 'shop', 'boon:ilu', 'key', 'boon:kestrel', 'boon:ossian', 'fountain'];
+function show(id, opts = {}) {
+  cur = id;
+  if (id === 'hub') ch = makeHub(opts.meta || { flags: {} });
+  else {
+    const T = TEMPLATES[id];
+    const kind = T.kinds.includes('combat') ? 'combat' : T.kinds[0];
+    ch = makeChamber(T.region, 5, kind, opts.seed || 1234, { template: id, doors: T.doors.length >= 3 ? 3 : T.doors.length });
+    setDoorRewards(ch, ch.doors.map((d, i) => (ch.kind === 'boss' ? null : REW[(i + id.length) % REW.length])));
+    const open = opts.open ?? Q.has('open');
+    ch.doors.forEach((d, i) => (d.open = open || i === 0));
+  }
+  P = paintChamber(ch, opts.q ?? +(Q.get('q') || 1));
+  hero.x = ch.entry.x; hero.y = ch.entry.y - 260;
+  if (Q.has('cam')) { const [x, y] = Q.get('cam').split(',').map(Number); hero.x = x; hero.y = y; }
+  return { ms: P.ms, id, region: ch.region, kind: ch.kind, props: P.props.length, lights: ch.lights.length, floor: [P.floor.width, P.floor.height] };
+}
+function bench(n = 30) {
+  const cam = camera(), W = cam.w, H = cam.h, out = { back: 0, floor: 0, props: 0, ambient: 0, front: 0 };
+  const flush = () => ctx.getImageData(0, 0, 1, 1);
+  const toWorld = () => ctx.setTransform(cam.scale, 0, 0, cam.scale, W / 2 - cam.x * cam.scale, H / 2 - cam.y * cam.scale);
+  flush();
+  for (let i = 0; i < n; i++) {
+    const t = 3 + i / 60;
+    let t0 = performance.now(); ctx.setTransform(1, 0, 0, 1, 0, 0); P.back(ctx, cam, t); flush(); out.back += performance.now() - t0;
+    t0 = performance.now(); toWorld(); ctx.drawImage(P.floor, P.origin.x, P.origin.y, P.w, P.h); ctx.globalCompositeOperation = 'lighter'; ctx.drawImage(P.glow, P.origin.x, P.origin.y, P.w, P.h); ctx.globalCompositeOperation = 'source-over'; flush(); out.floor += performance.now() - t0;
+    t0 = performance.now(); for (const p of P.props) ctx.drawImage(p.img, p.x - p.ox, p.y - p.oy, p.w, p.h); for (const d of ch.doors) drawDoor(ctx, d, ch, t); flush(); out.props += performance.now() - t0;
+    t0 = performance.now(); P.ambient(ctx, { t, hero, chamber: ch }, t); flush(); out.ambient += performance.now() - t0;
+    t0 = performance.now(); ctx.setTransform(1, 0, 0, 1, 0, 0); P.front(ctx, cam, t); flush(); out.front += performance.now() - t0;
+  }
+  for (const k in out) out[k] = Math.round((out[k] / n) * 10) / 10;
+  return out;
+}
+window.__w = { ids, show, bench, frame: (t) => draw(t), get ch() { return ch; }, get P() { return P; }, setFit: (f) => (fit = f), setDebug: (d) => (dbg = d), hero };
+
+function camera() {
+  const W = cv.width, H = cv.height;
+  if (fit) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of ch.shape) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    y0 -= 260; y1 += 160;
+    const s = Math.min(W / (x1 - x0 + 200), H / (y1 - y0 + 100));
+    return { x: (x0 + x1) / 2, y: (y0 + y1) / 2, scale: s, w: W, h: H };
+  }
+  const scale = Math.max(H / 640, W / 1180);
+  return { x: hero.x, y: hero.y - 30, scale, w: W, h: H };
+}
+function draw(t) {
+  const cam = camera(), W = cam.w, H = cam.h;
+  const toWorld = () => ctx.setTransform(cam.scale, 0, 0, cam.scale, W / 2 - cam.x * cam.scale, H / 2 - cam.y * cam.scale);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  P.back(ctx, cam, t);
+  toWorld();
+  ctx.drawImage(P.floor, P.origin.x, P.origin.y, P.w, P.h);
+  if (P.glow) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = P.glowPulse(t); ctx.drawImage(P.glow, P.origin.x, P.origin.y, P.w, P.h); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
+  // y-sorted: props, doors, hero dot
+  const list = P.props.map((p) => ({ y: p.sortY, f: () => ctx.drawImage(p.img, p.x - p.ox, p.y - p.oy, p.w, p.h) }));
+  for (const d of ch.doors) list.push({ y: d.y, f: () => drawDoor(ctx, d, ch, t) });
+  list.push({ y: hero.y, f: () => {
+    ctx.fillStyle = 'rgba(4,4,20,0.45)'; ctx.beginPath(); ctx.ellipse(hero.x, hero.y, 22, 8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#9b2244'; ctx.beginPath(); ctx.moveTo(hero.x - 20, hero.y); ctx.quadraticCurveTo(hero.x - 22, hero.y - 60, hero.x, hero.y - 80); ctx.quadraticCurveTo(hero.x + 22, hero.y - 60, hero.x + 20, hero.y); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#f3cfae'; ctx.beginPath(); ctx.arc(hero.x, hero.y - 56, 8, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#f2c46b'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(hero.x - 8, hero.y - 44); ctx.quadraticCurveTo(hero.x - 40, hero.y - 40, hero.x - 60, hero.y - 20); ctx.stroke();
+  } });
+  if (ch.npcs) for (const n of ch.npcs) if (n.present !== false) list.push({ y: n.y, f: () => { ctx.fillStyle = '#c9a6ff'; ctx.beginPath(); ctx.ellipse(n.x, n.y - 40, 18, 40, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.font = '16px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(n.id, n.x, n.y - 90); } });
+  list.sort((a, b) => a.y - b.y);
+  for (const it of list) it.f();
+  // darkness with light holes
+  const lights = ch.lights.map((l) => [l.x, l.y, l.r, l.color, (l.i ?? 1) * (1 + (l.flicker || 0) * Math.sin(t * 17 + l.x))]);
+  lights.push([hero.x, hero.y - 40, 300, '#ffc073', 0.9]);
+  lctx.setTransform(1, 0, 0, 1, 0, 0); lctx.globalCompositeOperation = 'source-over'; lctx.clearRect(0, 0, LIGHT.width, LIGHT.height);
+  lctx.globalAlpha = P.dark.a; lctx.fillStyle = P.dark.color; lctx.fillRect(0, 0, LIGHT.width, LIGHT.height); lctx.globalAlpha = 1;
+  const ls = cam.scale / 2;
+  lctx.setTransform(ls, 0, 0, ls, LIGHT.width / 2 - cam.x * ls, LIGHT.height / 2 - cam.y * ls);
+  lctx.globalCompositeOperation = 'destination-out';
+  for (const [x, y, r, , i] of lights) { lctx.globalAlpha = Math.min(1, Math.max(0, i)); lctx.drawImage(hole, x - r, y - r * 0.8, r * 2, r * 1.6); }
+  lctx.globalAlpha = 1;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(LIGHT, 0, 0, W, H);
+  toWorld();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const [x, y, r, c, i] of lights) { ctx.globalAlpha = Math.min(1, i * 0.22); ctx.drawImage(glow(c), x - r * 0.8, y - r * 0.8, r * 1.6, r * 1.6); }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  P.ambient(ctx, { t, hero, chamber: ch }, t);
+  if (dbg) {
+    ctx.lineWidth = 2 / cam.scale * 2;
+    ctx.strokeStyle = '#0f0'; ctx.beginPath(); ch.shape.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.stroke();
+    for (const o of ch.obstacles) { ctx.strokeStyle = '#ff0'; ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, 7); ctx.stroke(); }
+    for (const h of ch.hazards) { ctx.strokeStyle = '#f0f'; ctx.beginPath(); ctx.arc(h.x, h.y, h.r, 0, 7); ctx.stroke(); }
+    for (const s of ch.spawnPoints) { ctx.fillStyle = '#f44'; ctx.fillRect(s.x - 3, s.y - 3, 6, 6); }
+    for (const d of ch.doors) { ctx.fillStyle = '#0ff'; ctx.fillRect(d.x - 6, d.y - 6, 12, 12); }
+    for (const s of ch.stations || []) { ctx.strokeStyle = '#0ff'; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 7); ctx.stroke(); }
+    ctx.fillStyle = '#fff'; ctx.fillRect(ch.entry.x - 6, ch.entry.y - 6, 12, 12);
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  P.front(ctx, cam, t);
+  ctx.drawImage(VIG, 0, 0);
+  const name = ch.name || cur;
+  info.innerHTML = `<b>${name}</b><br>${cur} · ${ch.region} · ${ch.kind} · paint ${P.ms} ms`;
+}
+addEventListener('keydown', (e) => {
+  keys[e.key.toLowerCase()] = true;
+  const i = ids.indexOf(cur);
+  if (e.key === 'ArrowRight') show(ids[(i + 1) % ids.length]);
+  if (e.key === 'ArrowLeft') show(ids[(i - 1 + ids.length) % ids.length]);
+  if (e.key === 'f') fit = !fit;
+  if (e.key === 'd' && e.shiftKey) dbg = !dbg;
+});
+addEventListener('keyup', (e) => (keys[e.key.toLowerCase()] = false));
+show(cur);
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const sp = 340 * dt;
+  if (keys.w) hero.y -= sp; if (keys.s) hero.y += sp; if (keys.a) hero.x -= sp; if (keys.d) hero.x += sp;
+  draw(now / 1000);
+  requestAnimationFrame(loop);
+}
+if (Q.has('still')) draw(+(Q.get('time') || 3)); else requestAnimationFrame(loop);
+</script>
+</body>
+</html>

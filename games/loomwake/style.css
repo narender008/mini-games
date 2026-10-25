@@ -1,0 +1,24 @@
+/* ==== Base layout (engine helper). The UI helper's sections live in src/ui/ui.css (injected by the UI) and below this block. ==== */
+:root {
+  --void: #070818; --ink: #f3ead8; --gold: #f2c46b; --gold-hi: #fff1c4;
+  --display: 'Marcellus', 'Cinzel', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  --sans: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--void); color: var(--ink); font-family: var(--sans); }
+body { user-select: none; -webkit-user-select: none; touch-action: none; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+#scene { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: block; cursor: crosshair; outline: none; }
+body[data-scene="title"] #scene, body[data-scene="profiles"] #scene, body[data-scene="settings"] #scene { cursor: default; }
+#ui { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+#home { position: fixed; z-index: 30; top: calc(10px + env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); padding: 4px 10px; border-radius: 12px; font: 600 12px var(--sans); letter-spacing: 0.08em; color: rgba(243, 234, 216, 0.7); text-decoration: none; background: rgba(10, 9, 28, 0.55); border: 1px solid rgba(242, 196, 107, 0.3); }
+body:not([data-scene="title"]):not([data-scene="loading"]):not([data-scene="profiles"]) #home { display: none; }
+#home:hover, #home:focus-visible { color: var(--gold-hi); border-color: var(--gold); }
+#loader { position: fixed; inset: 0; z-index: 40; display: grid; place-content: center; text-align: center; background: radial-gradient(circle at 50% 45%, #1a1446, var(--void) 70%); transition: opacity 0.4s; }
+#loader p { margin: 0; font-family: var(--display); font-size: clamp(30px, 6vw, 64px); letter-spacing: 0.32em; color: var(--gold-hi); text-shadow: 0 0 24px rgba(255, 190, 90, 0.55); }
+#loader span { margin-top: 10px; font-size: 13px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(225, 230, 255, 0.7); animation: lw-pulse 1.6s ease-in-out infinite; }
+@keyframes lw-pulse { 50% { opacity: 0.4; } }
+.noscript { position: fixed; inset: 0; display: grid; place-content: center; font-family: var(--display); }
+body.cover #ui, body.cover #home { display: none !important; }
+@media (prefers-reduced-motion: reduce) { #loader span { animation: none; } }
+/* ==== end base layout ==== */
