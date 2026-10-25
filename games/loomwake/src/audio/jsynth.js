@@ -69,8 +69,8 @@ export function voiceJob(ctx, spec) {
         for (; i < bEnd; i++) {
           const tt = i / sr;
           let s = 0;
-          for (const o of oscs) {
-            const p = o.ph, dt = o.inc;
+          for (let q = 0; q < oscs.length; q++) {   // (index loop: this runs per sample)
+            const o = oscs[q], p = o.ph, dt = o.inc;
             let v;
             if (o.wave === 'saw') v = 2 * p - 1 - blep(p, dt);
             else if (o.wave === 'sqr') { v = p < 0.5 ? 1 : -1; v += blep(p, dt); v -= blep((p + 0.5) % 1, dt); }
