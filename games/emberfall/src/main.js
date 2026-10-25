@@ -232,7 +232,7 @@ function stateOf() {
     } : null,
     abilities: ABILITIES.filter((id) => G.prog.abilities[id]),
     bossesDefeated: Object.keys(G.prog.bosses),
-    boss: b ? { id: b.id, hp: Math.round(b.hp), maxHp: Math.round(b.maxHp), phase: b.phase ?? 1 } : null,
+    boss: b ? { id: b.id, hp: Math.round(b.hp), maxHp: Math.round(b.maxHp), phase: b.phase ?? 1, x: Math.round(b.x ?? 0), y: Math.round(b.y ?? 0), w: Math.round(b.w ?? 0), h: Math.round(b.h ?? 0) } : null,
     enemies: G.enemies.filter((e) => e.alive !== false).map((e) => ({ kind: e.kind, x: Math.round(e.x), y: Math.round(e.y), hp: Math.round(e.hp) })),
     checkpoint: G.prog.checkpoint?.room ?? null, deaths: G.prog.deaths,
     shards: G.prog.shards, maxHp: G.prog.maxHp,
