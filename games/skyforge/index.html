@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>Skyforge Tycoon · Mini Games</title>
+    <meta name="description" content="Build a colony on floating sky islands: mine and refine, join islands with bridges and cable cars, trade by airship, weather storms and fight off sky pirates, and restore the legendary Skyforge." />
+    <meta name="theme-color" content="#1b2142" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Skyforge" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body data-scene="loading">
+    <canvas id="scene" width="1280" height="720" aria-label="Skyforge Tycoon: a colony of floating sky islands"></canvas>
+    <div id="ui"></div>
+    <a id="home" href="../../index.html" aria-label="Back to Mini Games">‹ Games</a>
+    <div id="loader" aria-live="polite"><p>SKYFORGE TYCOON</p><span>raising the islands…</span></div>
+    <noscript><p class="noscript">Skyforge Tycoon needs JavaScript.</p></noscript>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
