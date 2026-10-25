@@ -222,6 +222,7 @@ function stateOf() {
     threats: G.shots.filter((s) => s.side === 'enemy').map((s) => ({ x: Math.round(s.x), y: Math.round(s.y), vx: Math.round(s.vx), vy: Math.round(s.vy), landX: Math.round(s.landX ?? s.x) })),
     upgrades: G.run ? [...G.run.picks] : [], cards: G.cards ? [...G.cards.ids] : [],
     shots: G.run?.shots ?? 0,
+    abilities: Object.fromEntries(['chain', 'fire', 'lightning', 'kraken'].map((id) => [id, { rank: G.stats[id] || 0, ready: !!p?.cd && (G.stats[id] || 0) > 0 && p.cd[id] <= 0 }])),
   };
 }
 const waitFrames = (n = 2) => new Promise((res) => { let k = 0; const f = () => (++k >= n ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); });
