@@ -47,9 +47,17 @@ export function createRenderer(G, canvas, opts = {}) {
     world: (c) => c.setTransform(SCALE, 0, 0, SCALE, W / 2 - (cam.x + cam.sx) * SCALE, H / 2 - (cam.y + cam.sy) * SCALE),
   };
 
+  // The canvas is capped in pixels as well as in device-pixel ratio: a retina laptop (2880x1800) or a 4K
+  // monitor gave a 5-8 megapixel canvas plus a dozen screen-size layers (vignette, light layer, parallax
+  // caches) of the same size in CPU memory, which stalled every resize and could leave Chrome's canvas memory
+  // exhausted (a blank screen). Q.maxPx is the budget at scale 1.
+  let seenDpr = 0;
   R.resize = () => {
-    cssW = innerWidth; cssH = innerHeight;
-    DPR = Math.min(devicePixelRatio || 1, Q.dprCap) * Q.scale;
+    cssW = innerWidth; cssH = innerHeight; seenDpr = devicePixelRatio || 1;
+    let d = Math.min(seenDpr, Q.dprCap);
+    const px = cssW * cssH * d * d, cap = Q.maxPx || 2.4e6;
+    if (px > cap) d *= Math.sqrt(cap / px);
+    DPR = d * Q.scale;
     W = Math.max(2, Math.round(cssW * DPR)); H = Math.max(2, Math.round(cssH * DPR));
     if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
     BASE = Math.max(cssH / 640, cssW / 1180) * DPR; P.dpr = DPR;
@@ -57,8 +65,11 @@ export function createRenderer(G, canvas, opts = {}) {
     const v = VIG.getContext('2d'), g = v.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
     g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(2,2,12,0.7)'); v.fillStyle = g; v.fillRect(0, 0, W, H);
   };
-  addEventListener('resize', R.resize);
+  // window resizes and moves to a screen with another pixel ratio are picked up at the start of the next
+  // frame (R.draw), so the canvas is never cleared between a paint and its presentation
   R.resize();
+  // a lost 2D context (GPU reset, memory pressure) comes back empty: repaint the chamber layers from scratch
+  canvas.addEventListener('contextrestored', () => { envFor = null; R.resize(); });
 
   R.setModules = (m) => { Object.assign(M, m); P.weapons = M.weapons; if (m.env) envFor = null; };
 
@@ -239,6 +250,7 @@ export function createRenderer(G, canvas, opts = {}) {
   let pT = 0;
   const mark = (k) => { if (!R.profOn) return; if (R.profFlush) ctx.getImageData(0, 0, 1, 1); const n = performance.now(); PROF[k] = (PROF[k] || 0) * 0.95 + (n - pT) * 0.05; pT = n; };
   R.draw = (G, dt) => {
+    if (innerWidth !== cssW || innerHeight !== cssH || (devicePixelRatio || 1) !== seenDpr) R.resize();
     if (R.profOn) pT = performance.now();
     t += dt; P.t = t; P.tier = Q.tier; view.t = t;
     cam.shakeMul = G.settings?.shake ?? 1;

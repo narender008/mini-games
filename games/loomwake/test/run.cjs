@@ -11,6 +11,7 @@ const steps = [
   ['input tests', [...T, 'input.test.cjs']],
   ['save tests', [...T, 'save.test.cjs']],
   ['story tests', [...T, 'story.test.cjs']],
+  ['frame tests', [...T, 'frames.test.cjs']],
   ['bot playtest', ['bot.cjs']],
   ['perf bench', ['perf.cjs']],
   ['screenshots', ['screenshots.cjs']],

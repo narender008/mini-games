@@ -8,6 +8,7 @@
     "input": "node --test --test-reporter=spec input.test.cjs",
     "save": "node --test --test-reporter=spec save.test.cjs",
     "story": "node --test --test-reporter=spec story.test.cjs",
+    "frames": "node --test --test-reporter=spec --test-concurrency=1 frames.test.cjs",
     "bot": "node bot.cjs",
     "perf": "node perf.cjs",
     "shots": "node screenshots.cjs"
