@@ -146,4 +146,13 @@ window.MINI_GAMES = [
     imageAlt: 'A white-sailed galleon trades cannon fire with red-sailed pirate ships on a purple and gold sunset sea, with lighthouses on palm islands and a smoking volcano behind',
     tags: ['2D', 'Ages 10+', 'Mouse first'],
   },
+  {
+    slug: 'loomwake',
+    name: 'Loomwake',
+    description: 'A hand-painted action roguelite: as Iri, the last golden thread, dive into a sleeping goddess\'s dream through four regions and four bosses, stack powers from six patrons into Braids, and learn run by run who the masked Unweaver really is. Saves at every door.',
+    path: 'games/loomwake/',
+    image: 'games/loomwake/cover.jpg',
+    imageAlt: 'A small hero in a crimson hooded cloak with a golden thread scarf fights hooded shadow husks and an armoured knight on a glowing glass floor under violet rain',
+    tags: ['2D', 'Ages 12+', 'Mouse first'],
+  },
 ];
