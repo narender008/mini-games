@@ -11,14 +11,17 @@
 //   rng: seeded () => [0,1) for everything that changes the outcome,
 //   leg: 0..4, node: 0..2, stage: leg * 3 + node (0..14), diff: difficulty multiplier (1 at stage 0),
 //   legDef: LEGS[leg],
-//   world: owned by world/*.js (biome, blend, lightning, scroll ...),
+//   world: owned by world/*.js { biome, scroll, ..., light: { rim, sailLit, glint, dark 0..1, fog 0..1 } }
+//         light is the current (blended) lighting other painters use for rims and lit sails,
 //   lane: { y, amp, ph, sp } the swell ships ride on, set by world.setBiome; world/ocean.js laneY(G, x),
 //   input: { aim: {x, y}, fire, fireTap, move: -1..1, steerTo: x|null, ability: id|null }  (set each step),
 //   player: ship entity (ships.js makePlayer) plus { cd: { broadside, chain, fire, lightning, kraken } },
 //   stats: computed player stats (upgrades.js computeStats, see BASE_STATS in config.js),
 //   enemies: [entity], allies: [entity], shots: [shot] (combat.js), fx: [particle] (world/fx.js),
 //   enc: the current encounter { type: 'fleet'|'fortress'|'serpent'|'leviathan', done, wave, waves, ... },
-//   boss: null | { kind, name, hp, maxHp, phase, phases } (the bar at the top; boss.js keeps it current),
+//   boss: null | { kind, name, hp, maxHp, phase, phases, x, y } (the bar at the top and the aim point
+//         for bots, the weak spot when open; boss.js keeps it current),
+//   shots: { side: 'player'|'enemy', kind, x, y, vx, vy, landX (where it will meet the lane), ... },
 //   run: { gold, score, kills, shots, dmg, upgrades: { id: rank }, picks: [id], rerolls, started },
 //   meta: saved progress (save.js), cards: null | { ids: [id], hover }, banner: null | { title, sub, t, life },
 //   ui: { hover: button id | null }, god: false, auto: false

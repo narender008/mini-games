@@ -41,6 +41,24 @@ export const BASE_STATS = {
   // ability ranks (0 = not owned) and cooldowns in seconds
   chain: 0, fire: 0, lightning: 0, kraken: 0,
   cdChain: 8, cdFire: 10, cdLightning: 12, cdKraken: 24,
+  // ability strength (upgrades.js raises these with ranks and combos; combat.js and kraken.js read them)
+  chainDmg: 2.5,        // chain shot damage, x dmg
+  chainSlow: 0.4,       // fraction of speed lost while slowed
+  slowTime: 4,          // seconds
+  barrels: 3,           // fire barrels per throw
+  burnTime: 6,          // seconds a fire burns
+  burnDps: 6,           // burn damage per second from fire barrels
+  lightningTargets: 3,  // ships one lightning bolt chains through
+  lightningDmg: 40,
+  stormBonus: 2,        // lightning damage multiplier in the storm biome
+  krakenDmg: 30,        // per second while a tentacle crushes
+  krakenTentacles: 1,
+  // combo flags (0 = off)
+  lightningIgnites: 0,  // lightning sets targets on fire
+  broadsideBurn: 0,     // every broadside ball sets fire
+  critArc: 0,           // crits arc lightning to this many nearby ships
+  skip: 0,              // balls that miss skip off the water this many times
+  krakenSlow: 0,        // kraken-held ships are chain-slowed and take x(1+krakenSlow) damage
 };
 
 // The voyage: five legs, three nodes each. Node types: 'fleet' (ai.js),
@@ -48,8 +66,8 @@ export const BASE_STATS = {
 export const LEGS = [
   { id: 'dawn',   name: 'Coral Shallows',  biome: 'dawn',   nodes: ['fleet', 'fleet', 'fortress'] },
   { id: 'sunset', name: 'Ember Reef',      biome: 'sunset', nodes: ['fleet', 'fleet', 'fortress'] },
-  { id: 'storm',  name: 'Tempest Strait', biome: 'storm',  nodes: ['fleet', 'fleet', 'fleet'] },
-  { id: 'fog',    name: 'Mistcoil Shallows',        biome: 'fog',    nodes: ['fleet', 'fleet', 'serpent'] },
+  { id: 'storm',  name: 'Tempest Strait',  biome: 'storm',  nodes: ['fleet', 'fleet', 'fleet'] },
+  { id: 'fog',    name: 'Mistcoil Shallows', biome: 'fog',    nodes: ['fleet', 'fleet', 'serpent'] },
   { id: 'night',  name: 'The Maelstrom',   biome: 'night',  nodes: ['fleet', 'fleet', 'leviathan'] },
 ];
 export const SHIP_NAME = 'The Gilded Gull';

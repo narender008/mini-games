@@ -8,3 +8,8 @@ export function makePlayer(G) {
 }
 export function updatePlayer(G, dt) {}
 export function drawShip(g, G, ship) {}
+// Ship styles (colours, masts) and the painter: origin at the waterline, facing +x when dir = 1, s = half the hull length.
+export const STYLES = { player: {}, pirate: {}, sloop: {} };
+export function paintShip(g, x, y, ang, s, dir, style, opt = {}, t = 0) {}
+// Enemy ship entity (see the entity contract in game.js). kind: sloop brig galleon fireship gunboat ...
+export function makeShip(G, kind, x, opts = {}) { return null; }
