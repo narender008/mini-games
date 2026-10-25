@@ -343,6 +343,8 @@ export function worldDump(G) {
         gates: d.ents.filter((e) => e.t === 'gate').map((g) => ({ id: g.id, kind: g.kind, requires: g.requires, x: g.x * TILE, y: g.y * TILE, w: g.w * TILE, h: g.h * TILE, from: stand(...g.from), to: stand(...g.to) })),
         pickups: d.ents.map((e, i) => ['ability', 'vessel', 'shards', 'lore'].includes(e.t) ? { kind: e.t, id: e.t === 'ability' ? e.id : `${d.id}#${i}`, ...stand(e.x, e.y), ...(e.after ? { after: e.after } : {}), ...(e.n ? { n: e.n } : {}) } : null).filter(Boolean),
         anchors: d.ents.filter((e) => e.t === 'anchor').map((e) => ({ x: (e.x + 0.5) * TILE, y: (e.y + 0.5) * TILE })),
+        // moving platforms: solid from above, x, y, w (px) at their start, path in px
+        platforms: d.ents.filter((e) => e.t === 'platform').map((e) => ({ x: e.x * TILE, y: e.y * TILE, w: e.w * TILE, h: 20, path: (e.path || []).map(([px, py]) => ({ x: px * TILE, y: py * TILE })) })),
       };
       const boss = d.ents.find((e) => e.t === 'boss');
       if (boss) out.boss = boss.id;
