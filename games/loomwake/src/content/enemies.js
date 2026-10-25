@@ -12,10 +12,10 @@ export const REGIONS = ['glasswood', 'choir', 'forge', 'unwoven'];
 
 // hp, dmg multipliers per region (applied by spawn unless opts.scale is given)
 export const REGION_SCALE = {
-  glasswood: { hp: 1, dmg: 1, speed: 1 },
-  choir: { hp: 1.3, dmg: 1.15, speed: 1.04 },
-  forge: { hp: 1.75, dmg: 1.3, speed: 1.08 },
-  unwoven: { hp: 2.25, dmg: 1.55, speed: 1.12 },
+  glasswood: { hp: 1.1, dmg: 0.85, speed: 1 },
+  choir: { hp: 1.4, dmg: 1.0, speed: 1.04 },
+  forge: { hp: 1.8, dmg: 1.2, speed: 1.08 },
+  unwoven: { hp: 2.3, dmg: 1.45, speed: 1.12 },
 };
 
 // Elite rules shared by every kind (a kind may override in its own `elite`)

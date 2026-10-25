@@ -108,7 +108,7 @@ export const BOSSES = {
       ring:     { wind: 0.8, act: 1.6, rec: 0.65, dmg: 12, n: 2, gap: 0.55, speed: 330, w: 34, maxR: 1250, cd: 2.2 },
       sweep:    { wind: 0.85, act: 1.3, rec: 0.75, dmg: 14, len: 720, w: 54, arc: 2.2, cd: 3.2 },
       notes:    { wind: 0.65, act: 0.9, rec: 0.5, dmg: 10, n: 5, speed: 220, homing: 1.4, life: 4.2, cd: 3 },
-      summon:   { wind: 0.9, act: 0.5, rec: 0.6, n: 2, kind: 'chorister', cd: 16, max: 3 },
+      summon:   { wind: 0.9, act: 0.5, rec: 0.6, n: 2, kind: 'chorister', cd: 20, max: 2 },
       sink:     { wind: 0.6, act: 1.0, rec: 0.5, dmg: 0, cd: 7 },
       choir:    { wind: 0.7, act: 2.6, rec: 0.7, dmg: 14, speed: 300, w: 30, cd: 4.5 },
       flood:    { wind: 1.1, act: 3.6, rec: 0, dmg: 6, tick: 0.35, slow: 0.45, cd: 7.5 },

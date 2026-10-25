@@ -300,7 +300,7 @@ boon({
 boon({
   id: 'veyra.call', patron: 'veyra', slot: 'call', name: 'Tempest',
   text: 'Call: for {t}s, lightning strikes the foes around you four times a second, {dmg} damage each.',
-  values: { t: { r: r4(4, 4.5, 5, 5.5), lvl: 0.25 }, dmg: r4(30, 38, 46, 54) }, tags: ['chain'],
+  values: { t: { r: r4(4, 4.5, 5, 5.5), lvl: 0.25 }, dmg: r4(22, 28, 34, 40) }, tags: ['chain'],
   hooks: { call(G, v, K) { K.power(G, 'tempest', { follow: true, x: G.hero.x, y: G.hero.y, life: v.t, dmg: v.dmg, every: 0.25, r: 520 }); K.fx(G, 'nova', { x: G.hero.x, y: G.hero.y, r: 380, element: 'storm' }); } },
 });
 boon({
@@ -323,7 +323,7 @@ boon({
 });
 boon({
   id: 'veyra.conduct', patron: 'veyra', slot: 'passive', name: 'Conductive Weft',
-  text: 'Chain lightning grows {v%} stronger with every leap.', values: r4(0.15, 0.22, 0.3, 0.38), needs: [CHAINERS],
+  text: 'Chain lightning grows {v%} stronger with every leap.', values: r4(0.1, 0.14, 0.18, 0.22), needs: [CHAINERS],
   hooks: { stats(s, v) { s.chainGrow += v; } },
 });
 boon({
@@ -333,7 +333,7 @@ boon({
 });
 boon({
   id: 'veyra.eye', patron: 'veyra', slot: 'passive', name: 'Eye of the Storm',
-  text: 'All your lightning deals {v%} more damage.', values: r4(0.2, 0.3, 0.4, 0.5),
+  text: 'All your lightning deals {v%} more damage.', values: r4(0.15, 0.22, 0.3, 0.38),
   hooks: { stats(s, v) { s.elem.storm += v; } },
 });
 boon({
