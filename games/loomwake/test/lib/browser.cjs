@@ -28,6 +28,11 @@ async function open(browser, base, query = '', { width = 1280, height = 720, tou
   });
   const page = await ctx.newPage();
   page.problems = [];
+  // LW_ALLOW=<regex> drops matching problems everywhere (a work-in-progress
+  // game that still 404s on modules not written yet); CI never sets it.
+  const allow = process.env.LW_ALLOW ? new RegExp(process.env.LW_ALLOW) : null;
+  const push = page.problems.push.bind(page.problems);
+  page.problems.push = (...x) => push(...x.filter((m) => !(allow && allow.test(m))));
   page.on('console', (m) => { if (m.type() === 'error') page.problems.push(`console: ${m.text()}`); });
   page.on('pageerror', (e) => page.problems.push(`pageerror: ${e.message}`));
   page.on('requestfailed', (r) => { if (r.url().startsWith(base)) page.problems.push(`requestfailed: ${r.url()} ${r.failure()?.errorText}`); });

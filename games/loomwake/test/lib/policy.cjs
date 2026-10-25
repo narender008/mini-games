@@ -53,7 +53,8 @@ function botRun(sliceSec) {
   const doorRank = (d, s) => {
     const low = s.hero.hp / s.hero.maxHp < 0.5;
     const pref = low ? ['heal', 'fountain', 'boon', 'knot', 'shop', 'run', 'lumen', 'key', 'shard'] : ['boon', 'knot', 'braid', 'heal', 'run', 'lumen', 'shop', 'key', 'shard', 'memory'];
-    const i = pref.findIndex((p) => String(d.reward || '').toLowerCase().includes(p));
+    const r = d.reward && typeof d.reward === 'object' ? `${d.reward.kind || ''} ${d.reward.patron || ''}` : String(d.reward || '');
+    const i = pref.findIndex((p) => r.toLowerCase().includes(p));
     return i < 0 ? 50 : i;
   };
   const inside = (tg, p, pad) => {
@@ -92,6 +93,27 @@ function botRun(sliceSec) {
     return { x: (p.x - tg.x) / d, y: (p.y - tg.y) / d };
   };
 
+  // keeps off pits, thorns and other floor hazards: if the step ahead (or a
+  // dash ahead) ends inside one, slide along its edge instead, and drop the dash
+  const steer = (s, p, move, dash) => {
+    const hz = s.hazards || (lw.game && lw.game.chamber && lw.game.chamber.hazards) || [];
+    if (!move || !hz.length) return { move, dash };
+    const ml = Math.hypot(move.x, move.y);
+    if (ml <= 0.05) return { move, dash };
+    let mx = move.x / ml, my = move.y / ml;
+    for (const h of hz) {
+      const look = dash ? 260 : 70;
+      const ax = p.x + mx * look, ay = p.y + my * look;
+      const lim = (h.r || 60) + p.r + 16;
+      if (Math.hypot(ax - h.x, ay - h.y) < lim) {
+        const ox = p.x - h.x, oy = p.y - h.y, od = Math.hypot(ox, oy) || 1;
+        if (od < lim) { mx = ox / od; my = oy / od; }
+        else { const tx = -oy / od, ty = ox / od, sg = tx * mx + ty * my >= 0 ? 1 : -1; mx = tx * sg; my = ty * sg; }
+        dash = false;
+      }
+    }
+    return { move: { x: mx * ml, y: my * ml }, dash };
+  };
   let s = lw.state();
   const end = s.time + sliceSec;
   // the end screens may already have dropped the run (runTime 0, region
@@ -100,6 +122,7 @@ function botRun(sliceSec) {
   let guard = 0;
   while (s.time < end && guard++ < 1e6) {
     if (s.region != null && s.runTime > 0) B.rt = s.runTime;
+    if (s.runTime > cfg.maxSec) { L.end = 'timeout'; break; }
     if (s.scene === 'victory' || s.scene === 'ending') { L.end = 'won'; break; }
     if (s.scene === 'dead' || (s.scene === 'hub' && L.started)) {
       L.end = 'lost';
@@ -164,7 +187,19 @@ function botRun(sliceSec) {
     if (s.cleared && !s.boss && foes.length === 0) {
       if (B.clearedAt == null) B.clearedAt = s.runTime;
       const open = (s.doors || []).filter((d) => d.open);
-      // give drops a moment to be offered (boon pickup), then go
+      // walk onto any reward left on the floor (doors may wait for it), tapping interact
+      const pk = (s.pickups || []).filter((q) => q.x != null);
+      if (pk.length) {
+        pk.sort((a2, b2) => Math.hypot(a2.x - p.x, a2.y - p.y) - Math.hypot(b2.x - p.x, b2.y - p.y));
+        const q = pk[0], d = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+        const tick = Math.floor(s.runTime * 1000 / dt);
+        const st = steer(s, p, d > 8 ? { x: (q.x - p.x) / d, y: (q.y - p.y) / d } : { x: 0, y: 0 }, false);
+        lw.input({ move: st.move, interact: d < 90 && tick % 6 < 3 });
+        B.pickT = (B.pickT || 0) + dt;
+        if (B.pickT < 15000) { s = lw.step(dt, { render: false }); continue; }
+      }
+      B.pickT = 0;
+      // give drops a moment to be offered, then go
       if (open.length && s.runTime - B.clearedAt > cfg.lingerSec) {
         open.sort((a2, b2) => doorRank(a2, s) - doorRank(b2, s));
         lw.input(null);
@@ -238,6 +273,7 @@ function botRun(sliceSec) {
     if (B.lastPos && Math.hypot(p.x - B.lastPos.x, p.y - B.lastPos.y) < 0.5 && move && Math.hypot(move.x, move.y) > 0.3) B.stuck += dt; else B.stuck = 0;
     if (B.stuck > 800) { const a2 = B.rnd() * 6.283; move = { x: Math.cos(a2), y: Math.sin(a2) }; B.stuck = 0; }
     B.lastPos = { x: p.x, y: p.y };
+    ({ move, dash } = steer(s, p, move, dash));
     inp.move = move || { x: 0, y: 0 };
     inp.dash = dash;
     if (dash) L.dashes++;
