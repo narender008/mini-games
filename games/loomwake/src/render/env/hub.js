@@ -819,8 +819,8 @@ function drawFire(ctx, t) {
     ctx.quadraticCurveTo(sx - sw * 0.6 + Math.sin(ph * 1.3) * 6, y - hh * 0.6, sx + Math.sin(ph) * 8, y - hh);
     ctx.quadraticCurveTo(sx + sw * 0.6 + Math.sin(ph * 1.7) * 6, y - hh * 0.5, sx + sw, y - 6); ctx.closePath(); ctx.fill();
   }
-  ctx.globalAlpha = 0.8; ctx.fillStyle = '#fff0b0';
-  ctx.beginPath(); ctx.ellipse(x, y - 22, 26, 18 + 4 * Math.sin(t * 11), 0, 0, TAU); ctx.fill();
+  ctx.globalAlpha = 0.5 + 0.1 * Math.sin(t * 11);
+  ctx.drawImage(glow('#ffe08a'), x - 34, y - 46, 68, 52);
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
 }
 

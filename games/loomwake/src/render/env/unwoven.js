@@ -85,31 +85,6 @@ function loompostSprite(seed, scale, k) {
 }
 
 // ---------------------------------------------------------------- motifs
-function motif(g, x, y, w, h, kind, cols, r) {
-  const cx = x + w / 2, cy = y + h / 2;
-  g.lineWidth = 6; g.lineJoin = 'round';
-  if (kind === 0) { // lozenge
-    g.fillStyle = cols[0]; g.beginPath(); g.moveTo(cx, y + 8); g.lineTo(x + w - 8, cy); g.lineTo(cx, y + h - 8); g.lineTo(x + 8, cy); g.closePath(); g.fill();
-    g.fillStyle = cols[1]; g.beginPath(); g.moveTo(cx, y + 26); g.lineTo(x + w - 30, cy); g.lineTo(cx, y + h - 26); g.lineTo(x + 30, cy); g.closePath(); g.fill();
-    g.fillStyle = cols[2]; g.beginPath(); g.arc(cx, cy, 8, 0, TAU); g.fill();
-  } else if (kind === 1) { // eight-point star
-    g.fillStyle = cols[0]; g.beginPath();
-    for (let i = 0; i < 16; i++) { const a = (i / 16) * TAU, rr = i % 2 ? h * 0.18 : h * 0.44; g.lineTo(cx + Math.cos(a) * rr * (w / h), cy + Math.sin(a) * rr); }
-    g.fill();
-    g.fillStyle = cols[2]; g.beginPath(); g.arc(cx, cy, h * 0.12, 0, TAU); g.fill();
-  } else if (kind === 2) { // chevrons
-    g.strokeStyle = cols[0];
-    for (let k = 0; k < 3; k++) { g.beginPath(); g.moveTo(x + 10, y + 20 + k * 26); g.lineTo(cx, y + 40 + k * 26); g.lineTo(x + w - 10, y + 20 + k * 26); g.stroke(); }
-  } else if (kind === 3) { // a little woven tree: a memory of the Glasswood
-    g.strokeStyle = cols[1]; g.lineWidth = 8; g.beginPath(); g.moveTo(cx, y + h - 10); g.lineTo(cx, cy); g.stroke();
-    g.fillStyle = cols[0]; g.beginPath(); g.ellipse(cx, cy - 6, w * 0.3, h * 0.28, 0, 0, TAU); g.fill();
-    g.fillStyle = cols[2]; for (let i = 0; i < 5; i++) { g.beginPath(); g.arc(cx + r.range(-w * 0.2, w * 0.2), cy - 6 + r.range(-h * 0.15, h * 0.15), 4, 0, TAU); g.fill(); }
-  } else { // knotwork rings
-    g.strokeStyle = cols[0];
-    g.beginPath(); g.ellipse(cx - w * 0.15, cy, w * 0.22, h * 0.3, 0, 0, TAU); g.stroke();
-    g.strokeStyle = cols[1]; g.beginPath(); g.ellipse(cx + w * 0.15, cy, w * 0.22, h * 0.3, 0, 0, TAU); g.stroke();
-  }
-}
 
 // ---------------------------------------------------------------- floor
 function paintFloor(ch, q) {
@@ -139,32 +114,70 @@ function paintFloor(ch, q) {
   }
   mark('cliff');
 
-  // the tapestry: base cloth, a border, panels of woven motifs
+  // the tapestry: no tiles, no icons. Broad woven bands of colour flow across the cloth like a
+  // landscape half remembered, edged with stitched borders; the weave itself is visible everywhere.
   polyPath(g, shape); g.fillStyle = '#3a3242'; g.fill();
   g.save(); polyPath(g, shape); g.clip();
   ge.save(); polyPath(ge, shape); ge.clip();
-  // panels of uneven size, row by row, like a tapestry pieced from many older ones
-  const cells = [];
-  for (let y = b.y0 - 20, iy = 0; y < b.y1; iy++) {
-    const CH = r.pick([92, 116, 116, 150]);
-    for (let x = b.x0 - r.range(0, 120), ix = 0; x < b.x1; ix++) { const CW = r.pick([120, 170, 170, 230, 300]); cells.push([x, y, CW, CH, ix, iy]); x += CW; }
-    y += CH;
+  const span = Math.max(b.w, b.h), cx0 = (b.x0 + b.x1) / 2, cy0 = (b.y0 + b.y1) / 2;
+  const bandAng = r.range(-0.5, 0.5), ca = Math.cos(bandAng), sa = Math.sin(bandAng);
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  const bandPath = (off, amp, ph, freq) => { const p2 = new Path2D(); for (let k = 0; k <= 40; k++) { const u = (k / 40 - 0.5) * span * 1.4, v = off + Math.sin(u / span * freq * TAU + ph) * amp; const x = cx0 + u * ca - v * sa, y = cy0 + u * sa + v * ca; k ? p2.lineTo(x, y) : p2.moveTo(x, y); } return p2; };
+  const bands = [];
+  for (let off = -span * 0.75; off < span * 0.75;) { const wd = r.range(70, 210); bands.push({ path: bandPath(off + wd / 2, r.range(20, 90), r() * 6, r.range(0.6, 1.6)), wd, col: mix(r.pick(TH), r.pick(['#3a3242', '#2a2436', '#4a3a3a']), r.range(0.25, 0.55)) }); off += wd * r.range(0.75, 1); }
+  for (const bd of bands) { g.strokeStyle = bd.col; g.lineWidth = bd.wd; g.stroke(bd.path); }
+  // stitched borders between bands: a darker cord with a gold running stitch
+  for (const bd of bands) {
+    if (r() < 0.4) continue;
+    g.save(); g.translate(-sa * bd.wd / 2, ca * bd.wd / 2);
+    g.strokeStyle = 'rgba(20,14,26,0.6)'; g.lineWidth = 7; g.stroke(bd.path);
+    g.setLineDash([9, 7]); g.strokeStyle = hexA(r() < 0.6 ? '#d2a03a' : '#e8e0d0', 0.6); g.lineWidth = 2.2; g.stroke(bd.path); g.setLineDash([]);
+    g.restore();
   }
-  for (const [x, y, CW, CH, ix, iy] of cells) {
-    const fieldCol = r.pick(['#4a2a3a', '#2a3448', '#3e2a4e', '#24403e', '#4a3424']);
-    g.fillStyle = mix(fieldCol, '#3a3242', n(x / 300, y / 300) * 0.5); g.fillRect(x, y, CW, CH);
-    const cols = [TH[(ix * 3 + iy) % TH.length], TH[(ix + iy * 2 + 1) % TH.length], '#e8e0d0'];
-    motif(g, x + 6, y + 6, CW - 12, CH - 12, (Math.abs(ix * 7 + iy * 3)) % 5, cols, r);
-    // border bands between panels
-    g.fillStyle = '#1e1824'; g.fillRect(x, y, CW, 5); g.fillRect(x, y, 5, CH);
-    g.fillStyle = hexA('#d2a03a', 0.5); g.fillRect(x, y + 5, CW, 2); g.fillRect(x + 5, y, 2, CH);
+  // painterly colour: soft blooms of thread colour and shadow so the bands are never flat
+  for (let i = 0; i < (b.w * b.h) / 50000; i++) {
+    const x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1), rr = r.range(60, 180), dark = r() < 0.45;
+    g.globalAlpha = dark ? 0.22 : 0.14; g.drawImage(glow(dark ? '#120e18' : r.pick(TH), 1), x - rr, y - rr * 0.6, rr * 2, rr * 1.2);
   }
-  // the weave: warp and weft lines
-  const weave = mk(64, 64), wg = weave.getContext('2d');
-  wg.fillStyle = 'rgba(0,0,0,0.16)'; for (let i = 0; i < 64; i += 4) { wg.fillRect(i, 0, 1, 64); }
-  wg.fillStyle = 'rgba(255,255,255,0.07)'; for (let i = 0; i < 64; i += 4) { wg.fillRect(0, i, 64, 1); }
-  polyPath(g, shape); g.fillStyle = g.createPattern(weave, 'repeat'); g.fill();
-  polyPath(g, shape); fillGrain(g, 'cloth', 0.5);
+  g.globalAlpha = 1;
+  // thread-like strokes along the weave direction: hand-painted texture in the bands
+  strokes(g, r, b, 2400 * Math.min(1, q + 0.3), [...TH.slice(0, 5), '#0e0a14', '#e8e0d0'], { len: [10, 34], width: [1.2, 3], alpha: [0.05, 0.13], angle: bandAng });
+  // embroidered flourishes: long curling gold-thread lines, faint, never symbols
+  g.strokeStyle = 'rgba(226,190,110,0.28)'; g.lineWidth = 1.8;
+  for (let i = 0; i < (b.w * b.h) / 220000; i++) {
+    let x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1), a = r() * TAU;
+    g.beginPath(); g.moveTo(x, y);
+    for (let k = 0; k < 14; k++) { a += r.range(-0.7, 0.9) * (k < 9 ? 1 : 2); const L = 22 - k; x += Math.cos(a) * L; y += Math.sin(a) * L * 0.62; g.lineTo(x, y); }
+    g.stroke();
+  }
+  // the weave: over-under threads, lit from the upper left (a 24 px tile, drawn at world scale)
+  {
+    const T = 24, wv = mk(T, T), wg = wv.getContext('2d'), s2 = T / 4;
+    for (let yy = 0; yy < 4; yy++) for (let xx = 0; xx < 4; xx++) {
+      const over = (xx + yy) % 2 === 0, x = xx * s2, y = yy * s2;
+      if (over) { // weft crossing: lit top, shadow bottom
+        wg.fillStyle = 'rgba(255,255,255,0.08)'; wg.fillRect(x, y + 0.5, s2, 1.5);
+        wg.fillStyle = 'rgba(0,0,0,0.15)'; wg.fillRect(x, y + s2 - 1.5, s2, 1.5);
+      } else { // warp crossing: lit left, shadow right
+        wg.fillStyle = 'rgba(255,255,255,0.06)'; wg.fillRect(x + 0.5, y, 1.5, s2);
+        wg.fillStyle = 'rgba(0,0,0,0.15)'; wg.fillRect(x + s2 - 1.5, y, 1.5, s2);
+      }
+    }
+    polyPath(g, shape); g.fillStyle = g.createPattern(wv, 'repeat'); g.fill();
+  }
+  polyPath(g, shape); fillGrain(g, 'soft', 0.25);
+  // threadbare patches: the coloured weft worn away to pale bare warp (never dark: dark means void)
+  for (let i = 0; i < Math.round((b.w * b.h) / 300000); i++) {
+    const x = r.range(b.x0 + 120, b.x1 - 120), y = r.range(b.y0 + 90, b.y1 - 90), rx = r.range(50, 110), ry = rx * 0.55;
+    if (ch.obstacles.some((o) => Math.hypot(o.x - x, o.y - y) < o.r + rx + 30) || ch.hazards.some((h) => Math.hypot(h.x - x, h.y - y) < h.r + rx + 60)) continue;
+    if (Math.hypot(ch.entry.x - x, ch.entry.y - y) < 260 || ch.doors.some((d) => Math.hypot(d.x - x, d.y - y) < 220)) continue;
+    const pts2 = []; for (let k = 0; k < 12; k++) { const a = (k / 12) * TAU, kk = r.range(0.7, 1.15); pts2.push([x + Math.cos(a) * rx * kk, y + Math.sin(a) * ry * kk]); }
+    smoothPath(g, pts2); g.fillStyle = 'rgba(150,144,160,0.35)'; g.fill();
+    g.save(); smoothPath(g, pts2); g.clip();
+        g.strokeStyle = 'rgba(220,214,230,0.35)'; g.lineWidth = 1.2; g.beginPath(); for (let xx = x - rx; xx < x + rx; xx += 5) { g.moveTo(xx, y - ry); g.lineTo(xx + r.range(-2, 2), y + ry); } g.stroke();
+    g.restore();
+    g.strokeStyle = 'rgba(200,190,210,0.4)'; g.lineWidth = 1; smoothPath(g, pts2); g.stroke();
+  }
   // colour bleeds out: desaturate in noisy patches and toward the edges
   g.globalCompositeOperation = 'saturation';
   for (let i = 0; i < 14; i++) {
@@ -209,6 +222,11 @@ function paintFloor(ch, q) {
   for (const h of ch.hazards) if ((h.type === 'void' || h.type === 'pit') && h.chan == null) voidTear(g, ge, h, r);
   innerShade(g, shape, '#08060c', 60, 0.5);
   lip(g, shape, '#e8e0ff', '#000000', 2.5);
+  // the cloth's edge frays: a fringe of loose thread ends standing out over the void
+  g.lineCap = 'round';
+  const fr = TH.map(() => new Path2D());
+  for (const sm of edgeSamples(shape, 5)) { const k = (r() * TH.length) | 0, L = r.range(6, 22) * (r() < 0.1 ? 2.2 : 1); fr[k].moveTo(sm.x - sm.nx * 6, sm.y - sm.ny * 6); fr[k].quadraticCurveTo(sm.x + sm.nx * L * 0.5 + r.range(-4, 4), sm.y + sm.ny * L * 0.5 + r.range(-3, 3), sm.x + sm.nx * L + r.range(-5, 5), sm.y + sm.ny * L + 4); }
+  fr.forEach((path, k) => { g.strokeStyle = hexA(mix(TH[k], '#8a8494', 0.55), 0.75); g.lineWidth = 1.4; g.stroke(path); });
   for (const f of ch.features) paintFeature(g, ge, f, ch, r, 'unwoven');
   paintEntry(g, ge, ch);
   paintBakedLights(g, ch, 0.16);

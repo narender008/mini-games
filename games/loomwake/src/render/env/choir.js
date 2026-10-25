@@ -6,6 +6,7 @@ import {
   TAU, mk, hexA, mix, rng, hashSeed, glow, drawGlow, drawShadow, polyPath, offsetPoly, bbox, edgeSamples, inPoly,
   noise2, worldCanvas, strokes, innerShade, cliff, sprite, propOf, screenCache, parallax, compose, drawLayer, sparse, drawSparse, starfield, nebula, aurora, drift, viewRect, lerp, clamp,
   fillGrain, lip, markStart, mark, marks,
+  slabs, paintSlab, smoothPath,
 } from './common.js';
 import { REGIONS } from '../../content/regions.js';
 import { paintFeature, paintEntry, paintBakedLights, featureProps } from './features.js';
@@ -217,61 +218,135 @@ function paintFloor(ch, q) {
   ge.globalCompositeOperation = 'source-over';
   mark('cliff');
 
-  // drowned marble: big slabs in two marbles with gold seams
-  polyPath(g, shape); g.fillStyle = P.marbleB; g.fill();
+  // drowned marble: hand-laid slabs of two marbles over dark water; some sunk deeper, some lost
+  polyPath(g, shape); g.fillStyle = '#040918'; g.fill();
   g.save(); polyPath(g, shape); g.clip();
   ge.save(); polyPath(ge, shape); ge.clip();
-  const TW = 128, TH = 86;
-  const ox = Math.floor(b.x0 / TW) * TW, oy = Math.floor(b.y0 / TH) * TH;
-  for (let y = oy; y < b.y1 + TH; y += TH) for (let x = ox; x < b.x1 + TW; x += TW) {
-    const ix = Math.round(x / TW), iy = Math.round(y / TH);
-    const dark = (ix + iy) % 2 === 0;
-    const tone = n.fbm(x / 600, y / 600);
-    const base = dark ? mix(P.marbleB, '#0a1430', tone * 0.5) : mix(P.marbleA, '#3a5090', (tone - 0.4) * 0.6);
-    g.fillStyle = base; g.fillRect(x, y, TW, TH);
-    // marble veins
-    g.strokeStyle = dark ? 'rgba(120,150,220,0.22)' : 'rgba(220,235,255,0.3)'; g.lineWidth = r.range(0.8, 1.8);
-    g.beginPath();
-    let vx = x + r.range(0, TW), vy = y; g.moveTo(vx, vy);
-    for (let k = 0; k < 5; k++) { vx += r.range(-24, 24); vy += TH / 5; g.lineTo(vx, vy); }
-    g.stroke();
-    // bevel
-    const lg = g.createLinearGradient(x, y, x + TW, y + TH);
-    lg.addColorStop(0, 'rgba(200,220,255,0.12)'); lg.addColorStop(0.5, 'rgba(0,0,0,0)'); lg.addColorStop(1, 'rgba(0,0,20,0.25)');
-    g.fillStyle = lg; g.fillRect(x, y, TW, TH);
-    // chipped or sunken slabs
-    if (r() < 0.06) { g.fillStyle = 'rgba(2,6,20,0.45)'; g.beginPath(); g.moveTo(x + r.range(0, TW), y); g.lineTo(x + TW, y + r.range(0, TH)); g.lineTo(x + TW, y); g.fill(); }
-    // inlaid gold star at some crossings
-    if ((ix % 3 === 0) && (iy % 2 === 0)) {
-      g.fillStyle = GOLD; g.beginPath();
-      for (let k = 0; k < 8; k++) { const a = (k / 8) * TAU, rr = k % 2 ? 4 : 11; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.62); }
-      g.fill();
-      ge.globalCompositeOperation = 'lighter'; ge.globalAlpha = 0.35; ge.drawImage(glow('#ffd27a'), x - 14, y - 10, 28, 20); ge.globalAlpha = 1; ge.globalCompositeOperation = 'source-over';
-    }
-  }
-  // gold seams
-  g.strokeStyle = 'rgba(8,10,24,0.75)'; g.lineWidth = 4;
-  g.beginPath();
-  for (let y = oy; y < b.y1 + TH; y += TH) { g.moveTo(b.x0 - 10, y); g.lineTo(b.x1 + 10, y); }
-  for (let x = ox; x < b.x1 + TW; x += TW) { g.moveTo(x, b.y0 - 10); g.lineTo(x, b.y1 + 10); }
-  g.stroke();
-  g.strokeStyle = hexA(GOLD, 0.55); g.lineWidth = 1.5; g.stroke();
-  // central aisle: a long runner of mosaic along the hall's long axis
+  const depth = (x, y) => clamp((n(x / 560 + 7.3, y / 560 - 2.1) - 0.5) * 2.4, 0, 1); // 0 dry .. 1 drowned
+  const veinsL = new Path2D(), veinsD = new Path2D(), cracks = new Path2D();
   const longX = b.w >= b.h;
-  g.save();
-  if (longX) { g.fillStyle = 'rgba(70,20,40,0.55)'; g.fillRect(b.x0, -70, b.w, 140); }
-  else { g.fillStyle = 'rgba(70,20,40,0.55)'; g.fillRect(-80, b.y0, 160, b.h); }
-  g.strokeStyle = hexA(GOLD, 0.7); g.lineWidth = 3;
-  if (longX) { g.strokeRect(b.x0 - 10, -70, b.w + 20, 140); g.strokeRect(b.x0 - 10, -58, b.w + 20, 116); }
-  else { g.strokeRect(-80, b.y0 - 10, 160, b.h + 20); g.strokeRect(-68, b.y0 - 10, 136, b.h + 20); }
-  g.strokeStyle = hexA(GOLD, 0.45); g.lineWidth = 2;
-  for (let i = longX ? b.x0 : b.y0; i < (longX ? b.x1 : b.y1); i += 90) {
-    g.beginPath();
-    if (longX) g.ellipse(i, 0, 30, 30, 0, 0, TAU); else g.ellipse(0, i, 30, 30, 0, 0, TAU);
-    g.stroke();
+  const inAisle = (x, y) => (longX ? Math.abs(y) < 74 : Math.abs(x) < 84);
+  for (const sl of slabs(b, r, { rowH: [64, 112], colW: [80, 230], jitter: 6, inset: 3 })) {
+    const { pts, cx, cy, w, h } = sl;
+    if (inAisle(cx, cy) && r() < 0.8) continue; // the mosaic aisle replaces most slabs
+    const dp = depth(cx, cy);
+    if (r() < 0.035 + dp * 0.06) {
+      // a lost slab: dark water where it was, a cold reflection on its surface
+      polyPath(g, pts); const wg = g.createLinearGradient(0, cy - h / 2, 0, cy + h / 2); wg.addColorStop(0, '#02050f'); wg.addColorStop(1, '#0a1a3a'); g.fillStyle = wg; g.fill();
+      g.strokeStyle = 'rgba(140,200,255,0.25)'; g.lineWidth = 1.2; for (let k = 1; k < 3; k++) { g.beginPath(); g.ellipse(cx, cy + 4, w * 0.12 * k, h * 0.07 * k, 0, 0, TAU); g.stroke(); }
+      ge.globalCompositeOperation = 'lighter'; ge.fillStyle = 'rgba(150,210,255,0.35)'; ge.fillRect(cx - w * 0.3, cy - 2, w * 0.25, 2); ge.fillRect(cx + w * 0.05, cy + 6, w * 0.15, 2); ge.globalCompositeOperation = 'source-over';
+      continue;
+    }
+    const kindR = r(), pale = kindR < 0.4, patina = kindR > 0.86, tone = n.fbm(cx / 600, cy / 600);
+    let col = pale ? mix(P.marbleA, '#8094cc', 0.2 + tone * 0.55) : patina ? mix('#1e4a58', '#2a6a6a', tone) : mix(P.marbleB, '#24346a', r() * 0.5);
+    col = mix(col, r() < 0.5 ? '#0a1430' : '#3a4a80', r() * 0.18);
+    col = mix(col, '#0c2a48', dp * 0.55);                       // the drowned slabs sink into blue-green
+    paintSlab(g, pts, col, { hi: `rgba(200,225,255,${0.16 - dp * 0.08})`, lo: 'rgba(0,4,20,0.4)', edgeHi: `rgba(200,225,255,${0.3 - dp * 0.18})`, edgeLo: 'rgba(0,0,10,0.6)', edge: 2 });
+    polyPath(g, pts); g.strokeStyle = 'rgba(2,4,16,0.85)'; g.lineWidth = 3.4; g.stroke();
+    if (r() < 0.25) { g.strokeStyle = hexA(GOLD, 0.35); g.lineWidth = 1; g.stroke(); }
+    // veins: soft meanders, a few gold-filled where the marble cracked and was mended
+    // one or two long veins running diagonally through the slab, thin and uneven
+    if (r() < (pale ? 0.85 : 0.5)) {
+      const P2 = pale ? veinsL : veinsD, ang = r.range(-0.6, 0.6) + (r() < 0.5 ? 0 : Math.PI / 2);
+      let vx = cx - Math.cos(ang) * w * 0.5, vy = cy - Math.sin(ang) * h * 0.5;
+      P2.moveTo(vx, vy);
+      const ex = cx + Math.cos(ang) * w * 0.5, ey = cy + Math.sin(ang) * h * 0.5;
+      P2.bezierCurveTo(lerp(vx, ex, 0.33) + r.range(-30, 30), lerp(vy, ey, 0.33) + r.range(-20, 20), lerp(vx, ex, 0.66) + r.range(-30, 30), lerp(vy, ey, 0.66) + r.range(-20, 20), ex, ey);
+      if (r() < 0.5) { const bx = lerp(vx, ex, 0.5), by = lerp(vy, ey, 0.5); P2.moveTo(bx, by); P2.quadraticCurveTo(bx + r.range(-30, 30), by + r.range(-20, 20), bx + r.range(-50, 50), by + r.range(-30, 30)); }
+    }
+    if (r() < 0.07) {
+      let vx = cx - w * 0.4, vy = cy + r.range(-h * 0.3, h * 0.3);
+      g.strokeStyle = hexA(GOLD, 0.8); g.lineWidth = 1.6; g.beginPath(); g.moveTo(vx, vy);
+      for (let m = 0; m < 5; m++) { vx += w * 0.16; vy += r.range(-12, 12); g.lineTo(vx, vy); }
+      g.stroke();
+      ge.globalCompositeOperation = 'lighter'; ge.strokeStyle = 'rgba(255,210,122,0.4)'; ge.lineWidth = 3; ge.stroke(); ge.globalCompositeOperation = 'source-over';
+    }
+    if (r() < 0.1) { let x = cx + r.range(-w * 0.3, w * 0.3), y = cy + r.range(-h * 0.3, h * 0.3); cracks.moveTo(x, y); for (let m = 0; m < 3; m++) { x += r.range(-26, 26); y += r.range(-14, 14); cracks.lineTo(x, y); } }
+    // a tilted slab: one edge sunk, its lower side in shadow and wet
+    if (r() < 0.07) { const [a, b2, c, d] = pts; g.fillStyle = 'rgba(0,4,16,0.4)'; g.beginPath(); g.moveTo(b2[0], b2[1]); g.lineTo(c[0], c[1]); g.lineTo((d[0] + c[0]) / 2, (d[1] + c[1]) / 2); g.closePath(); g.fill(); }
+    // water standing on the drowned slabs
+    if (dp > 0.35) { g.globalAlpha = dp * 0.35; g.drawImage(glow('#1a5a7a', 1), cx - w * 0.6, cy - h * 0.6, w * 1.2, h * 1.2); g.globalAlpha = 1; }
   }
-  g.restore();
-  polyPath(g, shape); fillGrain(g, 'stone', 0.4);
+  // cloudy marble: soft light and dark clouds drifting across the slabs
+  for (let i = 0; i < (b.w * b.h) / 40000; i++) {
+    const x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1), rr = r.range(50, 150), lite = r() < 0.5;
+    g.globalAlpha = lite ? 0.07 : 0.16; g.drawImage(glow(lite ? '#b8c8f0' : '#020614', 1), x - rr, y - rr * 0.55, rr * 2, rr * 1.1);
+  }
+  g.globalAlpha = 1;
+  g.lineCap = 'round';
+  g.strokeStyle = 'rgba(225,238,255,0.3)'; g.lineWidth = 1.3; g.stroke(veinsL);
+  g.strokeStyle = 'rgba(0,6,24,0.35)'; g.lineWidth = 1.6; g.stroke(veinsD);
+  g.strokeStyle = 'rgba(0,4,16,0.6)'; g.lineWidth = 1.4; g.stroke(cracks);
+  // the mosaic aisle: tesserae of gold, lapis and sea-green in a wave pattern, many lost
+  {
+    const T = 9, half = longX ? 74 : 84, L0 = longX ? b.x0 : b.y0, L1 = longX ? b.x1 : b.y1;
+    const cols = ['#b8924a', '#1a3470', '#245a6a', '#9a9888', '#10204a', '#4a90c0'];
+    g.fillStyle = '#060c1e'; if (longX) g.fillRect(L0, -half, L1 - L0, half * 2); else g.fillRect(-half, L0, half * 2, L1 - L0);
+    const byCol = cols.map(() => new Path2D());
+    for (let u = L0; u < L1; u += T) for (let v = -half + 2; v < half - 2; v += T) {
+      const wv = Math.sin(u / 60) * 30, d = Math.abs(v - wv), edge = Math.abs(v) > half - 16;
+      if (r() < 0.07 + depth(longX ? u : v, longX ? v : u) * 0.25) continue; // lost tesserae
+      const ci = edge ? 0 : d < 8 ? 0 : d < 18 ? 5 : (Math.floor(u / 44) + Math.floor(v / 44)) % 2 ? 1 : 4;
+      const jx = r.range(-1, 1), jy = r.range(-1, 1);
+      if (longX) byCol[r() < 0.08 ? 2 : ci].rect(u + jx, v + jy, T - 2, T - 2); else byCol[r() < 0.08 ? 2 : ci].rect(v + jx, u + jy, T - 2, T - 2);
+    }
+    g.globalAlpha = 0.8; byCol.forEach((path, i) => { g.fillStyle = cols[i]; g.fill(path); }); g.globalAlpha = 1;
+    { const sh = new Path2D(); if (longX) sh.rect(L0, -half, L1 - L0, half * 2); else sh.rect(-half, L0, half * 2, L1 - L0); g.save(); g.clip(sh); for (let k = 0; k < (L1 - L0) / 300; k++) { const u = L0 + r() * (L1 - L0), rr = r.range(60, 160); g.globalAlpha = 0.35; const [px, py] = longX ? [u, r.range(-half, half)] : [r.range(-half, half), u]; g.drawImage(glow('#020614', 1), px - rr, py - rr * 0.6, rr * 2, rr * 1.2); } g.globalAlpha = 1; g.restore(); }
+    g.strokeStyle = hexA(GOLD, 0.5); g.lineWidth = 2;
+    if (longX) { g.beginPath(); g.moveTo(L0, -half); g.lineTo(L1, -half); g.moveTo(L0, half); g.lineTo(L1, half); g.stroke(); }
+    else { g.beginPath(); g.moveTo(-half, L0); g.lineTo(-half, L1); g.moveTo(half, L0); g.lineTo(half, L1); g.stroke(); }
+    ge.globalCompositeOperation = 'lighter'; ge.globalAlpha = 0.18; ge.strokeStyle = '#ffd27a'; ge.lineWidth = 6; ge.beginPath();
+    for (let u = L0; u < L1; u += 8) { const wv = Math.sin(u / 60) * 30; if (longX) (u === L0 ? ge.moveTo(u, wv) : ge.lineTo(u, wv)); else (u === L0 ? ge.moveTo(wv, u) : ge.lineTo(wv, u)); }
+    ge.stroke(); ge.globalAlpha = 1; ge.globalCompositeOperation = 'source-over';
+  }
+  // puddles in the hollows, reflecting the candlelight above
+  for (let i = 0; i < Math.round((b.w * b.h) / 260000); i++) {
+    const x = r.range(b.x0 + 120, b.x1 - 120), y = r.range(b.y0 + 100, b.y1 - 100), rx = r.range(60, 150), ry = rx * r.range(0.35, 0.5);
+    if (ch.obstacles.some((o) => Math.hypot(o.x - x, o.y - y) < o.r + rx)) continue;
+    const pts2 = []; for (let k = 0; k < 14; k++) { const a = (k / 14) * TAU, kk = r.range(0.75, 1.15); pts2.push([x + Math.cos(a) * rx * kk, y + Math.sin(a) * ry * kk]); }
+    smoothPath(g, pts2); const pg = g.createLinearGradient(0, y - ry, 0, y + ry); pg.addColorStop(0, 'rgba(10,24,56,0.45)'); pg.addColorStop(1, 'rgba(60,110,170,0.3)'); g.fillStyle = pg; g.fill();
+    g.strokeStyle = 'rgba(190,225,255,0.4)'; g.lineWidth = 1.5; g.stroke();
+    ge.globalCompositeOperation = 'lighter';
+    smoothPath(ge, pts2); ge.fillStyle = 'rgba(90,150,220,0.12)'; ge.fill();
+    for (let k = 0; k < 3; k++) { const sx = x + r.range(-rx * 0.5, rx * 0.5); const sg = ge.createLinearGradient(0, y - ry * 0.6, 0, y + ry * 0.6); sg.addColorStop(0, 'rgba(255,214,140,0)'); sg.addColorStop(0.5, 'rgba(255,214,140,0.35)'); sg.addColorStop(1, 'rgba(160,210,255,0)'); ge.fillStyle = sg; ge.fillRect(sx - 2, y - ry * 0.6, 4, ry * 1.2); }
+    ge.globalCompositeOperation = 'source-over';
+  }
+  // pale sand drifted against the walls and round the columns, with ripples; weed in the hollows
+  const sandAt = [];
+  for (const sm of edgeSamples(shape, 90)) if (r() < 0.55) sandAt.push([sm.x - sm.nx * r.range(20, 90), sm.y - sm.ny * r.range(14, 60), r.range(60, 150)]);
+  for (const o of ch.obstacles) sandAt.push([o.x + r.range(-20, 20), o.y + 16, o.r + r.range(50, 100)]);
+  for (const [x, y, rr] of sandAt) { g.globalAlpha = 0.32; g.drawImage(glow('#9a8c70', 1), x - rr, y - rr * 0.55, rr * 2, rr * 1.1); }
+  g.globalAlpha = 1;
+  g.strokeStyle = 'rgba(210,196,160,0.16)'; g.lineWidth = 1.4; g.beginPath();
+  for (const [x, y, rr] of sandAt) for (let k = 0; k < 3; k++) { const yy = y + r.range(-rr * 0.25, rr * 0.25), xx = x + r.range(-rr * 0.4, rr * 0.2); g.moveTo(xx, yy); g.quadraticCurveTo(xx + rr * 0.25, yy - 5, xx + rr * 0.5, yy); }
+  g.stroke();
+  g.lineCap = 'round';
+  for (let i = 0; i < Math.round((b.w * b.h) / 180000); i++) {
+    const [x, y] = sandAt.length ? sandAt[(r() * sandAt.length) | 0] : [0, 0];
+    for (let k = 0; k < 7; k++) { const bx = x + r.range(-30, 30), by = y + r.range(-10, 10), L = r.range(18, 44); g.strokeStyle = r() < 0.5 ? 'rgba(30,80,60,0.75)' : 'rgba(60,110,70,0.6)'; g.lineWidth = r.range(2, 4); g.beginPath(); g.moveTo(bx, by); g.quadraticCurveTo(bx + r.range(-14, 14), by - L * 0.5, bx + r.range(-10, 10), by - L); g.stroke(); }
+  }
+  // hymn pages, soaked and stuck to the floor, and wrecked pews heaped against the walls
+  for (let i = 0; i < Math.round((b.w * b.h) / 120000); i++) {
+    const x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1);
+    g.save(); g.translate(x, y); g.rotate(r.range(-1.2, 1.2)); g.scale(1, 0.7);
+    g.fillStyle = 'rgba(214,204,176,0.75)'; g.fillRect(-13, -17, 26, 34); g.fillStyle = 'rgba(30,40,70,0.35)'; for (let k = -12; k < 14; k += 5) g.fillRect(-9, k, 18, 1.5);
+    g.fillStyle = 'rgba(160,30,40,0.6)'; g.fillRect(-9, -14, 5, 5);
+    g.restore();
+  }
+  for (const sm of edgeSamples(shape, 230)) {
+    if (sm.ny > -0.4 || r() > 0.4) continue;
+    const x = sm.x - sm.nx * 70, y = sm.y - sm.ny * 70 + 10, a = r.range(-0.25, 0.25);
+    if (ch.doors.some((d) => Math.hypot(d.x - x, d.y - y) < 190)) continue;
+    g.save(); g.translate(x, y); g.rotate(a);
+    drawShadow(g, 0, 8, 90, 18, 0.6);
+    g.fillStyle = '#2a1a14'; g.fillRect(-80, -10, 160, 14);               // the seat, split
+    g.fillStyle = '#4a2e1e'; g.fillRect(-80, -14, 70, 5); g.fillRect(4, -12, 76, 5);
+    g.fillStyle = '#1e120e'; g.fillRect(-74, -44, 10, 36); g.fillRect(58, -30, 10, 24); // ends, one snapped
+    g.strokeStyle = '#3a241a'; g.lineWidth = 8; g.lineCap = 'butt'; g.beginPath(); g.moveTo(-70, -40); g.lineTo(-6, -36); g.moveTo(14, -28); g.lineTo(66, -22); g.stroke(); // back rail broken in two
+    g.strokeStyle = 'rgba(180,200,255,0.18)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(-80, -14); g.lineTo(80, -12); g.stroke();
+    g.restore();
+  }
+  polyPath(g, shape); fillGrain(g, 'soft', 0.25);
   // wet sheen and silt: dark drifts in the corners, pale sand ripples
   for (let i = 0; i < 16; i++) {
     const x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1), rr = r.range(160, 380);
@@ -280,7 +355,7 @@ function paintFloor(ch, q) {
     cg.addColorStop(0, hexA(col, 0.22)); cg.addColorStop(1, hexA(col, 0));
     g.fillStyle = cg; g.fillRect(x - rr, y - rr, rr * 2, rr * 2);
   }
-  strokes(g, r, b, 1600 * Math.min(1, q + 0.3), ['#06102a', '#9ad0ff', '#c8b890'], { len: [10, 30], width: [1, 2], alpha: [0.03, 0.08], angle: 0 });
+  strokes(g, r, b, 2600 * Math.min(1, q + 0.3), ['#06102a', '#9ad0ff', '#c8b890', '#3a6a9a'], { len: [8, 26], width: [1, 2.5], alpha: [0.04, 0.1] });
   // sea-glass and shells, sunken coins
   for (let i = 0; i < (b.w * b.h) / 14000; i++) {
     const x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1);
@@ -291,7 +366,7 @@ function paintFloor(ch, q) {
   {
     const pat = ge.createPattern(caustics(), 'repeat');
     pat.setTransform(new DOMMatrix().scale(2.6, 2.6 * 0.62));
-    ge.globalCompositeOperation = 'lighter'; ge.globalAlpha = 0.07; ge.fillStyle = pat; ge.fillRect(b.x0, b.y0, b.w, b.h); ge.globalAlpha = 1; ge.globalCompositeOperation = 'source-over';
+    ge.globalCompositeOperation = 'lighter'; ge.globalAlpha = 0.12; ge.fillStyle = pat; ge.fillRect(b.x0, b.y0, b.w, b.h); ge.globalAlpha = 1; ge.globalCompositeOperation = 'source-over';
   }
   // wet specular streaks in the glow layer
   ge.globalCompositeOperation = 'lighter';
@@ -488,10 +563,10 @@ const shafts = screenCache((W, H) => sparse(shaftsCanvas(W, H)));
 function shaftsCanvas(W, H) {
   const c = mk(W, H), g = c.getContext('2d'), r = rng(5);
   g.globalCompositeOperation = 'lighter';
-  for (let i = 0; i < 4; i++) {
-    const x = r.range(-0.1, 0.9) * W, wd = r.range(60, 180) * (W / 1600), sk = W * 0.25;
+  for (let i = 0; i < 3; i++) {
+    const x = r.range(-0.1, 0.9) * W, wd = r.range(50, 140) * (W / 1600), sk = W * 0.25;
     const lg = g.createLinearGradient(x, 0, x + sk, H);
-    lg.addColorStop(0, 'rgba(160,210,255,0.13)'); lg.addColorStop(1, 'rgba(160,210,255,0)');
+    lg.addColorStop(0, 'rgba(160,210,255,0.08)'); lg.addColorStop(1, 'rgba(160,210,255,0)');
     g.fillStyle = lg; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + wd, 0); g.lineTo(x + wd + sk, H); g.lineTo(x + sk, H); g.fill();
   }
   return c;

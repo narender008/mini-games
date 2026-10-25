@@ -90,7 +90,7 @@ function menuTick(G, B) {
     }
     case 'dialogue': {
       const d = G.dialogue;
-      if (d && d.choices && !d.queue.length) { const k = d.choices.findIndex((c) => c.choice === 'braid'); Run.answer(G, k >= 0 ? k : 0); return; }
+      if (d && d.choices && !d.queue.length) { const k = d.choices.findIndex((c) => c.choice === 'braid' || c.id === 'braid'); Run.answer(G, k >= 0 ? k : 0); return; }
       Run.advance(G);
       return;
     }
@@ -595,9 +595,119 @@ function aimAtNearest(G, h, foes, want) {
   if (best) want.aim = { x: best.x, y: best.y };
 }
 
+// ------------------------------------------------------------------ path planning
+// A coarse walk grid per chamber (32 px cells): a cell is blocked outside the floor shape, on an
+// obstacle, or on a lasting chamber hazard (pits, thorns, molten channels). When the straight line
+// to a goal crosses blocked cells, walkTo follows an A* route instead (e.g. out of a ring of lava
+// through its one gap). Moving dangers stay with the local steering (avoidGround, escapeDir).
+const CELL = 32;
+function navGrid(G, B) {
+  const c = G.chamber;
+  if (!c || !c.shape || !c.shape.length) return null;
+  const nh = (c.hazards || []).length, no = (c.obstacles || []).length;
+  if (B.nav && B.nav.c === c && B.nav.nh === nh && B.nav.no === no) return B.nav;
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const [x, y] of c.shape) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  const cols = Math.ceil((x1 - x0) / CELL) + 1, rows = Math.ceil((y1 - y0) / CELL) + 1;
+  const hr = (G.hero && G.hero.r) || 20;
+  const hz = (c.hazards || []).filter((z) => z.r > 0);
+  const block = new Uint8Array(cols * rows);
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const x = x0 + i * CELL, y = y0 + j * CELL;
+    let b = !inside(G, x, y, hr);
+    if (!b) for (const z of hz) if (Math.hypot(x - z.x, y - z.y) < z.r + hr + 6) { b = true; break; }
+    block[j * cols + i] = b ? 1 : 0;
+  }
+  B.nav = { c, nh, no, x0, y0, cols, rows, block };
+  return B.nav;
+}
+function cellOf(nav, x, y) {
+  const i = Math.round((x - nav.x0) / CELL), j = Math.round((y - nav.y0) / CELL);
+  return i < 0 || j < 0 || i >= nav.cols || j >= nav.rows ? -1 : j * nav.cols + i;
+}
+function blockedAt(nav, x, y) { const k = cellOf(nav, x, y); return k < 0 || nav.block[k] === 1; }
+// the nearest free cell to (x, y), searched outward ring by ring
+function freeNear(nav, x, y, maxR = 8) {
+  const ci = Math.round((x - nav.x0) / CELL), cj = Math.round((y - nav.y0) / CELL);
+  for (let r = 0; r <= maxR; r++) {
+    let best = -1, bd = 1e9;
+    for (let j = cj - r; j <= cj + r; j++) for (let i = ci - r; i <= ci + r; i++) {
+      if (Math.max(Math.abs(i - ci), Math.abs(j - cj)) !== r || i < 0 || j < 0 || i >= nav.cols || j >= nav.rows) continue;
+      const k = j * nav.cols + i;
+      if (nav.block[k]) continue;
+      const d = Math.hypot(nav.x0 + i * CELL - x, nav.y0 + j * CELL - y);
+      if (d < bd) { bd = d; best = k; }
+    }
+    if (best >= 0) return best;
+  }
+  return -1;
+}
+// a straight walk from a to b stays on free cells (the ends may sit on blocked cells: walls, doors)
+function clearLine(nav, ax, ay, bx, by, endSkip = 40) {
+  const d = Math.hypot(bx - ax, by - ay), n = Math.ceil(d / 12);
+  for (let k = 1; k < n; k++) {
+    const t = k / n, l = t * d;
+    if (l < 24 || d - l < endSkip) continue;
+    if (blockedAt(nav, ax + (bx - ax) * t, ay + (by - ay) * t)) return false;
+  }
+  return true;
+}
+function astar(nav, sx, sy, gx, gy) {
+  const s = freeNear(nav, sx, sy), g = freeNear(nav, gx, gy);
+  if (s < 0 || g < 0) return null;
+  const { cols, rows, block } = nav, N = cols * rows;
+  const gs = new Float32Array(N).fill(Infinity), from = new Int32Array(N).fill(-1), shut = new Uint8Array(N);
+  const gi = g % cols, gj = (g / cols) | 0;
+  const hfn = (k) => { const di = Math.abs((k % cols) - gi), dj = Math.abs(((k / cols) | 0) - gj); return Math.max(di, dj) + 0.414 * Math.min(di, dj); };
+  // binary heap of [f, k]
+  const heap = [];
+  const push = (f, k) => { heap.push([f, k]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+  gs[s] = 0; push(hfn(s), s);
+  let found = false, it = 0;
+  while (heap.length && it++ < N * 4) {
+    const [, k] = pop();
+    if (shut[k]) continue;
+    shut[k] = 1;
+    if (k === g) { found = true; break; }
+    const i = k % cols, j = (k / cols) | 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      if (!di && !dj) continue;
+      const ni = i + di, nj = j + dj;
+      if (ni < 0 || nj < 0 || ni >= cols || nj >= rows) continue;
+      const nk = nj * cols + ni;
+      if (block[nk] || shut[nk]) continue;
+      if (di && dj && (block[j * cols + ni] || block[nj * cols + i])) continue; // no corner cutting
+      const ng = gs[k] + (di && dj ? 1.414 : 1);
+      if (ng < gs[nk]) { gs[nk] = ng; from[nk] = k; push(ng + hfn(nk), nk); }
+    }
+  }
+  if (!found) return null;
+  const pts = [];
+  for (let k = g; k >= 0 && k !== s; k = from[k]) pts.push({ x: nav.x0 + (k % cols) * CELL, y: nav.y0 + ((k / cols) | 0) * CELL });
+  pts.reverse();
+  pts.push({ x: gx, y: gy });
+  return pts;
+}
+// the next point to walk at on the way to (x, y), or null when the straight line is clear
+function route(G, B, h, x, y) {
+  const nav = navGrid(G, B);
+  if (!nav || clearLine(nav, h.x, h.y, x, y)) { B.path = null; return null; }
+  const key = cellOf(nav, x, y);
+  const P = B.path;
+  if (!P || (P.key !== key && B.t - P.t > 0.25) || B.t - P.t > 0.8) B.path = { key, t: B.t, pts: astar(nav, h.x, h.y, x, y) };
+  const pts = B.path.pts;
+  if (!pts || !pts.length) return null;
+  for (let i = pts.length - 1; i >= 0; i--) if (clearLine(nav, h.x, h.y, pts[i].x, pts[i].y, i === pts.length - 1 ? 40 : 0)) return pts[i];
+  return pts[0];
+}
+
 // ------------------------------------------------------------------ walking
 function walkTo(G, B, want, x, y, slow = 1) {
   const h = G.hero;
+  const wp = route(G, B, h, x, y);
+  const aimX = x, aimY = y;
+  if (wp) { x = wp.x; y = wp.y; }
   const dx = x - h.x, dy = y - h.y, d = Math.hypot(dx, dy);
   if (d < 6) return;
   let mv = { x: (dx / d) * slow, y: (dy / d) * slow };
@@ -613,9 +723,10 @@ function walkTo(G, B, want, x, y, slow = 1) {
       mv = { x: mv.x + side * -mv.y * 0.9, y: mv.y + side * mv.x * 0.9 };
     }
   }
-  mv = avoidGround(G, h, mv);
+  // on a planned route the grid already keeps us off the floor hazards: only nudge
+  mv = wp ? steerGround(G, h, mv) : avoidGround(G, h, mv);
   want.move = mv;
-  want.aim = want.aim || { x, y };
+  want.aim = want.aim || { x: aimX, y: aimY };
 }
 // If the hero has not moved for a while, wiggle (and dash) to get free.
 function unstick(G, B, want, goal) {

@@ -418,7 +418,7 @@ export function createSaves({ store, now = () => Date.now() } = {}) {
   }
 
   return {
-    store, load, write, profiles, wipe, keys,
+    store, now, load, write, profiles, wipe, keys,
     loadSettings, saveSettings, lastProfile, setLastProfile,
     exportProfile, importProfile,
     status: (p) => ({ ...info(p) }),

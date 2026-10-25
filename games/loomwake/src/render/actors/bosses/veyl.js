@@ -234,7 +234,7 @@ export default function draw(ctx, e, G, P) {
   const B = body(e, 'veyl', W, H, AX, AY, k);
   const g = B.g;
   g.save();
-  const down = sunk * 270 + kneel * 70;
+  const down = sunk * 400 + kneel * 70;
   g.translate(0, down + lift);
   g.transform(1, 0, sway + lean, 1, 0, 0);
   if (sunk > 0) { g.beginPath(); g.rect(-W, -H, W * 2, H - down - lift + 4); g.clip(); }

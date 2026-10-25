@@ -4,7 +4,7 @@
 // live snapshot with an offer on screen, mid-fight restart, death -> hub with meta kept,
 // boss -> next region, Sable -> victory -> ending, three profiles, export/import through the api.
 import assert from 'node:assert/strict';
-import { makeSim, step } from './sim-harness.mjs';
+import { makeSim, step as rawStep } from './sim-harness.mjs';
 import * as Run from '../src/sim/run.js';
 import { memoryStore } from '../src/save/save.js';
 
@@ -17,7 +17,10 @@ const doorsOf = (G) => (G.chamber.doors || []).map((d) => ({ i: d.i, reward: d.r
 const offerOf = (G) => (G.offer ? G.offer.map((c) => `${c.id}:${c.rarity}`) : null);
 // Clear the chamber by the debug path, collect the reward pickup by walking (bot), return the offer.
 const settle = (G) => { for (let k = 0; k < 20 && G.scene === 'dialogue'; k++) Run.skip(G); return G.scene; };
+// story conversations (region cards, boss intros) open as dialogue: these tests skip them as a player would
+const step = (G, n = 1, bot = true) => { for (let i = 0; i < n; i++) { settle(G); rawStep(G, 1, bot); } settle(G); };
 function clearAndReward(G) {
+  settle(G);
   Run.clear(G);
   for (let i = 0; i < 120 * 8 && G.scene === 'run' && !G.run.ch.rewardDone; i++) step(G, 1, true);
 }
@@ -138,7 +141,7 @@ await test('death returns to the hub with meta kept and no checkpoint', () => {
 await test('boss defeat opens the way to the next region; Sable gives victory then ending', () => {
   const G = makeSim(5);
   Run.newGame(G, 0, { wipe: true });
-  Run.boss(G, 'veyl');
+  Run.boss(G, 'veyl'); settle(G);
   assert.equal(G.run.kind, 'boss');
   step(G, 120 * 2, false);
   for (let k = 0; k < 4 && G.boss; k++) { Run.bossKill(G); step(G, 120 * 4, false); }
@@ -148,7 +151,7 @@ await test('boss defeat opens the way to the next region; Sable gives victory th
   assert.ok(G.run.ch.rewardDone);
   const r = Run.door(G, 0);
   assert.equal(r.ok, true, r.error); assert.equal(G.run.region, 'choir'); assert.equal(G.run.chamber, 0);
-  Run.boss(G, 'sable');
+  Run.boss(G, 'sable'); settle(G);
   step(G, 120 * 2, false);
   for (let k = 0; k < 5 && G.scene === 'run'; k++) { Run.bossKill(G); step(G, 120 * 4, false); }
   assert.equal(G.scene, 'victory');
@@ -183,6 +186,47 @@ await test('api: profiles independent, export/import', () => {
   assert.equal(G.meta.currency.lumen, 0);
   assert.equal(api.importSave(ex).ok, true);
   assert.equal(G.meta.currency.lumen, 20);
+});
+
+await test('fountain chamber: the region wanderer stands by it and can be talked to; hub NPCs are not carried into runs', () => {
+  const G = makeSim(5);
+  Run.newGame(G, 0, { wipe: true }); settle(G);
+  assert.ok((G.npcs || []).length > 0, 'hub has NPCs');
+  Run.startRun(G, { seed: 77 }); settle(G);
+  assert.equal(G.npcs.length, 0);
+  G.run.plan[G.run.region][G.run.chamber] = 'fountain';
+  Run.enterChamber(G); settle(G);
+  assert.equal(G.run.kind, 'fountain');
+  const w = G.npcs.find((n) => n.id === 'hob');
+  assert.ok(w, 'Hob waits by the glasswood fountain');
+  const r = Run.talk(G, 'hob');
+  assert.equal(r.ok, true); assert.equal(G.scene, 'dialogue');
+  assert.ok(G.meta.affinity.hob >= 1);
+  settle(G); assert.equal(G.scene, 'run');
+});
+
+await test('gift: story counts it once', () => {
+  const G = makeSim(5);
+  Run.newGame(G, 0, { wipe: true }); settle(G);
+  G.meta.currency.shards = 2;
+  Run.gift(G, 'orrin'); settle(G);
+  assert.equal(G.meta.gifts.orrin, 1);
+  assert.equal(G.meta.currency.shards, 1);
+});
+
+await test('Sable true-ending choice opens as a dialogue and the braid answer sets the true ending', () => {
+  const G = makeSim(5);
+  Run.newGame(G, 0, { wipe: true }); settle(G);
+  Run.boss(G, 'sable'); settle(G);
+  G.bus.emit('bossChoice', { id: 'sable', options: ['braid', 'cut'] });
+  assert.equal(G.scene, 'dialogue');
+  for (let k = 0; k < 12 && G.dialogue && G.dialogue.queue.length; k++) Run.advance(G);
+  const i = G.dialogue.choices.findIndex((c) => (c.choice || c.id) === 'braid');
+  assert.ok(i >= 0, 'braid is offered');
+  Run.answer(G, i);
+  assert.equal(G.meta.ending, 'true');
+  assert.equal(G.meta.flags.endingChoice, 'braid');
+  assert.notEqual(G.scene, 'dialogue');
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -68,7 +68,7 @@ export const BOSS_OF = { glasswood: 'veyl', choir: 'morrow', forge: 'aurum', unw
 const REGION_LEN = () => (Regions.RHYTHM && Regions.RHYTHM.length) || 12;
 const PLAY_SCENES = new Set(['run', 'hub']);
 const PERSIST = ['seed', 'weapon', 'keepsake', 'region', 'regionIndex', 'chamber', 'depth', 'kind', 'reward', 'plan', 'shopDoors',
-  'boons', 'hp', 'maxHp', 'deathDefiance', 'rerolls', 'currency', 'path', 'stats', 'pacts', 'trueEnding', 'memoryRegions', 'flags', 'started', 'aspect', 'regionT', 'tempers', 'favourPatron', 'callPatron', 'rareRegion'];
+  'boons', 'hp', 'maxHp', 'deathDefiance', 'rerolls', 'currency', 'path', 'stats', 'pacts', 'trueEnding', 'memoryRegions', 'flags', 'started', 'aspect', 'regionT', 'tempers', 'favourPatron', 'callPatron', 'rareRegion', 'glintBonus'];
 const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
 const PATRONS = () => (PatronData.PATRON_IDS && PatronData.PATRON_IDS.length ? PatronData.PATRON_IDS : ['solenne', 'maru', 'veyra', 'ossian', 'ilu', 'kestrel']);
 const RARITY = ['common', 'rare', 'epic', 'mythic'];
@@ -78,6 +78,8 @@ function safe(fn, ...args) {
   if (typeof fn !== 'function') return undefined;
   try { return fn(...args); } catch (e) { console.error('[loomwake run]', fn.name || 'call', e); return undefined; }
 }
+// wall clock through the save manager (injected in tests and the harness, so fresh profiles are reproducible)
+const clock = (G) => (G.saves && G.saves.now ? G.saves.now() : Date.now());
 function emit(G, type, p) { if (G.bus) G.bus.emit(type, p); }
 // Story results with mode 'dialogue' become portrait conversations: queued on G.storyQueue and opened by
 // tick() as soon as the hero is free in the run or the hub (a death's lines wait for the Loomhall).
@@ -174,14 +176,14 @@ function hookBus(G) {
   });
   on('bossDefeat', (p) => { if (G.run && G.run.ch) G.run.ch.bossDefeat = { ...p }; });
   on('bossPhase', (p) => story(G, 'bossPhase', p));
-  on('bossChoice', (p) => { G.ui = G.ui || {}; G.ui.bossChoice = { ...p }; story(G, 'bossChoice', p); });
+  on('bossChoice', (p) => { G.ui = G.ui || {}; G.ui.bossChoice = { ...p }; story(G, 'bossChoice', p); openBossChoice(G, p); });
 }
 
 function loadProfile(G, p) {
   p = Math.max(0, Math.min(Save.PROFILES - 1, p | 0));
   const r = G.saves.load(p);
   G.profile = p;
-  G.meta = r.meta || Save.freshMeta(Date.now());
+  G.meta = r.meta || Save.freshMeta(clock(G));
   safe(Story.ensureStoryMeta, G);
   G.saveInfo = { readOnly: r.readOnly, message: r.message, recovered: r.recovered, empty: r.empty, migratedFrom: r.migratedFrom };
   G.checkpoint = r.run || null;
@@ -245,7 +247,7 @@ export function newGame(G, i, opts = {}) {
   if (G.saveInfo.readOnly) return { ok: false, readOnly: true, message: G.saveInfo.message };
   if (opts.wipe || G.saveInfo.empty || G.saveInfo.recovered && !G.lastSave) {
     G.saves.wipe(p);
-    G.meta = Save.freshMeta(Date.now());
+    G.meta = Save.freshMeta(clock(G));
     safe(Story.ensureStoryMeta, G);
     G.checkpoint = null;
     persist(G, null, 'new');
@@ -363,10 +365,10 @@ export function startRun(G, opts = {}) {
   const chamber = Math.max(0, Math.min(REGION_LEN() - 1, opts.chamber | 0));
   const pacts = clone(opts.pacts || G.meta.pacts || {});
   G.run = {
-    seed, weapon, keepsake, aspect: opts.aspect || null, region, regionIndex: ri, chamber, depth: ri * REGION_LEN() + chamber, kind: 'entry',
+    seed, weapon, keepsake, aspect: opts.aspect || (G.meta.loadout.aspects && G.meta.loadout.aspects[weapon]) || null, region, regionIndex: ri, chamber, depth: ri * REGION_LEN() + chamber, kind: 'entry',
     reward: null, plan: {}, shopDoors: {}, boons: [], hp: 100, maxHp: 100, deathDefiance: 0, rerolls: 0, currency: 0,
     path: [], stats: { kills: 0, damageTaken: 0, time: 0, chambers: 0, lumen: 0, keys: 0, shards: 0, bosses: [] },
-    pacts, trueEnding: !!(safe(Story.canTrueEnding, G) || false), memoryRegions: [], flags: {}, started: Date.now(),
+    pacts, trueEnding: !!(safe(Story.canTrueEnding, G) || false), memoryRegions: [], flags: {}, started: clock(G),
     ch: null, cp: null, over: false,
   };
   G.lastRun = null;
@@ -666,7 +668,9 @@ function markCleared(G, quiet = false) {
     emit(G, 'chamberClear', { chamber: G.chamber });
     story(G, 'chamberClear', { kind: run.kind, region: run.region });
     // a little Glint for every cleared fight
-    const glint = Math.round((6 + run.regionIndex * 3 + run.chamber * 0.5) * glintMult(G));
+    // plus what slain foes dropped this chamber (G.run.glintBonus, e.g. the Aspect of Pell)
+    const glint = Math.round((6 + run.regionIndex * 3 + run.chamber * 0.5) * glintMult(G)) + Math.round(run.glintBonus || 0);
+    run.glintBonus = 0;
     run.currency += glint;
     if (run.keepsake) { const key = String(run.keepsake).replace(/^keepsake\./, ''); inc(G.meta.keepsakeXp, key); }
     const ha = run.tap && run.tap.healAfter;
@@ -1086,7 +1090,7 @@ export function openDialogue(G, entry, back) {
   const queue = entry.lines.map((l) => (typeof l === 'string' ? { speaker: entry.speaker, text: l } : { speaker: l.speaker || entry.speaker, text: l.text, mood: l.mood, art: l.art }));
   const first = queue.shift();
   G.dialogue = { speaker: first.speaker, lineId: entry.id, text: first.text, mood: first.mood || 'neutral', art: first.art, queue, entry: entry.id, kind: entry.kind || 'talk',
-    choices: queue.length ? null : entry.choices || null, back: back || (G.scene === 'dialogue' ? (G.dialogue && G.dialogue.back) || 'hub' : G.scene), memory: entry.memory || null, index: 0, total: entry.lines.length };
+    choices: queue.length ? null : entry.choices || null, pendingChoices: entry.choices || null, back: back || (G.scene === 'dialogue' ? (G.dialogue && G.dialogue.back) || 'hub' : G.scene), memory: entry.memory || null, index: 0, total: entry.lines.length };
   emit(G, 'line', { speaker: first.speaker, lineId: entry.id, text: first.text, mood: first.mood });
   setScene(G, 'dialogue');
   return G.dialogue;
@@ -1099,6 +1103,7 @@ export function advance(G) {
   if (d.queue.length) {
     const l = d.queue.shift();
     Object.assign(d, { speaker: l.speaker, text: l.text, mood: l.mood || 'neutral', art: l.art, index: d.index + 1 });
+    if (!d.queue.length && d.pendingChoices) d.choices = d.pendingChoices; // the answers come with the last line
     emit(G, 'line', { speaker: l.speaker, lineId: d.lineId, text: l.text, mood: l.mood });
     return { ok: true };
   }
@@ -1110,6 +1115,12 @@ export function skip(G) {
   if (G.scene === 'ending') return returnToHub(G);
   const d = G.dialogue;
   if (!d) return { ok: false };
+  // a conversation that asks something skips to its question, never past it
+  if (d.pendingChoices && d.pendingChoices.length) {
+    if (d.queue.length) { const l = d.queue[d.queue.length - 1]; d.queue.length = 0; Object.assign(d, { speaker: l.speaker, text: l.text, mood: l.mood || 'neutral', art: l.art, index: d.total - 1 }); emit(G, 'line', { speaker: l.speaker, lineId: d.lineId, text: l.text, mood: l.mood }); }
+    d.choices = d.pendingChoices;
+    return { ok: true, needsAnswer: true };
+  }
   G.dialogue = null;
   setScene(G, PLAY_SCENES.has(d.back) || ['shop', 'fountain', 'victory'].includes(d.back) ? d.back : (G.run ? 'run' : 'hub'));
   emit(G, 'dialogueEnd', { id: d.lineId });
@@ -1126,10 +1137,10 @@ export function answer(G, i) {
   const c = d.choices[i];
   if (!c) return { ok: false };
   if (Story.answer) safe(Story.answer, G, d.entry, i, c);
-  if (c.choice && Story.chooseEnding) safe(Story.chooseEnding, G, c.choice);
-  if (c.choice && Bosses.resolveBossChoice) safe(Bosses.resolveBossChoice, G, c.choice);
   G.dialogue = null;
   setScene(G, d.back || 'run');
+  const ch = choiceOf(c);
+  if (ch) resolveChoice(G, ch);
   if (c.next) openDialogue(G, c.next, d.back);
   return { ok: true };
 }
@@ -1217,7 +1228,12 @@ function bossBeaten(G, info) {
   inc(st.bossWins, id);
   if (!run.stats.bosses.includes(id)) run.stats.bosses.push(id);
   story(G, 'bossDefeat', { id, first, ending: info.ending, choice: info.choice });
-  if (id === 'sable' || run.regionIndex >= REGION_IDS.length - 1) { victory(G, info); return; }
+  if (id === 'sable' || run.regionIndex >= REGION_IDS.length - 1) {
+    // the choice was already made on his last stand: drop a second copy of it
+    if (G.storyQueue && G.meta.flags && G.meta.flags.endingChoice) G.storyQueue = G.storyQueue.filter((e) => !(e.choices && e.choices.some(choiceOf)));
+    run.ch.victoryInfo = { ...info, id }; run.ch.victoryT = 1.2; // victory once his defeat lines are told (tick)
+    return;
+  }
   // the boss's reward, then the way down
   const c = rewardSpot(G);
   G.pickups.push({ id: G.nextId++, kind: 'boss', x: c.x, y: c.y, z: 0, r: 34, t: 0, reward: { kind: 'boss', boss: id }, main: true });
@@ -1423,6 +1439,11 @@ export function tick(G, dt) {
     return;
   }
   if (G.scene !== 'run') return;
+  if (ch.victoryInfo) {
+    ch.victoryT -= dt;
+    if (ch.victoryT <= 0 && !G.dialogue && !(G.storyQueue && G.storyQueue.length)) { const info = ch.victoryInfo; ch.victoryInfo = null; victory(G, info); }
+    return;
+  }
   if (G.hero && G.hero.dead && !ch.deathT) { ch.deathT = 1.7; return; }
   const live = G.hitstop > 0 ? 0 : dt;
   run.stats.time += dt;
@@ -1693,8 +1714,22 @@ export function playMemory(G, id) {
   return { ok: true };
 }
 // The true ending's choice at the end of the Sable fight ('braid' | 'cut').
+// The true-ending choice on Sable's last stand: his story entry (with its braid / cut answers) opens as a
+// dialogue at once; answer() resolves it through resolveChoice.
+const CHOICE_ENTRY = 'sableboss_defeat_true';
+function openBossChoice(G, p = {}) {
+  if (G.dialogue && G.dialogue.choiceFor) return;
+  const raw = Story.BY_ID && Story.BY_ID.get(CHOICE_ENTRY);
+  let e = raw && safe(Story.applyEntry, G, raw);
+  if (!e || !e.lines || !e.lines.length) e = { id: 'sable.choice', speaker: 'sable_bare', lines: [{ speaker: 'sable_bare', text: 'Finish it, then.' }], choices: [{ id: 'braid', text: 'Braid his thread back beside yours' }, { id: 'cut', text: 'Cut the thread' }] };
+  if (!e.choices || !e.choices.length) e = { ...e, choices: (p.options || ['braid', 'cut']).map((id) => ({ id, text: id })) };
+  const d = openDialogue(G, { ...e, kind: 'choice' }, 'run');
+  if (d) d.choiceFor = p.id || 'sable';
+}
+const choiceOf = (c) => (c && (c.choice || ((c.id === 'braid' || c.id === 'cut') ? c.id : null))) || null;
 export function resolveChoice(G, choice = 'braid') {
   if (G.ui) G.ui.bossChoice = null;
+  if (G.dialogue && G.dialogue.choiceFor) { const d = G.dialogue; G.dialogue = null; setScene(G, d.back || 'run'); }
   safe(Story.chooseEnding, G, choice);
   if (Bosses.resolveBossChoice) safe(Bosses.resolveBossChoice, G, choice);
   return { ok: true, choice };

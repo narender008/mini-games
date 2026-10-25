@@ -29,6 +29,11 @@ export const VOICES = {
   ilu:       { base: 58, range: 5, rate: 12, wave: 'sine', lp: 2400, breath: 0.55, drop: 2, gain: 1.1 },
   kestrel:   { base: 72, range: 7, rate: 19, wave: 'triangle', lp: 4400, breath: 0.15, drop: 1, gain: 0.95 },
   echo:      { base: 64, range: 6, rate: 16, wave: 'triangle', lp: 1800, breath: 0.1, ring: 23, drop: 2, gain: 0.8 },
+  hob:       { base: 47, range: 5, rate: 13, wave: 'triangle', lp: 1400, breath: 0.22, glide: 0.04, drop: 2, gain: 1.05, vib: [3.5, 8] },
+  lisle:     { base: 74, range: 4, rate: 12, wave: 'sine', lp: 3800, breath: 0.6, fade: 0.3, drop: 1, gain: 1.15 },
+  gilt:      { base: 68, range: 9, rate: 21, wave: 'square', lp: 3000, breath: 0.03, fm: [4.02, 0.35], drop: 1, gain: 0.7 },
+  ash:       { base: 52, range: 2, rate: 10, wave: 'sine', lp: 1300, breath: 0.5, fade: 0.35, drop: 2, gain: 1.15 },
+  sable_bare:{ base: 47, range: 4, rate: 11, wave: 'triangle', lp: 1700, breath: 0.2, drop: 3, gain: 1.0, vib: [4, 6] },
   narrator:  { base: 52, range: 4, rate: 12, wave: 'triangle', lp: 1800, breath: 0.2, drop: 2, gain: 0.9 },
   default:   { base: 55, range: 5, rate: 14, wave: 'triangle', lp: 2200, breath: 0.12, drop: 2, gain: 0.9 },
 };
@@ -78,10 +83,26 @@ function syllables(text, rate) {
 }
 
 // Speak a line. Returns { dur } (seconds of voice).
+// Mood tags from the dialogue ('#sad', '#happy', ...) bend pitch, pace, range and breath.
+const MOODS = {
+  happy: { pitch: 1.5, rate: 1.08, range: 1.25 }, warm: { pitch: -0.5, rate: 0.94, range: 0.9, breath: 1.2 },
+  sad: { pitch: -1.5, rate: 0.84, range: 0.7, breath: 1.4, drop: 1 }, grave: { pitch: -2, rate: 0.86, range: 0.6, drop: 1 },
+  wry: { pitch: 0, rate: 1.02, range: 1.15 }, angry: { pitch: 0.5, rate: 1.12, range: 1.1, drop: 1.5 },
+  surprised: { pitch: 3, rate: 1.1, range: 1.4 }, afraid: { pitch: 2, rate: 1.16, range: 0.9, wob: 0.8, breath: 1.3 },
+  whisper: { pitch: -1, rate: 0.9, range: 0.6, breath: 3, quiet: 0.6 }, neutral: {},
+};
 export function speak(E, speaker, text, o = {}) {
   stopVoice(E, 0.03);
-  const key = voiceKey(speaker), P = VOICES[key];
-  const rate = P.rate * (o.rate ?? 1);
+  text = String(text || '');
+  let mood = o.mood;
+  const tag = /^\s*#([a-z]+)\s*/i.exec(text); if (tag) { mood = mood || tag[1].toLowerCase(); text = text.slice(tag[0].length); }
+  text = text.replace(/^\s*@[a-z_]+\s*/i, '');
+  if (/\((whisper|whispering)\)/i.test(text)) mood = 'whisper';
+  text = text.replace(/\([^)]*\)/g, ' ');
+  const key = voiceKey(speaker), M = MOODS[String(mood || '').toLowerCase()] || {}, P0 = VOICES[key];
+  const P = { ...P0, base: P0.base + (M.pitch || 0), range: P0.range * (M.range ?? 1), drop: (P0.drop ?? 2) + (M.drop || 0),
+    breath: Math.min(0.9, P0.breath * (M.breath ?? 1)), wob: (P0.wob || 0) + (M.wob || 0) || undefined, gain: P0.gain * (M.quiet ?? 1) };
+  const rate = P.rate * (o.rate ?? 1) * (M.rate ?? 1);
   const { syl } = syllables(text, rate);
   if (!syl.length) return { dur: 0 };
   const MAX = o.max ?? 44;

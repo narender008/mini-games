@@ -227,6 +227,7 @@ function paintFloor(ch, q) {
     else if (kind < 0.14) col = mix(col, '#6a5a3a', 0.35);       // old brass
     if (hv > 0.05) col = mix(col, TEMPER[Math.min(3, Math.floor((1 - hv) * 4))], hv * 0.5);
     paintSlab(g, pts, col, { hi: 'rgba(255,214,190,0.13)', lo: 'rgba(8,2,6,0.42)', edgeHi: 'rgba(255,200,170,0.26)', edgeLo: 'rgba(0,0,0,0.6)', edge: 2 });
+    polyPath(g, pts); g.strokeStyle = 'rgba(4,1,3,0.85)'; g.lineWidth = 3.4; g.stroke();
     // diamond tread on some plates, embossed (lit and shadowed dashes)
     if (kind > 0.84) {
       g.save(); polyPath(g, pts); g.clip(); g.lineCap = 'round';

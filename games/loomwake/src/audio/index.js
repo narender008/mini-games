@@ -29,7 +29,7 @@ const S = {
   vol: { master: 0.85, music: 0.7, sfx: 0.9, voice: 0.85 }, muted: false,
   pending: null, auto: true, lastWant: '', want: null,
   boss: { id: null, phase: 1, active: false, done: false }, enterT: 0, holdUntil: 0, warned: false, armor: new WeakMap(),
-  lastDash: -9, lastBeat: 0, foes: 0, clearT: -9, offs: [], gestures: false, muffle: 20000, scene: null,
+  lastDash: -9, lastBeat: 0, brokeAt: new WeakSet(), sawWindup: false, ending: null, dom: false, foes: 0, clearT: -9, offs: [], gestures: false, muffle: 20000, scene: null,
 };
 const LOOK = 0.3, LOOK_HIDDEN = 1.6;
 
@@ -156,6 +156,8 @@ function liveFoes(G) {
   return { n, elite };
 }
 function trueEnding(G) {
+  if (S.ending) return S.ending === 'true';
+  if (G.ending && G.ending.kind) return G.ending.kind === 'true';
   const m = G.meta || {}, s = m.story || m.flags || {};
   return !!(m.trueEnding || s.trueEnding || s.true_ending || (G.ui && G.ui.ending === 'true') || (G.run && G.run.ending === 'true'));
 }
@@ -176,6 +178,10 @@ function desire(G, now) {
   // boss fallback: a live boss without an intro event still gets its theme
   if (!S.boss.active && !S.boss.done && G.boss && !G.boss.dead && now - S.enterT > 2.5) {
     const k = bossKey(G.boss.kind || G.boss.id); if (k) { S.boss.id = k; S.boss.active = true; }
+  }
+  if (S.boss.intro && !S.boss.active && !S.boss.done) {
+    if (now - S.boss.intro > 7) S.boss.active = !!S.boss.id; // no bossFight event: start anyway
+    else return { track: null }; // the title card and the intro line, in a hush
   }
   if (S.boss.active && S.boss.id) {
     const ph = (G.boss && G.boss.phase) || S.boss.phase || 1;
@@ -218,6 +224,8 @@ function direct(now) {
 }
 
 // ---------------------------------------------------------------- events
+// Event map. The sim's own vocabulary (see the headers of sim/run.js,
+// sim/combat.js, sim/enemies/brain.js, sim/bosses/common.js) plus the brief's.
 function materialOf(e) {
   const k = String(e.kind || e.art || '').toLowerCase();
   if (/veyl|glass|thorn|crystal/.test(k)) return 'glass';
@@ -228,220 +236,393 @@ function materialOf(e) {
   return 'thread';
 }
 const ownerOf = (G, o) => (o && typeof o === 'object' ? o : (G.foes || []).find((f) => f.id === o) || null);
-const isBoss = (G, e) => !!e && (e === G.boss || e.boss || !!bossKey(e.kind) && (e.tier === 'boss' || e === G.boss || e.isBoss));
+const isBoss = (G, e) => !!e && (e === G.boss || !!e.boss || e.tier === 'boss' || e.isBoss === true);
+const at = (p, e) => ({ x: p.x ?? (e && e.x), y: p.y ?? (e && e.y) });
 
-function tellFor(G, tg) {
-  const owner = ownerOf(G, tg.owner);
-  const k = String((owner && owner.kind) || tg.ownerKind || '').toLowerCase();
-  const dur = clamp(tg.max ?? tg.t ?? 0.5, 0.2, 2.2);
-  const at = { x: tg.x, y: tg.y };
-  if (tg.sfx === false) return;
-  if (typeof tg.sfx === 'string') sfx(tg.sfx, { ...at, dur });
-  else if (owner && isBoss(G, owner) || bossKey(k)) {
-    const b = bossKey(k) || S.boss.id;
-    sfx('tell_boss', { ...at, dur, vel: 0.8 });
-    // the signature sound lands with the attack
-    const sig = tg.hitSfx || bossSig(b, tg);
-    if (sig) sfx(sig, { ...at, delay: dur });
-  } else {
-    let name = 'tell';
-    if (/hollow|thornling/.test(k)) name = 'tell_claw';
-    else if (/knight|warden/.test(k)) name = 'tell_heavy';
-    else if (/needle|caster/.test(k)) name = 'tell_cast';
-    else if (/snarl|wolf/.test(k)) name = 'tell_leap';
-    else if (/hulk|brute|bellows/.test(k)) name = tg.kind === 'line' ? 'tell_charge' : 'tell_slam';
-    else if (/chorist|choir/.test(k)) name = 'tell_song';
-    sfx(name, { ...at, dur });
-    if (tg.hitSfx) sfx(tg.hitSfx, { ...at, delay: dur });
-    else if (/knight|hulk|brute/.test(k) && (tg.kind === 'line' || tg.kind === 'circle')) sfx('slam', { ...at, delay: dur, vel: /hulk|brute/.test(k) ? 1 : 0.75 });
-  }
-}
-function bossSig(b, tg) {
-  const k = tg.kind;
-  if (b === 'veyl') return k === 'line' ? 'veyl_thorns' : k === 'circle' ? 'veyl_shatter' : k === 'ring' ? 'veyl_ring' : 'veyl_claw';
-  if (b === 'morrow') return k === 'ring' ? 'morrow_ring' : k === 'circle' ? 'morrow_flood' : 'morrow_lantern';
-  if (b === 'aurum') return k === 'circle' ? 'aurum_hammer' : k === 'line' ? 'aurum_anvil' : 'aurum_hiss';
-  if (b === 'sable') return k === 'line' || k === 'cone' ? 'sable_lunge' : 'sable_thread';
-  return 'slam';
+// enemy wind-ups by attack id (sim/enemies: foeWindup {e, atk}, wind-up length e.stDur)
+const TELL = {
+  clawLunge: 'tell_claw', twinRake: 'tell_claw', spoolSlash: 'tell_claw', bite: 'tell_leap',
+  overheadSlam: 'tell_heavy', doubleSlam: 'tell_heavy', shardSlam: 'tell_heavy', backSweep: 'tell_heavy',
+  censerSwing: 'tell_heavy', censerSlam: 'tell_heavy', censerSpin: 'tell_heavy', hammerSwing: 'tell_heavy',
+  needleFan: 'tell_cast', needleStorm: 'tell_cast', snareThread: 'tell_cast', twinThread: 'tell_cast',
+  songRing: 'tell_song', canon: 'tell_song', leap: 'tell_leap', doubleLeap: 'tell_leap',
+  hammerLob: 'tell', tripleLob: 'tell', groundSlam: 'tell_slam', quake: 'tell_slam', charge: 'tell_charge',
+  fireBreath: null, fireSweep: null, // the inhale is the tell (foeInhale)
+  echoDash: 'tell', echoChain: 'tell', echoCombo: 'tell',
+};
+const SLAMS = new Set(['overheadSlam', 'doubleSlam', 'shardSlam', 'censerSlam', 'groundSlam', 'quake']);
+function tellByKind(k, tgKind) {
+  if (/hollow|thornling/.test(k)) return 'tell_claw';
+  if (/knight|warden/.test(k)) return 'tell_heavy';
+  if (/needle|caster|unspool/.test(k)) return 'tell_cast';
+  if (/snarl|wolf/.test(k)) return 'tell_leap';
+  if (/hulk|brute|bellows/.test(k)) return tgKind === 'line' ? 'tell_charge' : 'tell_slam';
+  if (/chorist|choir/.test(k)) return 'tell_song';
+  return 'tell';
 }
 
+// boss moves (bossMove {id, move, pose: wind|act|rec}) -> the sound on 'act'
+const BOSS_ACT = {
+  veyl: { volley: 'veyl_volley', claw: 'veyl_claw', burrow: 'veyl_ring', ring: 'veyl_ring', verdict: 'veyl_thorns', summon: 'veyl_summon' },
+  morrow: { ring: 'morrow_ring', sweep: 'morrow_lantern', notes: 'song_ring', summon: 'morrow_summon', sink: 'morrow_flood', choir: 'morrow_choir', flood: 'morrow_flood', requiem: 'morrow_choir' },
+  aurum: { sweep: 'aurum_sweep', anvil: 'hammer_throw', breath: 'aurum_breath', heat: 'aurum_heat', pour: 'aurum_hiss' },
+  sable: { lunge: 'sable_lunge', snare: 'sable_snare', riposte: 'sable_lunge', echoes: 'sable_echo', dash: 'sable_dash', mirror: 'sable_thread', storm: 'sable_thread' },
+};
+// where something lands (bossImpact {id, item})
+const BOSS_IMPACT = { glass: 'veyl_shatter', lanes: 'veyl_thorns', emerge: 'veyl_thorns', anvil: 'aurum_anvil', hammer: 'aurum_hammer', sweep: 'slam', note: 'morrow_ring', ring: 'morrow_ring', riposte: 'hit_armor' };
+// set pieces (bossSetPiece {id, name})
+const BOSS_SET = {
+  veyl: { thornEdge: 'veyl_ring', verdict: 'veyl_thorns' },
+  morrow: { choir: 'morrow_choir', requiem: 'morrow_choir', chorus: 'morrow_summon', flood: 'morrow_flood' },
+  aurum: { stoke: 'aurum_heat', pour: 'aurum_hiss', heat: 'aurum_heat' },
+  sable: { unmask: 'sable_unmask', unravel: 'sable_thread', storm: 'sable_thread' },
+};
 const BOSS_ROOT = { veyl: 33, morrow: 36, aurum: 29, sable: 35 };
+
+const UI_MAP = { buy: 'purchase', purchase: 'purchase', reroll: 'reroll', select: 'ui_confirm', equip: 'ui_confirm', upgrade: 'ui_upgrade', deny: 'ui_error', locked: 'ui_error' };
 const ui = (p) => {
+  if (p && p.toast) return sfx('ui_tick', { vol: 1.5 });
+  if (p && p.station) return sfx('ui_hover', { vol: 1.5 });
+  if (p && p.prompt) return;
   const n = typeof p === 'string' ? p : p && (p.sfx || p.type || p.kind || p.action || p.name);
   if (!n) return;
-  const map = { buy: 'purchase', purchase: 'purchase', reroll: 'reroll', select: 'ui_confirm', equip: 'ui_confirm', upgrade: 'ui_upgrade', deny: 'ui_error', locked: 'ui_error' };
-  const name = map[n] || (SFX['ui_' + n] ? 'ui_' + n : SFX[n] ? n : null);
+  const name = UI_MAP[n] || (SFX['ui_' + n] ? 'ui_' + n : SFX[n] ? n : null);
   if (name) sfx(name, p && typeof p === 'object' ? p : {});
 };
+
+// DOM interface sounds by delegation: any button or [data-sfx] in the page.
+// data-sfx="none" silences an element; data-sfx="<name>" picks the click sound.
+function domSounds() {
+  if (typeof document === 'undefined' || S.dom) return;
+  S.dom = true;
+  const target = (ev) => ev.target && ev.target.closest && ev.target.closest('button, [role="button"], [data-sfx], [data-boon], [data-shop], [data-profile], a, input[type="range"], input[type="checkbox"], select');
+  let lastHover = null;
+  document.addEventListener('pointerover', (ev) => {
+    const el = target(ev); if (!el || el === lastHover) return; lastHover = el;
+    if (el.dataset.sfx === 'none' || el.disabled) return;
+    sfx('ui_hover');
+  }, true);
+  document.addEventListener('click', (ev) => {
+    const el = target(ev); if (!el || el.dataset.sfx === 'none') return;
+    if (el.disabled || el.getAttribute('aria-disabled') === 'true') return sfx('ui_error');
+    if (el.dataset.sfx) return sfx(el.dataset.sfx);
+    if (el.matches('[data-boon]')) return sfx('ui_confirm');
+    if (el.matches('[data-shop]')) return; // shopBuy plays the purchase
+    if (el.matches('input[type="range"]')) return;
+    if (/back|close|resume|leave|cancel/i.test(el.id || '')) return sfx('ui_back');
+    sfx('ui_click');
+  }, true);
+  document.addEventListener('input', (ev) => { const el = ev.target; if (el && el.type === 'range' && el.dataset.sfx !== 'none') sfx('ui_slider', { value: (+el.value - +(el.min || 0)) / ((+(el.max || 1) - +(el.min || 0)) || 1) }); }, true);
+  document.addEventListener('focusin', (ev) => { const el = target(ev); if (el && el !== lastHover && el.dataset.sfx !== 'none') { lastHover = el; sfx('ui_hover'); } }, true);
+}
+
+function applySettings(G) {
+  const v = G && G.settings && G.settings.volume;
+  if (v && typeof v === 'object') setVolumes(v);
+  const m = G && G.settings && (G.settings.mute ?? (G.settings.audio && G.settings.audio.mute));
+  if (m != null) mute(!!m);
+}
 
 export function attachAudio(bus, G) {
   if (S.bus) for (const off of S.offs) try { off(); } catch (e) {}
   S.offs = []; S.bus = bus; S.G = G;
   if (S.E) S.E.G = G;
+  applySettings(G);
   const on = (type, fn) => { if (bus && bus.on) S.offs.push(bus.on(type, (p) => { try { fn(p || {}); } catch (e) { if (!S.warned) { S.warned = true; console.warn('Loomwake audio event', type, e); } } })); };
   const now = () => (S.E ? S.E.now() : 0);
 
-  // gestures unlock audio (main.js should also call initAudio from its own handlers)
+  // gestures unlock audio (main.js also calls initAudio from its own handlers)
   if (!S.gestures && typeof window !== 'undefined') {
     S.gestures = true;
     const unlock = () => { initAudio(); if (S.E && S.E.ctx.state === 'running') for (const ev of ['pointerdown', 'keydown', 'touchend']) window.removeEventListener(ev, unlock, true); };
     for (const ev of ['pointerdown', 'keydown', 'touchend']) window.addEventListener(ev, unlock, true);
     window.addEventListener('gamepadconnected', () => initAudio());
   }
+  domSounds();
 
-  // ---- combat
-  on('hit', (p) => {
-    const e = p.target; if (!e || e === G.hero || e.team === 'hero') return;
-    const pos = { x: p.x ?? e.x, y: p.y ?? e.y };
-    const vel = clamp(0.55 + (p.dmg || 0) / 60, 0.5, 1.3);
-    const mat = materialOf(e);
-    if (p.kind === 'snare') sfx('snare_hit', pos);
-    sfx('hit_' + mat, { ...pos, vel });
-    if (p.crit) sfx('crit', pos);
-    const el = patronKey(p.element) || (p.element === 'fire' || p.element === 'molten' ? 'fire' : null);
-    if (el && p.kind !== 'call') sfx('proc_' + el, { ...pos, vel: 0.7 });
-    // armour break: armour went from >0 to 0 on this hit
-    const prev = S.armor.get(e);
-    if (prev > 0 && !(e.armor > 0)) sfx('armor_break', { ...pos, material: mat === 'glass' ? 'glass' : 'armor' });
-    S.armor.set(e, e.armor || 0);
-  });
-  on('armorBreak', (p) => { const e = p.e || p.target; if (e) S.armor.set(e, 0); sfx('armor_break', { x: p.x ?? e?.x, y: p.y ?? e?.y, material: e && materialOf(e) === 'glass' ? 'glass' : 'armor' }); });
-  on('stagger', (p) => sfx('stagger', { x: p.x ?? p.e?.x, y: p.y ?? p.e?.y }));
-  on('kill', (p) => {
-    const e = p.e || p.target; if (!e || isBoss(G, e)) return;
-    const pos = { x: e.x, y: e.y };
-    const k = String(e.kind || '').toLowerCase();
-    if (e.elite || e.tier === 'elite' || /hulk|brute/.test(k)) sfx('unravel_elite', pos); else sfx('unravel', pos);
-    if (/thornling/.test(k)) sfx('thorn_burst', pos);
-    if (/glass/.test(k)) sfx('veyl_shatter', { ...pos, vel: 0.6 });
-  });
-  on('heroHurt', (p) => sfx('hero_hurt', { vel: clamp(0.7 + (p.dmg || 0) / 40, 0.7, 1.3) }));
-  on('heroDeath', () => { sfx('death_sting'); if (S.M) S.M.stopAll(0.6); S.lastWant = 'dead'; });
-  on('deathDefy', () => sfx('death_defy'));
-  on('heal', (p) => sfx('heal', { vel: p.small ? 0.6 : 1 }));
+  // ---- Iri
   on('swing', (p) => {
     const w = String(p.weapon || 'blade').toLowerCase(), c = p.combo | 0;
-    if (w.includes('spear')) sfx(c >= 2 ? 'swing3' : 'spear', { pitch: c >= 2 ? 0.85 : 1 });
-    else if (w.includes('bow')) sfx(p.charge ? 'bow' : 'bow', { vel: 0.7 + 0.3 * (p.charge ?? 1) });
-    else if (w.includes('gaunt') || w.includes('fist')) sfx(c >= 3 ? 'swing3' : 'punch', { pitch: 1 + (c % 3) * 0.06 });
-    else if (w.includes('chakram') || w.includes('bobbin')) sfx('chakram');
-    else sfx(c >= 2 ? 'swing3' : c === 1 ? 'swing2' : 'swing1');
+    if (w.includes('spear')) sfx(p.spin || p.heavy || c >= 2 ? 'swing3' : 'spear', { pitch: p.spin ? 0.8 : p.heavy ? 0.9 : 1 });
+    else if (w.includes('bow')) sfx('bow', { vel: 0.7 + 0.3 * Math.min(1, p.charge ?? 1) });
+    else if (w.includes('gaunt') || w.includes('fist')) sfx(p.heavy || c >= 3 ? 'swing3' : 'punch', { pitch: (p.fist ? 1.06 : 1) * (1 + (c % 3) * 0.04) });
+    else if (w.includes('chakram') || w.includes('bobbin')) sfx('chakram', { pitch: c === 3 ? 1.15 : 1 });
+    else sfx(p.heavy || c >= 2 ? 'swing3' : c === 1 ? 'swing2' : 'swing1', { pitch: p.thrust ? 1.1 : 1 });
   });
-  on('charge', () => sfx('bow_draw'));
+  on('weaponFx', (p) => {
+    const w = String(p.weapon || ''), f = p.fx, pos = at(p);
+    const M = {
+      spear: { throw: 'spear_throw', recall: ['snare_recall', { pitch: 0.8 }], stick: 'spear_stick', thorns: 'thorn_burst', catch: ['chakram_catch', { pitch: 0.7 }] },
+      bow: { perfect: 'bow_perfect', nock: 'bow_draw', full: 'charge_full', volley: ['bow', { pitch: 1.1 }], split: ['bow_perfect', { vel: 0.6 }], arrowWall: 'arrow_wall', hymn: 'hymn' },
+      chakram: { return: 'chakram_return', hover: ['chakram', { vel: 0.5 }], ricochet: 'chakram_ricochet', catch: 'chakram_catch', spin: 'chakram_spin' },
+      gauntlets: { fray: 'proc_shade', comet: 'comet', uppercut: 'uppercut', leap: 'leap', slam: 'slam' },
+    }[w];
+    const m = M && M[f];
+    if (!m) return;
+    if (Array.isArray(m)) sfx(m[0], { ...pos, ...m[1] }); else sfx(m, pos);
+  });
   on('special', () => sfx('special'));
   on('snare', () => sfx('snare_throw'));
-  on('snareHit', (p) => sfx('snare_hit', { x: p.x, y: p.y }));
-  on('snareRecall', () => sfx('snare_recall'));
-  on('recall', () => sfx('snare_recall'));
-  on('bind', (p) => sfx('bind', { x: p.x ?? p.e?.x, y: p.y ?? p.e?.y }));
-  on('catch', () => sfx('chakram_catch'));
+  on('snareHit', (p) => { if (p.boss) sfx('sable_snare'); else sfx('snare_hit', at(p)); });
+  on('snareBind', (p) => sfx('bind', at(p)));
+  on('snareRecall', (p) => sfx('snare_recall', { pitch: p.heavy ? 0.85 : 1 }));
+  on('snareBack', () => sfx('snare_recall', { vel: 0.6, pitch: 1.2 }));
   on('dash', () => { const t = now(); sfx('dash', { chained: t - S.lastDash < 0.45 }); S.lastDash = t; });
+  on('dodge', () => sfx('dodge'));
+  on('wardHit', () => sfx('ward'));
   on('call', (p) => sfx('call_' + (patronKey(p.patron) || 'dawn')));
   on('callReady', () => sfx('call_ready'));
-  on('chain', (p) => sfx('chain', { x: p.x, y: p.y }));
+  on('heroHurt', (p) => sfx('hero_hurt', { vel: clamp(0.7 + (p.dmg || 0) / 40, 0.7, 1.3) }));
+  on('hazard', (p) => { const k = String(p.kind || ''); sfx(/molten|fire/.test(k) ? 'sizzle' : /thorn|spike/.test(k) ? 'thorn_burst' : /water|flood/.test(k) ? 'proc_tide' : 'hit_stone', at(p)); });
+  on('heroDeath', () => { sfx('death_sting'); if (S.M) S.M.stopAll(0.6); S.lastWant = 'dead'; });
+  on('deathDefiance', () => sfx('death_defy'));
+  on('deathDefy', () => sfx('death_defy'));
+  on('heal', (p) => sfx('heal', { vel: (p.n ?? 20) < 10 ? 0.6 : 1 }));
+  on('respawn', () => sfx('respawn'));
+  on('fall', (p) => { if (p.who === 'hero') sfx('fall'); else sfx('fall', { ...at(p, p.e), vel: 0.6, pitch: 1.2 }); });
+  on('slam', (p) => sfx('wall_slam', at(p, p.e)));
   on('shield', () => sfx('shield'));
   on('cloak', () => sfx('cloak'));
-  on('telegraph', (p) => { const tg = p.tg || p; if (tg) tellFor(G, tg); });
-  on('spawn', (p) => {
-    const e = p.e; if (!e || isBoss(G, e) || e.team === 'hero') return;
-    const pos = { x: e.x, y: e.y }, k = String(e.kind || '').toLowerCase();
-    sfx('spawn', pos);
-    const r = Math.random();
-    if (/hollow|thornling/.test(k) && r < 0.35) sfx('rasp', { ...pos, delay: 0.6 });
-    else if (/knight|warden/.test(k) && r < 0.5) sfx('clank', { ...pos, delay: 0.6 });
-    else if (/snarl/.test(k) && r < 0.5) sfx('growl', { ...pos, delay: 0.6 });
-  });
-  on('projectile', (p) => {
-    const q = p.p || p; if (!q) return;
-    const k = String(q.kind || '').toLowerCase(), pos = { x: q.x, y: q.y };
-    if (q.team === 'hero') { if (/arrow|bolt/.test(k)) sfx('arrow', pos); return; }
-    if (/needle/.test(k)) sfx('needle', pos);
-    else if (/anvil/.test(k)) sfx('aurum_anvil', pos);
-    else if (/hammer/.test(k)) sfx('hammer_throw', pos);
-    else if (/glass|shard|thorn/.test(k)) sfx('needle', { ...pos, pitch: 1.25, vel: 0.8 });
-    else if (/song|ring|wave/.test(k)) sfx('song_ring', pos);
-    else if (/fire|flame/.test(k)) sfx('fire_breath', pos);
-    else if (/orb|bolt|wisp/.test(k)) sfx('orb', pos);
-    else sfx('projectile', pos);
-  });
-  on('explode', (p) => sfx('explode', { x: p.x, y: p.y, element: patronKey(p.element) || p.element, vel: clamp(0.6 + (p.r || 80) / 300, 0.6, 1.2) }));
-  on('slam', (p) => sfx('slam', { x: p.x, y: p.y }));
-  on('shockwave', (p) => sfx('shockwave', { x: p.x, y: p.y }));
-  on('leap', (p) => sfx('leap', { x: p.x, y: p.y }));
-  on('teleport', (p) => sfx('teleport', { x: p.x, y: p.y }));
-  on('pull', (p) => sfx('pull', { x: p.x, y: p.y }));
-  on('bossAttack', (p) => { const b = bossKey(p.id) || S.boss.id; const n = b && p.attack ? `${b}_${p.attack}` : null; if (n && SFX[n]) sfx(n, { x: p.x, y: p.y, delay: p.delay }); });
-  on('sfx', (p) => { if (p.name) sfx(p.name, p); });
 
-  // ---- powers and rewards
-  on('boon', (p) => sfx('boon_take', { patron: p.patron || p.id }));
+  // ---- boons and powers
+  on('power', (p) => {
+    const pos = at(p);
+    const m = { arc: 'chain', zap: 'chain', crackle: 'proc_storm', quake: ['call_stone', { vel: 0.45 }], spike: 'proc_stone', cloak: 'cloak', heal: ['heal', { vel: 0.6 }], wave: ['proc_tide', { vel: 1.3 }] }[p.fx];
+    if (!m) return;
+    if (Array.isArray(m)) sfx(m[0], { ...pos, ...m[1] }); else sfx(m, pos);
+  });
+  on('powerSpawn', (p) => {
+    const k = p.p && p.p.kind, pos = at(p.p || {});
+    const m = { cyclone: 'call_wind', vortex: 'proc_shade', rift: 'cloak', riptide: 'proc_tide', sunspot: 'proc_dawn', molten: 'sizzle', mud: 'proc_stone', strike: 'proc_storm', ring: 'proc_dawn', wave: 'proc_tide' }[k];
+    if (m) sfx(m, { ...pos, vel: k === 'cyclone' ? 0.45 : 0.8 });
+  });
+  on('boon', (p) => {
+    if (p.kind === 'temper') return sfx('ui_upgrade');
+    if (p.knot || p.upgrade) return sfx('pickup_knot');
+    sfx('boon_take', { patron: p.patron || (p.patrons && p.patrons[0]) || p.id });
+    if (p.braid || p.legendary) sfx('card', { rarity: 'mythic', delay: 0.25, vel: 0.7 });
+  });
+  on('boonLevel', () => sfx('pickup_knot'));
   on('offer', (p) => {
-    const list = (p && (p.offer || p.cards)) || G.offer || [];
-    sfx('offer');
-    list.forEach((c, i) => sfx('card', { rarity: c && c.rarity, delay: 0.12 + i * 0.12 }));
+    const list = (p && (p.cards || p.offer)) || G.offer || [];
+    sfx(p.reroll ? 'reroll' : 'offer');
+    list.forEach((c, i) => sfx('card', { rarity: c && (c.braid ? 'mythic' : c.rarity), delay: 0.12 + i * 0.12 }));
   });
   on('reroll', () => sfx('reroll'));
+  on('shopBuy', () => sfx('purchase'));
   on('purchase', () => sfx('purchase'));
-  on('pickup', (p) => { const k = String(p.kind || ''); sfx(SFX['pickup_' + k] ? 'pickup_' + k : 'pickup'); });
+  on('pickup', (p) => { const k = String(p.kind || ''); sfx(SFX['pickup_' + k] ? 'pickup_' + k : 'pickup', at(p)); });
   on('fountain', () => sfx('fountain'));
   on('memory', () => sfx('pickup_memory'));
   on('upgrade', () => sfx('ui_upgrade'));
 
-  // ---- rooms and flow
-  on('chamberEnter', (p) => {
-    const ch = p.chamber || G.chamber;
-    S.boss = { id: null, phase: 1, active: false, done: false };
-    S.enterT = now(); S.clearT = -9; S.holdUntil = 0;
-    sfx('door_enter');
-    if (S.E && ch && ch.region) setRoom(S.E, ch.region, 1.5);
+  // ---- the Unravelled
+  on('hit', (p) => {
+    const e = p.target; if (!e || e === G.hero || e.team === 'hero') return;
+    if (p.quiet && !p.crit) return; // damage-over-time ticks
+    const pos = at(p, e);
+    const vel = clamp(0.55 + (p.dmg || 0) / 60, 0.5, 1.3);
+    const mat = materialOf(e);
+    sfx('hit_' + mat, { ...pos, vel });
+    if (p.crit) sfx('crit', pos);
+    const el = patronKey(p.element) || (p.element === 'fire' || p.element === 'molten' ? 'fire' : null);
+    if (el && p.kind !== 'call') sfx('proc_' + el, { ...pos, vel: 0.7 });
+    // armour break, if the sim did not send armorBreak for it
+    const prev = S.armor.get(e);
+    if (prev > 0 && !(e.armor > 0) && !S.brokeAt.has(e)) sfx('armor_break', { ...pos, material: mat === 'glass' ? 'glass' : 'armor' });
+    S.armor.set(e, e.armor || 0);
   });
-  on('wave', () => sfx('wave_start'));
-  on('chamberClear', () => {
-    S.clearT = now();
-    const r = REGION_ROOT[regionOf(G)] ?? 62;
-    if (!S.boss.done) sfx('chamber_clear', { root: r + 12 });
+  on('armorBreak', (p) => { const e = p.e || p.target; if (e) { S.armor.set(e, 0); S.brokeAt.add(e); } sfx('armor_break', { ...at(p, e), material: e && materialOf(e) === 'glass' ? 'glass' : 'armor' }); });
+  on('stagger', (p) => sfx('stagger', at(p, p.e)));
+  on('status', (p) => { if (p.name === 'bound') sfx('bind', at(p, p.e)); else if (p.name === 'blind') sfx('proc_dawn', { ...at(p, p.e), vel: 0.6 }); });
+  on('kill', (p) => {
+    const e = p.e || p.target; if (!e || p.boss || isBoss(G, e)) return;
+    const pos = at(p, e), k = String(e.kind || '').toLowerCase();
+    if (p.elite || e.elite || /hulk|brute/.test(k)) sfx('unravel_elite', pos); else sfx('unravel', { ...pos, vel: p.noReward ? 0.6 : 1 });
+    if (/thornling/.test(k)) sfx('thorn_burst', pos);
+    if (/glass/.test(k)) sfx('veyl_shatter', { ...pos, vel: 0.6 });
   });
-  on('doorOpen', () => sfx('door_open'));
-  on('doorLocked', () => sfx('door_locked'));
-  on('regionEnter', (p) => { if (S.E && p.region) setRoom(S.E, p.region, 2); S.lastWant = ''; });
+  on('spawn', (p) => { const e = p.e; if (!e || isBoss(G, e) || e.team === 'hero') return; sfx('spawn', at(p, e)); });
+  on('foeRise', (p) => {
+    const e = p.e; if (!e) return;
+    const pos = at(p, e), k = String(e.kind || '').toLowerCase(), r = Math.random();
+    if (/hollow|thornling/.test(k) && r < 0.4) sfx('rasp', pos);
+    else if (/knight|warden|thrall/.test(k) && r < 0.6) sfx('clank', pos);
+    else if (/snarl/.test(k) && r < 0.6) sfx('growl', pos);
+    else if (/hulk|brute/.test(k)) sfx('roar', { ...pos, vel: 0.6 });
+  });
+  on('foeWindup', (p) => {
+    const e = p.e; if (!e) return;
+    S.sawWindup = true;
+    const pos = at(p, e), k = String(e.kind || '').toLowerCase();
+    const name = p.atk in TELL ? TELL[p.atk] : tellByKind(k);
+    if (name) sfx(name, { ...pos, dur: e.stDur || 0.5, vel: e.elite ? 1.15 : 1 });
+  });
+  on('telegraph', (p) => {
+    const tg = p.tg || p; if (!tg || tg.live) return;
+    const pos = { x: tg.x, y: tg.y }, dur = clamp(tg.max ?? tg.t ?? 0.5, 0.2, 2.2);
+    if (tg.sfx === false) return;
+    if (typeof tg.sfx === 'string') return sfx(tg.sfx, { ...pos, dur });
+    if (tg.boss || bossKey(tg.owner) || isBoss(G, ownerOf(G, tg.owner))) return sfx('tell_boss', { ...pos, dur, vel: 0.8 });
+    if (S.sawWindup) return; // foes: foeWindup already played the tell
+    const o = ownerOf(G, tg.owner);
+    sfx(tellByKind(String((o && o.kind) || '').toLowerCase(), tg.kind), { ...pos, dur });
+  });
+  on('foeSwing', (p) => {
+    const e = p.e; if (!e) return;
+    const pos = at(p, e), a = p.atk || '';
+    if (a === 'echoCombo') return sfx(['swing1', 'swing2', 'swing3'][(p.combo | 0) % 3], { ...pos, pitch: 0.78, vel: 0.8 });
+    if (/claw|rake|spool/i.test(a)) return sfx('claw', pos);
+    if (a === 'bite') { sfx('claw', { ...pos, pitch: 0.8 }); return sfx('growl', { ...pos, vel: 0.6 }); }
+    if (/censer/i.test(a)) return sfx('censer', pos);
+    sfx('foe_swing', { ...pos, pitch: /hammer/i.test(a) ? 0.8 : 1 });
+  });
+  on('foeImpact', (p) => {
+    const pos = at(p), k = String(p.kind || '').toLowerCase(), pw = p.power ?? 1;
+    if (k === 'thorns') return sfx('thorn_burst', pos);
+    if (k === 'hammer') { sfx('slam', { ...pos, vel: 0.7 }); return sfx('hit_gold', { ...pos, vel: 0.7 }); }
+    sfx('slam', { ...pos, vel: clamp(0.5 + pw * 0.5, 0.5, 1.2) });
+    if (pw >= 1 || /hulk|brute|knight/.test(k)) sfx('shockwave', { ...pos, vel: 0.7 });
+  });
+  on('foeHum', (p) => sfx('clank', at(p, p.e)));
+  on('foeCast', (p) => { const a = p.atk || ''; if (/thread/i.test(a)) sfx('pull', at(p, p.e)); else sfx('needle', at(p, p.e)); });
+  on('foeSing', (p) => sfx('song_ring', at(p, p.e)));
+  on('foeLeap', (p) => sfx('leap', at(p, p.e)));
+  on('foeThrow', (p) => sfx('hammer_throw', at(p, p.e)));
+  on('foeInhale', (p) => sfx('inhale', { ...at(p, p.e), dur: (p.e && p.e.stDur) || 0.6 }));
+  on('foeBreath', (p) => sfx('fire_breath', at(p, p.e)));
+  on('foeRoar', (p) => sfx('roar', at(p, p.e)));
+  on('foeEnrage', (p) => sfx('roar', { ...at(p, p.e), pitch: 0.9 }));
+  on('foeDash', (p) => sfx('foe_dash', at(p, p.e)));
+  on('foeBlink', (p) => sfx('teleport', at(p, p.e)));
+  on('foeSnare', (p) => sfx('pull', at(p, p.e)));
+  on('foeSnareBreak', (p) => sfx('snap', at(p, p.e)));
+  on('projectile', (p) => {
+    const q = p.p || p; if (!q) return;
+    const k = String(q.kind || q.style || '').toLowerCase(), pos = { x: q.x, y: q.y };
+    if (q.team === 'hero') { if (/arrow|bolt/.test(k)) sfx('arrow', pos); return; }
+    if (/needle/.test(k)) sfx('needle', pos);
+    else if (/anvil/.test(k)) sfx('hammer_throw', { ...pos, pitch: 0.7 });
+    else if (/hammer/.test(k)) sfx('hammer_throw', pos);
+    else if (/glass|shard|thorn/.test(k)) sfx('needle', { ...pos, pitch: 1.25, vel: 0.8 });
+    else if (/song|ring|wave|note/.test(k)) sfx('song_ring', pos);
+    else if (/fire|flame|ember/.test(k)) sfx('fire_breath', { ...pos, vel: 0.5 });
+    else if (/orb|bolt|wisp/.test(k)) sfx('orb', pos);
+    else sfx('projectile', pos);
+  });
+  on('projectileBounce', (p) => sfx('chakram_ricochet', { x: p.p && p.p.x, y: p.p && p.p.y, vel: 0.6 }));
+  on('zone', (p) => { const z = p.z || {}; const k = String(z.kind || ''); if (k.startsWith('boss:')) return; if (/molten|fire|burn/.test(k)) sfx('sizzle', at(z)); });
+  on('explode', (p) => {
+    if (p.call) return; // the call has its own sound
+    const el = String(p.element || '');
+    if (el.startsWith('boss:')) return sfx('explode', { ...at(p), vel: 1.2, element: el.includes('veyl') ? 'glass' : el.includes('aurum') ? 'fire' : el.includes('morrow') ? 'tide' : 'void' });
+    sfx('explode', { ...at(p), element: patronKey(el) || el, vel: clamp(0.6 + (p.r || 80) / 300, 0.6, 1.2) });
+  });
+  on('shockwave', (p) => sfx('shockwave', at(p)));
+  on('leap', (p) => sfx('leap', at(p)));
+  on('teleport', (p) => sfx('teleport', at(p)));
+  on('pull', (p) => sfx('pull', at(p)));
+  on('chain', (p) => sfx('chain', at(p)));
+
+  // ---- bosses
   on('bossIntro', (p) => {
     const b = bossKey(p.id) || bossKey(G.boss && G.boss.kind);
-    S.boss = { id: b, phase: 1, active: !!b, done: false };
+    S.boss = { id: b, phase: 1, active: false, done: false, intro: now() };
     sfx('boss_intro', { root: BOSS_ROOT[b] ?? 33 });
-    if (b === 'morrow') sfx('morrow_choir', { delay: 0.4 });
+    if (b === 'morrow') sfx('morrow_choir', { delay: 0.4, vel: 0.7 });
     if (b === 'veyl') sfx('veyl_ring', { delay: 0.3, vel: 0.7 });
-    if (b === 'sable') sfx('sable_thread', { delay: 0.5 });
+    if (b === 'sable') sfx('sable_thread', { delay: 0.5, vel: 0.8 });
     if (b === 'aurum') sfx('aurum_hammer', { delay: 0.25, vel: 0.8 });
+    if (p.line) voice(b || p.id, p.line, { delay: 1.2 });
+    S.lastWant = '';
   });
+  on('bossFight', (p) => { const b = bossKey(p.id) || S.boss.id; S.boss.id = b; S.boss.active = !!b; S.lastWant = ''; });
+  on('bossMove', (p) => {
+    const b = bossKey(p.id); if (!b) return;
+    if (p.pose === 'act') { const n = BOSS_ACT[b] && BOSS_ACT[b][p.move]; if (n) sfx(n, at(p)); }
+    else if (p.pose === 'wind' && b === 'aurum') sfx('aurum_step', at(p));
+  });
+  on('bossImpact', (p) => { const n = BOSS_IMPACT[p.item]; if (n) sfx(n, { ...at(p), vel: clamp(0.6 + (p.r || 100) / 400, 0.6, 1.1) }); });
+  on('bossSlash', (p) => sfx('sable_lunge', { ...at(p), vel: 0.7 }));
+  on('bossSetPiece', (p) => {
+    const b = bossKey(p.id);
+    if (p.name === 'braid') return sfx('braid');
+    if (p.name === 'death') return;
+    const n = b && BOSS_SET[b] && BOSS_SET[b][p.name]; if (n) sfx(n);
+  });
+  on('bossSummon', (p) => { const b = bossKey(p.id); sfx(b === 'veyl' ? 'veyl_summon' : b === 'morrow' ? 'morrow_summon' : b === 'sable' ? 'sable_echo' : 'spawn'); });
+  on('bossStagger', (p) => sfx('stagger', at(p, p.e)));
+  on('bossArmor', () => sfx('shield', { pitch: 0.7 }));
+  on('bossSnap', (p) => sfx('snap', at(p)));
+  on('bossMirror', (p) => sfx('call_' + (patronKey(p.patron) || 'shade'), { vel: 0.55, pitch: 0.8 }));
+  on('bossBark', (p) => { if (p.text) voice(p.speaker || p.id, p.text); });
   on('bossPhase', (p) => {
     const b = bossKey(p.id) || S.boss.id;
     S.boss.phase = p.phase || 2; if (b) { S.boss.id = b; S.boss.active = true; }
     sfx('boss_phase', { root: BOSS_ROOT[b] ?? 33 });
-    if (b === 'sable') sfx('sable_unmask');
-    if (b === 'aurum') sfx('aurum_heat', { delay: 0.4 });
     if (b === 'veyl') sfx('veyl_summon', { delay: 0.5 });
-    if (b === 'morrow') sfx('morrow_flood', { delay: 0.5 });
     if (S.M) S.M.phaseTo(S.boss.phase);
+    S.lastWant = '';
   });
-  on('bossDefeat', (p) => {
+  on('bossDying', (p) => {
     const b = bossKey(p.id) || S.boss.id;
+    if (S.M) S.M.stopAll(2.5);
+    S.boss.active = false; S.boss.done = true; S.holdUntil = now() + 9; S.lastWant = 'dying';
+    sfx('unravel_elite', { vel: 1.2 });
+    if (p.line) voice(b || p.id, p.line, { delay: 0.6 });
+  });
+  on('bossDefeat', () => {
     S.boss.active = false; S.boss.done = true;
     sfx('boss_defeat', { root: (REGION_ROOT[regionOf(G)] ?? 62) + 12 });
     if (S.M) S.M.stopAll(1.2);
     S.lastWant = 'defeat'; S.holdUntil = now() + 4;
   });
+  on('bossChoice', () => { if (S.M) S.M.stopAll(2); S.holdUntil = now() + 60; sfx('pickup_memory'); });
+  on('bossAttack', (p) => { const b = bossKey(p.id) || S.boss.id; const n = b && p.attack ? `${b}_${p.attack}` : null; if (n && SFX[n]) sfx(n, { ...at(p), delay: p.delay }); });
+  on('sfx', (p) => { if (p.name) sfx(p.name, p); });
+
+  // ---- rooms, flow, saves, story
+  on('runStart', () => sfx('run_start'));
+  on('chamberEnter', (p) => {
+    const ch = p.chamber || G.chamber;
+    S.boss = { id: null, phase: 1, active: false, done: false };
+    S.enterT = now(); S.clearT = -9; S.holdUntil = 0; S.brokeAt = new WeakSet();
+    if (ch && ch.kind !== 'hub') sfx('door_enter');
+    if (S.E && ch && ch.region) setRoom(S.E, ch.region, 1.5);
+  });
+  on('waveStart', (p) => { if ((p.wave | 0) > 0) sfx('wave_start'); });
+  on('wave', () => sfx('wave_start'));
+  on('chamberClear', (p) => {
+    S.clearT = now();
+    const ch = p.chamber || G.chamber;
+    const r = REGION_ROOT[regionOf(G)] ?? 62;
+    if (!S.boss.done && !(ch && ch.kind === 'boss')) sfx('chamber_clear', { root: r + 12 });
+  });
+  on('doorOpen', () => sfx('door_open'));
+  on('doorLocked', () => sfx('door_locked'));
+  on('regionEnter', (p) => { if (S.E && p.region) setRoom(S.E, p.region, 2); S.lastWant = ''; });
+  on('reward', (p) => { if (p.kind === 'boss') sfx('pickup_shard', { delay: 0.3 }); });
+  on('runEnd', (p) => { if (p.result === 'victory') sfx('victory', { root: (REGION_ROOT[regionOf(G)] ?? 62) + 12 }); });
   on('victory', () => sfx('victory', { root: (REGION_ROOT[regionOf(G)] ?? 62) + 12 }));
-  on('save', () => { if (typeof document === 'undefined' || document.visibilityState === 'visible') { if (G.scene === 'run' || G.scene === 'hub') sfx('save', { vol: 0.8 }); } });
-  on('line', (p) => { if (p.text) voice(p.speaker, p.text, { rate: p.rate }); });
+  on('ending', (p) => { S.ending = p.kind || null; S.holdUntil = 0; S.lastWant = ''; });
+  on('save', (p) => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    if (p.reason && !/door|checkpoint|chamber|room/i.test(p.reason)) return; // only the door checkpoint chimes
+    if (G.scene === 'run' || G.scene === 'hub') sfx('save', { vol: 0.8 });
+  });
+  on('line', (p) => { if (p.text) voice(p.speaker, p.text, { mood: p.mood }); });
+  on('dialogueEnd', () => stopVoice());
   on('dialogue', (p) => { if (p && p.open === false) stopVoice(); else sfx('dialogue_open'); });
   on('advance', () => sfx('dialogue_next'));
+  on('settings', (p) => { if (String(p.key || '').startsWith('volume') || /mute/.test(p.key || '')) applySettings(G); });
   on('ui', ui);
   on('scene', (p) => {
     const to = p.to, from = p.from;
     if (to === 'paused' || to === 'settings' || to === 'codex') sfx('ui_open');
     else if (from === 'paused' || from === 'settings' || from === 'codex') sfx('ui_close');
+    if (to === 'dialogue' && from !== 'dialogue') sfx('dialogue_open');
     if (to === 'victory') sfx('victory', { root: (REGION_ROOT[regionOf(G)] ?? 62) + 12 });
-    if (from === 'dialogue') stopVoice();
+    if (from === 'dialogue' && to !== 'dialogue') stopVoice();
     if (to === 'hub' || to === 'title' || to === 'dead' || to === 'ending' || to === 'profiles') S.holdUntil = 0;
     S.lastWant = '';
   });
