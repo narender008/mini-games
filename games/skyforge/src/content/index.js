@@ -5,7 +5,7 @@ export { ISLANDS } from './islands.js';
 export { RESEARCH, BRANCHES } from './research.js';
 export { PORTS } from './ports.js';
 export { SHIPS } from './ships.js';
-export { CHAPTERS } from './goals.js';
+export { CHAPTERS, SKYFORGE_STAGES } from './goals.js';
 export { EVENTS } from './events.js';
 export { ACHIEVEMENTS } from './achievements.js';
 export { PIRATES, DEFENDS } from './pirates.js';

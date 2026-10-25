@@ -159,7 +159,7 @@ function content() {
     configVersion: VERSION, dayLength: DAY, dt: DT,
     resources: C.RESOURCES.map((r) => r.id), resourceInfo: C.RESOURCES,
     buildings: C.BUILDINGS, links: C.LINKS, research: C.RESEARCH, branches: C.BRANCHES,
-    islands: C.ISLANDS, ports: C.PORTS, ships: C.SHIPS, goals: C.CHAPTERS, goal: { id: 'skyforge', needs: 'five stages then the Dreadnought' },
+    islands: C.ISLANDS, ports: C.PORTS, ships: C.SHIPS, goals: C.CHAPTERS, goal: { id: 'skyforge', needs: 'five stages then the Dreadnought', stages: C.SKYFORGE_STAGES },
     raids: C.PIRATES, storms: C.WEATHER, defend: C.DEFENDS, events: C.EVENTS, achievements: C.ACHIEVEMENTS,
   };
 }
