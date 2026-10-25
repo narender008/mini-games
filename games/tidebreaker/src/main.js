@@ -11,7 +11,7 @@
 //   ?mute                no sound
 //   ?debug               expose window.__tb (nothing is saved):
 //     freeze() / thaw()  stop and restart the simulation (rendering continues)
-//     step(ms)           advance the simulation by ms in fixed 60 Hz steps
+//     step(ms, opts)     advance the simulation by ms in fixed 60 Hz steps; opts.render false skips drawing
 //     play(opts)         { seed, leg 1..5, node 0..2, upgrades: { id: rank } } start a run; returns a promise
 //     state()            a summary of the run (see stateOf below)
 //     choose(i | id), cards(), reroll(), skip(), menu()
@@ -230,7 +230,7 @@ if (DEBUG) {
   window.__tb = {
     freeze() { frozen = true; },
     thaw() { frozen = false; last = performance.now(); acc = 0; },
-    step(ms) { const n = Math.max(1, Math.round(ms / 1000 / STEP)); for (let i = 0; i < n; i++) simStep(); render(); syncOverlay(); return stateOf(); },
+    step(ms, o = {}) { const n = Math.max(1, Math.round(ms / 1000 / STEP)); for (let i = 0; i < n; i++) simStep(); if (o.render !== false) { render(); syncOverlay(); } return stateOf(); },
     async play(opts = {}) {
       newRun(G, { ...opts, leg: opts.leg != null ? opts.leg - 1 : 0, node: opts.node ?? 0 });
       await waitFrames(2); return stateOf();
