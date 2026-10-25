@@ -11,7 +11,7 @@ const M = {
   update(G, e, dt) { run(G, e, dt, M, ATTACK_FNS); },
   move(G, e, dt) {
     const d = heroDist(G, e);
-    const [tx, ty] = d > 230 ? [G.hero.x, G.hero.y] : ringPoint(G, e, 170, dt, 0.2);
+    const rp = d > 230 ? null : ringPoint(G, e, 170, dt, 0.2), tx = rp ? rp[0] : G.hero.x, ty = rp ? rp[1] : G.hero.y;
     goTo(G, e, tx, ty, e.speed, dt, 4);
     turn(e, heroAng(G, e), 1.8, dt); // heavy: turns slowly, so flanking it pays
   },

@@ -619,7 +619,7 @@ function safeEntry(chamber) {
 function pointIn(x, y, poly) {
   let c = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    const pi = poly[i], pj = poly[j], xi = pi[0], yi = pi[1], xj = pj[0], yj = pj[1];
     if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
   }
   return c;

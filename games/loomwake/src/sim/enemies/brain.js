@@ -50,12 +50,13 @@ export function steer(e, tvx, tvy, dt, accel = 8) {
 export function brake(e, dt, rate = 10) { steer(e, 0, 0, dt, rate); }
 
 // Inside the chamber? (world.js may offer a better test; the polygon is the rule)
+const PROBE = [0, 1.57, 3.14, 4.71];
 export function inside(G, x, y, margin = 0) {
   const sh = G.chamber && G.chamber.shape;
   if (!sh || sh.length < 3) return true;
   if (!pointInPoly(x, y, sh)) return false;
   if (margin > 0) {
-    for (const a of [0, 1.57, 3.14, 4.71]) if (!pointInPoly(x + Math.cos(a) * margin, y + Math.sin(a) * margin, sh)) return false;
+    for (let k = 0; k < 4; k++) { const a = PROBE[k]; if (!pointInPoly(x + Math.cos(a) * margin, y + Math.sin(a) * margin, sh)) return false; }
   }
   for (const o of G.chamber.obstacles || []) if (len(x - o.x, y - o.y) < (o.r || 0) + margin * 0.6) return false;
   return true;
@@ -112,8 +113,9 @@ export function goTo(G, e, tx, ty, speed, dt, accel = 7) {
   }
   e.pathing = pathing;
   const dx = tx - e.x, dy = ty - e.y, d = len(dx, dy);
-  const [sx, sy] = spread(G, e);
-  const [px, py] = pitPush(G, e);
+  // (index access: destructuring a returned pair runs the iterator protocol, every foe every step)
+  const sp = spread(G, e), sx = sp[0], sy = sp[1];
+  const pp = pitPush(G, e), px = pp[0], py = pp[1];
   let vx = 0, vy = 0;
   if (d > 6) { const k = pathing ? 1 : Math.min(1, d / 60); vx = (dx / d) * speed * k; vy = (dy / d) * speed * k; }
   vx += sx * speed * (pathing ? 0.5 : 0.9) + px * speed; vy += sy * speed * (pathing ? 0.5 : 0.9) + py * speed;

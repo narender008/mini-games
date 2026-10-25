@@ -14,7 +14,6 @@ const lockAim = (G, e, rate, dt) => {
   if (e.st < e.stDur * TRACK) { const a = heroAng(G, e); e.aim = e.aim + clamp(wrapAng(a - e.aim), -rate * dt, rate * dt); }
   turn(e, e.aim, 10, dt);
 };
-const dirOf = (a) => [Math.cos(a), Math.sin(a)];
 const end = (e, A, reach) => [e.x + Math.cos(e.aim) * reach, e.y + Math.sin(e.aim) * reach];
 const impact = (G, e, x, y, r, power = 1, color) => emit(G, 'foeImpact', { e, x, y, r, power, kind: e.kind, color });
 const shoot = (G, p) => { if (C.shoot) C.shoot(G, p); else G.projectiles.push(p); };
@@ -23,7 +22,7 @@ const zone = (G, z) => { if (C.zone) C.zone(G, z); else G.zones.push(z); };
 // keep a line telegraph glued to the aim while it tracks
 function followLine(e, t, reach, off = 0) {
   if (!t) return;
-  const [dx, dy] = dirOf(e.aim);
+  const dx = Math.cos(e.aim), dy = Math.sin(e.aim);
   t.x = e.x + dx * off; t.y = e.y + dy * off; t.x2 = e.x + dx * reach; t.y2 = e.y + dy * reach; t.angle = e.aim;
 }
 function followCone(e, t) { if (t) { t.x = e.x; t.y = e.y; t.angle = e.aim; } }
@@ -38,9 +37,9 @@ export const ATTACK_FNS = {
   clawLunge: {
     wind0(G, e, A) { e.mem.t = tg(G, e, { kind: 'line', x: e.x, y: e.y, x2: e.x, y2: e.y, w: A.w, t: e.stDur }); },
     wind(G, e, A, dt) { brake(e, dt, 9); lockAim(G, e, 5, dt); followLine(e, e.mem.t, A.reach); },
-    start(G, e, A) { const [dx, dy] = dirOf(e.aim); e.vx = dx * A.speed; e.vy = dy * A.speed; emit(G, 'foeSwing', { e, atk: 'clawLunge' }); },
+    start(G, e, A) { const dx = Math.cos(e.aim), dy = Math.sin(e.aim); e.vx = dx * A.speed; e.vy = dy * A.speed; emit(G, 'foeSwing', { e, atk: 'clawLunge' }); },
     act(G, e, A, dt) {
-      const k = e.st / e.stDur, [dx, dy] = dirOf(e.aim);
+      const k = e.st / e.stDur, dx = Math.cos(e.aim), dy = Math.sin(e.aim);
       const sp = A.speed * (1 - k * 0.7);
       e.vx = dx * sp; e.vy = dy * sp;
       if (!e.hitOnce && heroInArc(G, e.x, e.y, e.r + 34, e.aim, 2.2)) { e.hitOnce = true; hurt(G, e, 1, { kb: 380 }); }
@@ -54,7 +53,7 @@ export const ATTACK_FNS = {
     wind0(G, e, A) { e.mem.t = tg(G, e, { kind: 'line', x: e.x, y: e.y, x2: e.x, y2: e.y, w: A.w, t: e.stDur }); emit(G, 'foeHum', { e }); },
     wind(G, e, A, dt) { brake(e, dt, 9); lockAim(G, e, 2.2, dt); followLine(e, e.mem.t, A.reach); },
     start(G, e, A) {
-      const [x2, y2] = end(e, A, A.reach);
+      const ep = end(e, A, A.reach), x2 = ep[0], y2 = ep[1];
       if (heroInLine(G, e.x, e.y, x2, y2, A.w)) hurt(G, e, 1, { kb: 520, x: e.x, y: e.y });
       impact(G, e, x2, y2, 90, 1);
       if (A.wave) shockRing(G, e, x2, y2, A.wave, 520, 22, 0.5);
@@ -140,7 +139,7 @@ export const ATTACK_FNS = {
   bite: {
     wind0(G, e, A) { e.aim = heroAng(G, e); e.mem.t = tg(G, e, { kind: 'cone', x: e.x, y: e.y, r: A.reach, angle: e.aim, arc: A.arc, t: e.stDur }); },
     wind(G, e, A, dt) { brake(e, dt, 9); lockAim(G, e, 4, dt); followCone(e, e.mem.t); },
-    start(G, e) { const [dx, dy] = dirOf(e.aim); e.vx = dx * 380; e.vy = dy * 380; emit(G, 'foeSwing', { e, atk: 'bite' }); },
+    start(G, e) { const dx = Math.cos(e.aim), dy = Math.sin(e.aim); e.vx = dx * 380; e.vy = dy * 380; emit(G, 'foeSwing', { e, atk: 'bite' }); },
     act(G, e, A, dt) {
       brake(e, dt, 10);
       if (!e.hitOnce && heroInArc(G, e.x, e.y, A.reach, e.aim, A.arc)) { e.hitOnce = true; hurt(G, e, 0.8, { kb: 300 }); }
@@ -162,8 +161,8 @@ export const ATTACK_FNS = {
     },
   },
   censerSlam: {
-    wind0(G, e, A) { const [x, y] = end(e, A, A.reach); e.mem.t = tg(G, e, { kind: 'circle', x, y, r: A.r, t: e.stDur }); },
-    wind(G, e, A, dt) { brake(e, dt, 9); lockAim(G, e, 2, dt); const [x, y] = end(e, A, A.reach - 40); if (e.mem.t) { e.mem.t.x = x; e.mem.t.y = y; } },
+    wind0(G, e, A) { const ep = end(e, A, A.reach), x = ep[0], y = ep[1]; e.mem.t = tg(G, e, { kind: 'circle', x, y, r: A.r, t: e.stDur }); },
+    wind(G, e, A, dt) { brake(e, dt, 9); lockAim(G, e, 2, dt); const ep = end(e, A, A.reach - 40), x = ep[0], y = ep[1]; if (e.mem.t) { e.mem.t.x = x; e.mem.t.y = y; } },
     start(G, e, A) {
       const t = e.mem.t, x = t ? t.x : e.x, y = t ? t.y : e.y;
       if (heroInCircle(G, x, y, A.r)) hurt(G, e, 1.2, { kb: 560, x, y, element: 'burn' });
@@ -236,7 +235,7 @@ export const ATTACK_FNS = {
     wind(G, e, A, dt) { brake(e, dt, 10); lockAim(G, e, 1.6, dt); followLine(e, e.mem.t, A.len); },
     start(G, e, A) { e.mem.d = 0; e.mem.stall = 0; },
     act(G, e, A, dt) {
-      const [dx, dy] = dirOf(e.aim), sp = A.speed * (e.enraged ? 1.15 : 1);
+      const dx = Math.cos(e.aim), dy = Math.sin(e.aim), sp = A.speed * (e.enraged ? 1.15 : 1);
       e.vx = dx * sp; e.vy = dy * sp;
       e.mem.d += sp * dt;
       if (!e.hitOnce && heroInCircle(G, e.x, e.y, e.r + 14)) { e.hitOnce = true; hurt(G, e, 1, { kb: 820 }); }
@@ -284,9 +283,9 @@ export const ATTACK_FNS = {
   echoDash: {
     wind0(G, e, A) { e.aim = heroAng(G, e); e.mem.t = tg(G, e, { kind: 'line', x: e.x, y: e.y, x2: e.x, y2: e.y, w: A.w, t: e.stDur }); },
     wind(G, e, A, dt) { brake(e, dt, 14); lockAim(G, e, 6, dt); followLine(e, e.mem.t, Math.min(A.range, heroDist(G, e) + 80)); },
-    start(G, e, A) { const [dx, dy] = dirOf(e.aim); e.vx = dx * A.speed; e.vy = dy * A.speed; e.dashing = true; emit(G, 'foeDash', { e }); },
+    start(G, e, A) { const dx = Math.cos(e.aim), dy = Math.sin(e.aim); e.vx = dx * A.speed; e.vy = dy * A.speed; e.dashing = true; emit(G, 'foeDash', { e }); },
     act(G, e, A, dt) {
-      const [dx, dy] = dirOf(e.aim); e.vx = dx * A.speed; e.vy = dy * A.speed;
+      const dx = Math.cos(e.aim), dy = Math.sin(e.aim); e.vx = dx * A.speed; e.vy = dy * A.speed;
       if (!e.hitOnce && heroInCircle(G, e.x, e.y, e.r + 16)) { e.hitOnce = true; hurt(G, e, 1, { kb: 420 }); }
     },
     end(G, e) { e.dashing = false; e.vx *= 0.2; e.vy *= 0.2; },
@@ -301,7 +300,7 @@ export const ATTACK_FNS = {
       const i = e.mem.hit;
       if (i < A.hits && e.st >= times[i]) {
         e.mem.hit++; e.combo = i;
-        const [dx, dy] = dirOf(e.aim); e.vx = dx * (i === 2 ? 380 : 220); e.vy = dy * (i === 2 ? 380 : 220);
+        const dx = Math.cos(e.aim), dy = Math.sin(e.aim); e.vx = dx * (i === 2 ? 380 : 220); e.vy = dy * (i === 2 ? 380 : 220);
         if (heroInArc(G, e.x, e.y, A.reach, e.aim, A.arc)) hurt(G, e, i === 2 ? 1.2 : 0.6, { kb: i === 2 ? 500 : 200 });
         emit(G, 'foeSwing', { e, atk: 'echoCombo', combo: i });
         // the next swing gets its own short telegraph

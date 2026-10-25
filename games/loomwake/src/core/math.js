@@ -18,10 +18,12 @@ export function segDist(px, py, ax, ay, bx, by) {
   const t = l2 ? clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1) : 0;
   return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
 }
+// (hot: every mover, every step. Index access, not `const [x, y] = p`: array destructuring runs the
+// iterator protocol, ~15x slower here and an iterator result per vertex for the GC.)
 export function pointInPoly(x, y, poly) {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    const pi = poly[i], pj = poly[j], xi = pi[0], yi = pi[1], xj = pj[0], yj = pj[1];
     if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
   }
   return inside;
