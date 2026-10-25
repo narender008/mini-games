@@ -325,7 +325,7 @@ export default function draw(ctx, e, G, P) {
   g.restore();
 
   // flash / stagger glaze / phase glow / unravel
-  const flash = Math.max((e.flash || 0) / 0.1 * 0.85, stag ? 0.12 + Math.max(0, Math.sin(t * 14)) * 0.12 : 0);
+  const flash = Math.max(Math.pow(clamp((e.flash || 0) / 0.1, 0, 1), 1.5) * 0.55, stag ? 0.12 + Math.max(0, Math.sin(t * 14)) * 0.12 : 0);
   present(ctx, e, G, B, {
     flash,
     white: stag ? '#d9f4ff' : '#ffffff',

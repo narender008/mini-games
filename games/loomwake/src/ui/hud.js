@@ -200,6 +200,7 @@ export function createHUD(ui) {
       hpwrap.classList.remove('hit'); void hpwrap.offsetWidth; hpwrap.classList.add('hit');
     },
     bark(p) {
+      if (p && (p.mode === 'dialogue' || p.kind === 'dialogue')) return; // it plays as a conversation
       const lines = p.lines || (p.text ? [{ speaker: p.speaker, text: p.text, mood: p.mood }] : []);
       for (const l of lines.slice(0, 3)) if (l && l.text) barkQ.push({ speaker: l.speaker || p.speaker, text: l.text, mood: l.mood, kind: p.kind, at: performance.now() });
       while (barkQ.length > 4) barkQ.shift();

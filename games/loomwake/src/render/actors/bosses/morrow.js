@@ -260,7 +260,7 @@ export default function draw(ctx, e, G, P) {
   for (const p of pagePos) if (!p.back) put(g, LAY.page(p.i % 4), p.x, p.y, p.rot, p.s * 0.8, p.s * 0.8, 0.85);
   g.restore();
 
-  const flash = Math.max((e.flash || 0) / 0.1 * 0.85, stag ? 0.1 + Math.max(0, Math.sin(t * 12)) * 0.1 : 0);
+  const flash = Math.max(Math.pow(clamp((e.flash || 0) / 0.1, 0, 1), 1.5) * 0.55, stag ? 0.1 + Math.max(0, Math.sin(t * 12)) * 0.1 : 0);
   present(ctx, e, G, B, {
     flash, white: stag ? '#cfefff' : '#ffffff',
     tint: phaseK ? ['#8fd6ff', Math.sin(phaseK * Math.PI) * 0.3] : dying ? ['#050914', dying * 0.45] : null,

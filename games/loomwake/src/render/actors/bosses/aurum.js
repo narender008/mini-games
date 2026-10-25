@@ -353,7 +353,7 @@ export default function draw(ctx, e, G, P) {
   g.restore();
 
   // ---------- composite with flash, heat tint, cooling, unravel ----------
-  const flash = Math.max((e.flash || 0) / 0.1 * 0.8, stag ? 0.1 + Math.max(0, Math.sin(t * 12)) * 0.12 : 0);
+  const flash = Math.max(Math.pow(clamp((e.flash || 0) / 0.1, 0, 1), 1.5) * 0.55, stag ? 0.1 + Math.max(0, Math.sin(t * 12)) * 0.12 : 0);
   present(ctx, e, G, B, {
     flash, white: stag ? '#fff4d8' : '#ffffff',
     tint: dying ? ['#2a2420', dying * 0.65] : phaseK ? [C.molten, Math.sin(phaseK * Math.PI) * 0.35] : heat > 0.05 ? [C.molten, heat * 0.12] : intro < 1 ? ['#1a120c', (1 - ease(k01((e.st - 0.3) / 1.4))) * 0.5] : null,

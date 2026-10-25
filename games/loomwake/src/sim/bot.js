@@ -596,11 +596,11 @@ function aimAtNearest(G, h, foes, want) {
 }
 
 // ------------------------------------------------------------------ path planning
-// A coarse walk grid per chamber (32 px cells): a cell is blocked outside the floor shape, on an
+// A walk grid per chamber (20 px cells): a cell is blocked outside the floor shape, on an
 // obstacle, or on a lasting chamber hazard (pits, thorns, molten channels). When the straight line
 // to a goal crosses blocked cells, walkTo follows an A* route instead (e.g. out of a ring of lava
 // through its one gap). Moving dangers stay with the local steering (avoidGround, escapeDir).
-const CELL = 32;
+const CELL = 20;
 function navGrid(G, B) {
   const c = G.chamber;
   if (!c || !c.shape || !c.shape.length) return null;
@@ -611,14 +611,21 @@ function navGrid(G, B) {
   const cols = Math.ceil((x1 - x0) / CELL) + 1, rows = Math.ceil((y1 - y0) / CELL) + 1;
   const hr = (G.hero && G.hero.r) || 20;
   const hz = (c.hazards || []).filter((z) => z.r > 0);
-  const block = new Uint8Array(cols * rows);
+  // block: walls, obstacles and floor hazards with a body's margin; soft: walls only (a fallback when
+  // the strict grid finds no way, e.g. a passage only just wider than the hero)
+  const block = new Uint8Array(cols * rows), soft = new Uint8Array(cols * rows);
   for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
     const x = x0 + i * CELL, y = y0 + j * CELL;
-    let b = !inside(G, x, y, hr);
-    if (!b) for (const z of hz) if (Math.hypot(x - z.x, y - z.y) < z.r + hr + 6) { b = true; break; }
-    block[j * cols + i] = b ? 1 : 0;
+    let wall = !inside(G, x, y, hr * 0.7), b = wall;
+    for (const z of hz) {
+      const d = Math.hypot(x - z.x, y - z.y);
+      if (d < z.r + hr * 0.8 + 6) b = true;
+      if ((z.type === 'pit' || z.type === 'void') && d < z.r + hr * 0.5) wall = true; // never route over a drop
+    }
+    block[j * cols + i] = b || wall ? 1 : 0;
+    soft[j * cols + i] = wall ? 1 : 0;
   }
-  B.nav = { c, nh, no, x0, y0, cols, rows, block };
+  B.nav = { c, nh, no, x0, y0, cols, rows, block, soft };
   return B.nav;
 }
 function cellOf(nav, x, y) {
@@ -653,7 +660,10 @@ function clearLine(nav, ax, ay, bx, by, endSkip = 40) {
   return true;
 }
 function astar(nav, sx, sy, gx, gy) {
-  const s = freeNear(nav, sx, sy), g = freeNear(nav, gx, gy);
+  return astarOn(nav, sx, sy, gx, gy) || astarOn({ ...nav, block: nav.soft }, sx, sy, gx, gy);
+}
+function astarOn(nav, sx, sy, gx, gy) {
+  const s = freeNear(nav, sx, sy, 12), g = freeNear(nav, gx, gy, 12);
   if (s < 0 || g < 0) return null;
   const { cols, rows, block } = nav, N = cols * rows;
   const gs = new Float32Array(N).fill(Infinity), from = new Int32Array(N).fill(-1), shut = new Uint8Array(N);
@@ -723,8 +733,7 @@ function walkTo(G, B, want, x, y, slow = 1) {
       mv = { x: mv.x + side * -mv.y * 0.9, y: mv.y + side * mv.x * 0.9 };
     }
   }
-  // on a planned route the grid already keeps us off the floor hazards: only nudge
-  mv = wp ? steerGround(G, h, mv) : avoidGround(G, h, mv);
+  mv = avoidGround(G, h, mv);
   want.move = mv;
   want.aim = want.aim || { x: aimX, y: aimY };
 }
@@ -742,3 +751,6 @@ function unstick(G, B, want, goal) {
     if (B.t - B.lastPos.t > 2.4) { B.lastPos = { x: h.x, y: h.y, t: B.t }; if (goal) B.doorPick = null; }
   }
 }
+
+// planner internals, for the dev harness (dev/bot-campaign.mjs stall dumps)
+export const __nav = { navGrid, astar, clearLine, route, freeNear, cellOf };

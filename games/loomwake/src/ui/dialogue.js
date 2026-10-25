@@ -44,7 +44,7 @@ export function createDialogue(ui) {
     lastAdvance = now;
     if (!cur.done) { cur.shown = cur.full.length; cur.done = true; paintText(); return; }
     const d = ui.G.dialogue;
-    if (d?.choices?.length && !(d.queue && d.queue.length)) return;
+    if (d?.choices?.length) return;
     call(['advance']);
   }
   dlg.addEventListener('click', (e) => { if (e.target.closest('.choices, .skip')) return; advance(); });
@@ -77,7 +77,7 @@ export function createDialogue(ui) {
     paintText();
     // choices
     choices.innerHTML = '';
-    const ch = !(d.queue && d.queue.length) && d.choices && d.choices.length ? d.choices : null;
+    const ch = d.choices && d.choices.length ? d.choices : null;
     if (ch) {
       ch.forEach((c, i) => {
         const b = h('button', { class: 'btn', type: 'button', 'data-choice': String(i) }, h('kbd', { class: 'hk', text: String(i + 1) }), h('span', { text: c.text || c.label || String(c) }));
@@ -152,7 +152,7 @@ export function createDialogue(ui) {
       bcPanel.innerHTML = '';
       const d = G.dialogue;
       if (!d) return;
-      const k = (d.lineId || '') + '#' + (d.index | 0) + '#' + d.speaker + '#' + (d.text || '').length;
+      const k = (d.lineId || '') + '#' + (d.index | 0) + '#' + d.speaker + '#' + (d.text || '').length + '#' + (d.choices?.length | 0);
       if (k !== cur.key) { cur.key = k; setLine(G, d); }
       if (!cur.done) {
         cur.shown += speed * dt;
@@ -169,7 +169,7 @@ export function createDialogue(ui) {
       if (ui.G.ui?.bossChoice && !ui.G.dialogue) return false;
       const k = e.key;
       const d = ui.G.dialogue;
-      if (d?.choices?.length && !(d.queue && d.queue.length) && cur.done) {
+      if (d?.choices?.length && cur.done) {
         const n = parseInt(k, 10);
         if (n >= 1 && n <= d.choices.length) { call(['answer'], n - 1); return true; }
         return false; // arrows/enter handled by focus navigation
@@ -183,7 +183,7 @@ export function createDialogue(ui) {
     onPad(p) {
       if (ui.G.ui?.bossChoice && !ui.G.dialogue) return false;
       const d = ui.G.dialogue;
-      if (d?.choices?.length && !(d.queue && d.queue.length) && cur.done) return false;
+      if (d?.choices?.length && cur.done) return false;
       if (p.a || p.x) { advance(); return true; }
       if (p.start) { call(['skip']); return true; }
       return false;

@@ -460,7 +460,7 @@ export default function draw(ctx, e, G, P) {
 
   // ---------- composite ----------
   const stag = e.state === 'stagger';
-  const flash = Math.max((e.flash || 0) / 0.1 * 0.85, stag ? 0.08 + Math.max(0, Math.sin(t * 12)) * 0.1 : 0);
+  const flash = Math.max(Math.pow(clamp((e.flash || 0) / 0.1, 0, 1), 1.5) * 0.55, stag ? 0.08 + Math.max(0, Math.sin(t * 12)) * 0.1 : 0);
   const rip = damp(e, 'rip', e.riposteFlash ? 1 : 0, 10, dt);
   if (e.riposteFlash) e.riposteFlash = Math.max(0, e.riposteFlash - dt * 3);
   present(ctx, e, G, B, {

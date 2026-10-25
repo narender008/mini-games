@@ -201,12 +201,14 @@ export function updateHazards(G, e, dt) {
   G.dtStep = dt;
   for (let i = G.zones.length - 1; i >= 0; i--) {
     const z = G.zones[i];
-    if (z.owner !== e.id || z.team !== 'boss') continue;
+    // a handler may add or clear zones (hero death, an impact's aftermath): re-check every slot
+    if (!z || z.owner !== e.id || z.team !== 'boss') continue;
     z.age += dt; z.life -= dt;
     const fn = HZ[z.kind.slice(5)];
     if (fn && heroAlive(G) && !e.dying) fn(G, e, z, dt);
     else if (fn && z.kind === 'boss:wave') { z.r += z.speed * dt; }
-    if (z.life <= 0) G.zones.splice(i, 1);
+    if (z.life <= 0) { const j = G.zones.indexOf(z); if (j >= 0) G.zones.splice(j, 1); }
+    if (i > G.zones.length) i = G.zones.length;
   }
 }
 
