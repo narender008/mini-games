@@ -161,7 +161,7 @@ window.MINI_GAMES = [
     description: 'A hand-painted action roguelite: as Iri, the last golden thread, dive into a sleeping goddess\'s dream through four regions and four bosses, stack powers from six patrons into Braids, and learn run by run who the masked Unweaver really is. Saves at every door.',
     path: 'games/loomwake/',
     image: 'games/loomwake/cover.jpg',
-    imageAlt: 'A small hero in a crimson hooded cloak with a golden thread scarf fights hooded shadow husks and an armoured knight on a glowing glass floor under violet rain',
+    imageAlt: 'A small hero in a crimson hooded cloak with a golden thread scarf slashes at clawed, hooded shadow husks inside a ring of wind, on a glowing glass floor in violet rain',
     tags: ['2D', 'Ages 12+', 'Mouse first'],
   },
 ];
