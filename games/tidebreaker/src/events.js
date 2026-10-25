@@ -9,6 +9,8 @@
 //   explode     { x, y, size }
 //   sink        { x, y, kind, boss }                         a ship or set piece destroyed
 //   player-hit  { dmg, x, y }
+//   kraken      { x, y, n }                                  the Kraken ally rises
+//   wave        { wave, waves }                              a new wave of a fleet
 //   ability     { id }                                       chain fire lightning kraken
 //   lightning   { x0, y0, x1, y1 }                           the Lightning Masts ability
 //   thunder     { near }                                     weather, 0..1

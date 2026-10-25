@@ -32,7 +32,7 @@ import { drawCards, cardButtons } from './ui/cards.js';
 import { drawScreen, screenButtons } from './ui/screens.js';
 import { applyUpgrade, computeStats } from './upgrades.js';
 import { buyMeta } from './save.js';
-import { initAudio, setMuted, updateAudio } from './audio.js';
+import { initAudio, setMuted, updateAudio, audioDebug } from './audio.js';
 import { botInput } from './bot.js';
 
 const canvas = document.getElementById('scene');
@@ -249,6 +249,7 @@ if (DEBUG) {
     upgrade(id, rank = 1) { if (!G.run) return; const have = G.run.upgrades[id] || 0; for (let i = have; i < rank; i++) applyUpgrade(G, id); G.stats = computeStats(G.run, G.meta); G.player.maxHp = G.stats.maxHull; },
     auto(on = true) { G.auto = on; if (!on) input.state.override = null; },
     get game() { return G; },
+    audio: () => audioDebug(),
     laneY: (x) => laneY(G, x),
     setBiome: (id) => setBiome(G, id, true),
   };
