@@ -376,7 +376,7 @@ export function positionBubble(el, tail, anchor) {
   if (y < 70) y = ay + 70;
   if (y + hgt > H - 12) y = H - hgt - 12;
   x = Math.max(12, Math.min(W - w - 12, x)); y = Math.max(12, Math.min(H - hgt - 12, y));
-  if (ax < 0 || ay < 0 || ax > W || ay > H) { el.style.left = Math.round(x) + 'px'; el.style.top = Math.round(y) + 'px'; path.setAttribute('d', ''); return; }
+  if (ax < 0 || ay < 0 || ax > W || ay > H) { x = (W - w) / 2; y = Math.min(H * 0.16, H - hgt - 12); el.style.left = Math.round(x) + 'px'; el.style.top = Math.round(y) + 'px'; path.setAttribute('d', ''); return; }
   el.style.left = Math.round(x) + 'px'; el.style.top = Math.round(y) + 'px';
   // tail from the nearest edge of the card to the point (local coords)
   const lx = ax - x, ly = ay - y;

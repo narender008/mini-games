@@ -161,7 +161,7 @@ function strike(G) {
   const sky = G.pirates.filter((p) => p.state !== 'down' && p.state !== 'gone');
   if (sky.length && rng() < 0.18) {
     const p = rng.pick(sky);
-    const dmg = 40 + 30 * P;
+    const dmg = 25 + 20 * P;
     G.bus.emit('lightning', { x: p.x, y: p.y, z: p.z, x0: p.x - 2, y0: p.y + 3, target: 'pirate', pirate: p.id, rod: null, shield: false, dmg });
     hitPirate(G, p, dmg, 'lightning');
     report(G, 'zap', 'Lightning struck the raiders', 1, null, 'good').value = 'zap!';

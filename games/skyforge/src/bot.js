@@ -31,7 +31,7 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
   const waitT = {}, count = {};
   let G = null, reserved = {}, budget = 0, lastT = 0, dt = 1, shortOf = [];
   const noSpot = new Map(), spotCache = new Map();
-  let aimAt = null;
+  let aimAt = null, lastNoSpot = -1e9;
 
   const say = (t) => log && log(t);
   const tally = (k) => { count[k] = (count[k] || 0) + 1; };
@@ -130,7 +130,7 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
     if (def.needs && !done(def.needs)) return false;
     if (def.req && !built(def.req)) return false;
     const key = `build ${type}`;
-    if ((noSpot.get(type + '@' + (strict ? prefer : '*')) || 0) > G.t) { waitT[`${key}: no spot`] = (waitT[`${key}: no spot`] || 0) + dt; return false; }
+    if ((noSpot.get(type + '@' + (strict ? prefer : '*')) || 0) > G.t) { lastNoSpot = G.t; waitT[`${key}: no spot`] = (waitT[`${key}: no spot`] || 0) + dt; return false; }
     let firstSpot = null, lastErr = null;
     for (const islId of strict ? [prefer] : islandsFor(type, prefer)) {
       const spot = bestSpot(type, islId);
@@ -145,7 +145,7 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
       waitT[`${key}: ${r.error}`] = (waitT[`${key}: ${r.error}`] || 0) + dt;
     }
     if (firstSpot) canPay(key, def.cost, 'hearthrock');     // record the wait and reserve the goods
-    else { noSpot.set(type + '@' + (strict ? prefer : '*'), G.t + 45); waitT[`${key}: no spot`] = (waitT[`${key}: no spot`] || 0) + dt; }
+    else { lastNoSpot = G.t; noSpot.set(type + '@' + (strict ? prefer : '*'), G.t + 45); waitT[`${key}: no spot`] = (waitT[`${key}: no spot`] || 0) + dt; }
     return false;
   }
   const ensure = (type, k, prefer, why) => (n(type) < k ? build(type, prefer, why) : false);
@@ -378,20 +378,28 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
   const labourShort = () => G.buildings.some((b) => b.state === 'built' && b.stall === 'workers' && b.on !== false);
   // Free hands and ground: knock down one producer of a raw good that sits at its cap.
   function trimSurplus() {
-    for (const [res, type] of [['wood', 'lumber'], ['stone', 'quarry'], ['planks', 'sawmill']]) {
+    const pairs = [['wood', 'lumber'], ['stone', 'quarry'], ['planks', 'sawmill'], ['ore', 'mine'], ['coal', 'coalpit'], ['iron', 'smelter'], ['flour', 'windmill']];
+    for (const [res, type] of pairs) {
       const c = cap(res);
-      if (!Number.isFinite(c) || stock(res) < c * 0.95 || rate(res) <= 2) continue;
-      const list = G.buildings.filter((b) => b.type === type && b.state === 'built');
+      if (!Number.isFinite(c) || stock(res) < c * 0.95) continue;
+      const list = G.buildings.filter((b) => b.type === type && b.state === 'built' && !b.upgrading);
       if (list.length <= 2) continue;
       const b = list[list.length - 1];
       const r = act.demolish(b.id);
       if (r.ok) { tally(`demolish ${type}`); say(`demolish surplus ${type} #${b.id} (${res} at cap)`); return true; }
     }
+    // more homes than work and the ground is wanted: let one cottage go
+    const blocked = lastNoSpot > G.t - 30;
+    if (idle() > 25 && blocked) {
+      const list = G.buildings.filter((b) => b.type === 'cottage' && b.state === 'built' && netOf(b.island) === netOf('hearthrock'));
+      const b = list[list.length - 1];
+      if (b && act.demolish(b.id).ok) { tally('demolish cottage'); say(`demolish cottage #${b.id} (idle ${idle()})`); return true; }
+    }
     return false;
   }
   function economy() {
     const p = pop();
-    if (G.t % 60 < dt + 0.01 && trimSurplus()) return true;
+    if (G.t % 20 < dt + 0.01 && trimSurplus()) return true;
     const eat = p * 0.3;
     if (labourShort() && idle() < 3 && popCap() - p < 4 && foodRate() > eat * 0.1 && build('cottage', 'hearthrock', 'workers wanted')) return true;
     // food first: settlers eat perSettler units a minute
@@ -439,7 +447,7 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
       const c = cap(k);
       if (Number.isFinite(c) && stock(k) > c * 0.9 && !siteOf('warehouse') && build('warehouse', 'hearthrock', `cap ${k}`)) return true;
     }
-    if (built('bakery') && stock('parts') > 60 && upgradeOne('cottage', 'townhouse')) return true;
+    if (built('bakery') && stock('parts') > 60 && jobs >= p - 3 && idle() < 4 && upgradeOne('cottage', 'townhouse')) return true;
     return false;
   }
 
