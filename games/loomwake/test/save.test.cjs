@@ -282,6 +282,10 @@ test('export then wipe then import restores the save, through the hook and throu
   const input = p.locator(G.SEL.importFile).first();
   assert.ok(await input.count(), 'no file input for Import');
   await input.setInputFiles(file);
+  // the game may ask before overwriting the profile: say yes (menus ignore
+  // clicks in their first moments, so wait for the button to settle)
+  const yes = await G.waitVisible(p, [G.SEL.confirmOk], 2000);
+  if (yes) { await sleep(500); await yes.click(); }
   await sleep(800);
   const r = await l('save.read');
   assert.ok(r.ok, `importing the downloaded file did not restore a save: ${JSON.stringify(r)}`);

@@ -23,7 +23,7 @@ const END_SCENES = ['dead', 'victory', 'ending'];
 
 const SEL = {
   continue: '#btn-continue', new: '#btn-new', settings: '#btn-settings', profile: (i) => `[data-profile="${i}"]`,
-  export: '#btn-export', import: '#btn-import', importFile: 'input[type=file]',
+  export: '#btn-export', confirmOk: '#btn-confirm-ok', import: '#btn-import', importFile: 'input[type=file]',
   dreamdoor: '#btn-dreamdoor', pause: '#btn-pause', resume: '#btn-resume', quit: '#btn-quit', ret: '#btn-return',
   boon: '[data-boon]', dialogue: '#dialogue', advance: '[data-advance]',
   stick: '#touch-stick', touch: (a) => `[data-touch="${a}"]`,
