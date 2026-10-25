@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ace Audio Levels</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 16px; background: #0b1020; color: #d8e2f0; font: 13px/1.4 system-ui, sans-serif; }
+  h1 { font-size: 16px; margin: 0 0 8px; }
+  table { border-collapse: collapse; width: 100%; max-width: 960px; }
+  th, td { padding: 3px 8px; border-bottom: 1px solid #1d2742; text-align: right; font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; }
+  .bad { color: #ff6b8a; font-weight: 600; }
+  button { background: #1d2742; color: inherit; border: 1px solid #33406a; border-radius: 4px; padding: 2px 8px; cursor: pointer; }
+  #status { margin: 8px 0; color: #7fd7ff; }
+</style>
+</head>
+<body>
+<h1>Ace Pilot audio: offline renders</h1>
+<p>Every sound is rendered on an OfflineAudioContext through the app's real master chain, then measured. Nothing plays unless you press a listen button.</p>
+<div id="status">rendering...</div>
+<table id="out"><thead><tr><th>case</th><th>dur s</th><th>peak dBFS</th><th>RMS dBFS</th><th>loudest 50 ms</th><th>&lt;150 Hz %</th><th>&gt;2 kHz %</th><th>NaN</th><th>clipped</th><th></th></tr></thead><tbody></tbody></table>
+<script type="module" src="./ace-audio.js"></script>
+</body>
+</html>

@@ -136,6 +136,7 @@ export class Audio {
     f.frequency.setValueAtTime(f0, t);
     if (f1 !== f0) f.frequency.exponentialRampToValueAtTime(f1, t + dur);
     const g = ctx.createGain();
+    g.gain.value = 0; // silent until the envelope starts, even if the source runs early
     g.gain.setValueAtTime(0.0001, t);
     g.gain.linearRampToValueAtTime(peak, t + 0.004);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);

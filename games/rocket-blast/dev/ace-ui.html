@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>Ace UI harness · Rocket Blast</title>
+    <!-- Dev harness for the Ace Pilot interface: loads the game's real markup
+         (fetched from ../index.html), style.css and ace.css, paints a stand-in
+         scene on the canvas, and drives src/ace/ui.js with fake state.
+         ?screen=menu|hud|boss|map|upgrade|pause|win|fail|banner
+         &sel=0..2 (upgrade: a chosen card) &kind=wave|boss|warning|clear (banner)
+         &low (hull at 1) &first (map before anything is cleared).
+         window.__ace = { ui, kids, S, progress } for poking at it. -->
+    <link rel="stylesheet" href="../style.css" />
+    <link rel="stylesheet" href="../ace.css" />
+  </head>
+  <body data-state="loading" data-mode="little">
+    <script type="module" src="ace-ui.js"></script>
+  </body>
+</html>

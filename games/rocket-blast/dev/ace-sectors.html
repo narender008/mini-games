@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Ace sectors</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+      canvas { display: block; width: 100%; height: 100%; }
+      #info { position: fixed; left: 8px; bottom: 6px; color: #7f8ea3; font: 12px system-ui, sans-serif; pointer-events: none; }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../../../vendor/three/build/three.module.js",
+          "three/addons/": "../../../vendor/three/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div id="info"></div>
+    <script type="module" src="./ace-sectors.js"></script>
+  </body>
+</html>

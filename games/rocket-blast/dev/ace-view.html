@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ace view harness</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../../../vendor/three/build/three.module.js",
+          "three/addons/": "../../../vendor/three/examples/jsm/"
+        }
+      }
+    </script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #05070c;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+      #info {
+        position: fixed;
+        left: 8px;
+        bottom: 6px;
+        color: #8ab;
+        font: 12px system-ui, sans-serif;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div id="info"></div>
+    <!--
+      Dev harness for src/ace/view: feeds AceView a fake sim state.
+      ?scene=wave|boss|fx|bullets  ?boss=hauler|tempest|crusher|brood|dreadnought
+      ?sector=belt|storm|foundry|hive|dreadnought (real backdrop when it exists)
+      ?bg=dark|lava  ?t=seconds (advance before the first frame)  ?still (no animation loop)
+      window.__av = { advance(s, step), render(), S, view }
+    -->
+    <script type="module" src="ace-view.js"></script>
+  </body>
+</html>

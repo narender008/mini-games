@@ -161,6 +161,7 @@ export class Music {
     fl.type = type;
     fl.frequency.value = f;
     const g = this.ctx.createGain();
+    g.gain.value = 0; // silent until the envelope starts, even if the source runs early
     this.env(g, t, 0.002, peak, d);
     s.connect(fl).connect(g).connect(this.bus);
     s.start(t, Math.random() * 0.5);

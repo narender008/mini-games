@@ -7,7 +7,10 @@
 // pick the starting choices; ?quality=high|medium|low, ?msaa=N and
 // ?tone=neutral|aces|agx tune rendering; ?cover hides the interface (for
 // the cover picture); ?debug exposes window.__rb
-// (freeze, thaw, step(ms), hitFirst, mega, pointer(x, y, down, type)).
+// (freeze, thaw, step(ms), hitFirst, mega, pointer(x, y, down, type), and
+// ace, the Ace Pilot hook documented in src/ace/ace.js debugApi()).
+// Ace Pilot (?mode=ace) is the 12+ campaign in src/ace/; with ?play it opens
+// the sector map, or a sector with &sector=N (&wave=N, &boss, &seed=N).
 import * as THREE from 'three';
 import { QUERY, DEBUG, REDUCED_MOTION, CELL, VIEW_ZOOM, TOY_CAPACITY, load, save, rand, clamp, WEAPONS, WORLDS, STYLES, MODES } from './config.js';
 import { detectQuality, FrameGovernor } from './quality.js';
@@ -131,6 +134,7 @@ class App {
         mode: (m) => {
           this.sel.mode = m;
           save('mode', m);
+          if (m === 'ace') this.loadAce().then((ace) => ace.ui.summary(ace.progress));
           this.audio.unlock();
           this.audio.select();
         },
@@ -183,6 +187,7 @@ class App {
     requestAnimationFrame((t) => this.frame(t));
     if (DEBUG) this.exposeDebug();
     if (QUERY.has('cover')) document.body.classList.add('cover');
+    if (this.sel.mode === 'ace') this.loadAce().then((ace) => ace.ui.summary(ace.progress));
     if (QUERY.has('play')) this.startGame();
   }
 
@@ -218,6 +223,7 @@ class App {
     const layoutKey = `${dist.toFixed(4)}:${aspect.toFixed(4)}`;
     if (!first && layoutKey !== this.layoutKey) for (const world of Object.values(this.worlds)) world.layout(this.view);
     this.layoutKey = layoutKey;
+    this.ace?.onResize(this.field);
     if (this.state !== 'loading' && this.frozen) this.render();
   }
 
@@ -331,6 +337,10 @@ class App {
     this.audio.click();
     const mode = this.sel.mode;
     save('mode', mode);
+    if (mode === 'ace') {
+      this.loadAce().then((ace) => ace.enter());
+      return;
+    }
     this.state = 'playing';
     this.ui.setMode(mode);
     this.clearField();
@@ -346,8 +356,35 @@ class App {
     this.audio.music?.setTempo(mode === 'big' ? 128 : 112);
   }
 
+  // Ace Pilot is loaded the first time it is played
+  loadAce() {
+    this.aceLoad ??= import('./ace/ace.js').then(({ AceMode }) => {
+      this.ace = new AceMode(this);
+      if (DEBUG && window.__rb) window.__rb.ace = this.ace.debugApi();
+      return this.ace;
+    });
+    return this.aceLoad;
+  }
+
+  // the kids' rocket, toys and weapons step aside for the Ace campaign
+  enterAce() {
+    this.state = 'ace';
+    this.clearField();
+    this.director.reset('menu');
+    this.rocket.root.visible = false;
+    for (const s of Object.values(this.styles)) s.group.visible = false;
+    this.megaT = 0;
+    this.ui.show('ace');
+  }
+
   toMenu() {
     this.audio.click();
+    if (this.ace?.active) {
+      this.ace.exit();
+      this.rocket.root.visible = true;
+      this.styles[this.sel.style].group.visible = true;
+      this.setWorld(this.sel.world);
+    }
     this.state = 'menu';
     this.clearField();
     this.director.reset('menu');
@@ -549,6 +586,11 @@ class App {
     const f = this.field;
     const playing = this.state === 'playing';
     const mode = playing ? this.director.mode : 'menu';
+    if (this.ace?.active) {
+      this.ace.update(realDt, dt);
+      this.updateScene(realDt, dt, this.ace.S?.player.x ?? 0);
+      return;
+    }
 
     // rocket target: pointer (lifted above a finger), keys, or autopilot
     const r = this.rocket;
@@ -619,12 +661,19 @@ class App {
     // idle hint for little hands
     if (playing && mode !== 'big') this.ui.hint(this.realTime - this.lastInput > 6);
 
+    this.updateScene(realDt, dt, r.pos.x);
+  }
+
+  // camera, backdrop and effects, shared by every mode
+  updateScene(realDt, dt, focusX = 0) {
+    const t = this.time;
+    const f = this.field;
     // camera: gentle parallax with the rocket plus the blast shake
     this.shakeV.addScaledVector(this.shakeP, -220 * realDt);
     this.shakeV.multiplyScalar(Math.exp(-realDt * 14));
     this.shakeP.addScaledVector(this.shakeV, realDt);
     const cam = this.camera;
-    const px = r.pos.x * 0.03;
+    const px = focusX * 0.03;
     cam.position.set(px + this.shakeP.x * 0.12, this.shakeP.y * 0.12, f.dist);
     cam.lookAt(px * 0.5, 0, 0);
     cam.updateMatrixWorld();
@@ -670,6 +719,9 @@ class App {
       pointer: (x, y, down = false, type = 'mouse') => Object.assign(this.pointer, { x, y, known: true, down, type }),
       MEGA_EVERY,
     };
+    // the Ace Pilot hook, loaded on first use: await __rb.loadAce() once
+    window.__rb.loadAce = () => this.loadAce().then(() => window.__rb.ace);
+    if (this.sel.mode === 'ace' || QUERY.get('mode') === 'ace') window.__rb.loadAce();
   }
 }
 
