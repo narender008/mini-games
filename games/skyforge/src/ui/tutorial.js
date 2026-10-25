@@ -34,7 +34,7 @@ export function createTutorial(ctx) {
     return null;
   }
   function blocked() {
-    return !!(app.G?.event || app.scene !== 'colony' && app.scene !== 'build' || ctx.parts.inspector.isOpen() || ctx.parts.pause.codexOpen());
+    return !!(app.G?.event || document.body.classList.contains('threat') || app.scene !== 'colony' && app.scene !== 'build' || ctx.parts.inspector.isOpen() || ctx.parts.pause.codexOpen());
   }
 
   function update(dt, slow, G) {

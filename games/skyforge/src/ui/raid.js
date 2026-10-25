@@ -87,6 +87,8 @@ export function createRaid(ctx) {
     }
     if (threat && slow) {
       setClass(banner, 'crimson', !!raid); setClass(banner, 'slate', !raid);
+      const li = raid ? 'skull' : 'storm';
+      if (lead.__i !== li) { lead.__i = li; lead.replaceChildren(ico(li, 'lead')); }
       const stormLeft = storm && G.weather.until ? Math.max(0, G.weather.until - G.t) : null;
       if (raid) {
         const title = raid.final ? 'THE DREADNOUGHT' : raid.phase === 'warn' ? 'PIRATES SIGHTED' : raid.phase === 'retreat' ? 'PIRATES IN RETREAT' : 'SKY PIRATES ATTACK';

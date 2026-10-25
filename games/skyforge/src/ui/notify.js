@@ -58,10 +58,6 @@ export function createNotify(ctx) {
   app.bus.on('notify', (n) => { if (app.G && n) toast(n); });
   // INPUT's refusals (a click that could not build, defend, ...)
   app.ev.on('ui:denied', ({ reason } = {}) => { if (app.G && reason) toast({ text: sentence(reason), kind: 'warn', icon: 'warn', life: 4 }); });
-  app.bus.on('achievement', ({ id } = {}) => {
-    const a = X.ach[id];
-    toast({ title: 'Achievement', text: a ? a.name : id, kind: 'good', icon: a?.icon || 'trophy', life: 8 });
-  });
   app.bus.on('chapter', ({ id } = {}) => {
     const ch = X.chap.find((c) => c.id === id || c.n === id) || X.chap[(app.G?.goals?.chapter || 1) - 1];
     if (ch) showBanner(`Chapter ${ch.n}`, ch.name, ch.desc);

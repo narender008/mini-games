@@ -379,7 +379,7 @@ body:has(#raid-banner:not([hidden])) #clock { }
 .abil.fired .medal { animation: fire 0.4s; }
 @keyframes fire { 40% { transform: scale(1.15); filter: brightness(1.6); } }
 .abil .cost { position: absolute; top: 3.6rem; font: bold 0.62rem var(--sans); color: var(--gold-text); background: rgba(23,21,58,.9); border-radius: 0.5rem; padding: 0 0.35rem; z-index: 3; }
-#damage { position: absolute; right: calc(1rem + var(--safe-r)); bottom: calc(1rem + var(--safe-b)); width: 18.75rem; padding: 0.9rem 1.1rem 0.9rem; }
+#damage { position: absolute; right: calc(1rem + var(--safe-r)); bottom: calc(6.4rem + var(--safe-b)); width: 18.75rem; padding: 0.9rem 1.1rem 0.9rem; }
 #damage > * { position: relative; z-index: 1; }
 #damage .h2 { color: #ffb8a0; font-size: 1.06rem; margin-bottom: 0.4rem; }
 #damage .dl { display: flex; justify-content: space-between; gap: 0.6rem; font: 0.84rem/1.75 var(--sans); color: var(--cream); }
