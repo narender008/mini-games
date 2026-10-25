@@ -48,9 +48,11 @@ async function fight(lw, ms) {
 // Beats the current boss through every phase: bossKill() may end one phase at
 // a time, with lines in between.
 async function finishBoss(lw) {
-  for (let k = 0; k < 12; k++) {
+  let seen = false; // the boss arrives a moment after the chamber does
+  for (let k = 0; k < 16; k++) {
     const s = await lw('state');
-    if (G.END_SCENES.includes(s.scene) || (!s.boss && s.scene === 'run')) return;
+    if (s.boss) seen = true;
+    if (G.END_SCENES.includes(s.scene) || (seen && !s.boss && s.scene === 'run')) return;
     if (s.scene === 'dialogue') await lw('skip');
     else if (s.scene === 'run' && s.boss) await lw('bossKill');
     await sleep(700);
