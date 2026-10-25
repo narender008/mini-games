@@ -14,6 +14,7 @@
     "stress": "node stress.cjs",
     "bot": "node bot.cjs",
     "perf": "node perf.cjs",
+    "hitch": "node hitch.cjs",
     "shots": "node screenshots.cjs"
   },
   "devDependencies": {
