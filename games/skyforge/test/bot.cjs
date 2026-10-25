@@ -43,13 +43,13 @@ async function playColony(browser, base, seed) {
       const end = s.time + 600;
       while (s.time < end) {
         const el = (s.time - t0) / 60;
-        if (!mem.raided && el >= raidAt) { mem.raided = true; sf.raid(); mem.raidStart = s.time; mem.popBefore = s.colony.pop; mem.bBefore = s.buildings.length; }
+        if (!mem.raided && el >= raidAt) { mem.raided = true; sf.raid(); mem.raidStart = s.time; mem.popBefore = s.colony.pop; mem.bBefore = s.buildings.map((b) => b.id); }
         if (!mem.stormed && el >= stormAt) { mem.stormed = true; sf.storm(); mem.stormStart = s.time; }
         f(sf, mem, c);
         sf.step(tickS * 1000, { render: false });
         s = sf.state();
         if (mem.raided && !mem.raidDone && !(s.threat.raid && s.threat.raid.active) && s.time - mem.raidStart > 30) {
-          mem.raidDone = true; raid = { secs: Math.round(s.time - mem.raidStart), popLost: mem.popBefore - s.colony.pop, buildingsLost: mem.bBefore - s.buildings.length, pop: s.colony.pop };
+          mem.raidDone = true; raid = { secs: Math.round(s.time - mem.raidStart), popLost: mem.popBefore - s.colony.pop, buildingsLost: (() => { const now = new Set(s.buildings.filter((b) => b.state !== 'ruin' && !b.damaged).map((b) => b.id)); return mem.bBefore.filter((id) => !now.has(id)).length; })(), pop: s.colony.pop };
         }
         if (mem.stormed && !mem.stormDone && !(s.threat.storm && s.threat.storm.active) && s.time - mem.stormStart > 30) {
           mem.stormDone = true; storm = { secs: Math.round(s.time - mem.stormStart), pop: s.colony.pop, damaged: s.buildings.filter((b) => b.damaged).length };
