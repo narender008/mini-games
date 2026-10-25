@@ -185,7 +185,7 @@ test('every migration step upgrades an old save, and a future version is left un
     const { page: p, lw: l } = await env.reopen(ctx);
     const r = await l('save.read');
     assert.ok(r.ok, `save v${v} was not accepted: ${JSON.stringify(r)}`);
-    await G.titleToHub(p, l, 0);
+    await G.titleToHub(p, l, 0, { allowRun: true });
     // read() may report the migrated version or the stored one; the next
     // write must be the current version either way
     if (r.v !== version) {

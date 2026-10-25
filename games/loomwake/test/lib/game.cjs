@@ -81,10 +81,12 @@ async function waitVisible(page, selectors, timeout = 3000) {
   return null;
 }
 
-async function titleToHub(page, lw, profile = 0) {
+// allowRun: a profile with a run in progress resumes it, so 'run' counts too.
+async function titleToHub(page, lw, profile = 0, { allowRun = false } = {}) {
+  const done = (sc) => sc === 'hub' || (allowRun && sc === 'run');
   let s = await waitScene(lw, ['title', 'profiles', 'hub', 'dialogue'], 5000).catch(() => lw('state'));
   const trail = [s.scene];
-  for (let i = 0; i < 6 && s.scene !== 'hub'; i++) {
+  for (let i = 0; i < 6 && !done(s.scene); i++) {
     if (s.scene === 'title') {
       // profiles may sit on the title itself: pick the slot first (that may
       // already enter the game), else New / Continue
@@ -99,7 +101,7 @@ async function titleToHub(page, lw, profile = 0) {
     s = await lw('state');
     trail.push(s.scene);
   }
-  if (s.scene !== 'hub') throw new Error(`could not reach the hub from the title, scene '${s.scene}' (went ${trail.join(' > ')})`);
+  if (!done(s.scene)) throw new Error(`could not reach the hub from the title, scene '${s.scene}' (went ${trail.join(' > ')})`);
   return s;
 }
 
