@@ -137,4 +137,13 @@ window.MINI_GAMES = [
     imageAlt: 'A round purple monster with little horns and a big open smile in a sunny meadow, holding up an apple to its mouth, with a watermelon slice, cherries, a pear, a strawberry and a banana floating around it',
     tags: ['2D', 'Ages 2+', 'Touch friendly'],
   },
+  {
+    slug: 'tidebreaker',
+    name: 'Tidebreaker',
+    description: 'A naval roguelite: captain a galleon through five seas from dawn to a crimson-moon night, trade broadsides with pirate fleets, storm sea forts, stack upgrade cards into combos and face the Mistcoil Serpent and the Drowned Leviathan.',
+    path: 'games/tidebreaker/',
+    image: 'games/tidebreaker/cover.jpg',
+    imageAlt: 'A white-sailed galleon fires a broadside across a purple and gold sunset sea at a burning black-sailed pirate ship, with a fortress island and a smoking volcano on the horizon',
+    tags: ['2D', 'Ages 10+', 'Mouse first'],
+  },
 ];
