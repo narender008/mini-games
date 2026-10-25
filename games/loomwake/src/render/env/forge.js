@@ -488,7 +488,7 @@ function back(ctx, cam, t) {
   // a few smoke plumes drifting across the towers
   ctx.globalAlpha = 0.16;
   for (let i = 0; i < 3; i++) {
-    const [x, y] = drift(i, t, 4.4, W + 400, H * 0.6, 14, -6);
+    const dr = drift(i, t, 4.4, W + 400, H * 0.6, 14, -6), x = dr[0], y = dr[1];
     ctx.drawImage(glow('#1a0a10', 1), x - 380, y - 100, 360, 200);
   }
   ctx.globalAlpha = 1;
@@ -521,7 +521,7 @@ function front(ctx, cam, t) {
   ctx.fillStyle = 'rgba(200,180,180,0.35)';
   ctx.beginPath();
   for (let i = 0; i < 70; i++) {
-    const [x, y, fa] = drift(i, t, 2.2, W, H, 12 + Math.sin(t + i) * 10, 30 + (i % 5) * 8);
+    const dr = drift(i, t, 2.2, W, H, 12 + Math.sin(t + i) * 10, 30 + (i % 5) * 8), x = dr[0], y = dr[1], fa = dr[2];
     const s = (1 + fa * 2) * k;
     ctx.rect(x, y, s * 1.6, s);
   }
@@ -529,7 +529,7 @@ function front(ctx, cam, t) {
   // embers rising
   ctx.globalCompositeOperation = 'lighter';
   for (let i = 0; i < 40; i++) {
-    const [x, y, fa] = drift(i, t, 6.6, W, H, Math.sin(t * 1.5 + i) * 30, -60 - (i % 7) * 14);
+    const dr = drift(i, t, 6.6, W, H, Math.sin(t * 1.5 + i) * 30, -60 - (i % 7) * 14), x = dr[0], y = dr[1], fa = dr[2];
     const a = 0.5 + 0.5 * Math.sin(t * 6 + i * 2);
     ctx.globalAlpha = a * 0.9;
     ctx.drawImage(glow('#ff8a2a'), x - 6 * k, y - 6 * k, 12 * k, 12 * k);
@@ -562,7 +562,7 @@ function makeAmbient(ch) {
     // sparks drifting through the whole hall, lifted on the heat
     const v = viewRect(ctx, 40);
     for (let i = 0; i < 26; i++) {
-      const [x, y] = drift(i, t, 3.3, v.x1 - v.x0, v.y1 - v.y0, Math.sin(t * 0.8 + i) * 22, -38 - (i % 5) * 10);
+      const dr = drift(i, t, 3.3, v.x1 - v.x0, v.y1 - v.y0, Math.sin(t * 0.8 + i) * 22, -38 - (i % 5) * 10), x = dr[0], y = dr[1];
       ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t * 5 + i * 1.7);
       ctx.drawImage(glow(i % 4 ? '#ff9a3a' : '#ff5a8a'), v.x0 + x - 5, v.y0 + y - 5, 10, 10);
     }

@@ -754,7 +754,8 @@ function makeAmbient(ch, q) {
     if (q >= 0.95) {
       // animated caustics (high tier only: a full-screen additive blit), one-third resolution, then one additive upscale blit
       const m = ctx.getTransform(), cw = ctx.canvas.width, chh = ctx.canvas.height, D = 3;
-      if (!cc || cc.width !== Math.ceil(cw / D) || cc.height !== Math.ceil(chh / D)) { cc = mk(cw / D, chh / D); ccg = cc.getContext('2d'); pat = null; }
+      // (redrawn every frame, never read back: a plain context, GPU-backed on a GPU browser; mk() makes CPU canvases)
+      if (!cc || cc.width !== Math.ceil(cw / D) || cc.height !== Math.ceil(chh / D)) { cc = document.createElement('canvas'); cc.width = Math.ceil(cw / D); cc.height = Math.ceil(chh / D); ccg = cc.getContext('2d'); pat = null; }
       if (!pat) pat = ccg.createPattern(caustics(), 'repeat');
       ccg.setTransform(1, 0, 0, 1, 0, 0); ccg.clearRect(0, 0, cc.width, cc.height);
       ccg.setTransform(m.a / D, m.b / D, m.c / D, m.d / D, m.e / D, m.f / D);
@@ -774,17 +775,17 @@ function makeAmbient(ch, q) {
     ctx.strokeStyle = 'rgba(190,230,255,0.5)'; ctx.lineWidth = 1.2;
     ctx.beginPath();
     for (let i = 0; i < 26; i++) {
-      const [x, y, fa] = drift(i, t, 3.3, W, H, Math.sin(t * 2 + i) * 10, -40 - (i % 6) * 12);
+      const dr = drift(i, t, 3.3, W, H, Math.sin(t * 2 + i) * 10, -40 - (i % 6) * 12), x = dr[0], y = dr[1], fa = dr[2];
       const rr = 1.2 + fa * 2.6, bx = v.x0 + x + Math.sin(t * 3 + i) * 4, by = v.y0 + y;
       ctx.moveTo(bx + rr, by); ctx.arc(bx, by, rr, 0, TAU);
     }
     ctx.stroke();
     // motes of gold
-    for (let i = 0; i < 24; i++) { const [x, y, fa] = drift(i, t, 8.1, W, H, 6, -10); drawGlow(ctx, v.x0 + x, v.y0 + y, 6 + fa * 5, '#ffd27a', 0.35 * (0.5 + 0.5 * Math.sin(t * 2 + i))); }
+    for (let i = 0; i < 24; i++) { const dr = drift(i, t, 8.1, W, H, 6, -10), x = dr[0], y = dr[1], fa = dr[2]; drawGlow(ctx, v.x0 + x, v.y0 + y, 6 + fa * 5, '#ffd27a', 0.35 * (0.5 + 0.5 * Math.sin(t * 2 + i))); }
     ctx.globalCompositeOperation = 'source-over';
     // floating hymn pages, drifting and turning
     for (let i = 0; i < 9; i++) {
-      const [x, y] = drift(i, t, 12.7, W, H, 12 + (i % 3) * 5, -6 - (i % 4) * 3);
+      const dr = drift(i, t, 12.7, W, H, 12 + (i % 3) * 5, -6 - (i % 4) * 3), x = dr[0], y = dr[1];
       const px = v.x0 + x, py = v.y0 + y, z = 60 + Math.sin(t * 0.7 + i) * 20, rot = Math.sin(t * 0.5 + i * 2) * 0.6 + i;
       const flip = Math.cos(t * 0.8 + i * 1.3);
       ctx.save(); ctx.translate(px, py - z); ctx.rotate(rot); ctx.scale(Math.max(0.15, Math.abs(flip)), 0.8);

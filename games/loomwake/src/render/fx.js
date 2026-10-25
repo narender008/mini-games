@@ -203,15 +203,20 @@ export function createFx(G, Q) {
     clock += dt;
     for (let i = texts.length - 1; i >= 0; i--) { const t = texts[i]; t.life -= dt; t.y += t.vy * dt; t.vy *= Math.exp(-dt * 3); t.pop = Math.max(0, t.pop - dt * 8); if (t.life <= 0) texts.splice(i, 1); }
     if (frozen) return;
-    for (let i = parts.length - 1; i >= 0; i--) {
+    // dead particles are dropped by compacting in place (one pass, order kept; a splice per death was a
+    // memmove of the whole list each time, thousands of particles in a boon storm)
+    let w = 0;
+    for (let i = 0; i < parts.length; i++) {
       const p = parts[i]; p.life -= dt;
-      if (p.life <= 0) { parts.splice(i, 1); continue; }
+      if (p.life <= 0) continue;
       const dr = Math.exp(-dt * p.drag);
       p.vx *= dr; p.vy *= dr; p.x += p.vx * dt; p.y += p.vy * dt;
       p.vz -= p.g * dt; p.z += p.vz * dt;
       if (p.z < 0 && p.g > 0) { p.z = 0; p.vz *= -p.bounce; p.vx *= 0.6; p.vy *= 0.6; p.vr *= 0.5; }
       p.rot += p.vr * dt;
+      parts[w++] = p;
     }
+    parts.length = w;
     for (let i = decals.length - 1; i >= 0; i--) if ((decals[i].life -= dt) <= 0) decals.splice(i, 1);
     for (let i = bolts.length - 1; i >= 0; i--) if ((bolts[i].life -= dt) <= 0) bolts.splice(i, 1);
     for (let i = flashes.length - 1; i >= 0; i--) if ((flashes[i].life -= dt) <= 0) flashes.splice(i, 1);
