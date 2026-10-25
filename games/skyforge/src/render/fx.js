@@ -89,10 +89,10 @@ export function createFX(app, quality) {
     const [x, y] = I ? at(I.ox + (p.u ?? I.w / 2) + 0.5, I.oy + (p.v ?? I.h / 2) + 0.5, I.alt + 1.6) : [0, 0];
     if (!I) return;
     // merge with a fresh label for the same resource nearby
-    const near = labels.find((l) => l.res === p.res && l.max - l.life < 0.5 && Math.hypot(l.x - x, l.y - y) < 80);
+    const near = labels.find((l) => l.res === p.res && l.max - l.life < 1 && Math.hypot(l.x - x, l.y - y) < 170);
     if (near) { near.n += p.n; near.text = fmt(near.n, p.res); return; }
     labels.push({ res: p.res, n: p.n, text: fmt(p.n, p.res), x, y, life: RC().labelLife || 1.8, max: RC().labelLife || 1.8 });
-    if (labels.length > 14) labels.shift();
+    if (labels.length > 10) labels.shift();
   });
   const fmt = (n, res) => `${n > 0 ? '+' : ''}${Math.round(n)}${res === 'coin' ? '' : ' ' + res}`;
   for (const ev of ['build:placed', 'build:demolished']) B.on(ev, ({ b } = {}) => { const p = bpos(b); if (p) dust(p[0], p[1], 1.2); });
@@ -281,24 +281,52 @@ export function createFX(app, quality) {
       if (flash > 0.01) { g.fillStyle = rgba('#dceaff', flash * 0.5); g.fillRect(0, 0, W, H); }
     },
     drawLabels(g, cam, W, H) {
-      for (const l of labels) {
-        const f = 1 - l.life / l.max, [sx, sy0] = toScreen(cam, 0, 0, 0);
-        const x = W / 2 + (l.x - wpx(cam.x, cam.y, cam.z)[0]) * cam.zoom, y = H / 2 + (l.y - wpx(cam.x, cam.y, cam.z)[1]) * cam.zoom - f * 36;
+      // newest first; a label that would overlap one already placed slides up
+      // a row or two, and is skipped when there is still no room
+      const [cx, cy] = wpx(cam.x, cam.y, cam.z), placed = [], k = clamp(0.7 + cam.zoom * 0.45, 0.78, 1);
+      g.font = `bold 15px ${SANS}`;
+      for (let i = labels.length - 1; i >= 0; i--) {
+        const l = labels[i];
+        const f = 1 - l.life / l.max;
+        const x = W / 2 + (l.x - cx) * cam.zoom;
+        let y = H / 2 + (l.y - cy) * cam.zoom - f * 36;
         const a = f < 0.12 ? f / 0.12 : f > 0.75 ? (1 - f) / 0.25 : 1;
         if (a <= 0 || x < -100 || x > W + 100 || y < -40 || y > H + 40) continue;
-        g.save(); g.globalAlpha = a;
-        g.font = `bold 15px ${SANS}`;
-        const tw = g.measureText(l.text).width, w = tw + 42, h = 28;
-        rr(g, x - w / 2, y - h / 2, w, h, 14); g.fillStyle = 'rgba(29,26,68,0.86)'; g.fill(); g.strokeStyle = rgba(BRASS, 0.85); g.lineWidth = 1.5; g.stroke();
-        const ix = x - w / 2 + 16;
-        if (ICONS.glyph && (ICONS.hasGlyph?.(l.res) ?? true)) { try { ICONS.glyph(g, l.res, ix, y, 0.62); } catch { resDot(g, ix, y, l.res); } } else resDot(g, ix, y, l.res);
-        g.fillStyle = TXT_COL[l.res] || '#9cf0a0'; g.textBaseline = 'middle'; g.fillText(l.text, x - w / 2 + 31, y + 1);
+        const tw = g.measureText(l.text).width, w = (tw + 42) * k, h = 28 * k;
+        let ok = false;
+        for (let tries = 0; tries < 3 && !ok; tries++) {
+          const hit = placed.find((r) => Math.abs(r.x - x) < (r.w + w) / 2 + 4 && Math.abs(r.y - y) < (r.h + h) / 2 + 3);
+          if (!hit) ok = true; else y = hit.y - (hit.h + h) / 2 - 4;
+        }
+        if (!ok) continue;
+        placed.push({ x, y, w, h });
+        g.save(); g.globalAlpha = a; g.translate(x, y); g.scale(k, k);
+        const wu = tw + 42;
+        rr(g, -wu / 2, -14, wu, 28, 14); g.fillStyle = 'rgba(29,26,68,0.86)'; g.fill(); g.strokeStyle = rgba(BRASS, 0.85); g.lineWidth = 1.5; g.stroke();
+        const ix = -wu / 2 + 16;
+        const gi = glyphImg(l.res, g.getTransform().a); if (gi) g.drawImage(gi, ix - 20, -20, 40, 40); else resDot(g, ix, 0, l.res);
+        g.fillStyle = TXT_COL[l.res] || '#9cf0a0'; g.textBaseline = 'middle'; g.fillText(l.text, -wu / 2 + 31, 1);
         g.restore();
       }
     },
     burst, bolt, dust, kick: shake,
     count: () => parts.length,
   };
+  // resource glyphs are painted once per resource and pixel ratio
+  const glyphs = new Map();
+  function glyphImg(res, k) {
+    k = Math.max(1, Math.round(k * 2) / 2);
+    const key = res + '@' + k;
+    if (glyphs.has(key)) return glyphs.get(key);
+    let c = null;
+    if (ICONS.glyph && (ICONS.hasGlyph?.(res) ?? true)) {
+      try {
+        c = document.createElement('canvas'); c.width = c.height = Math.ceil(40 * k);
+        const cg = c.getContext('2d'); cg.setTransform(k, 0, 0, k, 0, 0); ICONS.glyph(cg, res, 20, 20, 0.62);
+      } catch { c = null; }
+    }
+    glyphs.set(key, c); return c;
+  }
   function resDot(g, x, y, res) { g.fillStyle = RES_COL[res] || '#e0b25a'; circ(g, x, y, 6); g.fill(); g.strokeStyle = 'rgba(30,16,24,0.8)'; g.lineWidth = 1.2; g.stroke(); }
   return api;
 }

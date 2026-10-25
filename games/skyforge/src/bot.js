@@ -437,7 +437,8 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
     if (stock(res) >= 120 && rate(res) > 0) return false;
     if (n(type) >= (CAP[type] ?? 99)) return false;
     if (G.buildings.some((b) => b.type === type && b.state === 'built' && b.stall && b.stall !== 'workers')) return false;
-    if (labourShort() || (idle() < Math.max(1, (def.workers || 0) - 1) && popCap() - pop() < 2)) return false;
+    const critical = stock(res) < 25 && rate(res) <= 1;   // economy staffs suppliers of stalled goods first
+    if ((labourShort() && !critical) || (!critical && idle() < Math.max(1, (def.workers || 0) - 1) && popCap() - pop() < 2)) return false;
     for (const k of Object.keys(def.consumes || {})) if (rate(k) < (def.consumes[k] || 0) * 0.5 && stock(k) < 30 && k !== 'coal') return more(k, `${why} <- ${res}`);
     return build(type, PREFER[type] || null, why);
   }
@@ -519,7 +520,7 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
       if (rate('iron') < iron && more('iron', `iron rate ${rate('iron').toFixed(1)}`)) return true;
       if (rate('parts') < parts && rate('iron') > 3 && more('parts', `parts rate ${rate('parts').toFixed(1)}`)) return true;
     }
-    if (idle() >= 8 && n('academy') < 6 && !siteOf('academy') && build('academy', 'hearthrock', 'idle hands to scholars')) return true;
+    if (idle() >= 8 && n('academy') < (G.goals.chapter >= 5 ? 6 : 4) && !siteOf('academy') && build('academy', 'hearthrock', 'idle hands to scholars')) return true;
     if (p >= 30 && rate('insight') < 6 + G.goals.chapter * 2 && n('academy') < 3 && !siteOf('academy') && build('academy', 'hearthrock', 'research')) return true;
     // storage only when something we want costs more than the cap, or a precious good is capped
     const tight = Object.keys(needCap).some((k) => needCap[k] > G.t - 60)

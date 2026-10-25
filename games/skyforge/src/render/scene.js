@@ -77,7 +77,7 @@ export function createRenderer(canvas, app) {
 
   // ---------------------------------------------------------------- invalidation
   function invalidate(what) {
-    if (!what || what === 'all') { isl.clear(); props.clear(); sprites.clear(); sky.invalidate(); return; }
+    if (!what || what === 'all') { isl.clear(); props.clear(); plc.clear(); sprites.clear(); sky.invalidate(); return; }
     if (what === 'sprites') { sprites.clear(); return; }
     if (what === 'sky') { sky.invalidate(); return; }
     const id = String(what).replace(/^island:/, '');
@@ -89,7 +89,7 @@ export function createRenderer(canvas, app) {
   }
   app.bus.on('shot', (p) => { if (p && p.from != null) firedAt.set(p.from, clock); });
   let needFrame = false;
-  for (const ev of ['game', 'newgame', 'loaded']) app.ev.on(ev, () => { isl.clear(); props.clear(); interp.clear(); needFrame = true; });
+  for (const ev of ['game', 'newgame', 'loaded']) app.ev.on(ev, () => { isl.clear(); props.clear(); plc.clear(); interp.clear(); needFrame = true; });
   app.ev.on('settings', () => { resize(); });
 
   // ---------------------------------------------------------------- camera
@@ -127,20 +127,41 @@ export function createRenderer(canvas, app) {
   }
 
   // ---------------------------------------------------------------- sprites
+  // Sprites and island caches are painted at the exact device scale once the
+  // zoom has settled (a few per frame), at a bucket scale while it moves. An
+  // exact-scale sprite is blitted 1:1 on whole device pixels, which software
+  // canvases draw several times faster than a resampled image.
+  let spBudget = 0, zoomSettle = 0, lastZoom = 0;
+  function worldScale() {
+    const need = app.cam.zoom * dpr, b = bucket(need);
+    if (zoomSettle < 0.3) return b;
+    const cap = Q().cacheCap * (quality.Q.name === 'high' ? 1.42 : 1);
+    return need <= cap ? Math.round(need * 1000) / 1000 : b;
+  }
   function sprite(key, bounds, s, paint) {
     const k = key + '@' + s;
     let sp = sprites.get(k);
     if (sp) return sp;
-    if (sprites.size > 900) sprites.clear();
+    const b = bucket(app.cam.zoom * dpr);
+    if (s !== b && spBudget-- <= 0) return sprite(key, bounds, b, paint);
+    if (sprites.size > 1200) sprites.clear();
     const [x0, y0, x1, y1] = bounds;
     const c = layer((x1 - x0) * s + 2, (y1 - y0) * s + 2), cg = c.getContext('2d');
     cg.setTransform(s, 0, 0, s, -x0 * s + 1, -y0 * s + 1);
     paint(cg);
-    sp = { canvas: c, x: x0 - 1 / s, y: y0 - 1 / s, w: c.width / s, h: c.height / s };
+    sp = { canvas: c, x: x0 - 1 / s, y: y0 - 1 / s, w: c.width / s, h: c.height / s, k: s };
     sprites.set(k, sp);
     return sp;
   }
-  const blit = (gg, sp, x, y) => gg.drawImage(sp.canvas, x + sp.x, y + sp.y, sp.w, sp.h);
+  // draw a cached canvas whose pixels are at scale k; 1:1 on whole pixels when k is the device scale
+  function blitC(gg, canvas, x, y, w, h, k) {
+    const m = gg.getTransform();
+    if (m.b === 0 && m.c === 0 && Math.abs(m.a - k) < 2e-3 && Math.abs(m.d - k) < 2e-3) {
+      const dx = Math.round(m.a * x + m.e), dy = Math.round(m.d * y + m.f);
+      gg.setTransform(1, 0, 0, 1, 0, 0); gg.drawImage(canvas, dx, dy); gg.setTransform(m);
+    } else gg.drawImage(canvas, x, y, w, h);
+  }
+  const blit = (gg, sp, x, y) => blitC(gg, sp.canvas, x + sp.x, y + sp.y, sp.w, sp.h, sp.k);
 
   // building options shared by the body, its live parts and its lights
   function bOpts(b, G, I) {
@@ -191,7 +212,7 @@ export function createRenderer(canvas, app) {
   // the live parts frozen in, which reads the same at the distance they sit.
   const animCost = new Map();           // type -> ms (EMA)
   let liveSet = new Set(), seen = [], liveAll = true;
-  function animBudget() { return { high: 6, medium: 4, low: 2.5 }[quality.tier] || 4; }
+  function animBudget() { return { high: 4, medium: 2.5, low: 1.2 }[quality.tier] || 2.5; }
   function animFrameStart() {
     // pick this frame's live set from the buildings seen last frame
     let total = 0; for (const e of seen) total += e.c;
@@ -203,8 +224,21 @@ export function createRenderer(canvas, app) {
     }
     seen = [];
   }
+  // ART's part split ('base' | 'anim' | 'light'): probed once, since a painter
+  // that ignores `part` would make the light pass repaint whole buildings
+  let partsOK = null;
+  function probeParts() {
+    try {
+      const c = layer(160, 160), cg = c.getContext('2d');
+      ART.drawBuilding(cg, 'cottage', 40, 120, { state: 'built', night: 1, seed: 3, part: 'light' });
+      const d = cg.getImageData(0, 0, 160, 160).data; let solid = 0;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 250) solid++;
+      return solid < 60;
+    } catch { return true; }
+  }
   function drawBuilding(gg, b, I, X, Y, G, s, alpha = 1) {
     const type = b.type, o = bOpts(b, G, I);
+    if (partsOK == null && ART.drawBuilding && ART.DEFS?.cottage) partsOK = probeParts();
     if (!ART.drawBuilding || !ART.buildingInfo?.(type, o)) { fallbackBuilding(gg, b, X, Y); return o; }
     const inf = ART.buildingInfo(type, o), bb = inf.bbox;
     const sk = ART.spriteKey(type, o);
@@ -212,9 +246,11 @@ export function createRenderer(canvas, app) {
     const cost = animCost.get(type) ?? 0.6;
     const m = gg.getTransform(), sx = m.a * X + m.c * Y + m.e, sy = m.b * X + m.d * Y + m.f;
     seen.push({ id: b.id, c: cost, d: Math.hypot(sx / m.a - W * dpr / 2 / m.a, sy / m.d - H * dpr / 2 / m.d) });
-    const live = liveAll || liveSet.has(b.id) || o.fire > 0.02 || o.firing || alpha < 1 || b.state === 'site';
+    const live = liveAll || liveSet.has(b.id) || o.fire > 0.02 || o.firing || alpha < 1;
     if (alpha < 1) gg.globalAlpha = alpha;
-    if (live) {
+    if (live && partsOK === false) {
+      ART.drawBuilding(gg, type, X, Y, { ...o, part: 'all' });
+    } else if (live) {
       const sp = sprite('b|' + sk, [bb.x - 4, bb.y - 4, bb.x + bb.w + 4, bb.y + bb.h + 4], s, (cg) => ART.drawBuilding(cg, type, 0, 0, { ...o, part: 'base' }));
       blit(gg, sp, X, Y);
       const t0 = performance.now();
@@ -223,6 +259,7 @@ export function createRenderer(canvas, app) {
     } else {
       const nb = Math.round(o.night * 3) / 3;
       const sp = sprite('F|' + sk + '|' + nb, [bb.x - 40, bb.y - 90, bb.x + bb.w + 40, bb.y + bb.h + 8], s, (cg) => {
+        if (partsOK === false) { ART.drawBuilding(cg, type, 0, 0, { ...o, night: nb, t: 1.3 + (b.id % 5) * 0.7, part: 'all' }); return; }
         ART.drawBuilding(cg, type, 0, 0, { ...o, part: 'base' });
         ART.drawBuilding(cg, type, 0, 0, { ...o, night: nb, t: 1.3 + (b.id % 5) * 0.7, part: 'anim' });
       });
@@ -234,8 +271,8 @@ export function createRenderer(canvas, app) {
   // a building's lights (window glow, lamps, furnace mouths): halos are static per
   // body and night level, so they come from a sprite blitted additively; fire stays live
   function drawBuildingLight(g2, b, X, Y, o) {
-    if (o.fire > 0.02 || o.firing || o.charge > 0.05 || !o.__key) { ART.drawBuilding(g2, b.type, X, Y, { ...o, part: 'light' }); return; }
-    const nb = Math.round(o.night * 6) / 6, inf = ART.buildingInfo(b.type, o), bb = inf.bbox, s = Math.min(bucket(app.cam.zoom * dpr), 1);
+    if (o.fire > 0.02 || o.firing || o.charge > 0.05 || !o.__key || app.rdbg?.liveLights) { ART.drawBuilding(g2, b.type, X, Y, { ...o, part: 'light' }); return; }
+    const nb = Math.round(o.night * 6) / 6, inf = ART.buildingInfo(b.type, o), bb = inf.bbox, s = worldScale();
     const sp = sprite('L|' + o.__key + '|' + nb, [bb.x - 70, bb.y - 70, bb.x + bb.w + 70, bb.y + bb.h + 70], s, (cg) => ART.drawBuilding(cg, b.type, 0, 0, { ...o, night: nb, part: 'light' }));
     const op = g2.globalCompositeOperation; g2.globalCompositeOperation = 'lighter'; blit(g2, sp, X, Y); g2.globalCompositeOperation = op;
   }
@@ -340,7 +377,17 @@ export function createRenderer(canvas, app) {
       return;
     }
     if (!cable && ART.drawBridge) {
-      ART.drawBridge(gg, A[0], A[1], B[0], B[1], { state: st, progress: lprog, t: clock, night, seed: L.id });
+      if (st === 'broken') ART.drawBridge(gg, A[0], A[1], B[0], B[1], { state: st, progress: lprog, t: clock, night, seed: L.id });
+      else {
+        // the deck, ropes and posts are static: one sprite per bridge and build step
+        const sc = worldScale(), pq = st === 'site' ? Math.round(lprog * 20) / 20 : 1;
+        const x0 = Math.min(A[0], B[0]), x1 = Math.max(A[0], B[0]), y0 = Math.min(A[1], B[1]), y1 = Math.max(A[1], B[1]);
+        const bnd = [x0 - 24 - A[0], y0 - 50 - A[1], x1 + 40 - A[0], y1 + 60 - A[1]];
+        const key = `br|${L.id}|${st}|${pq}|${Math.round(B[0] - A[0])},${Math.round(B[1] - A[1])}`;
+        const sp = sprite(key, bnd, sc, (cg) => ART.drawBridge(cg, 0, 0, B[0] - A[0], B[1] - A[1], { state: st, progress: pq, t: 0, night: 0, seed: L.id, part: 'base' }));
+        blit(gg, sp, A[0], A[1]);
+        if (night > 0.05) ART.drawBridge(gg, A[0], A[1], B[0], B[1], { state: st, progress: pq, t: clock, night, seed: L.id, part: 'light' });
+      }
       if (st === 'built') {
         const sag = Math.min(40, len * 0.09);
         for (const c of agents.carts(L)) { const [x, y] = ART.cablePoint ? ART.cablePoint(A[0], A[1], B[0], B[1], c.t, sag * 0.9) : [lerp(A[0], B[0], c.t), lerp(A[1], B[1], c.t)]; c.draw(gg, x, y); }
@@ -398,7 +445,8 @@ export function createRenderer(canvas, app) {
 
   // ---------------------------------------------------------------- the world
   function drawWorld(gg, G, lights) {
-    const cam = app.cam, s = bucket(cam.zoom * dpr);
+    const cam = app.cam, s = worldScale();
+    spBudget = 10;
     const view = [-60, -60, W + 60, H + 60];
     const [cwx, cwy] = wpx(cam.x, cam.y, cam.z);
     const onScreen = (x0, y0, x1, y1) => {
@@ -439,12 +487,53 @@ export function createRenderer(canvas, app) {
     fx.drawShots(gg, G, clock);
   }
 
+  // Trees, rocks and crystals that no building can stand behind are baked into
+  // one layer per island (rebuilt with the island cache); only props that a
+  // building further back could overlap stay in the depth-sorted live list.
+  const plc = new Map();
+  function propLayer(I, G, s, hz, geo, budget) {
+    const c = isl.get(I.id), list = propsOf(I, G);
+    let e = plc.get(I.id);
+    if (e && e.list === list && e.s === s && e.isl === c) return e;
+    if (e && e.list === list && budget.n <= 0) return e;  // rescale next frame
+    budget.n--;
+    const bl = [];
+    for (const b of G.buildings) {
+      if (b.island !== I.id) continue;
+      const [w, d] = sizeOf(b.type), [x0] = local(b.u, b.v + d), [x1] = local(b.u + w, b.v), [, yf] = local(b.u, b.v);
+      bl.push({ v: b.v + d / 2, x0: x0 - 34, x1: x1 + 34, y: yf + 6 });
+    }
+    const live = [], baked = [], glows = [];
+    for (const p of list) {
+      if (p.glow) glows.push(p);
+      const kind = p.key.split('|')[0], B = PROP_BOUNDS[kind] || [-24, -60, 24, 8];
+      const over = bl.some((q) => q.v > p.v - 0.01 && p.x + B[2] > q.x0 && p.x + B[0] < q.x1 && p.y + B[1] < q.y);
+      (over ? live : baked).push(p);
+    }
+    const [bx0, by0, bx1] = geo.bounds, by1 = geo.maxY + 24, top = Math.min(by0, geo.minY - 80);
+    let canvas = null;
+    if (baked.length) {
+      canvas = layer((bx1 - bx0) * s + 2, (by1 - top) * s + 2);
+      const cg = canvas.getContext('2d');
+      cg.setTransform(s, 0, 0, s, -bx0 * s + 1, -top * s + 1);
+      baked.sort((a, b) => b.v - a.v || a.u - b.u);
+      for (const p of baked) {
+        const kind = p.key.split('|')[0], B = PROP_BOUNDS[kind] || [-24, -60, 24, 8];
+        const sp = sprite('p|' + p.key + '|' + (hz ? 'wild' : ''), B, s, (g2) => paintProp(g2, p.key, hz ? (col) => mix(col, WILD_HAZE, hz * 0.8) : undefined));
+        cg.drawImage(sp.canvas, p.x + sp.x, p.y + sp.y, sp.w, sp.h);
+      }
+    }
+    e = { list, s, isl: c, live, glows, canvas, bounds: [bx0 - 1 / s, top - 1 / s, bx0 - 1 / s + (canvas ? canvas.width / s : 0), top - 1 / s + (canvas ? canvas.height / s : 0)] };
+    plc.set(I.id, e);
+    return e;
+  }
+
   function drawIsland(gg, I, G, s, budget, onScreen, lights) {
     const geo = islandGeometry(I), [ox, oy] = wpx(I.ox, I.oy, I.alt);
     const [bx0, by0, bx1, by1] = geo.bounds;
     if (!onScreen(ox + bx0, oy + by0 - 160, ox + bx1, oy + by1 + 300)) return;
     const c = islandCache(I, G, s, budget);
-    gg.drawImage(c.canvas, ox + c.bounds[0], oy + c.bounds[1], c.bounds[2] - c.bounds[0], c.bounds[3] - c.bounds[1]);
+    blitC(gg, c.canvas, ox + c.bounds[0], oy + c.bounds[1], c.bounds[2] - c.bounds[0], c.bounds[3] - c.bounds[1], c.s);
     const hz = hazeOf(I), hc = (col) => (hz ? mix(col, WILD_HAZE, hz) : col);
     gg.save(); gg.translate(ox, oy);
     for (const f of waterfalls(I)) drawWaterfall(gg, I, f, clock, hc);
@@ -454,7 +543,10 @@ export function createRenderer(canvas, app) {
     if (tip) lights.push(() => glow(g, ox + tip[0], oy + tip[1] - 14, (90 + geo.rx * 0.25) * (1 + 0.06 * Math.sin(clock * 1.7 + I.alt)), I.biome === 'crystal' ? '#b48aff' : '#5fd3e8', (0.28 + env.night * 0.35) * (hz ? 0.6 : 1)));
     // sorted contents
     const list = [];
-    for (const p of propsOf(I, G)) list.push({ k: p.v, x: p.u, p });
+    const pl = propLayer(I, G, s, hz, geo, budget);
+    if (pl.canvas) blitC(gg, pl.canvas, ox + pl.bounds[0], oy + pl.bounds[1], pl.bounds[2] - pl.bounds[0], pl.bounds[3] - pl.bounds[1], pl.s);
+    for (const p of pl.live) list.push({ k: p.v, x: p.u, p });
+    if (env.night > 0.15) for (const p of pl.glows) lights.push(() => glow(g, ox + p.x, oy + p.y - 14, 34, '#7fe8ff', 0.5 * env.night));
     for (const b of G.buildings) {
       if (b.island !== I.id) continue;
       const [w, d] = sizeOf(b.type);
@@ -468,11 +560,10 @@ export function createRenderer(canvas, app) {
         const p = it.p, kind = p.key.split('|')[0], B = PROP_BOUNDS[kind] || [-24, -60, 24, 8];
         const sp = sprite('p|' + p.key + '|' + (hz ? 'wild' : ''), B, s, (cg) => paintProp(cg, p.key, hz ? (col) => mix(col, WILD_HAZE, hz * 0.8) : undefined));
         blit(gg, sp, ox + p.x, oy + p.y);
-        if (p.glow && env.night > 0.15) lights.push(() => glow(g, ox + p.x, oy + p.y - 14, 34, '#7fe8ff', 0.5 * env.night));
       } else if (it.b) {
         const b = it.b, [X, Y] = local(b.u, b.v);
         const bo = drawBuilding(gg, b, I, ox + X, oy + Y, G, s);
-        if (ART.drawBuilding && ART.DEFS?.[b.type]) lights.push(() => drawBuildingLight(g, b, ox + X, oy + Y, bo));
+        if (ART.drawBuilding && ART.DEFS?.[b.type] && partsOK !== false) lights.push(() => drawBuildingLight(g, b, ox + X, oy + Y, bo));
         fx.building(b, ox + X, oy + Y, bo, I, sizeOf(b.type));
       } else if (it.draw) {
         it.draw(gg, ox, oy);
@@ -487,21 +578,31 @@ export function createRenderer(canvas, app) {
   }
 
   // ---------------------------------------------------------------- frame
+  // The near cloud bank sits across the lower undersides (concept 3): a weighted
+  // blend of each island's front rim and its underside tip on screen, the
+  // owned islands counting most, kept in the bottom part of the screen.
   function frontBankY(G) {
     const list = viewIslands(G); if (!list.length) return H * 0.8;
-    let y = Infinity, alt = Infinity, cx = 0;
-    for (const I of list) { y = Math.min(y, I.oy); alt = Math.min(alt, I.alt); cx += I.ox + I.w / 2; }
-    cx /= list.length;
-    const [, sy] = toScreen(app.cam, cx, y - 3, alt - 4.2);
-    return sy;
+    const cam = app.cam, [cwx, cwy] = wpx(cam.x, cam.y, cam.z);
+    let sum = 0, wsum = 0;
+    for (const I of list) {
+      const geo = islandGeometry(I), [ox, oy] = wpx(I.ox, I.oy, I.alt);
+      const rim = oy + geo.maxY, tip = oy + (geo.tipPt ? geo.tipPt[1] : geo.maxY + geo.depth);
+      const y = H / 2 + (rim + (tip - rim) * 0.66 - cwy) * cam.zoom;
+      const sx = W / 2 + (ox + geo.cx - cwx) * cam.zoom;
+      const w = (I.owned ? 3 : 1) * (sx > -W * 0.2 && sx < W * 1.2 ? 1 : 0.2);
+      sum += y * w; wsum += w;
+    }
+    return clamp(sum / wsum, H * 0.62, H + 40);
   }
 
   function draw(realDt) {
     const dt = Math.min(0.1, Math.max(0, realDt || 0));
     if (quality.frame(dt)) resize();
     clock += dt;
+    if (app.cam) { if (Math.abs(app.cam.zoom - lastZoom) > 1e-5) { zoomSettle = 0; lastZoom = app.cam.zoom; } else zoomSettle += dt; }
     const G = app.G;
-    if (G !== lastG) { lastG = G; isl.clear(); props.clear(); interp.clear(); needFrame = true; }
+    if (G !== lastG) { lastG = G; isl.clear(); props.clear(); plc.clear(); interp.clear(); needFrame = true; }
     if (needFrame && G && G.islands.length) { needFrame = false; frameColony(G); }
     g.setTransform(1, 0, 0, 1, 0, 0);
     if (!G || TITLE_SCENES.has(app.scene)) {
@@ -535,7 +636,7 @@ export function createRenderer(canvas, app) {
     }
     // lights and glow fx, additive, in world space
     g.setTransform(dpr, 0, 0, dpr, shx * dpr, shy * dpr); applyCamera(g, cam);
-    if (!X.noLights && (env.night > 0.08 || Q().name !== 'low')) for (const f of lights) f();
+    if (!X.noLights && (env.night > 0.08 || Q().name === 'high')) for (const f of lights) f();
     fx.drawGlow(g, G, clock);
     agents.drawBirds(g, env, clock);
     // the sky goes in behind everything drawn so far
@@ -554,7 +655,7 @@ export function createRenderer(canvas, app) {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (!X.noOver) overlay.drawScreen(g, G, clock, W, H);
     fx.drawLabels(g, cam, W, H);
-    if (!X.noVig) vignette(g);
+    if (!X.noVig && Q().name === 'high') vignette(g);
   }
   let homeYc = null;
   function homeY(G) {

@@ -82,7 +82,7 @@ app.continueGame = (profile = app.profile) => {
   adopt(G);
   hydrateSim(G);
   app.setScene('colony');
-  app.ev.emit('loaded', { G, away: data.awaySeconds || 0 });
+  app.ev.emit('loaded', { G, away: data.awaySeconds || 0, summary: data.awaySummary || null });
   return true;
 };
 
@@ -181,7 +181,7 @@ function installHook() {
     step(ms, { render = true } = {}) {
       const g = G(); if (!g) return state();
       const n = Math.round(ms / 1000 / DT);
-      for (let i = 0; i < n; i++) tick(g);
+      for (let i = 0; i < n; i++) { tick(g); if (app.bot?.on && i % 30 === 29) app.bot.update(0); }
       if (render) { try { app.renderer?.draw(0); app.ui?.update(0); } catch (e) { console.error(e); } }
       return state();
     },

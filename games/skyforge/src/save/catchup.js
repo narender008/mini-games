@@ -7,12 +7,17 @@
 //   - G.tmp.quiet = true for the whole run: THREATS schedules no raids and no
 //     storms while it is set. If one starts anyway, catch-up stops right there
 //     so the player meets it with the game open.
-//   - a choice card (G.event) also stops it, so the player makes the choice
+//   - a choice card (G.event) waits for the player; the colony keeps working
+//     meanwhile (goals deal no new card while one is pending)
+//   - steps are coarse (0.5 s, src/save/coarse.js): raids and storms are off
 //   - the work is capped by budgetMs of real time so loading stays snappy
 // The run uses its own private bus, so render, audio and UI hear nothing.
 import { restore, snapshot } from '../state.js';
-import { hydrateSim, tick } from '../sim/index.js';
-import { CFG, DT } from '../config.js';
+import { hydrateSim } from '../sim/index.js';
+import { coarseStep } from './coarse.js';
+import { CFG } from '../config.js';
+
+const STEP = 0.5;   // game seconds per coarse step
 
 const clock = () => (globalThis.performance?.now ? performance.now() : Date.now());
 
@@ -42,13 +47,12 @@ export function catchUp(data, away, { cfg = CFG.save.catchup, budgetMs = cfg.bud
   G.tmp.quiet = true; G.tmp.catchup = true;
   const before = { res: totals(G), pop: G.colony.pop || 0, day: G.day, research: new Set(G.research.done), built: G.buildings.filter((b) => b.state === 'built').length, chapter: G.goals.chapter };
   const raid0 = !!G.raid, storm0 = G.weather?.kind === 'storm';
-  const steps = Math.round(want / DT);
+  const steps = Math.round(want / STEP);
   const t0 = clock();
   let i = 0, stop = null;
   for (; i < steps; i++) {
-    if ((i & 255) === 0 && clock() - t0 > budgetMs) { stop = 'time'; break; }
-    if (G.event) { stop = 'event'; break; }
-    tick(G);
+    if ((i & 31) === 0 && clock() - t0 > budgetMs) { stop = 'time'; break; }
+    coarseStep(G, STEP);
     if (!raid0 && G.raid) { stop = 'raid'; break; }
     if (!storm0 && G.weather?.kind === 'storm') { stop = 'storm'; break; }
   }
@@ -60,7 +64,7 @@ export function catchUp(data, away, { cfg = CFG.save.catchup, budgetMs = cfg.bud
     if (d) res[k] = d;
   }
   const summary = {
-    away: Math.round(away), counted: Math.min(away, cfg.maxAway), simulated: Math.round(i * DT), wanted: Math.round(want),
+    away: Math.round(away), counted: Math.min(away, cfg.maxAway), simulated: Math.round(i * STEP), wanted: Math.round(want),
     complete: i >= steps, stoppedBy: stop, ms: Math.round(clock() - t0),
     days: G.day - before.day, pop: Math.round((G.colony.pop || 0) - before.pop), res,
     built: G.buildings.filter((b) => b.state === 'built').length - before.built,

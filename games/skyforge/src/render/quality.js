@@ -1,7 +1,8 @@
 // Quality tiers and the frame governor. `?quality=high|medium|low` or
 // settings.quality ('auto' by default) picks the tier; under 'auto' the
-// governor lowers the render scale (then the tier) when frames run long and
-// raises it again when there is headroom, aiming at a steady 60 fps.
+// governor lowers the tier (then the render scale) when frames run long, drops
+// straight to low when they are far too slow (software canvas), and raises
+// the scale again when there is headroom, aiming at a steady 60 fps.
 import { CFG } from '../config.js';
 
 export const TIERS = {
@@ -32,10 +33,13 @@ export function createQuality(app) {
       if (!q.auto || dt <= 0 || dt > 0.25 || document.hidden) { const c = changed; changed = false; return c; }
       ema += (dt - ema) * 0.08;
       if (ema > 1 / (R.governorLowFps || 48)) { slow += dt; fast = 0; } else if (ema < 1 / 57) { fast += dt; slow = 0; } else { slow = Math.max(0, slow - dt); fast = 0; }
-      if (slow > 1.5) {
-        slow = 0;
-        if (scale > (R.minScale || 0.65)) scale = Math.max(R.minScale || 0.65, +(scale - 0.1).toFixed(2));
-        else if (ORDER.indexOf(tier) > 0) { tier = ORDER[ORDER.indexOf(tier) - 1]; scale = 0.85; }
+      // far too slow (a software canvas, a weak GPU): drop straight to low
+      if (slow > 0.6 && ema > 1 / 22 && tier !== 'low') { tier = 'low'; scale = 1; slow = 0; ema = 1 / 40; changed = true; }
+      else if (slow > 1.5) {
+        // tiers first (they cut work), then the render scale (blurrier)
+        slow = 0; ema = 1 / 50;
+        if (ORDER.indexOf(tier) > 0) tier = ORDER[ORDER.indexOf(tier) - 1];
+        else if (scale > (R.minScale || 0.65)) scale = Math.max(R.minScale || 0.65, +(scale - 0.1).toFixed(2));
         changed = true;
       } else if (fast > 5) {
         fast = 0;

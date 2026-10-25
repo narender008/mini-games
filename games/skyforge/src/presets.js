@@ -15,7 +15,7 @@
 //   stress late colony plus extra buildings, ships, pirates (opts)
 // applyPreset(G, name, app, opts) -> { ok, error?, chapter, seconds, ms }
 import { tick, MODULES } from './sim/index.js';
-import { DAY } from './config.js';
+import { coarseStep as coarse } from './save/coarse.js';
 import { makeActions } from './sim/actions.js';
 import * as C from './content/index.js';
 import { createBus } from './core/events.js';
@@ -30,16 +30,6 @@ const PLAN = {
   stress: { chapter: 7, pop: 150, maxT: 12000, settle: 120, stage: 2 },
 };
 
-// Coarse steps for growing a preset quickly: the same modules in the same
-// order as sim/index.js tick(), with a bigger dt (raids and storms are off).
-const ORDER = ['weather', 'links', 'economy', 'islands', 'fleet', 'trade', 'chart', 'research', 'raids', 'defence', 'combat', 'goals'];
-function coarse(G, dt) {
-  G.t += dt;
-  G.tod += dt / DAY;
-  if (G.tod >= 1) { G.tod -= 1; G.day += 1; G.bus.emit('day', { day: G.day }); }
-  for (const k of ORDER) MODULES[k].step?.(G, dt);
-}
-
 const clock = () => (globalThis.performance?.now ? performance.now() : Date.now());
 
 export function applyPreset(G, name, app, opts = {}) {
@@ -48,7 +38,7 @@ export function applyPreset(G, name, app, opts = {}) {
   if (!plan) return { ok: false, error: `unknown preset ${name}` };
   const t0 = clock();
   const act = makeActions(() => G);
-  const give = (k, n) => MODULES.economy.give?.(G, k, n);
+  const give = (k, n, root) => MODULES.economy.give?.(G, k, n, root);
   const brain = createBrain({ getG: () => G, act, C, cheat: true, give });
   // grow it on a private bus: render, audio and UI hear none of the hundreds of events
   const bus = G.bus;
@@ -59,15 +49,27 @@ export function applyPreset(G, name, app, opts = {}) {
   const reached = () => G.goals.chapter >= plan.chapter && (G.colony.pop || 0) >= (plan.pop || 0) && (!plan.stage || (G.buildings.find((b) => b.type === 'skyforge')?.level || 0) >= plan.stage);
   let settleUntil = null;
   const startT = G.t;
+  let k = 0;
   while (G.t - startT < plan.maxT) {
     if (opts.fine) { for (let i = 0; i < 30; i++) tick(G); } else { coarse(G, 0.5); coarse(G, 0.5); }
+    if (++k % 2 && !G.event) continue;       // the planner thinks every other game second
     if (G.event) brain.onEvent();
-    // research is the slow part: pay its insight up front so it never waits
-    if (!G.research.current) give('insight', 200);
     brain.think();
     if (settleUntil == null && reached()) settleUntil = G.t + plan.settle;
     if (settleUntil != null && G.t >= settleUntil) break;
   }
+  // believable stores for the picture (a colony at work keeps some of everything it makes),
+  // then a minute of ordinary steps so the HUD's smoothed rates settle
+  for (const [root, pool] of Object.entries(G.pools)) {
+    for (const r of Object.keys(pool.res)) {
+      const made = G.tmp.made?.[root]?.[r] || 0;
+      if (made <= 0) continue;
+      const want = Math.min(400, (pool.cap?.[r] ?? 400) * 0.4);
+      if (pool.res[r] < want) give(r, want - pool.res[r], root);
+    }
+  }
+  if (G.colony.coin < 400) give('coin', 400 - G.colony.coin);
+  for (let i = 0; i < 60 * 30; i++) tick(G);
   G.tmp.quiet = quiet;
   if (!quiet) delete G.tmp.quiet;
   // presets start in daylight unless they say otherwise; storm at dusk
@@ -75,6 +77,7 @@ export function applyPreset(G, name, app, opts = {}) {
   G.raid = null; G.pirates = []; G.shots = [];
   G.bus = bus;
   G.log = (G.log || []).slice(-6);
+  if (name !== 'storm') MODULES.weather.setWeather?.(G, 'clear', 0);
   if (name === 'storm') MODULES.weather.startStorm?.(G, 0.85);
   if (name === 'raid') MODULES.raids.startRaid?.(G, 1.2, { now: true });
   if (name === 'stress') stress(G, act, give, opts);

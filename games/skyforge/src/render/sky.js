@@ -140,7 +140,7 @@ export function createSky(Q) {
         g.restore();
       }
       g.restore();
-      g.fillStyle = '#121428'; g.fillRect(0, 0, W, H * 0.06);
+      g.fillStyle = vgrad(g, 0, H * 0.16, [[0, rgba('#121428', 0.95)], [1, rgba('#121428', 0)]]); g.fillRect(0, 0, W, H * 0.16);
     } },
   };
 
@@ -220,15 +220,8 @@ export function createSky(Q) {
     g.globalAlpha = 1;
   }
 
-  return {
-    resize(w, h, k) { size = { w, h, k }; },
-    // back of the scene: gradient, stars, moon, sun, rays, high clouds, distant islands, horizon bank
-    // the backdrop behind the world. Called with globalCompositeOperation
-    // 'destination-over' after the world is drawn, so it paints nearest first:
-    // horizon bank, distant islands, high clouds, stars, then the cached sky.
-    back(g, e, v, t, dt) {
-      const { w, h } = size, k = Math.min(size.k, Q().skyK);
-      if (queue.length) build(queue.shift());
+  function paintBack(g, e, v, t, dt, w, h) {
+      const k = Math.min(size.k, Q().skyK);
       const ho = ensure('horizon', e, w, h, k);
       const hy = h * 0.6 - v.py * 0.28;
       if (hy + ho.H < h) { g.fillStyle = mix(e.cl[2], e.far[1], 0.5); g.fillRect(0, hy + ho.H - 1, w, h - hy - ho.H + 1); }
@@ -247,6 +240,37 @@ export function createSky(Q) {
       }
       const bd = backdrop(e, w, h);
       g.drawImage(bd, 0, 0, w, h);
+    }
+
+  let comp = null;
+  return {
+    resize(w, h, k) { size = { w, h, k }; },
+    // back of the scene: gradient, stars, moon, sun, rays, high clouds, distant islands, horizon bank
+    // the backdrop behind the world. Called with globalCompositeOperation
+    // 'destination-over' after the world is drawn, so it paints nearest first:
+    // horizon bank, distant islands, high clouds, stars, then the cached sky.
+    back(g, e, v, t, dt) {
+      const { w, h } = size;
+      if (queue.length) build(queue.shift());
+      // high tier layers the sky live; medium and low composite it into one
+      // canvas-sized image refreshed a few times a second (or on a pan) and
+      // drawn 1:1, which cuts the resampled full-screen draws that dominate
+      // software rendering
+      if (Q().name === 'high') { paintBack(g, e, v, t, dt, w, h); return; }
+      const cs = size.k;
+      const cw = Math.max(1, Math.round(w * cs)), ch = Math.max(1, Math.round(h * cs));
+      let c = comp;
+      const fading = Object.values(strips).some((st) => st.prev);
+      if (!c || c.canvas.width !== cw || c.canvas.height !== ch) { c = comp = { canvas: layer(cw, ch), t: -9 }; }
+      if (fading || c.key !== e.key || Math.abs(c.px - v.px) > 0.6 || Math.abs(c.py - v.py) > 0.6 || t - c.t > 0.25 || c.stars !== e.stars > 0.02) {
+        const cg = c.canvas.getContext('2d');
+        cg.setTransform(1, 0, 0, 1, 0, 0); cg.globalCompositeOperation = 'source-over'; cg.clearRect(0, 0, cw, ch);
+        cg.setTransform(cs, 0, 0, cs, 0, 0); cg.globalCompositeOperation = 'destination-over';
+        paintBack(cg, e, v, t, t - c.t > 1 ? 0 : t - c.t, w, h);
+        cg.globalCompositeOperation = 'source-over';
+        Object.assign(c, { key: e.key, px: v.px, py: v.py, t, stars: e.stars > 0.02 });
+      }
+      const m = g.getTransform(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(c.canvas, 0, 0); g.setTransform(m);
     },
     // hanging storm clouds at the top of the screen
     stormTop(g, e, v, t, dt) {
@@ -261,6 +285,6 @@ export function createSky(Q) {
       drawStrip(g, s, t * 6 + v.px * 0.9, y, 1, dt);
       if (y + s.H < size.h) { g.fillStyle = mix(e.cl[2], e.cl[1], 0.35); g.fillRect(0, y + s.H - 1, size.w, size.h - y - s.H + 1); }
     },
-    invalidate() { strips = {}; queue = []; bdc = null; },
+    invalidate() { strips = {}; queue = []; bdc = null; comp = null; },
   };
 }
