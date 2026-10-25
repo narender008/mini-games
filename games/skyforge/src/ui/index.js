@@ -148,7 +148,10 @@ export function createUI(root, app) {
     if (parts.settings.isOpen()) { parts.settings.close(); return true; }
     if (parts.pause.back()) return true;
     if (app.scene === 'won') return true;
-    if (app.G?.event) return true;                         // a choice card must be answered
+    if (app.G?.event) {                                    // a choice card must be answered, but never behind a panel
+      if (openPanel) { closePanels(); return true; }
+      return true;
+    }
     if (app.mode.build || app.mode.link) { parts.build.cancelPlacing(); return true; }
     if (openPanel) { if (PANEL_SCENES.includes(app.scene)) app.setScene('colony'); else { hidePanel(); placeClose(); } return true; }
     if (parts.inspector.isOpen()) { parts.inspector.close(); return true; }
@@ -203,9 +206,15 @@ export function createUI(root, app) {
 
   // ---------- per-frame ----------
   let acc = 0;
+  // a choice card (G.event) pauses the sim: close any full-screen panel so it is never hidden (P0-1)
+  function closePanels() {
+    if (!openPanel) return;
+    if (PANEL_SCENES.includes(app.scene)) app.setScene('colony'); else { hidePanel(); placeClose(); }
+  }
   ui.update = (realDt = 0) => {
-    applyScene();
     const G = app.G;
+    if (G?.event && openPanel) closePanels();
+    applyScene();
     acc += realDt;
     // DOM text refreshes at ~12 Hz (and on every debug step: realDt 0)
     const slow = acc >= 0.08 || realDt === 0;

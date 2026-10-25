@@ -25,6 +25,9 @@ body { font-family: var(--sans); color: var(--cream); -webkit-font-smoothing: an
 #ui { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
 #ui * { box-sizing: border-box; }
 #ui .layer { position: absolute; inset: 0; pointer-events: none; }
+/* each layer is its own stacking context, in DOM order: hud < panels < title < modal < top.
+   Nothing inside the HUD (raid banner, abilities) can draw over a panel or a modal (P0-1, P1-9). */
+#ui > .layer.hud { z-index: 1; } #ui > .panel-host { z-index: 2; } #ui > .layer.title { z-index: 3; } #ui > .layer.modal { z-index: 4; } #ui > .layer.top { z-index: 5; }
 #ui .layer > *, #ui .hit { pointer-events: auto; }
 /* overlays that must let taps through to the world (the rule above would otherwise win on specificity) */
 #ui .layer > :is(.hud-top, #toasts, #chapter-banner, #tip, .pulse-ring, .bubble.place-hint) { pointer-events: none; }
@@ -138,8 +141,23 @@ body:not([data-scene="title"]):not([data-scene="profiles"]):not([data-scene="loa
 .hud-top { position: absolute; left: calc(1rem + var(--safe-l)); right: calc(1rem + var(--safe-r)); top: calc(0.9rem + var(--safe-t)); display: flex; gap: 1rem; align-items: flex-start; pointer-events: none; }
 .hud-top > * { pointer-events: auto; }
 #resbar { display: flex; align-items: center; height: 3.15rem; padding: 0 0.6rem 0 0.4rem; max-width: calc(100% - 20rem); min-width: 0; }
-#resbar .scroller { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; height: 100%; gap: 0.15rem; position: relative; z-index: 1; touch-action: pan-x; }
+#resbar .scroller { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; height: 100%; gap: 0.15rem; position: relative; z-index: 1; touch-action: pan-x; }
 #resbar .scroller::-webkit-scrollbar { display: none; }
+/* scrolling resources | network label | pinned coin, insight, settlers (QA P1-3) */
+#resbar .swrap { position: relative; flex: 0 1 auto; min-width: 0; height: 100%; display: flex; z-index: 1; }
+#resbar.over .swrap { flex: 1 1 auto; }
+#resbar .pinned { flex: none; display: flex; align-items: center; height: 100%; gap: 0.15rem; padding-left: 0.3rem; margin-left: 0.2rem; border-left: 1px solid rgba(224, 178, 90, 0.35); position: relative; z-index: 1; }
+#resbar.over:not(.at-end) .scroller { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 3.2rem), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 3.2rem), transparent); }
+#resbar.over.at-end:not(.at-start) .scroller { -webkit-mask-image: linear-gradient(90deg, transparent, #000 2.4rem); mask-image: linear-gradient(90deg, transparent, #000 2.4rem); }
+#resbar .more { display: none; position: absolute; right: 0; top: 50%; width: 1.7rem; height: 1.7rem; margin-top: -0.85rem; border-radius: 50%; border: 1px solid var(--brass); background: rgba(29, 26, 68, 0.95); padding: 0; cursor: pointer; }
+#resbar .more::before { content: ''; position: absolute; inset: -0.6rem; }
+#resbar .more i { display: block; width: 0.45rem; height: 0.45rem; margin: 0 auto; border: solid var(--gold-text); border-width: 0.13rem 0.13rem 0 0; transform: translateX(-0.08rem) rotate(45deg); }
+#resbar.over .more { display: block; }
+#resbar.over.at-end .more i { transform: translateX(0.08rem) rotate(-135deg); }
+#resbar.tight .res { padding: 0 0.26rem; gap: 0.22rem; }
+#resbar.tight .scroller, #resbar.tight .pinned { gap: 0.05rem; }
+#resbar.tight .res small { display: none; }
+#resbar.tight .res .ico { width: 1.35rem; height: 1.35rem; }
 .res { display: flex; align-items: center; gap: 0.35rem; height: 2.75rem; padding: 0 0.55rem; border-radius: 1.4rem; cursor: default; white-space: nowrap; flex: none; }
 .res .ico { width: 1.55rem; height: 1.55rem; }
 .res b { font: bold 1.08rem var(--sans); color: var(--cream); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); font-variant-numeric: tabular-nums; }
@@ -157,7 +175,9 @@ body:not([data-scene="title"]):not([data-scene="profiles"]):not([data-scene="loa
 #clock .dial { width: 2.2rem; height: 2.2rem; border-radius: 50%; position: relative; z-index: 1; flex: none; }
 #clock .when { display: flex; flex-direction: column; line-height: 1.1; min-width: 8.6rem; position: relative; z-index: 1; }
 #clock .when b { font: bold 1.05rem var(--serif); color: var(--cream); }
-#clock .when span { font: 0.76rem var(--sans); color: var(--lilac); white-space: nowrap; }
+#clock .when span { font: 0.76rem var(--sans); color: var(--lilac); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#clock .when b { white-space: nowrap; }
+#clock .when > * { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 #clock .speeds { display: flex; gap: 0.3rem; position: relative; z-index: 1; }
 .spd { width: 1.75rem; height: 1.75rem; border-radius: 50%; padding: 0; cursor: pointer; display: grid; place-items: center; border: 0.1rem solid var(--brass); background: rgba(58, 54, 112, 0.92); color: var(--cream); }
 .spd svg { width: 62%; height: 62%; fill: currentColor; }
@@ -549,6 +569,12 @@ input[type=range]::-moz-range-thumb { width: 1.4rem; height: 1.4rem; border-radi
 .ledger-host { position: relative; height: 100%; min-height: 20rem; }
 .ledger-host > * { position: absolute; inset: 0; }
 
+/* ---------- landscape tablets / small laptops: the centred palette would run into the dock, so it
+   centres in the room left of the dock instead (QA P2-4) ---------- */
+@media (min-width: 901px) and (max-width: 1240px) {
+  #build { left: calc(1rem + var(--safe-l)); right: calc(22rem + var(--safe-r)); transform: none; max-width: none; }
+  #build.closed { transform: translateY(130%); }
+}
 /* ---------- tablet portrait / phone ---------- */
 @media (max-width: 900px) {
   #resbar { max-width: none; flex: 1; }
@@ -688,5 +714,20 @@ body.touch .round { width: 2.75rem; height: 2.75rem; }
   .bubble b { font-size: 0.92rem; }
   .bubble p { font-size: 0.74rem; line-height: 1.3; }
   .bubble .row { margin-top: 0.3rem; }
-  #raid-banner, #raid-banner.low { top: calc(3.6rem + var(--safe-t)); min-height: 0; padding: 0.4rem 0.9rem; }
+  #raid-banner, #raid-banner.low { top: calc(3.6rem + var(--safe-t)); min-height: 0; padding: 0.4rem 0.9rem; max-width: calc(100% - 12rem); }
+  #raid-banner .h1 { font-size: 1.2rem; }
+  #defences { left: calc(0.5rem + var(--safe-l)); bottom: calc(0.5rem + var(--safe-b)); width: 14rem; padding: 0.55rem 0.75rem; }
+  #defences .drow { font-size: 0.74rem; }
+  #damage { right: calc(5rem + var(--safe-r)); bottom: calc(0.5rem + var(--safe-b)); width: 15rem; padding: 0.55rem 0.75rem; }
+  /* while building, the tray owns the bottom edge: the defence list and damage report step aside */
+  body[data-scene=build] #defences, body[data-scene=build] #damage,
+  .layer.hud:has(> #build:not(.closed)) > #defences, .layer.hud:has(> #build:not(.closed)) > #damage { display: none; }
+  body.threat #goals { display: none; }
 }
+
+/* the Skyforge stage being raised: a progress bar in place of the "Begin stage" button (QA P2-16) */
+#btn-upgrade.busy, #btn-upgrade.busy:disabled { position: relative; overflow: hidden; isolation: isolate; opacity: 1; filter: none; cursor: default; color: #eafcff; border-color: #7fd8ea; background: linear-gradient(#1f5f78, #123e52); }
+#btn-upgrade.busy::before { content: ''; position: absolute; inset: 0; z-index: -1; width: calc(var(--p, 0) * 100%); background: linear-gradient(#3fa8c4, #2a7f9c); transition: width 0.4s linear; }
+#btn-upgrade.busy small { font: bold 0.72rem var(--sans); opacity: 0.9; margin-left: 0.5rem; }
+/* toasts step left of an open inspector on wide screens instead of sliding under it */
+@media (min-width: 901px) { .layer.hud:has(> #inspector:not([hidden])) #toasts { right: calc(24.5rem + var(--safe-r)); } }

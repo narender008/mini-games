@@ -313,9 +313,10 @@ export function createBuild(ctx) {
         const reason = c.reason || (valid ? null : app.act.canBuild(m.type, c.island, c.u, c.v)?.error);
         const [sz0, sz1] = def.size || [1, 1];
         if (i) anchor = toScreen(app.cam, i.ox + c.u + sz0 / 2, i.oy + c.v + sz1 / 2, i.alt + 0.6);
-        title = CELL[ch] || def.name;
+        // the building's name leads; the ground only matters when it is the reason it can't go here (QA P2-15)
+        title = def.name;
         if (valid) text = step?.hint?.text && /here|outcrop|forest|soil|seam/i.test(step.hint.text) ? `Place a ${def.name} here. ${step.hint.text.replace(/^[^:]*:\s*/, '')}` : `Place a ${def.name} here. ${firstSentence(def.desc)}`;
-        else { err = true; text = plainError(reason, m.type) + ' ' + placeText(def); }
+        else { err = true; if (CELL[ch]) title = `${def.name} · ${CELL[ch]}`; text = plainError(reason, m.type) + ' ' + placeText(def); }
       } else {
         const hs = step?.hint;
         if (hs && hs.u != null) { const i = G.islands.find((x) => x.id === (hs.island || 'hearthrock')); if (i) anchor = toScreen(app.cam, i.ox + hs.u + (def.size?.[0] || 1) / 2, i.oy + hs.v + (def.size?.[1] || 1) / 2, i.alt + 0.6); }
@@ -348,7 +349,7 @@ export function createBuild(ctx) {
     }
     setHidden(bubble, false);
     lastAnchor = anchor;
-    positionBubble(bubble, tailSvg, anchor);
+    positionBubble(bubble, tailSvg, anchor, m ? 66 : 36);   // clear of the ghost and its name label
   }
 
   function update(dt, slow, G) {
@@ -399,7 +400,7 @@ export function svgTail() {
   return svg;
 }
 // place a .bubble near a screen point with a tail pointing at it
-export function positionBubble(el, tail, anchor) {
+export function positionBubble(el, tail, anchor, clear = 36) {
   const W = innerWidth, H = innerHeight;
   const w = el.offsetWidth || 300, hgt = el.offsetHeight || 100;
   const path = tail.firstChild;
@@ -418,7 +419,7 @@ export function positionBubble(el, tail, anchor) {
   grab('.hud-top > *, #dock button, #build:not(.closed) .tabs, #build:not(.closed) .tray, #build:not(.closed) .detail:not(.hide), #place:not([hidden]) > *, #raid-banner, #abilities, #defences, #inspector, #contract', hard);
   grab('#goals, #toasts > *, #chapter-banner.on', soft, 2);
   const over = (X0, Y0, list) => { let a = 0; for (const [l, t, r, b] of list) { const ox = Math.min(X0 + w, r) - Math.max(X0, l), oy = Math.min(Y0 + hgt, b) - Math.max(Y0, t); if (ox > 0 && oy > 0) a += ox * oy; } return a; };
-  const covers = (X0, Y0) => ax > X0 - 36 && ax < X0 + w + 36 && ay > Y0 - 36 && ay < Y0 + hgt + 36;
+  const covers = (X0, Y0) => ax > X0 - clear && ax < X0 + w + clear && ay > Y0 - clear && ay < Y0 + hgt + clear;
   const cand = [[ax + 40, ay - hgt - 70], [ax - w - 40, ay - hgt - 70], [ax + 50, ay - hgt / 2], [ax - w - 50, ay - hgt / 2],
     [ax - w / 2, ay - hgt - 60], [ax - w / 2, ay + 60], [ax + 40, ay + 50], [ax - w - 40, ay + 50]];
   for (let gy = 0; gy <= 6; gy++) for (let gx = 0; gx <= 6; gx++) cand.push([M + (W - w - 2 * M) * gx / 6, M + (H - hgt - 2 * M) * gy / 6]);

@@ -32,6 +32,13 @@ export function createNotify(ctx) {
         const tx = x != null ? x : i ? i.ox + (u ?? i.w / 2) + 0.5 : null;
         const ty = y != null ? y : i ? i.oy + (v ?? i.h / 2) + 0.5 : null;
         if (tx != null) { app.cam.tx = tx; app.cam.ty = ty; if (app.cam.zoom < 1) app.cam.tzoom = 1.1; }
+        // a notice about a building (finished, on fire, a ruin, ...) also selects it, so its inspector
+        // opens: the way to reach a ruin hidden behind another building (QA P1-1)
+        if (island && u != null && v != null) {
+          const b = G.buildings.find((q) => q.island === island && q.u === u && q.v === v)
+            || G.buildings.find((q) => { const sz = X.bld[q.type]?.size || [1, 1]; return q.island === island && u >= q.u && u < q.u + sz[0] && v >= q.v && v < q.v + sz[1]; });
+          if (b && !app.mode.build && !app.mode.link) { app.mode.select = b.id; app.ev.emit('select', { id: b.id }); }
+        }
       }
       dismiss(t);
     });

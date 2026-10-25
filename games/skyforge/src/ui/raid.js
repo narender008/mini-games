@@ -77,6 +77,16 @@ export function createRaid(ctx) {
     const threat = !!raid || storm;
     document.body.classList.toggle('threat', threat);
     document.body.classList.toggle('raid', !!raid);
+    // abilities stand on top of the build palette while it is open, never under or over it (QA P1-4)
+    if (threat) {
+      const bp = document.getElementById('build');
+      const open = bp && !bp.classList.contains('closed');
+      if (open) {
+        let topY = Infinity;
+        for (const n of bp.querySelectorAll('.tabs, .tray, .detail:not(.hide)')) { const r = n.getBoundingClientRect(); if (r.height > 1) topY = Math.min(topY, r.top); }
+        abil.style.bottom = isFinite(topY) ? Math.round(innerHeight - topY + 10) + 'px' : '';
+      } else if (abil.style.bottom) abil.style.bottom = '';
+    }
     // banner: at the top between the resource bar and the clock when it fits, else just below them
     setHidden(banner, !threat);
     if (threat && slow) {

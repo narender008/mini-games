@@ -6,8 +6,12 @@
 import { h, ico, setText, setClass, setHidden, setBar, bar, fmt, fmtRate, fmtTime, resName, SVG, tipCard, onIcons } from './dom.js';
 import { DAY } from '../config.js';
 
-const ORDER = ['wood', 'planks', 'stone', 'ore', 'coal', 'iron', 'parts', 'skystone', 'aether', 'grain', 'flour', 'bread', 'coin', 'insight'];
-const ALWAYS = new Set(['wood', 'stone', 'grain', 'coin']);
+const ORDER = ['wood', 'planks', 'stone', 'ore', 'coal', 'iron', 'parts', 'skystone', 'aether', 'grain', 'flour', 'bread'];
+const ALWAYS = new Set(['wood', 'stone', 'grain']);
+// pinned at the right end of the bar, never scrolled away (QA P1-3)
+const PINNED = ['coin', 'insight'];
+// compact numbers when the bar is tight: 2,914 -> 2.9k
+const short = (n) => { const a = Math.abs(n || 0), sg = n < 0 ? '-' : ''; return a >= 1e6 || a < 1000 ? fmt(n) : sg + (a >= 1e5 ? Math.floor(a / 1e3) : (Math.floor(a / 100) / 10).toFixed(1).replace(/\.0$/, '')) + 'k'; };
 
 export function createHud(ctx) {
   const { app, X, L } = ctx;
@@ -15,7 +19,20 @@ export function createHud(ctx) {
   // ---------- resource bar ----------
   const scroller = h('div.scroller');
   const netLabel = h('span.net');
-  const resbar = h('div#resbar.glass.pill', scroller);
+  const pinned = h('div.pinned');
+  // overflow cue: a fade plus a chevron that scrolls to the hidden resources
+  const more = h('button.more', { type: 'button', 'aria-label': 'More resources', title: 'More resources', onclick: () => {
+    const end = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 4;
+    scroller.scrollTo({ left: end ? 0 : scroller.scrollLeft + scroller.clientWidth * 0.7, behavior: 'smooth' });
+  } }, h('i'));
+  const resbar = h('div#resbar.glass.pill', h('div.swrap', scroller, more), pinned);
+  scroller.addEventListener('scroll', () => cue(), { passive: true });
+  let tight = false, fullW = 0;
+  function cue() {
+    const over = scroller.scrollWidth > scroller.clientWidth + 2;
+    const atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 4;
+    setClass(resbar, 'over', over); setClass(resbar, 'at-end', over && atEnd); setClass(resbar, 'at-start', scroller.scrollLeft < 4);
+  }
   const chips = {};          // id -> { el, b, s }
   const seen = new Set();
   function chip(id) {
@@ -46,7 +63,7 @@ export function createHud(ctx) {
   const clock = h('div#clock.glass.pill', dial, h('div.when', dayEl, whenEl), speeds, pauseBtn, saved, forecast);
 
   const top = h('div.hud-top', resbar, clock);
-  resbar.append(netLabel);
+  resbar.insertBefore(netLabel, pinned);
 
   // ---------- dock medallions ----------
   const dockDefs = [['fleet', 'airship', 'Fleet', 'F'], ['chart', 'compass', 'Sky Chart', 'M'], ['research', 'flask', 'Research', 'R'], ['build', 'hammer', 'Build', 'B']];
@@ -162,21 +179,44 @@ export function createHud(ctx) {
       if (seen.has(id)) list.push(id);
     }
     let i = 0;
-    for (const id of list) {
-      let c = chips[id];
-      if (!c) { c = chips[id] = chip(id); c.el.classList.add('new'); }
-      if (scroller.children[i] !== c.el) scroller.insertBefore(c.el, scroller.children[i] || null);
+    const put = (parent, el, k) => { if (parent.children[k] !== el) parent.insertBefore(el, parent.children[k] || null); };
+    const fill = (c, id) => {
       const a = amount(G, id), cap = capOf(id), r = rateOf(G, id);
-      setText(c.b, fmt(a));
-      const rs = fmtRate(r);
-      setText(c.s, rs); setClass(c.s, 'neg', r < 0);
+      setText(c.b, tight ? short(a) : fmt(a));
+      setText(c.s, fmtRate(r)); setClass(c.s, 'neg', r < 0);
       setClass(c.el, 'full', isFinite(cap) && cap > 0 && a >= cap * 0.9);
       setClass(c.el, 'low', r < -0.05 && a / -r < 1);   // under a minute of stock left
-      i++;
+    };
+    // the most relevant first: anything running out leads, then the usual order
+    const urgent = list.filter((id) => { const a = amount(G, id), r = rateOf(G, id); return r < -0.05 && a / -r < 3; });
+    for (const id of [...urgent, ...list.filter((id) => !urgent.includes(id))]) {
+      let c = chips[id];
+      if (!c) { c = chips[id] = chip(id); c.el.classList.add('new'); }
+      put(scroller, c.el, i++); fill(c, id);
     }
-    if (scroller.children[i] !== pop) scroller.insertBefore(pop, scroller.children[i] || null);
+    while (scroller.children.length > i) scroller.lastChild.remove();
+    let k = 0;
+    for (const id of PINNED) {
+      let c = chips[id];
+      if (!c) { c = chips[id] = chip(id); }
+      put(pinned, c.el, k++); fill(c, id);
+    }
+    put(pinned, pop, k);
+    // tight mode (rates hidden, compact numbers) when the scroller overflows; leave it only when
+    // the full-width version measured earlier would fit again
+    if (!tight && scroller.scrollWidth > scroller.clientWidth + 2) { fullW = scroller.scrollWidth; tight = true; setClass(resbar, 'tight', true); }
+    else if (tight) {
+      // room the scroller would have: the top row minus the clock (when side by side), the bar's
+      // own cap (max-width), the pinned group and padding
+      const cs = getComputedStyle(top), row = cs.flexDirection !== 'column';
+      let avail = top.clientWidth - (row ? clock.offsetWidth + (parseFloat(cs.columnGap) || 0) : 0);
+      const mws = getComputedStyle(resbar).maxWidth, mw = /^[\d.]+px$/.test(mws) ? parseFloat(mws) : /calc/.test(mws) ? top.clientWidth - 20 * parseFloat(getComputedStyle(document.documentElement).fontSize) : Infinity;
+      avail = Math.min(avail, mw);
+      if (avail - pinned.offsetWidth - 24 > fullW + 8) { tight = false; setClass(resbar, 'tight', false); }
+    }
+    cue();
     const col = G.colony || {};
-    setText(popB, `${fmt(col.pop)}/${fmt(col.popCap)}`);
+    setText(popB, tight && innerWidth < 600 ? fmt(col.pop) : `${fmt(col.pop)}/${fmt(col.popCap)}`);   // phones: the cap is in the tip
     const hp = col.happiness ?? 0.6;
     mood.style.background = hp > 0.66 ? 'var(--tick)' : hp > 0.4 ? '#f2c84a' : 'var(--bad-d)';
     const owned = G.islands.filter((x) => x.owned).length;
@@ -185,8 +225,7 @@ export function createHud(ctx) {
     setText(netLabel, nn.length > 2 ? `${nn[0]} + ${nn.length - 1}` : nn.join(' + '));
     if (nn.length) netLabel.title = `Stores shared by ${nn.join(', ')}`;
     // the label gives way when the resources need the room (they scroll otherwise)
-    const room = resbar.clientWidth - 16 - scroller.scrollWidth;
-    setHidden(netLabel, !(owned > 1 && cur.island) || room < Math.min(netLabel.scrollWidth || 80, 80));
+    setHidden(netLabel, !(owned > 1 && cur.island) || tight || resbar.classList.contains('over') || resbar.clientWidth < 700);
 
     // clock
     drawDial(G.tod, G.weather?.kind || 'clear');

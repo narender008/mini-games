@@ -4,7 +4,7 @@
 // storage as bars, workers - / +, on/off (#btn-toggle), upgrade (#btn-upgrade),
 // repair (#btn-repair) and demolish (#btn-demolish, asks to confirm), with costs.
 // Opens on app.mode.select (INPUT, __sf.select); closes with #btn-close / Esc.
-import { h, ico, setText, setClass, setHidden, setBar, bar, fmt, cap1, resName, bldName, techName, costChips, canPay, SVG } from './dom.js';
+import { h, ico, setText, setClass, setHidden, setBar, bar, fmt, cap1, resName, bldName, techName, costChips, canPay, SVG, fmtTime } from './dom.js';
 import { CFG } from '../config.js';
 import * as islandsSim from '../sim/islands.js';
 import * as eco from '../sim/economy.js';
@@ -192,17 +192,26 @@ export function createInspector(ctx) {
   }
   function renderActions(G, b, d) {
     // upgrade (or the Skyforge's next stage)
-    let upCost = null, upLabel = null, upNote = null;
+    let upCost = null, upLabel = null, upNote = null, forging = false;
+    if (b.type !== 'skyforge' || !b.forge) { upBtn.classList.remove('busy'); upBtn.style.removeProperty('--p'); }
     if (b.type === 'skyforge') {
       const S = SKYFORGE_STAGES || [];
       const next = S.find((s) => s.n === (b.level || 0) + 1);
-      if (b.state === 'built' && next && !b.upgrading && !b.staging) { upLabel = `Begin stage ${next.n}: ${next.name}`; upCost = next.cost; if (next.needs && !(G.research?.done || []).includes(next.needs)) upNote = `Needs ${techName(X, next.needs)}`; }
+      if (b.forge) {
+        // a stage is being raised: show its progress, not a dead "Begin stage" button (QA P2-16)
+        const st = S.find((x) => x.n === b.forge.stage), f = Math.min(1, (b.forge.t || 0) / Math.max(1, b.forge.time || 1));
+        setHidden(upBtn, false); upBtn.disabled = true; upBtn.classList.add('wide', 'busy'); upBtn.style.setProperty('--p', f.toFixed(3));
+        const k = 'forge' + b.forge.stage + Math.round(f * 100) + Math.ceil(((b.forge.time || 0) - (b.forge.t || 0)));
+        if (upBtn.__k !== k) { upBtn.__k = k; upBtn.replaceChildren(h('span', `Raising stage ${b.forge.stage}${st ? ': ' + st.name : ''}`), h('small', `${Math.round(f * 100)}% · ${fmtTime(Math.max(0, (b.forge.time || 0) - (b.forge.t || 0)))} left`)); }
+        forging = true;
+      }
+      if (!forging && b.state === 'built' && next && !b.upgrading && !b.staging) { upLabel = `Begin stage ${next.n}: ${next.name}`; upCost = next.cost; if (next.needs && !(G.research?.done || []).includes(next.needs)) upNote = `Needs ${techName(X, next.needs)}`; }
     } else if (b.state === 'built' && !b.upgrading) {
       const Lv = (d.levels || []).find((x) => x.level === b.level + 1);
       if (Lv) { upLabel = `Upgrade to ${Lv.name}`; upCost = Lv.cost; if (Lv.needs && !(G.research?.done || []).includes(Lv.needs)) upNote = `Needs ${techName(X, Lv.needs)}`; else if (Lv.req && !G.buildings.some((x) => x.type === Lv.req && x.state === 'built')) upNote = `Needs a ${bldName(X, Lv.req)}`; }
     }
-    setHidden(upBtn, !upLabel);
-    if (upLabel) {
+    if (!forging) setHidden(upBtn, !upLabel);
+    if (upLabel && !forging) {
       const k = upLabel + JSON.stringify(upCost) + upNote + canPay(G, upCost, b.island);
       if (upBtn.__k !== k) {
         upBtn.__k = k;
