@@ -185,7 +185,7 @@ test('every migration step upgrades an old save, and a future version is left un
     const { page: p, lw: l } = await env.reopen(ctx);
     const r = await l('save.read');
     assert.ok(r.ok, `save v${v} was not accepted: ${JSON.stringify(r)}`);
-    await G.titleToHub(p, l, 0);
+    await G.titleToHub(p, l, 0, { allowRun: true });
     // read() may report the migrated version or the stored one; the next
     // write must be the current version either way
     if (r.v !== version) {
@@ -271,6 +271,8 @@ test('export then wipe then import restores the save, through the hook and throu
   await l('menu');
   await l('thaw');
   await G.clickOr(p, [G.SEL.settings], null);
+  // Settings may open on another tab: go to the save one
+  if (!(await G.waitVisible(p, [G.SEL.export], 800))) await p.evaluate(() => { const t = [...document.querySelectorAll('[role="tab"], [data-tab], button')].find((b) => /save/i.test(b.textContent) && b.offsetParent); if (t) t.click(); });
   const exp = await G.waitVisible(p, [G.SEL.export]);
   assert.ok(exp, 'no Export button in Settings');
   const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }), exp.click()]);

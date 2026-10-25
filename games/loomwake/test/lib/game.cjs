@@ -81,11 +81,19 @@ async function waitVisible(page, selectors, timeout = 3000) {
   return null;
 }
 
-async function titleToHub(page, lw, profile = 0) {
+// allowRun: a profile with a run in progress resumes it, so 'run' counts too.
+async function titleToHub(page, lw, profile = 0, { allowRun = false } = {}) {
+  const done = (sc) => sc === 'hub' || (allowRun && sc === 'run');
   let s = await waitScene(lw, ['title', 'profiles', 'hub', 'dialogue'], 5000).catch(() => lw('state'));
   const trail = [s.scene];
-  for (let i = 0; i < 6 && s.scene !== 'hub'; i++) {
-    if (s.scene === 'title') { const el = await waitVisible(page, [SEL.new, SEL.continue]); if (el) await el.click(); else await page.keyboard.press('Enter'); }
+  for (let i = 0; i < 6 && !done(s.scene); i++) {
+    if (s.scene === 'title') {
+      // profiles may sit on the title itself: pick the slot first (that may
+      // already enter the game), else New / Continue
+      const prof = await firstVisible(page, [SEL.profile(profile)]);
+      if (prof && !trail.includes('picked')) { await prof.click(); trail.push('picked'); }
+      else { const el = await waitVisible(page, [SEL.new, SEL.continue]); if (el) await el.click(); else await page.keyboard.press('Enter'); }
+    }
     else if (s.scene === 'profiles') { const el = await waitVisible(page, [SEL.profile(profile)]); if (el) await el.click(); else await page.keyboard.press('Enter'); }
     else if (s.scene === 'dialogue') await skipDialogue(page, lw);
     else await page.keyboard.press('Enter');
@@ -93,7 +101,7 @@ async function titleToHub(page, lw, profile = 0) {
     s = await lw('state');
     trail.push(s.scene);
   }
-  if (s.scene !== 'hub') throw new Error(`could not reach the hub from the title, scene '${s.scene}' (went ${trail.join(' > ')})`);
+  if (!done(s.scene)) throw new Error(`could not reach the hub from the title, scene '${s.scene}' (went ${trail.join(' > ')})`);
   return s;
 }
 

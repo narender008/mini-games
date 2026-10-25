@@ -35,7 +35,9 @@ test('dialogue is data: unique ids, every speaker known, a few hundred lines', a
   const ids = lines.map((l) => l.id);
   const dup = ids.filter((id, i) => ids.indexOf(id) !== i);
   assert.deepEqual(dup, [], `duplicate dialogue ids: ${[...new Set(dup)].join(', ')}`);
-  assert.ok(lines.length >= 150, `only ${lines.length} dialogue lines (plan: about 300 at launch)`);
+  // an entry may be one line or a conversation of several (lines: count or array)
+  const total = lines.reduce((n, l) => n + (Array.isArray(l.lines) ? l.lines.length : typeof l.lines === 'number' ? l.lines : 1), 0);
+  assert.ok(total >= 150, `only ${total} dialogue lines in ${lines.length} entries (plan: about 300 at launch)`);
   const speakers = new Set(lines.map((l) => l.speaker));
   for (const who of ['orrin', 'sable', 'veyl', 'morrow', 'aurum']) assert.ok([...speakers].some((s) => String(s).toLowerCase().includes(who)), `no lines for ${who}`);
   assert.ok((c.memoryThreads || []).length >= 12, `expected 12 Memory Threads, got ${(c.memoryThreads || []).length}`);
