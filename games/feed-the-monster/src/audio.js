@@ -190,4 +190,41 @@ export const sfx = {
     noise({ dur: 0.35, vol: 0.2, type: 'lowpass', f: 2400, f1: 300 });
     tone({ f0: 420, f1: 1100, dur: 0.22, vol: 0.12 });
   }),
+  // a soap bubble: a bright plip as it pops
+  bubble: on(() => {
+    tone({ f0: 900, f1: 2400, dur: 0.06, vol: 0.18 });
+    noise({ dur: 0.05, vol: 0.12, type: 'highpass', f: 3500 });
+  }),
+  // a bubble wobbling up from below
+  blub: on(() => {
+    tone({ f0: 300, f1: 620, dur: 0.12, vol: 0.08, filter: 1500 });
+    tone({ f0: 380, f1: 760, t: 0.14, dur: 0.1, vol: 0.06, filter: 1500 });
+  }),
+  // a squishy jelly boing when the monster is poked
+  boing: on(() => tone({ type: 'triangle', f0: 180, f1: 340, dur: 0.22, vol: 0.18, filter: 1400, vib: 14 })),
+  yawn: on(() => {
+    tone({ type: 'triangle', f0: 330, f1: 520, dur: 0.45, vol: 0.12, attack: 0.08, filter: 1200, vib: 4 });
+    tone({ type: 'triangle', f0: 520, f1: 210, t: 0.5, dur: 0.8, vol: 0.13, attack: 0.05, filter: 1000, vib: 5 });
+  }),
+  // a soft snore: a low rumble in, a little whistle out
+  snore: on(() => {
+    noise({ dur: 0.7, vol: 0.06, type: 'lowpass', f: 300, q: 2 });
+    tone({ type: 'sawtooth', f0: 70, f1: 62, dur: 0.6, vol: 0.05, filter: 280 });
+    tone({ f0: 900, f1: 1300, t: 1.0, dur: 0.5, vol: 0.025, attack: 0.15 });
+  }),
+  wake: on(() => {
+    tone({ type: 'triangle', f0: 300, f1: 700, dur: 0.25, vol: 0.14, filter: 1800, vib: 6 });
+    tone({ type: 'triangle', f0: 700, f1: 520, t: 0.26, dur: 0.15, vol: 0.12, filter: 1800 });
+  }),
+  // the bud opening into a flower: a little rising harp
+  bloom: on(() => {
+    for (let i = 0; i < 6; i++) tone({ type: 'triangle', f0: PENTA[i + 1], t: i * 0.06, dur: 0.35, vol: 0.08 });
+  }),
+  // a treat: extra sparkly
+  treat: on(() => {
+    for (let i = 0; i < 8; i++) tone({ f0: PENTA[(i * 3) % 8] * 2, t: i * 0.05, dur: 0.18, vol: 0.06 });
+    tone({ type: 'triangle', f0: 523.25, f1: 1046.5, dur: 0.4, vol: 0.1 });
+  }),
+  // a star zipping up to the row at the top
+  zip: on(() => tone({ type: 'triangle', f0: 600, f1: 1800, dur: 0.3, vol: 0.06 })),
 };
