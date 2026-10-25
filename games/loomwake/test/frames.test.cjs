@@ -124,6 +124,29 @@ test('a frame that throws does not stop the game loop', async () => {
   await page.context().close();
 });
 
+test('a throwing foe painter costs only that foe: the rest of the frame (lighting) still draws', async () => {
+  const { page, lw } = await vsyncPage(60, 'debug&play&seed=3&quality=low&mute');
+  await G.waitScene(lw, G.RUN_SCENES, 40000);
+  await lw('god', true);
+  await lw('spawn', 'hollow', 3);
+  const r = await page.evaluate(async () => {
+    const R = window.__lw.renderer, L = R.light, E = R.M.enemies;
+    let lights = 0, throws = 0;
+    const render = L.render, draw = E.drawFoe;
+    L.render = (...a) => { lights++; return render(...a); };
+    // a module namespace is frozen: swap the renderer's module table entry instead
+    R.M.enemies = Object.assign({}, E, { drawFoe: () => { throws++; throw new Error('foe painter blew up (test)'); } });
+    const err = console.error; console.error = () => {};
+    await new Promise((res) => setTimeout(res, 1500));
+    console.error = err;
+    R.M.enemies = E; L.render = render;
+    return { lights, throws, draw: !!draw };
+  });
+  assert.ok(r.throws > 3, `the foe painter was not reached (${JSON.stringify(r)})`);
+  assert.ok(r.lights >= r.throws / 3 - 1, `lighting stopped running once a foe painter threw (${JSON.stringify(r)})`);
+  await page.context().close();
+});
+
 // ---------------------------------------------------------------- governor, in Node
 async function governor(opts) {
   const { createQuality } = await import(pathToFileURL(path.join(__dirname, '../src/render/quality.js')).href);
