@@ -164,4 +164,13 @@ window.MINI_GAMES = [
     imageAlt: 'A small hero in a crimson hooded cloak with a golden thread scarf slashes at clawed, hooded shadow husks inside a ring of wind, on a glowing glass floor in violet rain',
     tags: ['2D', 'Ages 12+', 'Mouse first'],
   },
+  {
+    slug: 'skyforge',
+    name: 'Skyforge Tycoon',
+    description: 'Build a colony on floating sky islands: mine and refine through production chains, join islands with bridges and cable cars, trade by airship, ride out storms, fight off the Crimson Gale\'s sky pirates and restore the legendary Skyforge. Saves automatically.',
+    path: 'games/skyforge/',
+    image: 'games/skyforge/cover.jpg',
+    imageAlt: 'Floating grassy islands above golden clouds, joined by rope bridges, with cottages, windmills, a smelter and airships at the moorings',
+    tags: ['2D', 'Ages 8+', 'Touch friendly'],
+  },
 ];
