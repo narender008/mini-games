@@ -98,9 +98,14 @@ export function createRenderer(canvas, app) {
     const geo = islandGeometry(I), [ox, oy] = wpx(I.ox, I.oy, I.alt);
     let cx = ox + (geo.minX + geo.maxX) / 2, cy = oy + (geo.minY + geo.maxY) / 2;
     const ps = (G.pirates || []).map((p) => wpx(p.x, p.y, p.z));
-    if (ps.length) { const mx = ps.reduce((a, q) => a + q[0], 0) / ps.length, my = ps.reduce((a, q) => a + q[1], 0) / ps.length; cx += (mx - cx) * 0.25; cy += (my - cy) * 0.25; }
     const span = (geo.maxX - geo.minX) * 2.1;
     const zoom = clamp(Math.min(W / span, H / (span * 0.62)), Math.max(cam.minZoom || 0.35, 0.45), 1.0);
+    if (ps.length) {
+      // lean toward the fleet by at most a fifth of the screen, so the island stays in view
+      const mx = ps.reduce((a, q) => a + q[0], 0) / ps.length, my = ps.reduce((a, q) => a + q[1], 0) / ps.length;
+      let dx = mx - cx, dy = my - cy; const d = Math.hypot(dx, dy) || 1, m = Math.min(d * 0.3, (Math.min(W, H) * 0.2) / zoom);
+      cx += dx / d * m; cy += dy / d * m;
+    }
     const ty = -(cy / T + I.alt) / DY, tx = cx / T - ty * DX;
     if (quality.reduceMotion()) { cam.x = tx; cam.y = ty; cam.z = I.alt; cam.zoom = zoom; cam.tx = cam.ty = cam.tzoom = cam.tz = null; }
     else { cam.tx = tx; cam.ty = ty; cam.tz = I.alt; cam.tzoom = zoom; cam.anchor = null; }
