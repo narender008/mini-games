@@ -300,14 +300,14 @@ export function drawPost(g, G, canvas) {
     const amount = lerp(prev.bloom, cur.bloom, e);
     if (!bl) {
       const mk = (cw, ch) => { const c = document.createElement('canvas'); c.width = cw; c.height = ch; return c; };
-      bl = { a: mk(320, 180), b: mk(80, 45) };
+      bl = { a: mk(320, 180), b: mk(96, 54) };
       bl.ga = bl.a.getContext('2d'); bl.gb = bl.b.getContext('2d');
-      bl.filter = typeof bl.ga.filter === 'string';
+      bl.filter = false; // a CSS blur filter costs 100+ ms a frame without a GPU; two bilinear downsamples blur almost as well
     }
     const { ga, gb } = bl;
     ga.globalCompositeOperation = 'copy';
     if (bl.filter) { ga.filter = 'blur(3.5px) brightness(1.15) saturate(1.3)'; ga.drawImage(canvas, 0, 0, 320, 180); ga.filter = 'none'; }
-    else { gb.globalCompositeOperation = 'copy'; gb.drawImage(canvas, 0, 0, 80, 45); ga.drawImage(bl.b, 0, 0, 320, 180); }
+    else { gb.globalCompositeOperation = 'copy'; gb.drawImage(canvas, 0, 0, 96, 54); ga.drawImage(bl.b, 0, 0, 320, 180); }
     g.globalCompositeOperation = 'screen'; g.globalAlpha = amount;
     g.drawImage(bl.a, 0, 0, W, H);
     g.globalCompositeOperation = 'source-over';
