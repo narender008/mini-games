@@ -43,21 +43,33 @@ export function createInput(G, canvas) {
     keys.add(e.code);
     if (gameplay() && GAME_KEYS.has(e.code)) e.preventDefault();
   });
-  addEventListener('keyup', (e) => keys.delete(e.code));
-  addEventListener('blur', () => { keys.clear(); mouse.b = [false, false, false]; });
+  // macOS sends no keyup for keys released while Cmd is down, and a hidden tab or a lost window focus
+  // swallows every keyup: let go of everything rather than walk on by itself
+  const release = () => { keys.clear(); mouse.b = [false, false, false]; };
+  addEventListener('keyup', (e) => { keys.delete(e.code); if (e.key === 'Meta') release(); });
+  addEventListener('blur', release);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
   const onUi = (t) => t && t !== canvas && t.closest && t.closest('button, a, input, select, textarea, label, [data-ui], [role="button"], [data-touch], #touch-stick');
-  addEventListener('pointermove', (e) => { if (e.pointerType === 'touch') return; mouse.x = e.clientX; mouse.y = e.clientY; mouse.moved = true; api.lastDevice = 'kbm'; });
-  addEventListener('pointerdown', (e) => {
-    if (e.pointerType === 'touch') { api.lastDevice = 'touch'; return; }
+  // Pointer events fire pointerdown only for the first button pressed and pointerup only for the last one
+  // released; a second button going down or up in between arrives as a pointermove with e.button set.
+  // So presses are taken from e.button on any of the three, and held state from the e.buttons mask.
+  const BIT = [1, 4, 2];   // e.button -> e.buttons bit (left, middle, right)
+  function mouseButtons(e, down) {
     mouse.x = e.clientX; mouse.y = e.clientY;
-    if (onUi(e.target)) return;
+    for (let i = 0; i < 3; i++) if (!(e.buttons & BIT[i])) mouse.b[i] = false;
+    if (!down || e.button < 0 || e.button > 2 || !(e.buttons & BIT[e.button]) || mouse.b[e.button] || onUi(e.target)) return;
     api.lastDevice = 'kbm';
     mouse.b[e.button] = true;
     if (e.button === B.mouse.attack) queued.attack++;
     if (e.button === B.mouse.special) queued.special++;
-  });
-  addEventListener('pointerup', (e) => { if (e.pointerType !== 'touch') mouse.b[e.button] = false; });
-  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+  addEventListener('pointermove', (e) => { if (e.pointerType === 'touch') return; mouseButtons(e, true); mouse.moved = true; api.lastDevice = 'kbm'; });
+  addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') { api.lastDevice = 'touch'; return; } mouseButtons(e, true); });
+  addEventListener('pointerup', (e) => { if (e.pointerType !== 'touch') mouseButtons(e, false); });
+  addEventListener('pointercancel', (e) => { if (e.pointerType !== 'touch') mouse.b = [false, false, false]; });
+  // right click is the special anywhere in play (over the HUD too): a native menu would also swallow the
+  // keyups of keys held under it and leave Iri walking on her own
+  addEventListener('contextmenu', (e) => { if (e.target === canvas || (gameplay() && !typing(e.target))) e.preventDefault(); });
 
   function readPad() {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
