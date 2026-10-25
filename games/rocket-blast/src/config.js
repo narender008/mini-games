@@ -9,7 +9,7 @@ export const CELL = 1;
 // How many more cells the camera shows than the original layout. Everything in
 // play (rocket, toys, shots, bursts) looks this much smaller on screen, and
 // screen-relative speeds and distances are multiplied by it to feel the same.
-export const VIEW_ZOOM = 1.3;
+export const VIEW_ZOOM = 1.8;
 // Most toys each enemy style can draw at once (alive, popping and the boss).
 // Free Blast keeps its grid below this with room for toys still popping.
 export const TOY_CAPACITY = 240;
