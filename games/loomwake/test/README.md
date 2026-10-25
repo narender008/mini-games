@@ -1,0 +1,16 @@
+# Loomwake tests
+
+Run from this folder (`npm install` once, then `npx playwright install chromium` if no Chromium is around):
+
+- `npm test` runs everything below and exits non-zero on any failure.
+- `npm run smoke` (`smoke.test.cjs`): clean load (no console errors, 404s or network calls), a non-blank animated title, title to profile to hub to a run by real clicks, a chamber cleared to boon cards clicked to a door, pause and resume, death back to the hub, every boss fight and the victory, every boon and braid applied in a fight, every chamber template of every region.
+- `npm run input` (`input.test.cjs`): keyboard move and dash, mouse aim, attack, special, snare and pause, touch stick and buttons on a phone screen, and a standard gamepad.
+- `npm run save` (`save.test.cjs`): a checkpoint at every door, close mid-chamber and resume the same chamber and build, seeded rewards identical after reloads, A/B slot fallback on a truncated or tampered slot, a working title with both slots broken, every migration step from `save.fixture(v)`, future versions left untouched, three independent profiles, export/import through the hook and the Settings buttons, settings apart from game saves, and nothing written under plain `?debug`.
+- `npm run story` (`story.test.cjs`): dialogue data (unique ids, speakers, Memory Threads), new hub lines after each run, Sable's line after the first death, reveals after each boss's first defeat, the first ending, and story progress surviving a reload.
+- `npm run bot` (`bot.cjs`): a god-mode critical path through all four regions to the ending with real doors, then balance campaigns (fresh profiles playing several runs in a row with different builds and skills). Fails if a campaign never clears Glasswood, if nobody wins, or if the median region time is outside 4 to 15 minutes (plan target 6 to 12). Writes `out/balance.md` and `out/balance.json`. `LW_CAMPAIGNS`, `LW_RUNS`, `LW_CONC`, `LW_MIN_WINS`, `LW_REGION_MIN`, `LW_REGION_MAX`, `LW_WALL_MIN`, `LW_SKIP_PATH`, `LW_SKIP_BALANCE` tune it.
+- `npm run perf` (`perf.cjs`): the `?bench` stress chamber on the high and low tiers: frame-interval p95, game JS per frame and simulation cost. CI has no GPU, so Canvas rasterising lands in JS time and the ceilings (low tier frame p95 70 ms, JS p95 20 ms) are regression guards; the plan budget is reported as warnings and enforced with `LW_PERF_STRICT=1` on a GPU machine (`LW_P95_MAX`, `LW_JS_MAX`, `LW_SIM_MAX` override). Writes `out/perf.md`.
+- `npm run shots` (`screenshots.cjs`): every scene at 1280x720 plus phone landscape into `out/screens/` with an `index.html` contact sheet. `LW_SHOTS_DIR` copies them elsewhere.
+
+What the suite assumes about the game (the `window.__lw` hook, button ids, keys, save keys) is in `lib/game.cjs`; the bot's policy is `lib/policy.cjs`. The hook is documented at the top of `../src/main.js`. `LW_ROOT=<dir>` serves another checkout instead of this repository, and `LW_CHROMIUM=<path>` picks the browser. Chromium always runs muted.
+
+CI: `.github/workflows/loomwake-tests.yml` runs `npm test` on pull requests that touch `games/loomwake/` and uploads `out/` as an artifact.

@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loomwake: the Unravelled (dev gallery)</title>
+<script type="importmap">
+{ "imports": { "../src/sim/combat.js": "./stub/combat.js" } }
+</script>
+<style>
+  html, body { margin: 0; background: #05060f; color: #e8e0cc; font: 13px 'Segoe UI', system-ui, sans-serif; }
+  #bar { position: fixed; top: 0; left: 0; right: 0; z-index: 2; padding: 6px 10px; background: rgba(6,6,18,0.85); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  #bar a { color: #f2c46b; text-decoration: none; }
+  canvas { display: block; }
+  body.cover #bar { display: none; }
+</style>
+</head>
+<body>
+<div id="bar"></div>
+<canvas id="c"></canvas>
+<script type="module">
+// Dev gallery for every foe in every state, on a painted floor with a
+// darkness + glow pass that approximates the game's lighting.
+//   ?region=glasswood|choir|forge|unwoven   (default: kinds of that region; default glasswood)
+//   ?kinds=hollow,threadKnight              explicit rows
+//   ?elite=1                                elite versions
+//   ?live=1                                 an arena where the foes fight a dummy Iri with the real AI
+//   ?cover                                  hide the bar   ?scale=1.5 zoom
+import { KINDS, spawn, updateFoes } from '../src/sim/enemies/index.js';
+import { begin as beginAtk, setState } from '../src/sim/enemies/brain.js';
+import { ATTACK_FNS } from '../src/sim/enemies/attacks.js';
+import { drawFoe, drawFoeFx, foeFxLights, drawFoeProjectile, foeProjectileLight, FOE_PROJECTILES } from '../src/render/actors/enemies/index.js';
+import { rng } from '../src/core/rng.js';
+import { createBus } from '../src/core/events.js';
+import { kindsIn } from '../src/content/enemies.js';
+import { mk, glowSprite, rgba } from '../src/render/actors/enemies/kit.js';
+
+const Q = new URLSearchParams(location.search);
+if (Q.has('cover')) document.body.classList.add('cover');
+const region = Q.get('region') || 'glasswood';
+const elite = Q.get('elite') === '1';
+const kinds = Q.get('kinds') ? Q.get('kinds').split(',') : kindsIn(region);
+const SC = parseFloat(Q.get('scale') || '1');
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const bar = document.getElementById('bar');
+bar.innerHTML = ['glasswood', 'choir', 'forge', 'unwoven'].map((r) => `<a href="?region=${r}">${r}</a> <a href="?region=${r}&elite=1">(elite)</a> <a href="?region=${r}&live=1">(live)</a>`).join(' · ');
+
+// ---------- painted floors per region ----------
+const FLOORS = {
+  glasswood: { slab: ['#3b4688', '#34407e', '#2e3872', '#414c92', '#384284', '#2b3468'], vein: ['#5ff0dc', '#b69bff'], dark: 'rgba(4,5,22,0.80)' },
+  choir: { slab: ['#1e2c52', '#22335c', '#1a2748', '#273a66', '#1c2a4e', '#18223f'], vein: ['#e3bf6a', '#5ec8ff'], dark: 'rgba(2,6,22,0.82)' },
+  forge: { slab: ['#3a2326', '#331e22', '#2c191d', '#40272a', '#36201f', '#2a1618'], vein: ['#ff8a2a', '#ff5a8a'], dark: 'rgba(16,4,6,0.80)' },
+  unwoven: { slab: ['#2c2c36', '#262630', '#22222a', '#30303a', '#282832', '#1e1e26'], vein: ['#b8b0ff', '#e0e0f0'], dark: 'rgba(6,6,12,0.82)' },
+};
+function paintFloor(w, h, reg) {
+  const F = FLOORS[reg] || FLOORS.glasswood;
+  const c = mk(w, h), g = c.getContext('2d'), r = rng(42);
+  g.fillStyle = F.slab[0]; g.fillRect(0, 0, w, h);
+  const cw = 104, ch = 70, nx = Math.ceil(w / cw) + 2, ny = Math.ceil(h / ch) + 2, V = [];
+  for (let j = 0; j <= ny; j++) { V[j] = []; for (let i = 0; i <= nx; i++) V[j][i] = [(i - 1) * cw + (j % 2) * cw * 0.5 + r.range(-26, 26), (j - 1) * ch + r.range(-16, 16)]; }
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const p = [V[j][i], V[j][i + 1], V[j + 1][i + 1], V[j + 1][i]];
+    const cx = (p[0][0] + p[2][0]) / 2, cy = (p[0][1] + p[2][1]) / 2;
+    const ip = p.map((q) => [q[0] + (cx - q[0]) * 0.07, q[1] + (cy - q[1]) * 0.09]);
+    g.beginPath(); ip.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath();
+    g.fillStyle = r.pick(F.slab); g.fill();
+    const lg = g.createLinearGradient(cx - 40, cy - 30, cx + 40, cy + 30);
+    lg.addColorStop(0, 'rgba(190,210,255,0.14)'); lg.addColorStop(0.45, 'rgba(255,255,255,0)'); lg.addColorStop(1, 'rgba(0,0,20,0.28)');
+    g.fillStyle = lg; g.fill();
+    g.strokeStyle = 'rgba(10,10,30,0.55)'; g.lineWidth = 3; g.stroke();
+    if (r() < 0.14) { g.strokeStyle = r.pick(F.vein); g.globalAlpha = 0.55; g.lineWidth = 2; g.beginPath(); let x = cx, y = cy; g.moveTo(x, y); for (let k = 0; k < 4; k++) { x += r.range(-22, 22); y += r.range(-12, 12); g.lineTo(x, y); } g.stroke(); g.globalAlpha = 1; }
+  }
+  for (let i = 0; i < w * h / 60; i++) { g.fillStyle = r() < 0.5 ? 'rgba(0,0,0,0.13)' : 'rgba(200,220,255,0.04)'; g.fillRect(r() * w, r() * h, r.range(1, 3), r.range(1, 2)); }
+  return c;
+}
+const hole = (() => { const c = mk(128, 128), g = c.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.45, 'rgba(255,255,255,0.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return c; })();
+
+// ---------- a stub world step (the engine's world.js does this in the game) ----------
+function worldStep(G, dt) {
+  G.t += dt;
+  for (const e of G.foes) {
+    e.st += dt;
+    for (const k of ['flash', 'stun', 'inv', 'vuln']) e[k] = Math.max(0, (e[k] || 0) - dt);
+    for (const n in e.status) { e.status[n].t -= dt; if (e.status[n].t <= 0) delete e.status[n]; }
+    const frozen = e.stun > 0;
+    e.x += ((frozen ? 0 : e.vx) + (e.kx || 0)) * dt; e.y += ((frozen ? 0 : e.vy) + (e.ky || 0)) * dt;
+    e.kx = (e.kx || 0) * Math.exp(-dt * 8); e.ky = (e.ky || 0) * Math.exp(-dt * 8);
+    if (G.arena) { const a = G.arena, d = Math.hypot(e.x / a.rx, e.y / a.ry); if (d > 0.95) { e.x *= 0.95 / d; e.y *= 0.95 / d; } }
+  }
+  updateFoes(G, dt);
+  for (const t of G.telegraphs) if (!t.live) t.t -= dt;
+  G.telegraphs = G.telegraphs.filter((t) => !t.done && t.t > -0.16);
+  for (const p of G.projectiles) { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; const h = G.hero; if (h && Math.hypot(p.x - h.x, p.y - h.y) < p.r + h.r) { p.life = 0; if (G.live) h.inv <= 0 && (h.hp -= p.dmg, h.inv = 0.4); } }
+  G.projectiles = G.projectiles.filter((p) => p.life > 0);
+  for (const z of G.zones) z.t -= dt;
+  G.zones = G.zones.filter((z) => z.t > 0);
+  G.foes = G.foes.filter((e) => !e.gone);
+}
+function makeG(seed, reg) {
+  return { t: 0, dt: 1 / 120, rng: { ai: rng(seed), run: rng(seed + 1), combat: rng(seed + 2) }, bus: createBus(), cfg: { minTelegraph: 0.35 },
+    hero: { x: 150, y: 20, vx: 0, vy: 0, r: 20, hp: 100, maxHp: 100, inv: 0, state: 'move' }, foes: [], telegraphs: [], projectiles: [], zones: [], chamber: { region: reg, shape: null, obstacles: [] }, nextId: 1, foeFx: [] };
+}
+
+// ---------- telegraph painting (approximates the engine's) ----------
+function drawTelegraph(g, tg) {
+  const k = 1 - Math.max(0, tg.t) / (tg.max || 1);
+  const col = tg.color || '#ff5a7a';
+  g.save();
+  g.fillStyle = rgba(col, tg.spawn ? 0.18 : 0.12 + k * 0.22);
+  g.strokeStyle = tg.t <= 0 ? 'rgba(255,255,255,0.95)' : rgba(col, 0.45 + k * 0.5); g.lineWidth = 2;
+  g.beginPath();
+  if (tg.kind === 'circle') g.arc(tg.x, tg.y, tg.r, 0, Math.PI * 2);
+  else if (tg.kind === 'line') { const a = Math.atan2(tg.y2 - tg.y, tg.x2 - tg.x), L = Math.hypot(tg.x2 - tg.x, tg.y2 - tg.y), w = tg.w / 2; g.translate(tg.x, tg.y); g.rotate(a); g.rect(0, -w, L, w * 2); }
+  else if (tg.kind === 'cone') { g.moveTo(tg.x, tg.y); g.arc(tg.x, tg.y, tg.r, tg.angle - tg.arc / 2, tg.angle + tg.arc / 2); g.closePath(); }
+  g.fill(); g.stroke();
+  // inner fill grows toward the hit moment
+  if (!tg.spawn && tg.kind === 'circle') { g.beginPath(); g.arc(tg.x, tg.y, tg.r * k, 0, Math.PI * 2); g.fillStyle = rgba(col, 0.25); g.fill(); }
+  g.restore();
+}
+
+// ---------- draw a world (one cell or the arena) ----------
+function drawWorld(g, G, ox, oy, floor, reg, extraLights = []) {
+  g.save(); g.translate(ox, oy);
+  for (const z of G.zones) { g.fillStyle = z.kind === 'molten' ? 'rgba(255,120,40,0.35)' : 'rgba(80,170,255,0.3)'; g.beginPath(); g.arc(z.x, z.y, z.r, 0, Math.PI * 2); g.fill(); }
+  for (const tg of G.telegraphs) drawTelegraph(g, tg);
+  drawFoeFx(g, G);
+  const list = [...G.foes].sort((a, b) => a.y - b.y);
+  if (G.hero && G.showHero) { g.fillStyle = 'rgba(0,0,0,0.4)'; g.beginPath(); g.ellipse(G.hero.x, G.hero.y, 20, 7, 0, 0, 7); g.fill(); g.fillStyle = G.hero.inv > 0 ? '#ffe' : '#9b2244'; g.beginPath(); g.ellipse(G.hero.x, G.hero.y - 34, 12, 30, 0, 0, 7); g.fill(); g.fillStyle = '#f2c46b'; g.fillRect(G.hero.x - 10, G.hero.y - 58, 20, 4); }
+  for (const e of list) { g.save(); g.translate(e.x, e.y - (e.z || 0)); drawFoe(g, e, G); g.restore(); }
+  for (const p of G.projectiles) if (FOE_PROJECTILES.includes(p.kind)) drawFoeProjectile(g, p, G);
+  g.restore();
+  const L = [...extraLights];
+  for (const e of G.foes) if (e.light && !e.hidden) L.push([ox + e.x + (e.light.x || 0), oy + e.y - (e.z || 0) + (e.light.y ?? -40), e.light.r, e.light.color, e.light.i]);
+  for (const l of foeFxLights(G)) L.push([ox + l.x, oy + l.y, l.r, l.color, l.i]);
+  for (const p of G.projectiles) { const l = foeProjectileLight(p); L.push([ox + l.x, oy + l.y, l.r, l.color, l.i]); }
+  return L;
+}
+function lightPass(g, W, H, lights, dark) {
+  const LR = 0.5, lc = mk(W * LR, H * LR), lg = lc.getContext('2d');
+  lg.fillStyle = dark; lg.fillRect(0, 0, lc.width, lc.height);
+  lg.globalCompositeOperation = 'destination-out';
+  for (const [x, y, r, , i] of lights) { lg.globalAlpha = Math.min(1, i); lg.drawImage(hole, (x - r) * LR, (y - r * 0.8) * LR, r * 2 * LR, r * 1.6 * LR); }
+  g.drawImage(lc, 0, 0, W, H);
+  g.globalCompositeOperation = 'lighter';
+  for (const [x, y, r, c, i] of lights) { g.globalAlpha = Math.min(1, i * 0.22); g.drawImage(glowSprite(c), x - r * 0.8, y - r * 0.8, r * 1.6, r * 1.6); }
+  g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+}
+
+// ---------- the sheet ----------
+const COLS = [
+  ['idle', 0], ['walk', 0], ['wind-up', 0], ['wind-up 2', 1], ['attack', 0], ['recover', 0], ['hurt', 0], ['stagger', 0], ['stunned', 0], ['spawn', 0], ['death', 0.22], ['death', 0.55],
+];
+const CW = 190, CH = 230, LBL = 150;
+function cellWorld(kind, col, seed) {
+  const G = makeG(seed, region);
+  const def = KINDS[kind];
+  const atks = (elite && def.eliteAttacks) || def.attacks;
+  const e = spawn(G, kind, 0, 0, { elite, region });
+  // finish the vortex, unless this is the spawn column
+  const [name, arg] = col;
+  const step = (s) => { const n = Math.round(s * 120); for (let i = 0; i < n; i++) worldStep(G, 1 / 120); };
+  if (name === 'spawn') { step(0.36); return G; }
+  step(0.62);
+  e.cd = 99;
+  const freeze = () => { e.vx = 0; e.vy = 0; };
+  const atk = arg === 1 && atks[1] ? atks[1] : atks[0];
+  const A = (e.A = null);
+  if (name === 'idle') { G.hero.x = 160; step(0.3); freeze(); e.facing = 0.15; }
+  else if (name === 'walk') { G.hero.x = 900; step(0.5); e.vx = e.speed; e.vy = 0; e.facing = 0; }
+  else if (name.startsWith('wind-up') || name === 'attack' || name === 'recover') {
+    G.hero.x = 140; G.hero.y = 30;
+    e.facing = Math.atan2(G.hero.y, G.hero.x);
+    beginAtk(G, e, atk, ATTACK_FNS);
+    const w = e.stDur;
+    if (name.startsWith('wind-up')) step(w * 0.75);
+    else if (name === 'attack') { step(w + 0.02); step(Math.min(0.14, e.A.act * 0.3)); }
+    else { step(w + e.A.act + 0.05); step(0.15); }
+    if (!name.startsWith('wind')) { e.x = 0; e.y = 0; } else freeze();
+  } else if (name === 'hurt') { step(0.1); freeze(); e.facing = 0.15; e.flash = 0.07; e.hurtT = 0.22; e.hurtA = Math.PI; }
+  else if (name === 'stagger') { setState(e, 'stagger', 0.3); e.st = 0.08; e.hurtT = 0.2; e.hurtA = Math.PI; freeze(); e.facing = 0.15; }
+  else if (name === 'stunned') { e.armor = 0; e.stun = 1.2; step(0.25); freeze(); }
+  else if (name === 'death') { e.dead = true; step(arg * 1.25); freeze(); }
+  e.x = 0; e.y = 0; e.z = Math.min(e.z, 80);
+  G.telegraphs = G.telegraphs.filter((t) => !t.spawn || name === 'spawn');
+  for (const t of G.telegraphs) { t.x -= 0; }
+  return G;
+}
+function sheet() {
+  const W = LBL + COLS.length * CW, H = 40 + kinds.length * CH;
+  cv.width = W * SC; cv.height = H * SC; cv.style.width = W * SC + 'px';
+  ctx.scale(SC, SC);
+  const floor = paintFloor(W, H, region);
+  ctx.drawImage(floor, 0, 0);
+  const lights = [];
+  const cells = [];
+  kinds.forEach((kind, r) => COLS.forEach((col, c) => {
+    const G = cellWorld(kind, col, 1000 + r * 31 + c);
+    // pre-warm the painters' smoothing, then draw for real
+    const scratch = mk(10, 10).getContext('2d');
+    for (let i = 0; i < 20; i++) { for (const e of G.foes) { scratch.save(); drawFoe(scratch, e, G); scratch.restore(); } G.t += 1 / 60; }
+    cells.push([G, LBL + c * CW + CW * 0.42, 40 + r * CH + CH * 0.8]);
+  }));
+  for (const [G, ox, oy] of cells) {
+    const L = drawWorld(ctx, G, ox, oy, floor, region);
+    // Iri's lantern nearby lights every cell like the hero would
+    L.push([ox + 60, oy - 40, 230, '#ffc073', 0.75]);
+    lights.push(...L);
+  }
+  lightPass(ctx, W, H, lights, FLOORS[region].dark);
+  ctx.font = '600 13px Segoe UI, system-ui, sans-serif'; ctx.fillStyle = '#f2c46b';
+  COLS.forEach(([n, a], c) => ctx.fillText(n + (n === 'death' ? ' ' + a : ''), LBL + c * CW + 12, 30));
+  kinds.forEach((k, r) => { ctx.fillStyle = '#fff1c4'; ctx.font = '600 15px Georgia, serif'; ctx.fillText(KINDS[k].name + (elite ? ' (elite)' : ''), 10, 40 + r * CH + 40); ctx.fillStyle = '#9aa'; ctx.font = '12px Segoe UI, sans-serif'; ctx.fillText(k, 10, 40 + r * CH + 58); });
+  window.__ready = true;
+}
+
+// ---------- the live arena ----------
+function live() {
+  const W = innerWidth, H = innerHeight;
+  cv.width = W; cv.height = H;
+  const G = makeG(7, region); G.live = true; G.showHero = true; G.arena = { rx: 620, ry: 380 };
+  const floor = paintFloor(1400, 900, region);
+  kinds.forEach((k, i) => { const a = (i / kinds.length) * Math.PI * 2; spawn(G, k, Math.cos(a) * 380, Math.sin(a) * 240, { elite, delay: i * 0.15 }); });
+  const h = G.hero; h.x = 0; h.y = 0;
+  let last = performance.now(), acc = 0, ang = 0;
+  addEventListener('keydown', (ev) => {
+    if (ev.key === 'k') for (const e of G.foes) e.dead || (e.dead = true, e.hp = 0);
+    if (ev.key === 'h') for (const e of G.foes) if (!e.dead && !e.spawning) { e.flash = 0.1; e.hp -= 10; e.onHit(G, e, { kind: 'attack' }); if (e.hp <= 0) e.dead = true; }
+    if (ev.key === 'r') kinds.forEach((k, i) => spawn(G, k, (i - kinds.length / 2) * 120, -250, { elite }));
+  });
+  window.__G = G;
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now; acc += dt;
+    while (acc > 1 / 120) {
+      acc -= 1 / 120;
+      // dummy Iri: wander, dash out of telegraphs
+      ang += 1 / 120 * 0.5;
+      const tx = Math.cos(ang) * 260, ty = Math.sin(ang * 1.3) * 160;
+      h.inv = Math.max(0, h.inv - 1 / 120); h.dashing = h.inv > 0.3;
+      const danger = G.telegraphs.some((t) => !t.spawn && t.t < 0.15 && t.t > 0 && Math.hypot(t.x - h.x, t.y - h.y) < 160);
+      if (danger && h.inv <= 0) { h.inv = 0.45; h.x += (Math.random() - 0.5) * 200; h.y += (Math.random() - 0.5) * 120; }
+      h.vx = (tx - h.x) * 1.5; h.vy = (ty - h.y) * 1.5; h.x += h.vx / 120; h.y += h.vy / 120;
+      if (h.kx) { h.x += h.kx / 120; h.y += h.ky / 120; h.kx *= 0.93; h.ky *= 0.93; }
+      worldStep(G, 1 / 120);
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(floor, 0, 0, 1400, 900, 0, 0, W, H);
+    const ox = W / 2, oy = H / 2 + 20;
+    const L = drawWorld(ctx, G, ox, oy, floor, region, [[ox + h.x, oy + h.y - 40, 300, '#ffc073', 0.9]]);
+    lightPass(ctx, W, H, L, FLOORS[region].dark);
+    ctx.fillStyle = '#f2c46b'; ctx.fillText('hero hp ' + Math.round(h.hp) + '   k: kill all, h: hit all, r: respawn', 12, H - 12);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  window.__ready = true;
+}
+
+try { if (Q.get('live') === '1') live(); else sheet(); }
+catch (err) { console.error(err); document.body.insertAdjacentHTML('beforeend', '<pre style="color:#f88">' + err.stack + '</pre>'); window.__ready = true; }
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Loomwake UI bench</title>
+<link rel="stylesheet" href="../style.css" />
+<style>
+  #bench { position: fixed; z-index: 1000; left: 50%; bottom: 4px; transform: translateX(-50%); display: flex; gap: 4px; flex-wrap: wrap; max-width: 96vw; justify-content: center; font: 11px system-ui; opacity: 0.25; }
+  #bench:hover { opacity: 1; }
+  #bench button { padding: 2px 6px; background: #222; color: #ddd; border: 1px solid #555; border-radius: 4px; cursor: pointer; }
+  body.shot #bench { display: none; }
+  #scene { background: radial-gradient(ellipse at 50% 55%, #2a2458 0%, #120f30 55%, #06061a 100%); }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="ui"></div>
+<div id="bench"></div>
+<script type="module" src="./ui-mock.js"></script>
+</body>
+</html>

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loomwake Sound Desk</title>
+<style>
+  :root { --ink: #120d1c; --ink2: #1c1530; --line: #3a2d55; --gold: #e9c27a; --gold2: #ffe3a8; --text: #e8e0f4; --dim: #a597c2; --bad: #ff6f8a; --ok: #8be3b5; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: radial-gradient(1200px 600px at 20% -10%, #2a1f45, var(--ink)); color: var(--text); font: 14px/1.45 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+  header { padding: 20px 24px 8px; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: baseline; }
+  h1 { margin: 0; font: 600 26px 'Marcellus', 'Cinzel', 'Palatino Linotype', 'Book Antiqua', Georgia, serif; color: var(--gold); letter-spacing: 0.04em; }
+  h2 { font: 600 15px 'Marcellus', 'Palatino Linotype', Georgia, serif; color: var(--gold); letter-spacing: 0.08em; text-transform: uppercase; margin: 18px 0 8px; }
+  main { padding: 0 24px 40px; max-width: 1280px; }
+  .state { color: var(--dim); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  button, select, input[type=text] { background: var(--ink2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; cursor: pointer; }
+  input[type=text] { cursor: text; min-width: 0; flex: 1 1 320px; }
+  button:hover { border-color: var(--gold); color: var(--gold2); }
+  button.on { background: #3b2b12; border-color: var(--gold); color: var(--gold2); }
+  button.big { background: linear-gradient(#4a3518, #2c1f0d); border-color: var(--gold); color: var(--gold2); font-weight: 600; }
+  label { color: var(--dim); display: inline-flex; gap: 8px; align-items: center; margin-right: 14px; }
+  input[type=range] { accent-color: var(--gold); width: 140px; }
+  .group { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; background: rgba(28, 21, 48, 0.55); }
+  .group b { display: block; color: var(--dim); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  td, th { border-bottom: 1px solid var(--line); padding: 3px 6px; text-align: left; white-space: nowrap; }
+  td.ok { color: var(--ok); } td.FAIL { color: var(--bad); font-weight: 700; }
+  #meter { height: 6px; background: var(--ink2); border-radius: 3px; overflow: hidden; width: 200px; display: inline-block; vertical-align: middle; }
+  #meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--ok), var(--gold), var(--bad)); }
+  .wrap { overflow-x: auto; }
+  @media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Loomwake Sound Desk</h1>
+  <a href="../index.html" style="color: var(--dim)">Back to the game</a>
+  <span class="state" id="state">Audio is off. Press any button to start it.</span>
+  <span id="meter"><i></i></span>
+</header>
+<main>
+  <h2>Mix</h2>
+  <div class="group">
+    <label>Master <input type="range" min="0" max="1" step="0.01" value="0.85" data-vol="master"></label>
+    <label>Music <input type="range" min="0" max="1" step="0.01" value="0.7" data-vol="music"></label>
+    <label>Effects <input type="range" min="0" max="1" step="0.01" value="0.9" data-vol="sfx"></label>
+    <label>Voices <input type="range" min="0" max="1" step="0.01" value="0.85" data-vol="voice"></label>
+    <button id="mute">Mute</button>
+  </div>
+
+  <h2>Music</h2>
+  <div class="group">
+    <div class="row" id="tracks"></div>
+    <div style="margin-top: 10px">
+      <label>Intensity <input type="range" id="intensity" min="0" max="1" step="0.01" value="0.5"> <span id="ival">0.50</span></label>
+      <button id="phase">Boss phase 1</button>
+      <button id="stop">Stop music</button>
+    </div>
+  </div>
+
+  <h2>Voices</h2>
+  <div class="group">
+    <div class="row">
+      <select id="speaker"></select>
+      <input type="text" id="line" value="Hello again, little thread.">
+      <button id="say" class="big">Speak</button>
+    </div>
+  </div>
+
+  <h2>Sound effects</h2>
+  <div id="sfx"></div>
+
+  <h2>Offline check</h2>
+  <div class="group">
+    <p class="state">Renders every sound, a few seconds of every track and every voice through an OfflineAudioContext (nothing plays aloud) and checks for silence, NaN and peaks at or over full scale.</p>
+    <button id="check" class="big">Run the check</button> <span class="state" id="checkState"></span>
+    <div class="wrap"><table id="results"></table></div>
+  </div>
+</main>
+<script type="module">
+  import * as AU from '../src/audio/index.js';
+  import { TRACKS } from '../src/audio/tracks.js';
+  import { VOICES } from '../src/audio/voice.js';
+  import { runAll, VOICE_LINES } from '../src/audio/check.js';
+
+  const $ = (s) => document.querySelector(s);
+  const start = () => { AU.initAudio(); };
+  const groups = [
+    ['Iri and the Instruments', /^(swing|spear|bow|punch|chakram|dash|footstep|snare_|bind|special|hero_|heal|death_defy|heartbeat)/],
+    ['Hits', /^(hit_|crit|armor_break|stagger)/],
+    ['Patrons: calls and procs', /^(call_|proc_|chain|shield|cloak)/],
+    ['The Unravelled', /^(tell|rasp|growl|clank|claw|slam|shockwave|leap|teleport|pull|fire_breath|censer|spawn|unravel|thorn_)/],
+    ['Projectiles and blasts', /^(needle|orb|hammer_throw|sizzle|arrow|song_ring|projectile|explode)/],
+    ['Queen Veyl', /^veyl_/], ['Cantor Morrow', /^morrow_/], ['Aurum', /^aurum_/], ['Sable', /^sable_/],
+    ['Boss moments', /^boss_/],
+    ['Rewards and rooms', /^(card|offer|boon_take|reroll|pickup|door_|wave_start|chamber_clear|save|fountain|purchase|victory|death_sting|dialogue_)/],
+    ['Interface', /^ui_/],
+  ];
+  const names = AU.sfxNames(), used = new Set();
+  for (const [title, re] of groups) {
+    const g = document.createElement('div'); g.className = 'group'; g.innerHTML = `<b>${title}</b><div class="row"></div>`;
+    const row = g.querySelector('.row');
+    for (const n of names.filter((n) => re.test(n) && !used.has(n))) {
+      used.add(n);
+      if (n === 'card') {
+        for (const r of ['common', 'rare', 'epic', 'mythic']) { const b = document.createElement('button'); b.textContent = 'card ' + r; b.onclick = () => { start(); AU.sfx('card', { rarity: r }); }; row.append(b); }
+        continue;
+      }
+      const b = document.createElement('button'); b.textContent = n;
+      b.onclick = () => { start(); AU.sfx(n, { dur: 0.7, rarity: 'epic' }); };
+      row.append(b);
+    }
+    $('#sfx').append(g);
+  }
+  const rest = names.filter((n) => !used.has(n));
+  if (rest.length) { const g = document.createElement('div'); g.className = 'group'; g.innerHTML = '<b>Other</b><div class="row"></div>'; for (const n of rest) { const b = document.createElement('button'); b.textContent = n; b.onclick = () => { start(); AU.sfx(n); }; g.querySelector('.row').append(b); } $('#sfx').append(g); }
+
+  for (const id of Object.keys(TRACKS)) {
+    const b = document.createElement('button'); b.textContent = id; b.dataset.track = id;
+    b.onclick = () => { start(); AU.music.auto(false); AU.music.set(id, { intensity: +$('#intensity').value, phase }); for (const x of document.querySelectorAll('[data-track]')) x.classList.toggle('on', x === b); };
+    $('#tracks').append(b);
+  }
+  let phase = 1;
+  $('#intensity').oninput = (e) => { $('#ival').textContent = (+e.target.value).toFixed(2); AU.music.intensity(+e.target.value); };
+  $('#phase').onclick = () => { phase = phase === 1 ? 2 : 1; $('#phase').textContent = 'Boss phase ' + phase; $('#phase').classList.toggle('on', phase === 2); AU.music.phase(phase); };
+  $('#stop').onclick = () => { AU.music.stop(1); for (const x of document.querySelectorAll('[data-track]')) x.classList.remove('on'); };
+  for (const k of Object.keys(VOICES)) { const o = document.createElement('option'); o.value = k; o.textContent = k; $('#speaker').append(o); }
+  $('#speaker').value = 'sable';
+  $('#speaker').onchange = () => { $('#line').value = VOICE_LINES[$('#speaker').value] || $('#line').value; };
+  $('#say').onclick = () => { start(); AU.voice($('#speaker').value, $('#line').value); };
+  for (const r of document.querySelectorAll('[data-vol]')) r.oninput = () => { start(); AU.setVolumes({ [r.dataset.vol]: +r.value }); };
+  $('#mute').onclick = () => { start(); const m = AU.mute(!AU.audioState().muted); $('#mute').classList.toggle('on', m); $('#mute').textContent = m ? 'Muted' : 'Mute'; };
+
+  setInterval(() => {
+    const s = AU.audioState();
+    $('#state').textContent = s.running ? `Running · track ${s.track || 'none'} · intensity ${s.intensity?.toFixed(2)} · room ${s.room} · voices ${s.voices} · made ${s.stats.made}, dropped ${s.stats.dropped}, stacked ${s.stats.stacked}` : `Audio is ${s.state}. Press any button to start it.`;
+    $('#meter i').style.width = Math.min(100, s.level * 300) + '%';
+  }, 200);
+
+  function table(res) {
+    const rows = [...res.sfx.map((r) => ['sfx', r]), ...res.tracks.map((r) => ['track', r]), ...res.voices.map((r) => ['voice', r]), ['stress', res.stress]];
+    $('#results').innerHTML = '<tr><th>kind</th><th>name</th><th>verdict</th><th>peak</th><th>peak dB</th><th>rms dB</th><th>NaN</th><th>end s</th><th>render ms</th></tr>' +
+      rows.map(([k, r]) => `<tr><td>${k}</td><td>${r.name}${r.intensity != null ? ` (i ${r.intensity}, p ${r.phase})` : ''}</td><td class="${r.verdict}">${r.verdict}</td><td>${r.peak}</td><td>${r.peakDb}</td><td>${r.rmsDb}</td><td>${r.nan}</td><td>${r.end}</td><td>${r.ms}</td></tr>`).join('');
+  }
+  async function check() {
+    $('#checkState').textContent = 'Rendering...';
+    let n = 0;
+    const res = await runAll(() => { if (++n % 10 === 0) $('#checkState').textContent = `Rendered ${n}...`; });
+    table(res);
+    $('#checkState').textContent = res.fail.length ? `${res.fail.length} failed: ${res.fail.join(', ')}` : `All ${n} renders passed.`;
+    window.__audioCheck = res;
+    return res;
+  }
+  $('#check').onclick = check;
+  window.__audio = AU;
+  window.__runAudioCheck = check;
+</script>
+</body>
+</html>

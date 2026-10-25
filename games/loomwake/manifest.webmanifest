@@ -1,0 +1,1 @@
+{ "name": "Loomwake", "short_name": "Loomwake", "start_url": "./index.html", "display": "fullscreen", "orientation": "landscape", "background_color": "#070818", "theme_color": "#070818", "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }] }
