@@ -218,6 +218,7 @@ export class AceMode {
         if (this.auto) chooseUpgrade(S, autopilotPick(S));
         else {
           this.screen = 'upgrade';
+          this.ui.clearFx(); // no "Wave clear" banner behind the cards
           this.ui.showUpgrade(S);
           this.audio.setIntensity(0.35);
         }
