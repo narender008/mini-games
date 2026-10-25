@@ -1,4 +1,4 @@
-// npm test: smoke, input, save and story tests, the bot playtest, the
+// npm test: smoke, input, save, story and render tests, the bot playtest, the
 // performance bench and the screenshot pass, one after another. Exits
 // non-zero if any of them fails. `node run.cjs smoke bot` runs only the steps
 // whose names start with those words. Reports land in out/.
@@ -12,6 +12,7 @@ const steps = [
   ['save tests', [...T, 'save.test.cjs']],
   ['story tests', [...T, 'story.test.cjs']],
   ['frame tests', [...T, 'frames.test.cjs']],
+  ['render tests', [...T, 'render.test.cjs']],
   ['bot playtest', ['bot.cjs']],
   ['perf bench', ['perf.cjs']],
   ['screenshots', ['screenshots.cjs']],
