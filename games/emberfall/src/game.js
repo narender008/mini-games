@@ -190,6 +190,7 @@ export function act(G, action, arg) {
       break;
     case 'menu': if (G.scene !== 'title') { if (G.player && G.scene !== 'won') saveGame(G); G.scene = 'title'; } break;
     case 'rekindle': if (G.scene === 'dead') respawn(G); break;
+    case 'confirm': G.ui.confirm = arg || null; G.ui.confirmT = G.vt; break; // ui: "Start over?" on the title
   }
 }
 
