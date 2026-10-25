@@ -10,6 +10,8 @@
     "story": "node --test --test-reporter=spec story.test.cjs",
     "frames": "node --test --test-reporter=spec --test-concurrency=1 frames.test.cjs",
     "render": "node --test --test-reporter=spec render.test.cjs",
+    "freeze": "node --test --test-reporter=spec freeze.test.cjs",
+    "stress": "node stress.cjs",
     "bot": "node bot.cjs",
     "perf": "node perf.cjs",
     "shots": "node screenshots.cjs"
