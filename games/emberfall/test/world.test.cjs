@@ -260,7 +260,7 @@ test('every gate holds without its ability and is passable with it', async () =>
     if (!g.from || !g.to) { bad.push(`${r.id}/${g.id}: no from/to standing spots in world()`); continue; }
     await G.fresh(eb, { abilities: G.ABILITIES.filter((a) => a !== g.requires) });
     await eb('god', true);
-    const a = await sim(M.playGate, r.id, g, r.anchors || [], 6);
+    const a = await sim(M.playGate, r.id, g, r.anchors || [], 6, false, g.requires);
     await G.fresh(eb, { abilities: G.ABILITIES });
     await eb('god', true);
     const b = await sim(M.playGate, r.id, g, r.anchors || [], 10);

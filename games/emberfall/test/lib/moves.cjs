@@ -24,8 +24,9 @@ function sim(page, fn, ...args) {
 // Plays one gate from its `from` spot toward its `to` spot for `secs` with a
 // small reactive controller that uses the moves the contract's gate table
 // lists for that kind. Returns whether the player stood at `to` (and, with
-// trace, a log every 4 frames).
-function playGate(eb, roomId, g, anchors, secs, trace) {
+// trace, a log every 4 frames). With deny, that ability is revoked every
+// frame, so a pickup in the gate's own room cannot hand it over mid-run.
+function playGate(eb, roomId, g, anchors, secs, trace, deny) {
   const s0 = PLACE(eb, roomId, g.from.x, g.from.y);
   if (s0.room !== roomId || !s0.player.onGround) return { ok: false, placed: false };
   const kind = g.kind;
@@ -67,6 +68,7 @@ function playGate(eb, roomId, g, anchors, secs, trace) {
       if (ax && !used.has(`${ax.x},${ax.y}`)) { inp.hook = true; used.add(`${ax.x},${ax.y}`); }
     }
     if ((kind === 'lava' || kind === 'thorn') && p.form !== 'fire' && !last.fire) inp.fire = true;
+    if (deny) eb.revoke(deny);
     eb.input(inp);
     last = inp;
     s = eb.step(1000 / 60, { render: false });
