@@ -76,7 +76,7 @@ test('the story moves on run by run: new hub lines, Sable after the first death,
   for (const id of G.BOSSES) {
     const seenBefore = new Set((await lw('state')).story.seen);
     await lw('boss', id);
-    const r = await G.stepUntil(page, `s => s.boss && s.boss.id === ${JSON.stringify(id)}`, { ms: 10000, chunk: 100 });
+    const r = await G.stepUntil(page, `s => s.boss && s.boss.id === ${JSON.stringify(id)}`, { ms: 10000, chunk: 100, skipDialogue: true });
     assert.ok(r.ok, `boss ${id} did not start`);
     await lw('god', true);
     for (let k = 0; k < 4; k++) { // Sable has two phases; bossKill may end one at a time
