@@ -226,7 +226,8 @@ function frame(now) {
   try {
     if (!frozen) {
       acc += dt * (G.slow ?? 1);
-      while (acc >= DT && n < MAX_STEPS) { tick(); acc -= DT; n++; }
+      // a throwing step is still a step (the clock moves on) and never takes the frame's drawing with it
+      while (acc >= DT && n < MAX_STEPS) { acc -= DT; n++; try { tick(); } catch (err) { if (errors++ < 5 || errors % 600 === 0) console.error('[loomwake] sim step error', errors, err); } }
       if (n >= MAX_STEPS) acc = Math.min(acc, DT * 0.99);
     }
     t1 = performance.now();
