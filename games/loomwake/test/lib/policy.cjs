@@ -245,6 +245,7 @@ function botRun(sliceSec) {
       b.minHp = Math.min(b.minHp ?? 1, s.boss.hp / s.boss.maxHp);
       b.phase = s.boss.phase;
     } else {
+      B.lastBoss = null;
       for (const b of L.bosses) if (b.end == null) { b.end = s.runTime; b.secs = b.end - b.t; b.won = true; }
     }
 
