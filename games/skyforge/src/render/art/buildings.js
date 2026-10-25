@@ -79,6 +79,7 @@ function resolve(type, o) {
     charge: o.charge ?? 0, tod: o.tod, on: o.on ?? true, growth: o.growth, reload: o.reload ?? 0,
     L: [],                                          // light halos collected while painting
   };
+  q.part = part;
   q.lit = state === 'built' ? q.night : 0;          // window light
   return q;
 }
