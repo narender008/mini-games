@@ -22,7 +22,8 @@ import { createQuality } from './quality.js';
 import { createCamera } from './camera.js';
 import { createLight, drawGlow } from './light.js';
 import { createFx } from './fx.js';
-import { updateHeroAnim, drawHero, drawHeroAdd, drawHeroGhosts, heroLights } from './actors/hero.js';
+import { updateHeroAnim, drawHero, drawHeroAdd, drawHeroGhosts, heroLights, drawHeroXray } from './actors/hero.js';
+import { BOSSES } from '../content/bosses.js';
 import { paintFallbackChamber, drawFallbackFoe, drawFallbackDoor, drawFallbackPickup } from './fallback.js';
 
 function mk(w, h) { const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h)); c.getContext('2d', { willReadFrequently: true }); return c; }
@@ -208,6 +209,7 @@ export function createRenderer(G, canvas, opts = {}) {
   let listN = 0;
   const push = (y, f) => { let o = list[listN]; if (!o) o = list[listN] = { y: 0, f: null }; o.y = y; o.f = f; listN++; };
 
+  let xrayK = 0;
   const darkO = { color: '#04051a', a: 0.8 };
   const AMBIENT_LIFT = 0.84;
   const PROF = R.prof = {};
@@ -217,6 +219,7 @@ export function createRenderer(G, canvas, opts = {}) {
     if (R.profOn) pT = performance.now();
     t += dt; P.t = t; P.tier = Q.tier; view.t = t;
     cam.shakeMul = G.settings?.shake ?? 1;
+    cam.viewW = cssW; cam.viewH = cssH; cam.base = BASE / DPR;
     cam.update(G, dt);
     SCALE = BASE * cam.zoom; P.scale = SCALE;
     view.w = cssW; view.h = cssH; view.zoom = cam.zoom;
@@ -284,7 +287,9 @@ export function createRenderer(G, canvas, opts = {}) {
     const ws = pick(M.weapons, 'weaponSorted'); if (ws && h) ws(h, G, P, push);
     fx.sorted(push, ctx, P);
     const L = list.slice(0, listN).sort((a, b) => a.y - b.y);
-    for (const it of L) it.f();
+    // every sorted painter starts from a clean state: a leaked alpha/composite from one painter must never
+    // make the next actor (a boss) pale or see-through
+    for (const it of L) { ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; if (ctx.filter !== 'none') ctx.filter = 'none'; it.f(); }
     for (const p of G.projectiles) if (isFoeOwn(p)) { try { M.enemies.drawFoeProjectile(ctx, p, G, P); } catch (err) { console.error('[loomwake] drawFoeProjectile', err); } }
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
     mark('sorted');
@@ -328,6 +333,17 @@ export function createRenderer(G, canvas, opts = {}) {
     mark('light');
     // ---- above the darkness
     if (E && E.ambient) E.ambient(ctx, G, t);
+    // Iri behind a boss or a big foe: warm x-ray silhouette (fades in/out)
+    if (h && !h.hidden && h.state !== 'dead') {
+      let hid = false;
+      for (const e of G.foes) {
+        if (e.gone || e.dead || !(e.boss || e.r >= 40) || h.y >= e.y) continue;
+        const H = e.height || BOSSES[e.kind]?.height || e.r * 3;
+        if (Math.abs(h.x - e.x) < e.r * 1.25 + 10 && h.y > e.y - (e.z || 0) - H * 0.85) { hid = true; break; }
+      }
+      xrayK += ((hid ? 1 : 0) - xrayK) * Math.min(1, dt / 0.12);
+      if (xrayK > 0.02) drawHeroXray(ctx, h, G, P, xrayK);
+    }
     const ov = pick(M.bosses, 'drawOverlay'); if (ov) ov(ctx, G, P);
     drawBars(ctx);
     fx.drawTop(ctx, P);

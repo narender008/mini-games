@@ -364,7 +364,7 @@ export function updateZones(G, dt) {
       for (const e of G.foes) {
         if (!targetable(e) || Math.hypot(e.x - z.x, e.y - z.y) > z.r + e.r * 0.5) continue;
         if (z.slow) addStatus(G, e, 'slow', 0.25, z.slow);
-        if (tickNow && z.dmg) damageFoe(G, e, z.dmg, { kind: 'boon', element: z.element, quiet: false, noHooks: true });
+        if (tickNow && z.dmg) damageFoe(G, e, z.dmg, { kind: 'boon', element: z.element, quiet: true, noHooks: true });
       }
     }
   }

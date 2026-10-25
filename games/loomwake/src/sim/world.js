@@ -191,21 +191,36 @@ function separate(G) {
 }
 
 // ---------------------------------------------------------------- hazards
+// The hero falls: cancel whatever was moving her (call lunge, dash, snare pull, knock), then put her back on a
+// validated safe point. A second fall within 1 s, or a remembered point that fails validation, uses the
+// chamber entry (searched clear by safeSpot).
+function heroFall(G, h, c) {
+  G.bus.emit('fall', { who: 'hero', x: h.x, y: h.y });
+  const ch = G.chamber;
+  h.vx = h.vy = h.kx = h.ky = 0; h.tvx = h.tvy = 0;
+  h.state = 'move'; h.st = 0; h.dashing = false; h.snare = null; h.cancel = false; h.combo = 0;
+  if (h.buf) for (const k in h.buf) h.buf[k] = 0;
+  const again = h._fallT != null && G.t - h._fallT < 1;
+  h._fallT = G.t;
+  let p = null;
+  if (!again && h.safe && spotIsSafe(ch, h.safe.x, h.safe.y, h.r)) p = { x: h.safe.x, y: h.safe.y };
+  if (!p) { const e = ch?.entry || { x: 0, y: 0 }; p = safeSpot(ch, e.x, e.y, h.r + 20); }
+  h.x = p.x; h.y = p.y; h.safe = { x: p.x, y: p.y };
+  hurtHero(G, c.fallDmg, { x: h.x, y: h.y, kind: 'fall', kb: 0, ignoreInv: true });
+  h.inv = Math.max(h.inv, 0.8);
+}
 function hazards(G, dt) {
   const ch = G.chamber, h = G.hero, c = G.cfg.hazards;
   if (!ch || !ch.hazards || !ch.hazards.length) { if (h) { h.safe.x = h.x; h.safe.y = h.y; } return; }
   let heroSafe = true;
   for (const z of ch.hazards) {
     z._cd = Math.max(0, (z._cd || 0) - dt);
-    const inHero = h && !h.dead && Math.hypot(h.x - z.x, h.y - z.y) < z.r - 4;
-    if (inHero) heroSafe = false;
+    const hd = h ? Math.hypot(h.x - z.x, h.y - z.y) : 1e9;
+    const inHero = h && !h.dead && hd < z.r - 4;
+    // a safe point is only remembered clear of every hazard by both radii
+    if (h && hd < z.r + h.r + 4) heroSafe = false;
     if (z.type === 'pit' || z.type === 'void') {
-      if (inHero && !h.dashing && Math.hypot(h.x - z.x, h.y - z.y) < z.r - h.r * 0.5) {
-        G.bus.emit('fall', { who: 'hero', x: h.x, y: h.y });
-        h.x = h.safe.x; h.y = h.safe.y; h.vx = h.vy = h.kx = h.ky = 0;
-        hurtHero(G, c.fallDmg, { x: h.x, y: h.y, kind: 'fall', kb: 0, ignoreInv: true });
-        h.inv = Math.max(h.inv, 0.8);
-      }
+      if (inHero && !h.dashing && hd < z.r - h.r * 0.5) heroFall(G, h, c);
       for (const e of G.foes) if (!e.dead && !e.flying && !e.boss && Math.hypot(e.x - z.x, e.y - z.y) < z.r - e.r * 0.5) {
         G.bus.emit('fall', { who: e.kind, e, x: e.x, y: e.y }); killFoe(G, e, { kind: 'fall' }); e.fell = true;
       }

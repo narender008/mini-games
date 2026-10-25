@@ -33,9 +33,15 @@ export function createCards(ui) {
       bn.textContent = info.name;
       be.textContent = info.title;
       bl.textContent = p.line || '';
-      regEl.classList.remove('on'); banEl.classList.remove('on');
+      regEl.classList.remove('on'); banEl.classList.remove('on'); bossEl.classList.remove('out');
       replay(bossEl);
       quietUntil = now() + 4400;
+    },
+    // the fight starts (end of the intro freeze): the title card fades out at once (engine seam fix)
+    bossFight() {
+      if (!bossEl.classList.contains('on')) return;
+      bossEl.classList.remove('on'); void bossEl.offsetWidth; bossEl.classList.add('out');
+      quietUntil = Math.min(quietUntil, now() + 400);
     },
     region(id, p = {}) {
       if (hidden() || !id || id === 'hub') return;

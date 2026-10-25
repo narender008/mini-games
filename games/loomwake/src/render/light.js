@@ -42,6 +42,8 @@ export function drawGlow(ctx, x, y, r, color, a = 1) {
 }
 const hole = (() => { const c = mk(128, 128); const g = c.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.45, 'rgba(255,255,255,0.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return c; })();
 
+const HAZE_BUDGET = 0.12;
+
 export function createLight() {
   let layer = null, lctx = null;
   const list = [];
@@ -80,8 +82,16 @@ export function createLight() {
     // coloured haze rather than a pure add, which is how the painted look wants it anyway. `extra(lctx)` lets the
     // renderer add world-space glow (the floor glow's pulse) in the same pass.
     lctx.globalCompositeOperation = 'lighter';
-    const gr = L.cheap ? 0.7 : 0.8, gi = L.cheap ? 0.3 : 0.26;
-    for (let k = 0; k < Math.min(use, cap); k++) { const o = list[k]; if (!vis(o)) continue; if (o.g > 0) drawGlow(lctx, o.x, o.y, o.r * gr, o.color, o.i * gi * o.g); }
+    const gr = L.cheap ? 0.7 : 0.8, gi0 = L.cheap ? 0.3 : 0.26;
+    // haze budget (soft tone-map): the summed haze coverage of all lights, weighted by strength and screen
+    // area, is held under HAZE_BUDGET, so a pile of boon flashes and boss lights tints the scene instead of
+    // washing it out. Each light's own strength is capped too.
+    const lim = Math.min(use, cap), area = W * H;
+    let cover = 0;
+    for (let k = 0; k < lim; k++) { const o = list[k]; if (!(o.g > 0) || !vis(o)) continue; const rr = o.r * gr * ls; cover += Math.min(1, o.i) * o.g * gi0 * 0.35 * rr * rr * 3.14 / area; }
+    const gi = gi0 * (cover > HAZE_BUDGET ? HAZE_BUDGET / cover : 1);
+    L.haze = cover;
+    for (let k = 0; k < lim; k++) { const o = list[k]; if (!vis(o)) continue; if (o.g > 0) drawGlow(lctx, o.x, o.y, o.r * gr, o.color, Math.min(1, o.i) * gi * o.g); }
     if (extra) extra(lctx, { x0: vx0, y0: vy0, x1: vx1, y1: vy1 });
     lctx.globalCompositeOperation = 'source-over'; lctx.globalAlpha = 1;
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(layer, 0, 0, view.W, view.H); ctx.restore();

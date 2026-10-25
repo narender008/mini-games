@@ -287,6 +287,10 @@
 .lw-ui .bark .who { font: 800 10px var(--sans); letter-spacing: 0.22em; color: var(--sc, #d9a2ff); text-transform: uppercase; }
 .lw-ui .bark .say { font: italic 16px var(--serif); color: var(--ink); line-height: 1.3; }
 .lw-ui .bark.boss { --sc: #ff8a9a; }
+/* (engine seam fix) while the boss bar is up, barks sit below it, never over it */
+.lw-ui .hud-boss.on ~ .bark { top: calc(122px + var(--safe-t)); }
+.lw-ui .bosscard.out { animation: lw-bc-out 0.35s ease forwards; }
+@keyframes lw-bc-out { from { opacity: 1; } to { opacity: 0; } }
 
 /* damage vignette */
 .lw-ui .vig { position: fixed; inset: 0; pointer-events: none; z-index: 1; background: radial-gradient(ellipse at 50% 50%, transparent 52%, rgba(160, 0, 30, 0.55) 100%); opacity: 0; mix-blend-mode: normal; }
@@ -822,6 +826,7 @@
   .lw-ui .item .ic { width: 36px; height: 36px; } .lw-ui .item .ic svg { width: 20px; height: 20px; }
   .lw-ui .pell { margin-bottom: 8px; padding: 6px 8px; } .lw-ui .pell canvas { width: 44px; height: 44px; }
   .lw-ui .bark { top: calc(64px + var(--safe-t)); }
+  .lw-ui .hud-boss.on ~ .bark { top: calc(92px + var(--safe-t)); }
   .lw-ui .bark .say { font-size: 13.5px; }
 }
 @media (max-width: 760px) {

@@ -78,7 +78,7 @@ export function resetHero(G, { x, y, full = false } = {}) {
   G.bus.emit('heroReset', { x: h.x, y: h.y, full });
 }
 
-export function placeHero(G, x, y) { const h = G.hero; const p = safeSpot(G.chamber, x, y, h.r); h.x = p.x; h.y = p.y; h.safe = { x: p.x, y: p.y }; h.vx = h.vy = h.kx = h.ky = 0; }
+export function placeHero(G, x, y) { const h = G.hero; const p = safeSpot(G.chamber, x, y, h.r); h.x = p.x; h.y = p.y; h.safe = { x: p.x, y: p.y }; h.vx = h.vy = h.kx = h.ky = 0; h.tvx = h.tvy = 0; h.snare = null; if (h.dashing) { h.dashing = false; } if (h.state !== 'dead' && h.state !== 'respawn' && h.state !== 'move') endAction(h); }
 
 export function respawnHero(G, x = G.hero.x, y = G.hero.y) {
   const h = G.hero;

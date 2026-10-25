@@ -358,8 +358,11 @@ function afterClear(G, B, want) {
   // choose a door
   const doors = (G.chamber.doors || []).filter((d) => d.open);
   if (!doors.length) return;
-  if (B.doorPick == null || !doors.find((d) => d.i === B.doorPick)) B.doorPick = pickDoor(G, doors);
-  const d = doors.find((x) => x.i === B.doorPick) || doors[0];
+  // doors the walk grid cannot reach from here are left for the others (a spiral's far arm)
+  const reach = doors.filter((d) => reachable(G, B, d));
+  const pool = reach.length ? reach : doors;
+  if (B.doorPick == null || !pool.find((d) => d.i === B.doorPick)) B.doorPick = pickDoor(G, pool);
+  const d = pool.find((x) => x.i === B.doorPick) || pool[0];
   walkTo(G, B, want, d.x, d.y);
   unstick(G, B, want, d);
 }
@@ -616,11 +619,12 @@ function navGrid(G, B) {
   const block = new Uint8Array(cols * rows), soft = new Uint8Array(cols * rows);
   for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
     const x = x0 + i * CELL, y = y0 + j * CELL;
-    let wall = !inside(G, x, y, hr * 0.7), b = wall;
+    let wall = !inside(G, x, y, hr * 0.45), b = !inside(G, x, y, hr * 0.8);
     for (const z of hz) {
       const d = Math.hypot(x - z.x, y - z.y);
-      if (d < z.r + hr * 0.8 + 6) b = true;
-      if ((z.type === 'pit' || z.type === 'void') && d < z.r + hr * 0.5) wall = true; // never route over a drop
+      const pit = z.type === 'pit' || z.type === 'void';
+      if (d < z.r + (pit ? hr + 22 : hr * 0.8 + 6)) b = true;
+      if (pit && d < z.r + hr * 0.8) wall = true; // never route over a drop
     }
     block[j * cols + i] = b || wall ? 1 : 0;
     soft[j * cols + i] = wall ? 1 : 0;
@@ -699,6 +703,19 @@ function astarOn(nav, sx, sy, gx, gy) {
   pts.push({ x: gx, y: gy });
   return pts;
 }
+// can the hero walk to (x, y)? (cached per chamber and goal cell for a couple of seconds)
+function reachable(G, B, g) {
+  const nav = navGrid(G, B), h = G.hero;
+  if (!nav || !h) return true;
+  if (clearLine(nav, h.x, h.y, g.x, g.y)) return true;
+  const key = `${cellOf(nav, g.x, g.y)}`;
+  B.reach = B.reach && B.reach.c === nav.c ? B.reach : { c: nav.c, m: {} };
+  const r = B.reach.m[key];
+  if (r && B.t - r.t < 2) return r.ok;
+  const ok = !!astar(nav, h.x, h.y, g.x, g.y);
+  B.reach.m[key] = { ok, t: B.t };
+  return ok;
+}
 // the next point to walk at on the way to (x, y), or null when the straight line is clear
 function route(G, B, h, x, y) {
   const nav = navGrid(G, B);
@@ -753,4 +770,4 @@ function unstick(G, B, want, goal) {
 }
 
 // planner internals, for the dev harness (dev/bot-campaign.mjs stall dumps)
-export const __nav = { navGrid, astar, clearLine, route, freeNear, cellOf };
+export const __nav = { CELL, navGrid, astar, clearLine, route, freeNear, cellOf, reachable };

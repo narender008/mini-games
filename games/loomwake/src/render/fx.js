@@ -11,12 +11,14 @@
 //     fx.drawTop(ctx, P)         after lighting: motes, damage numbers, call-outs
 //     fx.lights(push)
 //     fx.part(o), fx.sparks(x, y, z, color, n, speed, spread, dir), fx.ring(x, y, r0, r1, life, color, width),
-//     fx.flash(x, y, r, color, life, i), fx.text(x, y, s, color, size), fx.bolt(ax, ay, bx, by, color),
+//     fx.flash(x, y, r, color, life, i), fx.text(x, y, s, color, size, {key, every, life, vy}) (once per key per `every` s),
+//     fx.number(e, dmg, color, size, {top, crit, tick}) (merges rapid hits per target), fx.bolt(ax, ay, bx, by, color),
 //     fx.threads(x, y, n, color, eye), fx.decal(o)      (also handed to painters as P.fx)
 //     fx.count
 import { TAU, clamp, lerp } from '../core/math.js';
 import { FX as R, rng } from '../core/rng.js';
 import { drawGlow } from './light.js';
+import { BOSSES } from '../content/bosses.js';
 
 const ELEM = { dawn: '#ffc35a', tide: '#5ec8ff', storm: '#a6f6ff', stone: '#d8a46a', shade: '#b48cff', wind: '#8ff5b0', gold: '#ffd27a' };
 
@@ -39,7 +41,34 @@ export function createFx(G, Q) {
   const dust = fx.dust = (x, y, n, col = '#9fb4ff', spd = 60) => { for (let i = 0; i < n; i++) part({ x: x + R.range(-10, 10), y: y + R.range(-4, 4), z: 2, vx: R.range(-spd, spd), vy: R.range(-spd, spd) * 0.5, vz: R.range(10, 50), g: 40, life: R.range(0.35, 0.7), size: R.range(6, 14), color: col, type: 'dust', drag: 3, add: false }); };
   const ring = fx.ring = (x, y, r0, r1, life, color, width = 4, squash = 0.62) => part({ x, y, life, size: r0, r1, color, type: 'ring', width, squash });
   const flash = fx.flash = (x, y, r, color, life = 0.12, i = 1) => { flashes.push({ x, y, r, color, life, max: life, i }); };
-  const text = fx.text = (x, y, s, color = '#ffffff', size = 22, o = {}) => { texts.push({ x: x + R.range(-10, 10), y, s: String(s), color, size, life: o.life ?? 0.8, max: o.life ?? 0.8, vy: o.vy ?? -90, pop: 1, stroke: o.stroke }); };
+  // Text call-outs. Words ("BROKEN", "STONE") show once per target/place per second; damage numbers merge
+  // (see fx.number); at most MAX_TEXT on screen, the oldest go first.
+  const MAX_TEXT = 12;
+  const wordSeen = new Map();   // key -> time last shown
+  let clock = 0;
+  const addText = (t) => { texts.push(t); while (texts.length > MAX_TEXT) { let k = texts.findIndex((q) => q.kind === 'tick'); if (k < 0) k = 0; texts.splice(k, 1); } return t; };
+  const text = fx.text = (x, y, s, color = '#ffffff', size = 22, o = {}) => {
+    s = String(s);
+    const key = (o.key != null ? o.key : Math.round(x / 140) + ',' + Math.round(y / 140)) + ':' + s;
+    const last = wordSeen.get(key);
+    if (last != null && clock - last < (o.every ?? 1)) return null;
+    wordSeen.set(key, clock);
+    if (wordSeen.size > 200) for (const [k, v] of wordSeen) if (clock - v > 2) wordSeen.delete(k);
+    return addText({ x: x + R.range(-10, 10), y, s, color, size: Math.min(size, 26), life: o.life ?? 0.8, max: o.life ?? 0.8, vy: o.vy ?? -90, pop: 1, stroke: o.stroke, kind: 'word' });
+  };
+  // Damage numbers: hits on the same target within 0.4 s add into one rising number (it pops and lives on);
+  // damage-over-time ticks get their own smaller merged number.
+  fx.number = (e, dmg, color, size = 22, o = {}) => {
+    const kind = o.tick ? 'tick' : 'dmg', id = e.id ?? e;
+    for (const t of texts) if (t.kind === kind && t.target === id && clock - t.lastAdd < 0.4 && t.life > 0.25) {
+      t.n += dmg; t.s = String(Math.round(t.n)); t.lastAdd = clock; t.life = t.max; t.pop = 1;
+      if (o.crit) { t.color = color; t.size = Math.max(t.size, size); }
+      t.size = Math.min(t.size + 0.6, kind === 'tick' ? 17 : 32);
+      return t;
+    }
+    const top = o.top ?? 50;
+    return addText({ x: e.x + R.range(-14, 14), y: e.y - top, s: String(Math.round(dmg)), n: dmg, color, size: kind === 'tick' ? 14 : size, life: kind === 'tick' ? 0.6 : 0.8, max: kind === 'tick' ? 0.6 : 0.8, vy: kind === 'tick' ? -50 : -90, pop: 1, kind, target: id, lastAdd: clock });
+  };
   fx.bolt = (ax, ay, bx, by, color = '#a6f6ff', life = 0.22) => bolts.push({ a: [ax, ay], b: [bx, by], life, max: life, seed: R() * 1e6, color });
   fx.decal = (o) => { const d = Object.assign({ type: 'scorch', x: 0, y: 0, r: 40, life: 2, color: '#000000', a: R() * TAU }, o); d.max = d.life; decals.push(d); if (decals.length > 160) decals.shift(); return d; };
   // curling black threads + ash: the Unravelled come apart (enemies.md "Death = unravel")
@@ -67,8 +96,9 @@ export function createFx(G, Q) {
     }
     if (h.dmg > 0 && G.settings?.damageNumbers !== false) {
       const armour = h.armourDmg > 0 && !h.hpDmg;
-      const top = (e.h ?? (e.r || 20) * 2.6) + (e.z || 0);
-      text(e.x, e.y - top, h.dmg, armour ? '#d8e4ff' : h.crit ? '#ffe27a' : h.element ? col : '#ffffff', h.crit ? 30 : h.quiet ? 16 : 22);
+      // bosses: numbers rise from the chest, not the crown (the crown can sit under the boss bar)
+      const top = (e.boss ? (BOSSES[e.kind]?.height || (e.r || 40) * 3) * 0.55 : (e.h ?? (e.r || 20) * 2.6)) + (e.z || 0);
+      fx.number(e, h.dmg, armour ? '#d8e4ff' : h.crit ? '#ffe27a' : h.element ? col : '#ffffff', h.crit ? 28 : 22, { top, crit: h.crit, tick: h.quiet || h.kind === 'status' || h.kind === 'dot' });
     }
   });
   on('kill', ({ e, x, y }) => {
@@ -84,7 +114,7 @@ export function createFx(G, Q) {
     for (let i = 0; i < 18; i++) { const a = R() * TAU, s = R.range(160, 460); part({ x, y, z: top * 0.6, vx: Math.cos(a) * s, vy: Math.sin(a) * s * 0.6, vz: R.range(150, 400), g: 900, life: R.range(0.7, 1.2), size: R.range(4, 9), color: R.pick(['#e8f0ff', '#a9b6d6', '#ffffff']), type: 'shard', rot: R() * TAU, vr: R.range(-14, 14), drag: 1.2, add: false }); }
     ring(x, y, 20, 160, 0.4, '#ffffff', 6);
     flash(x, y - 30, 320, '#e8f0ff', 0.25, 1.2);
-    text(x, y - top - 26, 'BROKEN', '#ffffff', 26, { life: 1.1, vy: -40 });
+    text(x, y - Math.min(top, 160) - 26, 'BROKEN', '#ffffff', 24, { life: 1.1, vy: -40, key: e.id });
   });
   on('heroHurt', ({ x, y }) => { flash(x, y - 30, 220, '#ff5a7a', 0.22, 1); sparks(x, y, 30, '#ff8aa0', 12, 400); G.ui._hurtT = 0.3; });
   on('dodge', ({ x, y }) => { ring(x, y, 10, 50, 0.25, '#a6e8ff', 2); });
@@ -113,7 +143,7 @@ export function createFx(G, Q) {
     fx.decal({ type: 'vortex', x: e.x, y: e.y, r: (e.r || 20) * 2.6, life: 0.75, color: col });
     flash(e.x, e.y - 20, 140, col, 0.6, 0.6);
   });
-  on('slam', ({ x, y }) => { dust(x, y, 12, '#c8c0ff', 120); ring(x, y, 10, 70, 0.3, '#ffffff', 4); text(x, y - 60, 'SLAM', '#ffd27a', 18, { life: 0.7 }); fx.decal({ type: 'crack', x, y, r: 36, life: 4 }); });
+  on('slam', ({ x, y, e }) => { dust(x, y, 12, '#c8c0ff', 120); ring(x, y, 10, 70, 0.3, '#ffffff', 4); text(x, y - 60, 'SLAM', '#ffd27a', 18, { life: 0.7, key: e && e.id }); fx.decal({ type: 'crack', x, y, r: 36, life: 4 }); });
   on('telegraphHit', ({ tg }) => {
     if (tg.kind === 'circle' && tg.r > 60) { dust(tg.x, tg.y, 10, '#ffb3c0', 160); fx.decal({ type: 'crack', x: tg.x, y: tg.y, r: tg.r * 0.5, life: 3 }); }
   });
@@ -138,6 +168,7 @@ export function createFx(G, Q) {
   // ---------------------------------------------------------------- update
   let ambT = 0;
   fx.update = (dt, frozen) => {
+    clock += dt;
     for (let i = texts.length - 1; i >= 0; i--) { const t = texts[i]; t.life -= dt; t.y += t.vy * dt; t.vy *= Math.exp(-dt * 3); t.pop = Math.max(0, t.pop - dt * 8); if (t.life <= 0) texts.splice(i, 1); }
     if (frozen) return;
     for (let i = parts.length - 1; i >= 0; i--) {
@@ -212,16 +243,19 @@ export function createFx(G, Q) {
     for (const p of parts) if (p.type === 'mote') drawPart(ctx, p, P);
     ctx.globalCompositeOperation = 'source-over';
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    // never over the boss bar / top HUD band (css y < 118)
+    const minY = G.view && G.view.toWorld ? G.view.toWorld(0, G.boss ? 128 : 70).y : -1e9;
     for (const t of texts) {
-      const a = clamp(t.life / 0.3, 0, 1), s = t.size * (1 + t.pop * 0.35);
+      const a = clamp(t.life / 0.3, 0, 1), s = t.size * (1 + t.pop * 0.3);
+      const y = Math.max(t.y, minY + s);
       ctx.globalAlpha = a;
       ctx.font = `800 ${s}px 'Segoe UI', system-ui, sans-serif`;
-      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,6,20,0.85)'; ctx.strokeText(t.s, t.x, t.y); ctx.fillStyle = t.color; ctx.fillText(t.s, t.x, t.y);
+      ctx.lineWidth = t.kind === 'tick' ? 3 : 4; ctx.strokeStyle = 'rgba(10,6,20,0.85)'; ctx.strokeText(t.s, t.x, y); ctx.fillStyle = t.color; ctx.fillText(t.s, t.x, y);
     }
     ctx.globalAlpha = 1;
   };
   fx.lights = (push) => {
-    for (const f of flashes) push(f.x, f.y, f.r, f.color, (f.life / f.max) * f.i);
+    for (const f of flashes) push(f.x, f.y, f.r, f.color, (f.life / f.max) * f.i, 0.5);   // flashes open the dark more than they tint
     for (const b of bolts) push(b.b[0], b.b[1], 150, b.color, b.life / b.max);
   };
   fx.flashes = flashes;

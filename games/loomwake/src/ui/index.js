@@ -125,6 +125,7 @@ export function createUI(G, api = {}) {
   if (G.bus?.on) {
     const on = (t, f) => G.bus.on(t, (p) => { try { f(p || {}); } catch (e) { console.error('[ui] bus ' + t, e); } });
     on('bossIntro', (p) => cards.boss(p.id, p));
+    on('bossFight', () => cards.bossFight());
     on('regionEnter', (p) => cards.region(p.region || p.id, p));
     on('chamberClear', () => cards.banner('Chamber Cleared', 'clear'));
     on('bossDefeat', (p) => cards.bossDefeat(p.id));

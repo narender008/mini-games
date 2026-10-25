@@ -10,6 +10,7 @@
 //
 // Exports:
 //   updateHeroAnim(h, G, dt)            render-side cloth/squash/ghost sim (fixed 120 Hz substeps)
+//   drawHeroXray(ctx, h, G, P, k)      warm silhouette above the world while a boss hides Iri
 //   drawHero(ctx, h, G, P)              ctx in world space; draws shadow, scarf, body, sword, flash
 //   drawHeroAdd(ctx, h, G, P)           additive pass: blade smear, sword glow, snare thread, call aura
 //   drawHeroGhosts(ctx, h, G, P)        dash afterimages (additive, before the y-sorted pass)
@@ -557,6 +558,23 @@ function drawReweave(ctx, h, P) {
   }
   ctx.stroke(); ctx.globalAlpha = 1;
   P.glow(ctx, x, y - 40, 120 + 60 * Math.sin(t * 6), '#ffd27a', 0.8 * (1 - clamp((t - 1.0) / 0.4, 0, 1)));
+}
+
+// X-ray: when a boss (or anything big) stands in front of Iri, a warm silhouette of her current pose is
+// drawn above the world so she is never lost. k 0..1 fades it in/out.
+let xrayC = null;
+export function drawHeroXray(ctx, h, G, P, k = 1) {
+  if (!bodyC || k <= 0.01 || !h.anim || h.state === 'dead') return;
+  if (!xrayC || xrayC.width !== bodyC.width || xrayC.height !== bodyC.height) xrayC = mk(bodyC.width, bodyC.height);
+  const g = xrayC.getContext('2d');
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, xrayC.width, xrayC.height);
+  g.drawImage(bodyC, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = '#ffd8a0'; g.fillRect(0, 0, xrayC.width, xrayC.height);
+  g.globalCompositeOperation = 'source-over';
+  const x = h.x, y = h.y - (h.z || 0);
+  ctx.save();
+  for (const [ox, oy] of OUTLINE) { ctx.globalAlpha = 0.5 * k; ctx.drawImage(inkC, x - SPR.ox + ox, y - SPR.oy + oy, inkC.width / sprScale, inkC.height / sprScale); }
+  blit(ctx, xrayC, x, y, 0.42 * k);
+  ctx.restore();
 }
 
 export function heroLights(h, G, push) {
