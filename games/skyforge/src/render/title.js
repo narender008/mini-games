@@ -140,8 +140,15 @@ export function createTitle(app, quality, R) {
     g.restore();
     // near clouds
     const ny = Y(620), nw = C.nearW * k, off = ((t * 9) % C.nearW) * k;
-    for (let x = -off; x < W; x += nw) g.drawImage(C.near, x, ny, nw, 480 * k);
-    if (ny + 480 * k < H) { g.fillStyle = mix('#5c3468', '#a0577e', 0.4); g.fillRect(0, ny + 480 * k - 1, W, H - ny - 480 * k + 1); }
+    // tall (portrait) screens: further banks roll down toward the bottom edge
+    let yEnd = ny + 480 * k;
+    for (let row = 0, y = ny; row < 4; row++, y += 230 * k) {
+      const o2 = (off + row * 0.37 * nw) % nw;
+      for (let x = -o2; x < W; x += nw) g.drawImage(C.near, x, y, nw, 480 * k);
+      yEnd = y + 480 * k;
+      if (yEnd >= H) break;
+    }
+    if (yEnd < H) { g.fillStyle = mix('#5c3468', '#a0577e', 0.4); g.fillRect(0, yEnd - 1, W, H - yEnd + 1); }
     // airships
     g.save(); g.setTransform(k * dpr, 0, 0, k * dpr, -F.x0 * k * dpr, -F.y0 * k * dpr);
     const drift = ((t * 6) % 2400);

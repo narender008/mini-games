@@ -271,7 +271,7 @@ export function createRenderer(canvas, app) {
   // a building's lights (window glow, lamps, furnace mouths): halos are static per
   // body and night level, so they come from a sprite blitted additively; fire stays live
   function drawBuildingLight(g2, b, X, Y, o) {
-    if (o.fire > 0.02 || o.firing || o.charge > 0.05 || !o.__key || app.rdbg?.liveLights) { ART.drawBuilding(g2, b.type, X, Y, { ...o, part: 'light' }); return; }
+    if (o.fire > 0.02 || o.firing || o.charge > 0.05 || !o.__key) { ART.drawBuilding(g2, b.type, X, Y, { ...o, part: 'light' }); return; }
     const nb = Math.round(o.night * 6) / 6, inf = ART.buildingInfo(b.type, o), bb = inf.bbox, s = worldScale();
     const sp = sprite('L|' + o.__key + '|' + nb, [bb.x - 70, bb.y - 70, bb.x + bb.w + 70, bb.y + bb.h + 70], s, (cg) => ART.drawBuilding(cg, b.type, 0, 0, { ...o, night: nb, part: 'light' }));
     const op = g2.globalCompositeOperation; g2.globalCompositeOperation = 'lighter'; blit(g2, sp, X, Y); g2.globalCompositeOperation = op;
@@ -625,18 +625,17 @@ export function createRenderer(canvas, app) {
     g.setTransform(dpr, 0, 0, dpr, shx * dpr, shy * dpr); applyCamera(g, cam);
     const lights = [];
     animFrameStart();
-    const X = app.rdbg || {};
-    if (!X.noWorld) drawWorld(g, G, lights);
+    drawWorld(g, G, lights);
     fx.drawWorld(g, clock);
     // time-of-day grade over the world only (the sky is not drawn yet)
-    if (!X.noGrade && env.grade[1] > 0.005) {
+    if (env.grade[1] > 0.005) {
       g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-atop';
       g.fillStyle = rgba(env.grade[0], env.grade[1]); g.fillRect(0, 0, canvas.width, canvas.height);
       g.globalCompositeOperation = 'source-over';
     }
     // lights and glow fx, additive, in world space
     g.setTransform(dpr, 0, 0, dpr, shx * dpr, shy * dpr); applyCamera(g, cam);
-    if (!X.noLights && (env.night > 0.08 || Q().name === 'high')) for (const f of lights) f();
+    if (env.night > 0.08 || Q().name === 'high') for (const f of lights) f();
     fx.drawGlow(g, G, clock);
     agents.drawBirds(g, env, clock);
     // the sky goes in behind everything drawn so far
@@ -644,18 +643,18 @@ export function createRenderer(canvas, app) {
     g.globalCompositeOperation = 'destination-over';
     sky.stormTop(g, env, v, clock, dt);
     fx.drawBack(g, env, W, H, clock);
-    if (!X.noSky) sky.back(g, env, v, clock, dt);
+    sky.back(g, env, v, clock, dt);
     g.globalCompositeOperation = 'source-over';
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (!X.noFront) sky.front(g, env, v, frontBankY(G) + shy, clock, dt);
+    sky.front(g, env, v, frontBankY(G) + shy, clock, dt);
     fx.drawScreen(g, env, W, H, clock, dt);
     // overlay in world space then screen space
     g.setTransform(dpr, 0, 0, dpr, shx * dpr, shy * dpr); applyCamera(g, cam);
-    if (!X.noOver) overlay.drawWorld(g, G, clock);
+    overlay.drawWorld(g, G, clock);
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (!X.noOver) overlay.drawScreen(g, G, clock, W, H);
+    overlay.drawScreen(g, G, clock, W, H);
     fx.drawLabels(g, cam, W, H);
-    if (!X.noVig && Q().name === 'high') vignette(g);
+    if (Q().name === 'high') vignette(g);
   }
   let homeYc = null;
   function homeY(G) {

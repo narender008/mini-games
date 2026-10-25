@@ -309,9 +309,16 @@ export function paintIsland(I, s, ctx) {
   for (let v = 0; v < H; v++) for (let u = 0; u < W; u++) {
     const ch = cellAt(I, u, v), r = cr(u, v);
     switch (ch) {
-      case 'f': blob(u, v, '#6fae46', 0.5, 0.7, r); blob(u, v, '#8a6a3c', 0.28, 0.42, r);
-        g.strokeStyle = rgba(c('#6b4a2c'), 0.35); g.lineWidth = 0.035; g.beginPath();
-        for (let i = 0; i < 3; i++) { const yy = v + 0.25 + i * 0.25 + (r() - 0.5) * 0.05; g.moveTo(u + 0.2, yy); g.lineTo(u + 0.8, yy); } g.stroke(); break;
+      case 'f': {
+        // rich meadow: lush overlapping green, a loam patch here and there,
+        // clover specks; nothing aligned to the cell grid
+        g.fillStyle = rgba(c('#78b84a'), 0.32);
+        for (let i = 0; i < 2; i++) { ell(g, u + 0.5 + (r() - 0.5) * 0.9, v + 0.5 + (r() - 0.5) * 0.9, 0.7 + r() * 0.4, 0.55 + r() * 0.35, r() * 3); g.fill(); }
+        if (r() < 0.3) { g.fillStyle = rgba(c('#8a6a3c'), 0.2 + r() * 0.12); ell(g, u + 0.5 + (r() - 0.5) * 1.1, v + 0.5 + (r() - 0.5) * 1.1, 0.25 + r() * 0.35, 0.18 + r() * 0.2, r() * 3); g.fill(); }
+        g.fillStyle = rgba(c('#a6d86a'), 0.55);
+        for (let i = 0; i < 5; i++) { ell(g, u + r(), v + r(), 0.04, 0.03, 0); g.fill(); }
+        break;
+      }
       case 't': blob(u, v, '#3f7a3c', 0.42, 0.75, r); break;
       case 's': blob(u, v, '#b9ae9e', 0.62, 0.55, r); blob(u, v, '#8f857c', 0.3, 0.32, r); break;
       case 'o': blob(u, v, '#ad8a70', 0.62, 0.55, r); blob(u, v, '#d27a3a', 0.35, 0.28, r); break;

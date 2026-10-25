@@ -68,9 +68,9 @@ export function createOverlay(app, R) {
           const ok = !!h.valid, col = ok ? '#7dffb0' : '#ff6a5a';
           for (let v = h.v; v < h.v + d; v++) for (let u = h.u; u < h.u + w; u++) {
             const inside = cellAt(I, u, v) !== ' ';
-            cellPoly(g, I, u, v); g.fillStyle = rgba(inside ? col : '#ff6a5a', 0.28 * pulse); g.fill();
+            cellPoly(g, I, u, v); g.fillStyle = rgba(inside ? col : '#ff6a5a', 0.42 * pulse); g.fill();
           }
-          cellPoly(g, I, h.u, h.v, w, d, -0.05); g.setLineDash([7, 5]); g.strokeStyle = rgba(ok ? '#c8ffe0' : '#ffb0a0', 0.95); g.lineWidth = 2.2; g.stroke(); g.setLineDash([]);
+          cellPoly(g, I, h.u, h.v, w, d, -0.05); g.setLineDash([7, 5]); g.strokeStyle = rgba(ok ? '#c8ffe0' : '#ffb0a0', 0.95); g.lineWidth = 2.8; g.stroke(); g.setLineDash([]);
           const rg = rangeOf(type);
           if (rg) ring(g, I.ox + h.u + w / 2, I.oy + h.v + d / 2, I.alt, rg, ok ? (RANGE_COL[type] || '#ffffff') : '#ff6a5a', 0.75 * pulse);
           const [ox, oy] = wpx(I.ox, I.oy, I.alt), [X, Y] = local(h.u, h.v);
