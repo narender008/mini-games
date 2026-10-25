@@ -110,21 +110,38 @@ export function pickAt(G, cam, sx, sy, opts = {}) {
 
   // buildings as boxes (roofs stick up above their cells)
   if (!opts.ground) {
+    // the bare ground cell under the pointer (before roofs cover it)
+    const gIsl = res.u != null ? res.island : null, gu = res.u, gv = res.v, gDepth = res.depth;
     const byId = new Map(isles.map((i) => [i.id, i]));
+    const hits = [];
     for (const b of G.buildings) {
       const isl = byId.get(b.island); if (!isl) continue;
       const f = footprint(content, b.type);
       const x0 = isl.ox + b.u, y0 = isl.oy + b.v;
       const hit = boxHit(ray, x0, x0 + f.w, y0, y0 + f.d, isl.alt, isl.alt + f.h);
-      if (hit != null && hit <= res.depth + 1e-6) {
-        Object.assign(res, { island: isl, building: b, depth: hit, u: b.u, v: b.v, fu: b.u + f.w / 2, fv: b.v + f.d / 2, cell: cellAt(isl, b.u, b.v) });
-      }
+      if (hit != null) hits.push({ b, isl, f, hit });
     }
-    if (res.island && res.u != null && !res.building) res.building = buildingOnCell(G, content, res.island.id, res.u, res.v);
+    hits.sort((a, c) => a.hit - c.hit);
+    for (const h of hits) {
+      if (h.hit > res.depth + 1e-6) break;
+      const { b, isl, f } = h;
+      Object.assign(res, { island: isl, building: b, depth: h.hit, u: b.u, v: b.v, fu: b.u + f.w / 2, fv: b.v + f.d / 2, cell: cellAt(isl, b.u, b.v) });
+      break;
+    }
+    const groundB = gIsl ? buildingOnCell(G, content, gIsl.id, gu, gv) : null;
+    if (res.island && res.u != null && !res.building) res.building = groundB;
+    // every building the pointer could mean, front to back (sprites in sight, then the ground cell's owner)
+    res.ground = groundB;
+    res.candidates = [];
+    for (const h of hits) if (h.hit <= Math.max(gDepth, res.depth) + 1e-6 && !res.candidates.includes(h.b)) res.candidates.push(h.b);
+    if (groundB && !res.candidates.includes(groundB)) res.candidates.push(groundB);
   }
   if (!res.island && !res.pirate && !res.ship) return null;
   return res;
 }
+
+// A building that needs the player (ruined, damaged or burning).
+export const needsCare = (b) => !!b && (b.state === 'ruin' || b.fire > 0 || (b.maxHp && b.hp < b.maxHp - 1e-6) || b.state === 'broken');
 
 // Camera bounds (world tiles) of the islands in view, padded.
 export function viewBounds(G, pad = IC().clampPad ?? 8) {

@@ -23,14 +23,14 @@
 //   'ui:denied' {reason, action}, 'ui:placement' {pending, valid, reason},
 //   'ui:ship' {id}, 'ui:island' {id}, 'ui:focus' {id}, 'ui:key' {key}.
 import { CFG } from '../config.js';
-import { pickAt, footprint, originFor, viewIslands } from './pick.js';
+import { pickAt, footprint, originFor, viewIslands, needsCare } from './pick.js';
 import { panBy, zoomAbout, clampCam, easeCam, glideTo } from './camctl.js';
 
 const WORLD_SCENES = new Set(['colony', 'build']);
 const PANEL_SCENES = new Set(['research', 'chart', 'fleet', 'build']);
 const DEF = {
   dragMouse: 5, dragTouch: 10, tapMs: 650, inertiaDecay: 4.5, inertiaMin: 20,
-  keyPan: 720, keyZoom: 1.25, wheel: 0.0016, edge: 14, edgeSpeed: 640,
+  keyPan: 720, keyZoom: 1.25, wheel: 0.0016, edge: 14, edgeSpeed: 640, minZoom: 0.35, maxZoom: 2.4,
   repeat: ['cottage', 'well', 'rod', 'farm', 'lumber', 'quarry', 'harpoon'],
 };
 const IC = () => ({ ...DEF, ...(CFG.input || {}) });
@@ -108,7 +108,7 @@ export function createInput(canvas, app) {
     }
     const p = pick(mouse.x, mouse.y);
     if (!p) return m.link ? { island: null, u: null, v: null, valid: false, reason: m.link.a ? 'Pick a second island' : 'Pick an island', building: null, pirate: null, ship: null, link: { kind: m.link.kind, a: m.link.a || null, b: null } } : null;
-    const out = { island: p.island?.id || null, u: p.u, v: p.v, valid: true, reason: null, building: p.building?.id ?? null, pirate: p.pirate?.id ?? null, ship: p.ship?.id ?? null, link: null };
+    const out = { island: p.island?.id || null, u: p.u, v: p.v, valid: true, reason: null, building: (needsCare(p.ground) ? p.ground : p.building)?.id ?? null, pirate: p.pirate?.id ?? null, ship: p.ship?.id ?? null, link: null };
     if (m.link) {
       const a = m.link.a || null, b = a ? out.island : null;
       const r = a ? linkCheck(m.link.kind, a, b) : { ok: !!out.island };
@@ -158,6 +158,22 @@ export function createInput(canvas, app) {
     app.ev.emit('select', { id });
   }
 
+  // Overlapping buildings: the first click takes the ground cell's owner when it
+  // needs care (ruined, damaged, burning), else the sprite in front; clicking the
+  // same spot again cycles through every candidate under the pointer.
+  let lastPick = null;
+  function chooseBuilding(p, x, y) {
+    const list = (p?.candidates || (p?.building ? [p.building] : [])).slice();
+    if (!list.length) return null;
+    const g = p.ground;
+    if (g && needsCare(g) && list[0] !== g) { list.splice(list.indexOf(g), 1); list.unshift(g); }
+    const again = lastPick && Math.hypot(x - lastPick.x, y - lastPick.y) < 12 && app.mode.select != null;
+    let i = 0;
+    if (again) { const k = list.findIndex((b) => b.id === app.mode.select); if (k >= 0) i = (k + 1) % list.length; }
+    lastPick = { x, y };
+    return list[i];
+  }
+
   function tap(x, y, type, shift) {
     if (!world()) return;
     const m = app.mode;
@@ -190,7 +206,9 @@ export function createInput(canvas, app) {
       return;
     }
     if (p?.ship) { app.ev.emit('ui:ship', { id: p.ship.id }); return; }
-    if (p?.building) { select(p.building.id); return; }
+    const b = chooseBuilding(p, x, y);
+    if (b) { select(b.id); return; }
+    lastPick = null;
     select(null);
     if (p?.island) app.ev.emit('ui:island', { id: p.island.id });
   }
@@ -430,6 +448,9 @@ export function createInput(canvas, app) {
         if (Math.hypot(inertia[0], inertia[1]) < IC().inertiaMin) inertia = null;
       }
     }
+    // zoom limits come from config only, the same for new and loaded games
+    cam.minZoom = IC().minZoom; cam.maxZoom = IC().maxZoom;
+    if (cam.zoom < cam.minZoom || cam.zoom > cam.maxZoom) cam.zoom = Math.min(cam.maxZoom, Math.max(cam.minZoom, cam.zoom));
     easeCam(cam, dt);
     if (gesture === 'none' && cam.tx == null) clampCam(cam, g, dt);
     app.hover = computeHover();
