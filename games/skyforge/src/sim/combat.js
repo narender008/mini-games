@@ -168,8 +168,15 @@ export function damageBuilding(G, b, dmg, by = 'raid') {
   if (!b || b.state !== 'built' || dmg <= 0) return;
   ensureHp(b);
   const floor = floorHp(G, b);
+  const was = b.hp / b.maxHp;
   b.hp = Math.max(floor, b.hp - dmg);
   G.bus.emit('build:damaged', { b, by });
+  // Below this the building stops working until repaired; say so once, so a
+  // battered Skyforge (or any maker) doesn't just sit idle without a reason.
+  const at = CFG.economy?.damagedAt ?? 0.3;
+  if (was >= at && b.hp / b.maxHp < at && b.hp > 0) {
+    notify(G, bname(b) + ' is badly damaged and has stopped. Repair it from the inspector.', 'bad', 'repair', { island: b.island, u: b.u, v: b.v });
+  }
   if (b.hp <= 0) ruin(G, b, by);
 }
 
