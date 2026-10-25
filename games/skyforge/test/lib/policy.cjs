@@ -21,8 +21,10 @@ function tick(sf, mem, c) {
   if (!mem.init) {
     mem.init = true; mem.seen = {}; mem.fail = {};
   }
-  // the Skyforge's five stage bills (content() does not list them; src/content/goals.js SKYFORGE_STAGES)
-  const STAGES = [{ stone: 200, planks: 120, iron: 60 }, { iron: 120, parts: 60, coal: 80 }, { skystone: 80, iron: 100, parts: 60 }, { aether: 50, skystone: 60, parts: 80 }, { aether: 80, parts: 100, iron: 100 }];
+  // the Skyforge's five stage bills, from content().goal.stages (fallback: the
+  // bills as of src/content/goals.js SKYFORGE_STAGES when content() lacks them)
+  const STAGES = (c.goal && Array.isArray(c.goal.stages) && c.goal.stages.length ? c.goal.stages.map((st) => st.cost || st) : null)
+    || [{ stone: 200, planks: 120, iron: 60 }, { iron: 120, parts: 60, coal: 80 }, { skystone: 80, iron: 100, parts: 60 }, { aether: 50, skystone: 60, parts: 80 }, { aether: 80, parts: 100, iron: 100 }];
   const B = Object.fromEntries(c.buildings.map((b) => [b.id, b]));
   const R = Object.fromEntries(c.research.map((r) => [r.id, r]));
   const I = Object.fromEntries(c.islands.map((i) => [i.id, i]));
