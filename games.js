@@ -68,11 +68,11 @@ window.MINI_GAMES = [
   {
     slug: 'magic-brush',
     name: 'Magic Brush',
-    description: 'Paint a friend on a real canvas and watch it come alive in your colours, leap off the easel and run off to play in a golden-hour garden: cuddles, bubbles, a ball and more.',
+    description: 'Pick a friend, colour it in with big pots of paint, wave the magic wand and watch it peel off the page in your colours and hop into a sunny meadow to play. Every friend you paint is kept in a sticker book.',
     path: 'games/magic-brush/',
     image: 'games/magic-brush/cover.jpg',
-    imageAlt: 'A baby dragon in a child\'s rainbow paint climbing out of a canvas on an easel in a garden art studio at golden hour',
-    tags: ['3D', 'Ages 2+', 'Touch friendly'],
+    imageAlt: 'A storybook cover: a paintbrush painting a rainbow over a meadow while a child-painted dragon, unicorn, bunny and puppy look on',
+    tags: ['2D', 'Ages 2+', 'Touch friendly'],
   },
   {
     slug: 'toy-tanks',
