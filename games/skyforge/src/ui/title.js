@@ -58,7 +58,7 @@ export function createTitle(ctx) {
 
   function selectProfile(i) {
     app.profile = i;
-    try { app.saver?.setLast?.(i); } catch (e) { /* optional */ }
+    try { (app.saver?.setLast || app.saver?.setLastProfile)?.call(app.saver, i); } catch (e) { /* optional */ }
     refresh();
   }
   function doContinue() {

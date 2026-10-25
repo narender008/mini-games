@@ -121,6 +121,8 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 // big events save right away
 for (const ev of ['island:claimed', 'research:done', 'chapter', 'won']) app.bus.on(ev, () => setTimeout(() => app.save(ev), 0));
 
+app.bus.on('won', () => setTimeout(() => app.setScene('won'), 0));
+
 // ---- debug hook -------------------------------------------------------------
 function state() {
   const G = app.G;
