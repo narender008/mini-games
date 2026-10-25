@@ -108,6 +108,11 @@ test('nobody falls through a floor, in any room', async () => {
       if (G.tileAt(r, tx, ty) !== '#' || !G.isOpen(G.tileAt(r, tx, ty - 1)) || !G.isOpen(G.tileAt(r, tx, ty - 2))) continue;
       let top = ty - 1;
       while (top > 1 && ty - top < 10 && G.isOpen(G.tileAt(r, tx, top - 1))) top--;
+      // skip columns a moving platform passes through
+      if ((r.platforms || []).some((pl) => {
+        const xs = [pl.x, ...(pl.path || []).map((q) => q.x)], ys = [pl.y, ...(pl.path || []).map((q) => q.y)];
+        return tx * W.tile + W.tile > Math.min(...xs) && tx * W.tile < Math.max(...xs) + pl.w && ty * W.tile > Math.min(...ys) && top * W.tile < Math.max(...ys) + pl.h;
+      })) continue;
       cols.push({ tx, ty, top });
     }
     const pick = cols.filter((_, i) => i % Math.max(1, Math.floor(cols.length / 8)) === 0).slice(0, 8);
