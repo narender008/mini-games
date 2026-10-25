@@ -205,6 +205,7 @@ test('touch on a phone: tap the palette and the island to place, drag pans, pinc
 });
 
 test('the HUD fits a phone in portrait and landscape with nothing off screen', async () => {
+  const bad = [];
   for (const [w, h] of [[390, 844], [844, 390]]) {
     const { page } = await colony('touch', { width: w, height: h, touch: true, mobile: true });
     const off = await page.evaluate(([W, H]) => [...document.querySelectorAll('button, [data-build], [data-speed]')].filter((el) => {
@@ -214,17 +215,22 @@ test('the HUD fits a phone in portrait and landscape with nothing off screen', a
       for (let a = el.parentElement; a; a = a.parentElement) { const o = getComputedStyle(a); if (/(auto|scroll)/.test(o.overflowX + o.overflowY) && (a.scrollWidth > a.clientWidth || a.scrollHeight > a.clientHeight)) return false; }
       // wholly off screen is a panel slid away; cut by an edge is the fault
       const onScreen = r.right > 0 && r.bottom > 0 && r.left < W && r.top < H;
-      return onScreen && (r.right > W + 1 || r.bottom > H + 1 || r.left < -1 || r.top < -1);
+      if (!onScreen || !(r.right > W + 1 || r.bottom > H + 1 || r.left < -1 || r.top < -1)) return false;
+      // and really shown there: the middle of its visible part hits it
+      const x = (Math.max(0, r.left) + Math.min(W, r.right)) / 2, y = (Math.max(0, r.top) + Math.min(H, r.bottom)) / 2;
+      const hit = document.elementFromPoint(x, y);
+      return !!hit && el.contains(hit);
     }).map((el) => el.id || el.outerHTML.slice(0, 90)), [w, h]);
-    assert.deepEqual(off, [], `${w}x${h}: controls off screen`);
-    const scroll = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
-    assert.ok(!scroll, `${w}x${h}: page scrolls sideways`);
+    if (off.length) bad.push(`${w}x${h}: cut by the screen edge: ${off.join(' | ')}`);
+    if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)) bad.push(`${w}x${h}: page scrolls sideways`);
     clean(page);
     await B.close(page);
   }
+  assert.deepEqual(bad, [], 'the HUD does not fit the phone');
 });
 
 test('tutorial hints never cover the HUD buttons, on a desktop or a phone', async () => {
+  const bad = [];
   for (const [w, h, touch] of [[1280, 720, false], [844, 390, true], [390, 844, true]]) {
     const { page, sf } = await colony(touch ? 'touch' : '', { width: w, height: h, touch, mobile: touch }, { hints: true });
     const hits = [];
@@ -244,8 +250,9 @@ test('tutorial hints never cover the HUD buttons, on a desktop or a phone', asyn
       // finish the current goal step the cheap way: let a minute of the colony pass
       await sf('step', 60000, { render: true });
     }
-    assert.deepEqual(hits, [], `${w}x${h}: the tutorial card covers HUD buttons`);
+    if (hits.length) bad.push(`${w}x${h}: ${hits.join('; ')}`);
     clean(page);
     await B.close(page);
   }
+  assert.deepEqual(bad, [], 'the tutorial card covers HUD buttons');
 });

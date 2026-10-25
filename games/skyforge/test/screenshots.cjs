@@ -20,12 +20,15 @@ const colony = (preset, extra = async () => {}) => async (p, sf) => {
   await G.waitScene(sf, 'colony', 10000);
   await extra(p, sf);
   await sleep(1500);
+  // the new-game chapter banner covers the middle for a few seconds
+  await p.waitForFunction(() => !document.querySelector('#chapter-banner.on'), null, { polling: 200, timeout: 20000 }).catch(() => {});
 };
 const screen = (preset, name) => colony(preset, async (p, sf) => { await sf('open', name); await G.waitScene(sf, name === 'build' ? ['build', 'colony'] : name, 4000); });
 
 const SHOTS = [
   ['01-title', '', async () => {}],
-  ['02-profiles', 'debug', async (p, sf) => { if (await G.waitVisible(p, [G.SEL.profile(0)], 1500)) return; await G.clickOr(p, [G.SEL.new, G.SEL.continue]); await G.waitScene(sf, 'profiles', 4000); }],
+  ['02-profiles', 'debug', async (p, sf) => { await G.clickOr(p, [G.SEL.profiles], null, 3000); await G.waitScene(sf, 'profiles', 4000); await sleep(400); }],
+  ['02b-new-colony', 'debug', async (p, sf) => { await G.clickOr(p, [G.SEL.new], null, 3000); await G.waitVisible(p, [G.SEL.start], 3000); await sleep(400); }],
   ['03-first-landing', 'debug', colony('fresh')],
   ['04-early-colony', 'debug', colony('early')],
   ['05-mid-colony', 'debug', colony('mid')],
@@ -33,7 +36,7 @@ const SHOTS = [
   ['07-dusk', 'debug', colony('mid', async (p, sf) => { await sf('time', 0.74); })],
   ['08-night', 'debug', colony('late', async (p, sf) => { await sf('time', 0.95); })],
   ['09-storm', 'debug', colony('storm', async (p, sf) => { await sf('weather', 'storm', 1); await sleep(1500); })],
-  ['10-raid', 'debug', colony('raid', async (p, sf) => { await sf('freeze'); await sf('raid', 2); await G.stepUntil(p, 's => s.threat.raid && s.threat.raid.active', { ms: 120000, chunk: 500 }); await sf('step', 8000, { render: true }); await sf('thaw'); })],
+  ['10-raid', 'debug', colony('raid', async (p, sf) => { await sf('freeze'); await sf('raid', 2); await G.stepUntil(p, 's => s.threat.raid && s.threat.raid.active', { ms: 120000, chunk: 500 }); await G.stepUntil(p, '() => (window.__sf.game.pirates || []).length > 0 && window.__sf.game.raid && window.__sf.game.raid.phase === "attack"', { ms: 120000, chunk: 500 }); await sf('step', 6000, { render: true }); await sf('thaw'); })],
   ['11-build-palette', 'debug', screen('mid', 'build')],
   ['12-placing', 'debug', colony('mid', async (p, sf) => { const s = await sf('state'); await sf('open', 'build'); const item = await G.waitVisible(p, [G.SEL.buildItem('cottage'), G.SEL.buildItem()], 3000); if (item) await item.click(); const home = G.homeIsland(s); const type = item ? await item.getAttribute('data-build') : 'cottage'; const sp = await G.spot(sf, type, home); if (sp) { const xy = await sf('toScreen', home, sp.x, sp.y); await p.mouse.move(xy.x, xy.y); } })],
   ['13-inspector', 'debug', colony('mid', async (p, sf) => { const s = await sf('state'); const b = s.buildings.find((x) => /smelter|workshop|sawmill/.test(x.type)) || s.buildings[0]; await sf('select', b.id); await G.waitVisible(p, [G.SEL.inspector], 3000); })],

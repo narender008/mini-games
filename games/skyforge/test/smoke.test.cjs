@@ -211,6 +211,8 @@ test('every preset colony loads, draws and runs a game day without errors', asyn
     assert.ok(s1.day > s0.day || s1.time - s0.time >= 299, `preset ${preset}: a day did not pass`);
     if (preset !== 'fresh') assert.ok(s1.buildings.length > s0.buildings.length * 0.5 && s0.buildings.length > 3, `preset ${preset} has only ${s0.buildings.length} buildings`);
     await sf('step', 50, { render: true });
+    const banner = await page.evaluate(() => { const b = document.querySelector('#chapter-banner.on'); return b ? b.querySelector('.label')?.textContent : null; });
+    if (banner) assert.equal(banner, `Chapter ${s1.chapter}`, `preset ${preset} (chapter ${s1.chapter}) shows the banner for ${banner}`);
     const st = await B.frameStats(page);
     assert.ok(st.std > 8 && st.colours > 60, `preset ${preset} draws a blank frame: ${JSON.stringify(st)}`);
   }
