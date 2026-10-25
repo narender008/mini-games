@@ -13,6 +13,7 @@
 // Bus: weather:forecast {f}, weather:change {kind, power}, storm:start / storm:end {power},
 //      lightning {x, y, z, x0, y0, target, rod, shield, pirate, dmg}.
 import { CFG } from '../config.js';
+import * as research from './research.js';
 import { WEATHER } from '../content/weather.js';
 import { bonus, built, bpos, height, damageBuilding, ignite, report, closeReport, notify, hitPirate, islandById, shieldCovers, bname } from './combat.js';
 
@@ -103,7 +104,16 @@ function enter(G, kind, power, dur) {
     G.threat.storms = (G.threat.storms || 0) + 1;
     G.goals.flags = G.goals.flags || {};
     G.bus.emit('storm:start', { power });
-    notify(G, 'A thunderstorm breaks over the islands' + (w.gale ? ': gale-force winds, cable cars halted.' : '.'), 'warn', 'storm');
+    w.harmful = false;
+    if (!G.threat.stormWarned && rodsKnown(G)) {
+      G.threat.stormWarned = true; w.harmful = true;
+      notify(G, 'Storm season: lightning now seeks your tallest buildings and can start fires. Research Lightning Rods and raise them near windmills and towers; keep wells close by.', 'warn', 'storm');
+    } else if (!G.threat.stormWarned) {
+      notify(G, 'A summer storm: wind and rain sweep the islands' + (w.gale ? ', cable cars halted' : '') + '. The lightning stays out over open sky.', 'info', 'storm');
+    } else {
+      w.harmful = true;
+      notify(G, 'A thunderstorm breaks over the islands' + (w.gale ? ': gale-force winds, cable cars halted.' : '.'), 'warn', 'storm');
+    }
   }
 }
 
@@ -112,6 +122,7 @@ function endStorm(G) {
   G.goals.flags = G.goals.flags || {};
   G.goals.flags.stormSurvived = (G.goals.flags.stormSurvived || 0) + 1;
   G.bus.emit('storm:end', { power: w.power });
+  if (w.harmful) { G.threat.harmStorms = (G.threat.harmStorms || 0) + 1; w.harmful = false; }
   if (!G.raid) closeReport(G, 'Storm passed', 'passed');
   w.gale = false;
   notify(G, 'The storm has passed.', 'good', 'sun');
@@ -151,6 +162,21 @@ function scheduleStorm(G, inS, power) {
   if (w.until > at && w.kind !== 'storm') w.until = at;
 }
 
+// ---- how much harm lightning may do ------------------------------------------------------
+// Before Lightning Rods can even be researched, storms are rain and wind: bolts
+// stay over open ground. Once rods are researchable the player is warned at the
+// next storm (that storm strikes softly, few fires); full harm from then on.
+// Lightning never ruins a building until rods are researched.
+function rodsKnown(G) {
+  if (G.research.done.includes('rods')) return true;
+  try { return (research.available?.(G) || []).includes('rods') || G.research.current === 'rods' || (G.research.queue || []).includes('rods'); } catch (e) { return false; }
+}
+function harm(G) {
+  const T = G.threat || {};
+  if (!T.stormWarned) return 0;
+  return (T.harmStorms || 0) >= 1 || built(G, 'rod').length ? 1 : 0.5;
+}
+
 // ---- lightning ------------------------------------------------------------------------------
 function strike(G) {
   const w = G.weather;
@@ -167,8 +193,10 @@ function strike(G) {
     report(G, 'zap', 'Lightning struck the raiders', 1, null, 'good').value = 'zap!';
     return;
   }
+  const H = harm(G);
   const cand = [];
   for (const b of G.buildings) {
+    if (!H) break;
     if (b.state !== 'built') continue;
     const i = islandById(G, b.island); if (!i || !i.owned) continue;
     const h = height(b.type);
@@ -208,10 +236,11 @@ function strike(G) {
   }
   const dmg = (c.strikeDmg[0] + (c.strikeDmg[1] - c.strikeDmg[0]) * P) * (1 - bonus(G, 'stormDamage'));
   G.bus.emit('lightning', { x: p.x, y: p.y, z: p.top, x0, y0, target: b.id, rod: null, shield: false, dmg });
-  damageBuilding(G, b, dmg, 'lightning');
+  const rodsDone = G.research.done.includes('rods');
+  damageBuilding(G, b, rodsDone ? dmg * H : Math.max(0, Math.min(dmg * H, (b.hp ?? dmg) - 1)), 'lightning');
   report(G, 'strike:' + b.id, 'Lightning struck the ' + bname(b).toLowerCase(), 0, null, 'bad', '−' + Math.round(dmg) + ' hp');
   const fc = (c.strikeFire[0] + (c.strikeFire[1] - c.strikeFire[0]) * P) * (diff(G).ruin ? 1 : 0.5);
-  if (b.state === 'built' && rng() < fc) ignite(G, b, 0.3, 'lightning');
+  if (b.state === 'built' && rng() < fc * (H < 1 ? 0.3 : rodsDone ? 1 : 0.6)) ignite(G, b, 0.3, 'lightning');
 }
 
 // ---- module api -------------------------------------------------------------------------------

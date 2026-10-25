@@ -58,7 +58,9 @@ export function colonyValue(G) {
 }
 
 // ---------- scheduling ----------------------------------------------------------------
-function raidsOver(G) { return !!G.goals?.flags?.roostTaken; }
+// No more scheduled raids once Corsair Roost is taken, the Dreadnought has
+// fallen or the Skyforge is lit ("The islands are safe"). Debug raids still work.
+function raidsOver(G) { const f = G.goals?.flags || {}; return !!(f.roostTaken || f.dreadnoughtDown || G.goals?.won || G.threat?.finalDone); }
 
 function schedule(G, first = false) {
   const r = G.rng.events;
@@ -122,6 +124,7 @@ export function startRaid(G, strength = 1, { now = false, final = false, fleet =
     ships: [], fleet: kinds, counts, loot: {}, report: [], final: !!final, downed: 0, escaped: 0,
   };
   G.threat.raids = (G.threat.raids || 0) + 1;
+  G.raid.forced = !fleet && !final;   // debug / preset raids are never called off
   if (!final) schedule(G);
   G.bus.emit('raid:warn', { raid: G.raid });
   const what = Object.entries(counts).map(([k, n]) => n + ' ' + (pdef(k)?.name || k).toLowerCase() + (n > 1 ? 's' : '')).join(', ');
@@ -550,6 +553,9 @@ export function step(G, dt) {
       }
       if (G.t >= T.nextRaidAt) startRaid(G, autoStrength(G), { fleet: compose(G, autoStrength(G), false) });
     } else if (raidsOver(G)) T.nextRaidAt = null;
+  } else if (raidsOver(G) && !G.raid.final && G.raid.phase === 'warn' && !G.raid.forced) {
+    G.raid = null;
+    notify(G, 'The pirate sails turn away: the Crimson Gale is broken.', 'good', 'skull');
   }
   T.raidChapter = ch;
   G.tmp.raidEta = raidEta(G);

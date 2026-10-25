@@ -48,6 +48,8 @@ export const CFG = {
     builderShare: 0.35,        // up to this share of settlers go to construction first
     damagedAt: 0.3,            // hp fraction below which a building stops (stall 'damaged')
     demolishRefund: 0.5,
+    traders: 3,                // coin per base price for goods nobody in the colony can make (anti-deadlock)
+    patchHeal: 0.4,            // free emergency repairs heal at this share of the paid rate
     repair: { ruin: 0.5, damage: 0.15, heal: 9 },   // cost share of build cost; hp/s per full crew
     lumberForest: [6, 0.8, 1.25],  // forest cells for 100%, min and max multiplier
     gainEvery: 6,              // s between res:gain labels per building
@@ -153,13 +155,13 @@ export const CFG = {
       lostCrewPop: 0,
     },
     trade: {
-      quickSell: 0.6,        // fraction of the best port price at the town hall
+      quickSell: 0.5,        // fraction of the best port price at the town hall
       buyMarkup: 1.0,        // multiplier on the port's sells price when you buy
       saturation: 0.004,     // price multiplier lost per unit sold to a port
       recover: 0.12,         // fraction of the gap back to base per game minute
       drift: 0.04,           // daily random walk of each port price
       floor: 0.45, ceil: 1.9,
-      stockMax: 160, stockPerMin: 4,
+      stockMax: 400, stockPerMin: 20,   // what a port keeps of each good it sells, and its restock
       repPerSale: 0.012,     // reputation per coin earned at a port
       repTiers: [0, 25, 60, 90],   // standing tiers; price bonus per tier below
       repBonus: 0.05,
@@ -167,7 +169,7 @@ export const CFG = {
       contractDays: [3, 6],  // days to deliver
       contractMax: 2,        // offers + active per port
       contractRep: 12, contractFailRep: -8,
-      contractPremium: 1.6,  // reward vs plain sale value
+      contractPremium: 1.35, // reward vs plain sale value
     },
     chart: {
       scoutTime: 20,         // seconds on site to scout
@@ -190,6 +192,7 @@ export const CFG = {
       finalRetry: 1,         // days before the Dreadnought returns if it escapes
       forgeMinRate: 0.25,    // stage work rate with no staff
       hintEvery: 1,          // seconds between goal checks
+      minDwell: 45,          // a chapter lasts at least this long (s), so its banner and steps are seen
     },
   },
   // SAVE section
@@ -215,6 +218,7 @@ export const CFG = {
     tapMs: 650,                        // a touch held longer is not a tap
     inertiaDecay: 4.5, inertiaMin: 20, // flick glide: 1/s decay, px/s cutoff
     keyPan: 720, keyZoom: 1.25,        // px/s for WASD / arrows, factor per + / -
+    minZoom: 0.35, maxZoom: 2.4,       // camera zoom limits (applied every frame, new and loaded games alike)
     wheel: 0.0016,                     // zoom per wheel pixel (exp)
     edge: 14, edgeSpeed: 640,          // edge pan (settings.edgePan): margin px, px/s
     clampPad: 8,                       // tiles of sky allowed beyond the islands
