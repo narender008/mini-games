@@ -381,7 +381,8 @@ export function startRun(G, opts = {}) {
   G.run.kind = G.run.plan[region][chamber];
   // hero for the run
   clearArena(G);
-  G.offer = null; G.dialogue = null;
+  // hub conversations still waiting (a debug jump, or Iri still re-weaving) stay in the hub, not in the run
+  G.offer = null; G.dialogue = null; G.storyQueue = null;
   if (G.hero) G.hero.weapon = weapon;
   recomputeStats(G);
   applyMetaToRun(G);
