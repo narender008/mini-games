@@ -13,22 +13,20 @@ async function talkAround(page, lw, npcs) {
     let s = await lw('state');
     if (s.scene !== 'hub') { await G.stepUntil(page, 's => { if (s.scene === "dialogue") window.__lw.skip(); return s.scene === "hub"; }', { ms: 20000, chunk: 100 }); }
     try { await lw('talk', id); } catch { continue; }
+    // the conversation may open on the next tick (or after a short walk)
+    s = (await G.stepUntil(page, 's => s.scene === "dialogue"', { ms: 3000, chunk: 50 })).s;
     for (let i = 0; i < 40; i++) {
-      s = (await G.stepUntil(page, 's => true', { ms: 50, chunk: 50 })).s;
       if (s.dialogue && s.dialogue.lineId && !heard.includes(s.dialogue.lineId)) heard.push(s.dialogue.lineId);
       if (s.scene !== 'dialogue') break;
       await lw('advance');
+      s = (await G.stepUntil(page, 's => true', { ms: 0 })).s;
     }
     await lw('skip').catch(() => {});
   }
   return heard;
 }
 
-async function backToHub(page, lw) {
-  const r = await G.stepUntil(page, 's => { if (s.scene === "dialogue") window.__lw.advance(); if (["dead","victory","ending"].includes(s.scene)) { const b = document.querySelector("#btn-return"); if (b) b.click(); } return s.scene === "hub"; }', { ms: 60000, chunk: 100 });
-  assert.ok(r.ok, `did not get back to the hub (scene '${r.s.scene}')`);
-  return r.s;
-}
+const backToHub = (page, lw) => G.toHub(page, lw, { lines: 'advance' });
 
 test('dialogue is data: unique ids, every speaker known, a few hundred lines', async () => {
   const { page, lw } = await env.debug();
@@ -79,12 +77,17 @@ test('the story moves on run by run: new hub lines, Sable after the first death,
     const r = await G.stepUntil(page, `s => s.boss && s.boss.id === ${JSON.stringify(id)}`, { ms: 10000, chunk: 100 });
     assert.ok(r.ok, `boss ${id} did not start`);
     await lw('god', true);
-    for (let k = 0; k < 3; k++) { // Sable has two phases
+    for (let k = 0; k < 4; k++) { // Sable has two phases; bossKill may end one at a time
       const now = await lw('state');
-      if (!now.boss) break;
-      await lw('bossKill');
-      await G.stepUntil(page, 's => !s.boss || s.scene !== "run"', { ms: 15000, chunk: 100 });
+      if (!now.boss || G.END_SCENES.includes(now.scene)) break;
+      if (now.scene === 'run') await lw('bossKill');
+      // advance the boss's lines (they are what this test is after) until the fight is over or the next phase is up
+      await G.stepUntil(page, 's => { if (s.scene === "dialogue") window.__lw.advance(); return !s.boss || (s.scene === "run" && s.boss.hp > 0 && s.boss.hp === s.boss.maxHp) || ["dead","victory","ending","hub"].includes(s.scene); }', { ms: 15000, chunk: 100 });
     }
+    // a regional boss leaves the run going on to the next region: hear its
+    // lines out, then leave the run for the hub (Sable's ends it by itself)
+    s = (await G.stepUntil(page, 's => { if (s.scene === "dialogue") window.__lw.advance(); return s.scene !== "dialogue"; }', { ms: 15000, chunk: 100 })).s;
+    if (!G.END_SCENES.includes(s.scene) && s.scene !== 'hub') await lw('hub');
     s = await backToHub(page, lw);
     const after = new Set(s.story.seen);
     const newLines = [...after].filter((x) => !seenBefore.has(x));
@@ -108,7 +111,7 @@ test('story progress is saved and comes back after a reload', async () => {
   const s = await backToHub(page, lw);
   await lw('save.now');
   const ctx = page.context();
-  await page.close({ runBeforeUnload: true });
+  await G.closeTab(page);
   const { page: p, lw: l } = await env.reopen(ctx);
   await G.titleToHub(p, l, 0);
   const s2 = await l('state');

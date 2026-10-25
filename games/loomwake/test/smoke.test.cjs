@@ -34,7 +34,7 @@ test('title renders a detailed, moving frame and has its buttons', async () => {
 
 test('title, profile and hub by real clicks, then the Dreamdoor starts a run', async () => {
   const { page, lw } = await env.debug();
-  assert.equal((await lw('state')).scene, 'title');
+  await G.waitScene(lw, 'title', 5000);
   const hub = await G.titleToHub(page, lw, 0);
   assert.equal(hub.profile, 0);
   const st = await B.frameStats(page);
@@ -62,7 +62,7 @@ test('a chamber clears, offers boon cards, a card is taken by a click, doors ope
   if (!r.s.offer) r = await G.stepUntil(page, 's => s.offer && s.offer.length', { ms: 8000 });
   assert.ok(r.s.offer && r.s.offer.length >= 2, `no boon cards after the first chamber (scene '${r.s.scene}')`);
   await lw('thaw');
-  await sleep(300);
+  await G.waitVisible(page, [G.SEL.boon]);
   const cards = page.locator(G.SEL.boon).filter({ visible: true });
   assert.ok(await cards.count() >= 2, 'boon cards are not on screen as clickable elements');
   const id = await cards.first().getAttribute('data-boon');
@@ -86,14 +86,15 @@ test('pause holds the sim and resume carries on', async () => {
   await lw('thaw');
   await page.keyboard.press(G.KEYS.pause);
   let s = await G.waitScene(lw, 'paused', 3000);
-  const t = s.time;
+  // runTime is the run's own clock (time is wall-ish sim time since boot)
+  const t = s.runTime;
   await sleep(600);
-  assert.ok(Math.abs((await lw('state')).time - t) < 1e-6, 'sim clock runs while paused');
-  assert.ok(await G.firstVisible(page, [G.SEL.resume]), 'no Resume button in the pause menu');
+  assert.ok(Math.abs((await lw('state')).runTime - t) < 1e-6, 'run clock runs while paused');
+  assert.ok(await G.waitVisible(page, [G.SEL.resume]), 'no Resume button in the pause menu');
   await G.clickOr(page, [G.SEL.resume], G.KEYS.pause);
   s = await G.waitScene(lw, G.RUN_SCENES, 3000);
   await sleep(400);
-  assert.ok((await lw('state')).time > t, 'sim does not run after resume');
+  assert.ok((await lw('state')).runTime > t, 'run clock does not run after resume');
   clean(page);
   await B.close(page);
 });
@@ -122,15 +123,23 @@ test('each region boss fight loads, and beating Sable gives victory and the endi
   for (const id of bosses) {
     await lw('freeze');
     await lw('boss', id);
-    const r = await G.stepUntil(page, `s => s.boss && s.boss.id === ${JSON.stringify(id)} && s.scene === 'run'`, { ms: 10000, chunk: 100 });
+    const r = await G.stepUntil(page, `s => s.boss && s.boss.id === ${JSON.stringify(id)} && s.scene === 'run'`, { ms: 10000, chunk: 100, skipDialogue: true });
     assert.ok(r.ok, `boss fight ${id} does not start (scene '${r.s.scene}', boss ${JSON.stringify(r.s.boss)})`);
     assert.ok(r.s.boss.hp > 0 && r.s.boss.maxHp > 0, `boss ${id} has no health bar`);
   }
-  // the last one is Sable: finish it through the normal path
+  // the last one is Sable: finish it through the normal path. bossKill() may
+  // end one phase at a time (Sable has two), and lines may play in between.
   await lw('god', true);
-  await lw('bossKill');
-  const r = await G.stepUntil(page, 's => ["victory","ending","dialogue"].includes(s.scene) || s.story.wins > 0', { ms: 30000 });
-  assert.ok(r.ok, `beating ${G.FINAL_BOSS} does not end the run (scene '${r.s.scene}')`);
+  const done = 's => ["victory","ending"].includes(s.scene) || s.story.wins > 0';
+  let r;
+  for (let k = 0; k < 4; k++) {
+    const now = await lw('state');
+    if (now.boss && now.scene === 'run') await lw('bossKill');
+    r = await G.stepUntil(page, `s => (${done})(s) || (s.boss && s.scene === 'run')`, { ms: 30000, skipDialogue: true });
+    if (!r.s.boss || r.s.scene !== 'run') break;
+  }
+  r = await G.stepUntil(page, done, { ms: 30000, skipDialogue: true });
+  assert.ok(r.ok, `beating ${G.FINAL_BOSS} does not end the run (scene '${r.s.scene}', boss ${JSON.stringify(r.s.boss)})`);
   clean(page);
   await B.close(page);
 });
@@ -161,9 +170,10 @@ test('every boon and braid can be applied and used in a fight without errors', a
       lw.input(null);
     });
     const s = await lw('state');
-    const missing = all.slice(i, i + batch).filter((id) => !s.boons.some((b) => b.id === id) && !(s.braids || []).includes(id));
-    // a slot boon can be swapped out by a later one in the same slot: only flag ids that never showed up
-    if (missing.length === batch) errors.push(`none of ${missing.join(', ')} is in the build after give()`);
+    const given = all.slice(i, i + batch);
+    const missing = given.filter((id) => !s.boons.some((b) => b.id === id) && !(s.braids || []).includes(id));
+    // a slot boon can be swapped out by a later one in the same slot: only flag a batch none of which stuck
+    if (missing.length === given.length) errors.push(`none of ${missing.join(', ')} is in the build after give()`);
   }
   assert.deepEqual(errors, []);
   clean(page);
@@ -179,7 +189,7 @@ test('every chamber template of every region loads and draws', async () => {
     for (let c = 0; c < n; c++) {
       await lw('freeze');
       await lw('play', { seed: 900 + c, region: reg.id, chamber: c });
-      const r = await G.stepUntil(page, `s => s.scene === 'run' && s.region === ${JSON.stringify(reg.id)}`, { ms: 8000, chunk: 100, render: true });
+      const r = await G.stepUntil(page, `s => s.scene === 'run' && s.region === ${JSON.stringify(reg.id)}`, { ms: 8000, chunk: 100, render: true, skipDialogue: true });
       assert.ok(r.ok, `${reg.id} chamber ${c} does not load (scene '${r.s.scene}')`);
     }
   }

@@ -7,6 +7,23 @@ const { suite, clean, assert, B, G } = require('./lib/suite.cjs');
 const env = suite();
 const { sleep } = G;
 
+// After clear(): the chamber's reward comes up (boon cards in most
+// chambers) and would swallow input. Take any card that shows, then wait for
+// the run scene with the doors open, so nothing interrupts the checks.
+async function settle(lw) {
+  const t0 = Date.now();
+  let s = await lw('state');
+  while (Date.now() - t0 < 4000) {
+    if (s.offer && s.offer.length) await lw('choose', 0);
+    else if (s.scene === 'dialogue') await lw('skip');
+    else if (s.scene === 'run' && s.cleared && (s.doors || []).some((d) => d.open)) break;
+    await sleep(100);
+    s = await lw('state');
+  }
+  await sleep(300);
+  return G.waitScene(lw, G.RUN_SCENES, 3000);
+}
+
 // A live (unfrozen) run, god mode, no foes so nothing interrupts.
 async function liveRun(extra = '', opts) {
   const { page, lw } = await env.debug(extra, opts);
@@ -14,7 +31,7 @@ async function liveRun(extra = '', opts) {
   await G.waitScene(lw, G.RUN_SCENES, 10000);
   await lw('god', true);
   await lw('clear');
-  await sleep(500);
+  await settle(lw);
   return { page, lw };
 }
 
@@ -101,16 +118,18 @@ test('touch: the floating stick moves the hero and the buttons attack and dash o
   const s0 = await lw('state');
   const x0 = 160, y0 = 260;
   const tp = (x, y) => [{ x, y, id: 1, radiusX: 5, radiusY: 5, force: 1 }];
+  // a thumb press lasts about 100 ms; Playwright's tap() is instant
+  const press = async (el) => { const b = await el.boundingBox(); const x = b.x + b.width / 2, y = b.y + b.height / 2; await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 2, radiusX: 5, radiusY: 5, force: 1 }] }); await sleep(110); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); };
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: tp(x0, y0) });
   for (let i = 1; i <= 6; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: tp(x0 + i * 10, y0) }); await sleep(16); }
   await sleep(500);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   const s1 = await lw('state');
   assert.ok(s1.hero.x - s0.hero.x > 30, `touch stick moved the hero ${(s1.hero.x - s0.hero.x).toFixed(1)} (stick element: ${!!stick})`);
-  await atk.tap();
+  await press(atk);
   assert.ok((await watch(lw, (s) => /attack|swing|combo|strike/i.test(String(s.hero.state)))).ok, 'touch attack button did nothing');
   await sleep(400);
-  await dsh.tap();
+  await press(dsh);
   assert.ok((await watch(lw, (s) => s.hero.dashing)).ok, 'touch dash button did nothing');
   clean(page);
   await B.close(page);
@@ -118,18 +137,21 @@ test('touch: the floating stick moves the hero and the buttons attack and dash o
 
 test('a standard gamepad moves and attacks', async () => {
   const page = await env.open('debug&save=1');
-  await page.evaluate(() => {
+  // the fake pad is installed before any game code runs (the game may keep a
+  // reference to navigator.getGamepads at boot), then the page is reloaded
+  await page.context().addInitScript(() => {
     const pad = { id: 'test pad', index: 0, connected: true, mapping: 'standard', timestamp: 0, axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })) };
     window.__pad = pad;
-    navigator.getGamepads = () => [pad, null, null, null];
-    dispatchEvent(Object.assign(new Event('gamepadconnected'), { gamepad: pad }));
+    Object.defineProperty(Navigator.prototype, 'getGamepads', { configurable: true, value: () => [pad, null, null, null] });
+    addEventListener('load', () => dispatchEvent(Object.assign(new Event('gamepadconnected'), { gamepad: pad })));
   });
+  await page.reload({ waitUntil: 'load' });
   const lw = await G.hook(page);
   await lw('play', { seed: 56 });
   await G.waitScene(lw, G.RUN_SCENES, 10000);
   await lw('god', true);
   await lw('clear');
-  await sleep(400);
+  await settle(lw);
   const s0 = await lw('state');
   await page.evaluate(() => { window.__pad.axes[0] = 1; window.__pad.timestamp++; });
   await sleep(400);

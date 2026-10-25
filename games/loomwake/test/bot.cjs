@@ -67,9 +67,7 @@ async function playRun(page, lw, cfg, wallEnd) {
 // Back to the hub after a run, with dialogue skipped, so the next run starts
 // the way a player's would.
 async function toHub(page, lw) {
-  const r = await G.stepUntil(page, `s => { if (s.scene === 'dialogue') window.__lw.skip(); if (s.scene === 'dead' || s.scene === 'victory' || s.scene === 'ending') { const b = document.querySelector('#btn-return'); if (b) b.click(); } return s.scene === 'hub'; }`, { ms: 60000, chunk: 200 });
-  if (!r.ok) { await lw('hub'); }
-  return lw('state');
+  try { return await G.toHub(page, lw, { lines: 'skip', frozen: false }); } catch { await lw('hub'); return lw('state'); }
 }
 
 async function critical(browser, url) {

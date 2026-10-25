@@ -30,7 +30,9 @@ async function progress(page, lw, seed = 4242, chambers = 2) {
     if (r.s.offer && r.s.offer.length) { await lw('choose', 0); r = await G.stepUntil(page, 's => s.cleared && s.doors.some((d) => d.open)', { ms: 10000 }); }
     assert.ok(r.ok, `chamber ${i} never opened its doors`);
     const c = r.s.chamber;
-    await lw('door', r.s.doors.findIndex((d) => d.open));
+    // a boon door when there is one, so the next chamber offers cards
+    const open = r.s.doors.filter((d) => d.open);
+    await lw('door', (open.find((d) => /boon/i.test(String(d.reward))) || open[0]).i);
     r = await G.stepUntil(page, `s => s.scene === 'run' && s.chamber !== ${c}`, { ms: 10000, chunk: 100 });
     assert.ok(r.ok, 'door did not lead to the next chamber');
   }
@@ -39,10 +41,10 @@ async function progress(page, lw, seed = 4242, chambers = 2) {
 
 const parse = (raw) => { try { return JSON.parse(raw); } catch { return null; } };
 
-async function continueRun(page, lw) {
-  let s = await lw('state');
+async function continueRun(page, lw, profile = null) {
+  let s = await G.waitScene(lw, ['title', 'profiles', ...G.RUN_SCENES], 5000);
   if (s.scene === 'title') { await G.clickOr(page, [G.SEL.continue]); await sleep(400); s = await lw('state'); }
-  if (s.scene === 'profiles') { await G.clickOr(page, [G.SEL.profile(s.profile ?? 0)]); await sleep(400); }
+  if (s.scene === 'profiles') { await G.clickOr(page, [G.SEL.profile(profile ?? s.profile ?? 0)]); await sleep(400); }
   return G.waitScene(lw, G.RUN_SCENES, 10000);
 }
 
@@ -55,7 +57,7 @@ test('a checkpoint is written at every chamber door', async () => {
     let r = await G.stepUntil(page, 's => (s.offer && s.offer.length) || (s.cleared && s.doors.some((d) => d.open))', { ms: 10000 });
     if (r.s.offer && r.s.offer.length) await lw('choose', 0);
     r = await G.stepUntil(page, 's => s.cleared && s.doors.some((d) => d.open)', { ms: 10000 });
-    const before = (await lw('save.read')).seq;
+    const before = (await lw('save.read')).seq ?? -1; // no save yet reads as seq null/undefined
     await lw('door', r.s.doors.findIndex((d) => d.open));
     await G.stepUntil(page, `s => s.scene === 'run' && s.chamber !== ${r.s.chamber}`, { ms: 10000, chunk: 100 });
     const after = await lw('save.read');
@@ -77,7 +79,7 @@ test('closing the tab mid-chamber and coming back resumes the same chamber, buil
   await sleep(300);
   const fp = G.runFingerprint(await lw('state'));
   const ctx = page.context();
-  await page.close({ runBeforeUnload: true }); // fires pagehide
+  await G.closeTab(page); // fires pagehide
   const { page: p2, lw: lw2 } = await env.reopen(ctx);
   assert.equal((await lw2('state')).scene, 'title', 'reopening should land on the title');
   assert.ok(await G.firstVisible(p2, [G.SEL.continue]), 'no Continue button with a run in progress');
@@ -95,22 +97,30 @@ test('rewards are seeded: reloading a checkpoint gives the same doors and boon o
   const { page, lw } = await env.debug();
   await progress(page, lw, 777, 1);
   const s1 = await lw('state');
+  // the door checkpoint as written: put back before every reload, since
+  // closing a tab writes a pagehide save of whatever state it was in
+  const checkpoint = await G.saveEntries(page);
+  // the chamber's reward: boon cards if it came through a boon door, else
+  // whatever it gives (then only the doors are compared)
+  const rewardOrOpen = 's => (s.offer && s.offer.length) || (s.cleared && s.doors.some((d) => d.open))';
   await lw('clear');
-  const r1 = await G.stepUntil(page, 's => s.offer && s.offer.length', { ms: 10000 });
+  const r1 = await G.stepUntil(page, rewardOrOpen, { ms: 10000 });
+  assert.ok(r1.ok, `chamber ${s1.chamber} gave no reward and opened no door after clear (scene '${r1.s.scene}')`);
   const offer1 = (r1.s.offer || []).map((o) => `${o.id}:${o.rarity}`);
-  const doors1 = (await G.stepUntil(page, 's => s.cleared', { ms: 1 })).s.doors.map((d) => d.reward);
+  const doors1 = r1.s.doors.map((d) => d.reward);
   const ctx = page.context();
-  await page.close({ runBeforeUnload: true });
+  await G.closeTab(page);
   for (let k = 0; k < 2; k++) {
+    await G.writeStorage(ctx, env.server.url, checkpoint);
     const { page: p, lw: l } = await env.reopen(ctx);
     const s = await continueRun(p, l);
     assert.equal(s.chamber, s1.chamber, 'checkpoint did not restore the chamber');
     await l('freeze');
     await l('clear');
-    const r = await G.stepUntil(p, 's => s.offer && s.offer.length', { ms: 10000 });
-    assert.deepEqual(r.s.offer.map((o) => `${o.id}:${o.rarity}`), offer1, `boon offer changed after reload ${k + 1}`);
+    const r = await G.stepUntil(p, rewardOrOpen, { ms: 10000 });
+    assert.deepEqual((r.s.offer || []).map((o) => `${o.id}:${o.rarity}`), offer1, `boon offer changed after reload ${k + 1}`);
     assert.deepEqual(r.s.doors.map((d) => d.reward), doors1, `door rewards changed after reload ${k + 1}`);
-    await p.close(); // no pagehide save of the cleared state: keep the checkpoint
+    await G.closeTab(p);
   }
 });
 
@@ -122,31 +132,38 @@ test('a corrupt newest slot falls back to the other; both corrupt still leaves a
   const e = await G.saveEntries(page);
   const newest = good.slot === 'a' || good.slot === 'A' ? k.a : k.b;
   const other = newest === k.a ? k.b : k.a;
+  const olderSeq = (parse(e[other]) || {}).seq;
+  assert.ok(Number.isFinite(olderSeq) && olderSeq < good.seq, `the other slot should hold an older save: ${String(e[other]).slice(0, 80)}`);
   const ctx = page.context();
-  await page.close();
-  const tamper = async (fn) => { const p = await ctx.newPage(); await p.goto(`${env.server.url}${B.GAME}?nogame`, { waitUntil: 'commit' }).catch(() => {}); await p.evaluate(fn.f, fn.a); await p.close(); };
+  await G.closeTab(page);
+  // each case writes both slots from the recorded entries (closing a page
+  // writes a pagehide save, so storage is never left as the test found it)
+  const tamper = (newestRaw) => G.writeStorage(ctx, env.server.url, { [other]: e[other], [newest]: newestRaw });
 
   // 1. truncated newest slot
-  await tamper({ f: ([key, raw]) => localStorage.setItem(key, raw.slice(0, raw.length >> 1)), a: [newest, e[newest]] });
+  await tamper(e[newest].slice(0, e[newest].length >> 1));
   let { page: p, lw: l } = await env.reopen(ctx);
   let r = await l('save.read');
-  assert.ok(r.ok && r.seq === good.seq - 1, `loader did not fall back to the older slot: ${JSON.stringify(r)}`);
+  assert.ok(r.ok && r.seq === olderSeq, `loader did not fall back to the older slot (seq ${olderSeq}): ${JSON.stringify(r)}`);
   let s = await continueRun(p, l);
   assert.equal(s.region, G.REGIONS[0]);
   clean(p);
-  await p.close();
+  await G.closeTab(p);
 
   // 2. right JSON, wrong checksum (a field edited by hand)
-  await tamper({ f: ([key, raw]) => { const o = JSON.parse(raw); const walk = (x) => { for (const k of Object.keys(x)) { if (typeof x[k] === 'number' && /hp|lumen|run|chamber/i.test(k)) { x[k] += 999; return true; } if (x[k] && typeof x[k] === 'object' && walk(x[k])) return true; } return false; }; walk(o); localStorage.setItem(key, JSON.stringify(o)); }, a: [newest, e[newest]] });
+  const o = JSON.parse(e[newest]);
+  const walk = (x) => { for (const key of Object.keys(x)) { if (typeof x[key] === 'number' && /hp|lumen|run|chamber/i.test(key)) { x[key] += 999; return true; } if (x[key] && typeof x[key] === 'object' && walk(x[key])) return true; } return false; };
+  assert.ok(walk(o), 'found no numeric field to tamper with in the save');
+  await tamper(JSON.stringify(o));
   ({ page: p, lw: l } = await env.reopen(ctx));
   r = await l('save.read');
-  assert.ok(r.ok && r.seq === good.seq - 1, `a slot with a bad checksum was accepted: ${JSON.stringify(r)}`);
-  await p.close();
+  assert.ok(r.ok && r.seq === olderSeq, `a slot with a bad checksum was accepted: ${JSON.stringify(r)}`);
+  await G.closeTab(p);
 
   // 3. both slots garbage: the title works and a new game starts
-  await tamper({ f: ([a, b]) => { localStorage.setItem(a, '{"v":'); localStorage.setItem(b, 'not json at all \u0000'); }, a: [k.a, k.b] });
+  await G.writeStorage(ctx, env.server.url, { [k.a]: '{"v":', [k.b]: 'not json at all \u0000' });
   ({ page: p, lw: l } = await env.reopen(ctx));
-  assert.equal((await l('state')).scene, 'title');
+  await G.waitScene(l, 'title', 5000);
   s = await G.titleToHub(p, l, 0);
   assert.equal(s.scene, 'hub');
   clean(p);
@@ -167,10 +184,17 @@ test('every migration step upgrades an old save, and a future version is left un
     await page.evaluate(([a, b, raw]) => { localStorage.removeItem(b); localStorage.setItem(a, raw); }, [k.a, k.b, typeof fx === 'string' ? fx : JSON.stringify(fx)]);
     const { page: p, lw: l } = await env.reopen(ctx);
     const r = await l('save.read');
-    assert.ok(r.ok && r.v === version, `save v${v} did not migrate to v${version}: ${JSON.stringify(r)}`);
+    assert.ok(r.ok, `save v${v} was not accepted: ${JSON.stringify(r)}`);
     await G.titleToHub(p, l, 0);
+    // read() may report the migrated version or the stored one; the next
+    // write must be the current version either way
+    if (r.v !== version) {
+      await l('save.now');
+      const r2 = await l('save.read');
+      assert.ok(r2.ok && r2.v === version, `save v${v} did not migrate to v${version}: ${JSON.stringify(r)} then ${JSON.stringify(r2)}`);
+    }
     clean(p);
-    await p.close();
+    await G.closeTab(p); // waited for, so a late pagehide write cannot land on the next fixture
   }
   // a save from the future: kept as is, never overwritten
   const future = JSON.stringify({ v: version + 50, seq: 1, data: { note: 'from a newer build' } });
@@ -200,16 +224,19 @@ test('three profiles keep their own progress', async () => {
   assert.ok(e[k.profiles[0].a] || e[k.profiles[0].b], 'profile 1 has no save');
   assert.ok(!e[k.profiles[1].a] && !e[k.profiles[1].b], 'profile 2 was written without being played');
   assert.ok(e[k.profiles[2].a] || e[k.profiles[2].b], 'profile 3 has no save');
+  // each profile comes back on its own: reopen with ?profile=i and Continue
+  // (whether Continue resumes directly or goes by the profile picker)
+  const ctx = page.context();
+  clean(page);
+  await G.closeTab(page);
   for (const { i, chamber } of seen) {
-    await lw('menu');
-    await lw('thaw');
-    await G.titleToHub(page, lw, i).catch(() => {});
-    const s = await G.waitScene(lw, ['run', 'hub'], 8000).then(async (x) => (x.scene === 'run' ? x : continueRun(page, lw)));
+    const { page: p, lw: l } = await env.reopen(ctx, `debug&save=1&profile=${i}`);
+    const s = await continueRun(p, l, i);
     assert.equal(s.profile, i);
     assert.equal(s.chamber, chamber, `profile ${i + 1} came back in the wrong chamber`);
+    clean(p);
+    await G.closeTab(p);
   }
-  clean(page);
-  await B.close(page);
 });
 
 test('export then wipe then import restores the save, through the hook and through the Settings buttons', async () => {
@@ -219,15 +246,23 @@ test('export then wipe then import restores the save, through the hook and throu
   const json = await lw('save.export');
   const o = parse(json);
   assert.ok(o && o.v && (o.checksum || o.sum || o.crc), 'export is not JSON with a version and checksum');
-  // a damaged export is refused
-  const bad = await lw('save.import', json.replace(/"seed":\s*\d+/, '"seed":1'));
+  // a damaged export is refused: one number inside the checksummed data changed
+  const damaged = JSON.parse(json);
+  const bump = (x) => { for (const key of Object.keys(x)) { if (typeof x[key] === 'number') { x[key] += 1; return true; } if (x[key] && typeof x[key] === 'object' && bump(x[key])) return true; } return false; };
+  assert.ok(bump(damaged.run || {}) || bump(damaged.meta || damaged.data || {}), 'found no number to damage in the export');
+  const bad = await lw('save.import', JSON.stringify(damaged));
   assert.ok(bad && bad.ok === false, 'an export with a wrong checksum was accepted');
-  await page.evaluate(() => localStorage.clear());
-  const ok = await lw('save.import', json);
-  assert.ok(ok && ok.ok, `import failed: ${JSON.stringify(ok)}`);
+  // wipe with the game closed (its pagehide save would otherwise put the run
+  // back and hide a failed import), then import from a fresh page on the title
   const ctx = page.context();
-  await page.close();
+  await G.closeTab(page);
+  await G.writeStorage(ctx, env.server.url, null);
   let { page: p, lw: l } = await env.reopen(ctx);
+  assert.equal((await l('save.read')).ok, false, 'the wipe left a save behind');
+  const ok = await l('save.import', json);
+  assert.ok(ok && ok.ok, `import failed: ${JSON.stringify(ok)}`);
+  await G.closeTab(p);
+  ({ page: p, lw: l } = await env.reopen(ctx));
   let s = await continueRun(p, l);
   assert.deepEqual(G.runFingerprint(s).boons, G.runFingerprint(s0).boons, 'imported save lost the build');
   assert.equal(s.chamber, s0.chamber);
@@ -236,7 +271,7 @@ test('export then wipe then import restores the save, through the hook and throu
   await l('menu');
   await l('thaw');
   await G.clickOr(p, [G.SEL.settings], null);
-  const exp = await G.firstVisible(p, [G.SEL.export]);
+  const exp = await G.waitVisible(p, [G.SEL.export]);
   assert.ok(exp, 'no Export button in Settings');
   const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }), exp.click()]);
   const file = await dl.path();
@@ -249,7 +284,7 @@ test('export then wipe then import restores the save, through the hook and throu
   const r = await l('save.read');
   assert.ok(r.ok, `importing the downloaded file did not restore a save: ${JSON.stringify(r)}`);
   clean(p);
-  await p.close();
+  await G.closeTab(p);
 });
 
 test('settings live apart from game saves and survive a corrupt one', async () => {
@@ -258,7 +293,7 @@ test('settings live apart from game saves and survive a corrupt one', async () =
   await page.evaluate((key) => { const o = JSON.parse(localStorage.getItem(key) || '{}'); localStorage.setItem(key, JSON.stringify({ ...o, volume: 0.37, music: 0.37 })); }, k.settings);
   await page.evaluate(([a, b]) => { localStorage.setItem(a, '{{{'); localStorage.setItem(b, '}}}'); }, [k.profiles[0].a, k.profiles[0].b]);
   const ctx = page.context();
-  await page.close();
+  await G.closeTab(page);
   const { page: p } = await env.reopen(ctx);
   await sleep(800);
   const st = await p.evaluate((key) => localStorage.getItem(key), k.settings);

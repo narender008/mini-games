@@ -21,12 +21,12 @@ const SHOTS = [
   ['04-hub-dialogue', 'debug', async (p, lw) => { await G.titleToHub(p, lw, 0); const c = await lw('content'); const who = (c.dialogue || []).map((l) => l.speaker).find((s) => /orrin/i.test(s)) || 'orrin'; await lw('talk', who); await G.waitScene(lw, 'dialogue', 4000); await sleep(900); }],
   ...G.REGIONS.map((g, i) => [`${String(5 + i).padStart(2, '0')}-combat-${g}`, `debug&seed=${40 + i}`, async (p, lw) => { await lw('region', g); await G.waitScene(lw, G.RUN_SCENES, 8000); await lw('god', true); await fight(lw, 2600); }]),
   ['09-boons', 'debug&seed=9', async (p, lw) => { await lw('play', { seed: 9 }); await G.waitScene(lw, G.RUN_SCENES, 8000); await lw('clear'); await G.waitScene(lw, ['boons'], 8000).catch(async () => { await lw('freeze'); await G.stepUntil(p, 's => s.offer && s.offer.length', { ms: 8000 }); await lw('thaw'); }); await sleep(900); }],
-  ['10-shop', 'debug', async (p, lw) => { await reach(p, lw, 'shop'); }],
-  ['11-fountain', 'debug', async (p, lw) => { await reach(p, lw, 'fountain'); }],
+  ['10-shop', 'debug', async (p, lw) => { if (!(await reach(p, lw, 'shop'))) throw new Error('no shop chamber reached'); }],
+  ['11-fountain', 'debug', async (p, lw) => { if (!(await reach(p, lw, 'fountain'))) throw new Error('no fountain chamber reached'); }],
   ...G.BOSSES.map((b, i) => [`${12 + i}-boss-${b}`, 'debug', async (p, lw) => { await lw('boss', b); await G.waitScene(lw, G.RUN_SCENES, 8000); await lw('god', true); await fight(lw, 3500); }]),
   ['16-paused', 'debug', async (p, lw) => { await lw('play', { seed: 16 }); await G.waitScene(lw, G.RUN_SCENES, 8000); await sleep(800); await p.keyboard.press(G.KEYS.pause); await G.waitScene(lw, 'paused', 3000); await sleep(400); }],
   ['17-dead', 'debug', async (p, lw) => { await lw('play', { seed: 17 }); await G.waitScene(lw, G.RUN_SCENES, 8000); await sleep(600); await lw('kill'); await G.waitScene(lw, ['dead'], 8000); await sleep(1500); }],
-  ['18-victory', 'debug', async (p, lw) => { await lw('boss', 'sable'); await G.waitScene(lw, G.RUN_SCENES, 8000); await lw('god', true); for (let k = 0; k < 3; k++) { const s = await lw('state'); if (s.scene !== 'run' || !s.boss) break; await lw('bossKill'); await sleep(1500); } await G.waitScene(lw, ['victory', 'ending'], 20000); await sleep(1200); }],
+  ['18-victory', 'debug', async (p, lw) => { await lw('boss', 'sable'); await G.waitScene(lw, G.RUN_SCENES, 8000); await lw('god', true); await finishBoss(lw); await G.waitScene(lw, ['victory', 'ending'], 20000); await sleep(1200); }],
   ['19-settings', 'debug', async (p, lw) => { await G.clickOr(p, [G.SEL.settings], null); await G.waitScene(lw, 'settings', 3000); await sleep(400); }],
   ['20-codex', 'debug', async (p, lw) => { await G.clickOr(p, ['#btn-codex'], null); await G.waitScene(lw, 'codex', 3000); await sleep(400); }],
   ['21-phone-run', 'debug&touch', async (p, lw) => { await lw('region', 'choir'); await G.waitScene(lw, G.RUN_SCENES, 8000); await lw('god', true); await fight(lw, 2000); }, { width: 844, height: 390, touch: true, mobile: true }],
@@ -45,28 +45,49 @@ async function fight(lw, ms) {
   await lw('input', null);
 }
 
-// Plays chambers by doors (clear, take a card, go through the first door
-// whose reward matches) until the wanted chamber kind or scene shows up.
+// Beats the current boss through every phase: bossKill() may end one phase at
+// a time, with lines in between.
+async function finishBoss(lw) {
+  for (let k = 0; k < 12; k++) {
+    const s = await lw('state');
+    if (G.END_SCENES.includes(s.scene) || (!s.boss && s.scene === 'run')) return;
+    if (s.scene === 'dialogue') await lw('skip');
+    else if (s.scene === 'run' && s.boss) await lw('bossKill');
+    await sleep(700);
+  }
+}
+
+// Plays chambers by doors (clear, take a card, beat a boss, go through the
+// first door whose reward matches) until the wanted chamber kind or scene
+// shows up. Which chambers a run offers depends on its seed, so a few seeds
+// are tried. Then interacts, so the shop or fountain screen opens if the game
+// opens it from where the hero stands (else the shot is of the chamber).
 async function reach(p, lw, kind) {
-  await lw('freeze');
-  await lw('play', { seed: 77 });
-  for (let i = 0; i < 20; i++) {
-    let s = (await G.stepUntil(p, 's => s.scene !== "loading"', { ms: 3000, chunk: 100 })).s;
-    if (s.scene === kind || s.chamberKind === kind) break;
-    await lw('clear');
-    s = (await G.stepUntil(p, 's => (s.offer && s.offer.length) || (s.cleared && s.doors.some((d) => d.open))', { ms: 8000 })).s;
-    if (s.offer && s.offer.length) { await lw('choose', 0); s = (await G.stepUntil(p, 's => s.cleared && s.doors.some((d) => d.open)', { ms: 8000 })).s; }
-    const doors = s.doors.filter((d) => d.open);
-    const d = doors.find((x) => String(x.reward).includes(kind)) || doors[0];
-    if (!d) break;
-    await lw('door', d.i);
-    await G.stepUntil(p, `s => s.chamber !== ${s.chamber}`, { ms: 8000, chunk: 100 });
+  let found = false;
+  for (let seed = 77; seed < 83 && !found; seed++) {
+    await lw('freeze');
+    await lw('play', { seed });
+    for (let i = 0; i < 12; i++) {
+      let s = (await G.stepUntil(p, 's => s.scene !== "loading" && s.scene !== "dialogue"', { ms: 3000, chunk: 100, skipDialogue: true })).s;
+      if (s.scene === kind || s.chamberKind === kind) { found = true; break; }
+      if (s.region !== G.REGIONS[0] && i > 0) break; // past the first region: try the next seed
+      await lw('clear');
+      for (let k = 0; k < 4 && s.boss; k++) { if (s.scene === 'run') await lw('bossKill'); s = (await G.stepUntil(p, 's => !s.boss || (s.scene === "run" && s.boss.hp === s.boss.maxHp)', { ms: 8000, chunk: 100, skipDialogue: true })).s; }
+      s = (await G.stepUntil(p, 's => (s.offer && s.offer.length) || (s.cleared && s.doors.some((d) => d.open))', { ms: 8000, skipDialogue: true })).s;
+      if (s.offer && s.offer.length) { await lw('choose', 0); s = (await G.stepUntil(p, 's => s.cleared && s.doors.some((d) => d.open)', { ms: 8000, skipDialogue: true })).s; }
+      const doors = s.doors.filter((d) => d.open);
+      const d = doors.find((x) => String(x.reward).includes(kind)) || doors[0];
+      if (!d) break;
+      await lw('door', d.i);
+      await G.stepUntil(p, `s => s.chamber !== ${s.chamber} || s.region !== ${JSON.stringify(s.region)}`, { ms: 8000, chunk: 100 });
+    }
   }
   await lw('thaw');
   const s = await lw('state');
-  if (s.chamberKind === kind && s.scene === 'run') { await lw('interact').catch(() => {}); await lw('input', { interact: true }); await sleep(100); await lw('input', null); }
+  if (s.chamberKind === kind && s.scene === 'run') { await lw('input', { interact: true }); await sleep(150); await lw('input', null); }
   await G.waitScene(lw, [kind, 'run'], 4000);
   await sleep(900);
+  return found;
 }
 
 async function main() {

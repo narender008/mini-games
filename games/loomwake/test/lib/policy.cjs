@@ -26,7 +26,9 @@ function botInit(cfg) {
 function botRun(sliceSec) {
   const lw = window.__lw, B = window.__bot, cfg = B.cfg, L = B.log;
   const dt = cfg.tickMs;
-  const click = (sel) => { const el = document.querySelector(sel); if (el && el.offsetParent !== null) { el.click(); return true; } return false; };
+  // the DOM is only redrawn between frames, never inside this loop, so a button
+  // is clicked when it exists rather than when it is visible
+  const click = (sel) => { const el = document.querySelector(sel); if (el) { el.click(); return true; } return false; };
   const re = (p) => new RegExp(`^(?:${p})$`, 'i');
   const pickBoon = (offer, own) => {
     const ids = offer.map((c) => c.id);
@@ -92,8 +94,12 @@ function botRun(sliceSec) {
 
   let s = lw.state();
   const end = s.time + sliceSec;
+  // the end screens may already have dropped the run (runTime 0, region
+  // null): reports use the last values seen in the run
+  const rt = () => (s.region != null && s.runTime > 0 ? s.runTime : B.rt || 0);
   let guard = 0;
   while (s.time < end && guard++ < 1e6) {
+    if (s.region != null && s.runTime > 0) B.rt = s.runTime;
     if (s.scene === 'victory' || s.scene === 'ending') { L.end = 'won'; break; }
     if (s.scene === 'dead' || (s.scene === 'hub' && L.started)) {
       L.end = 'lost';
@@ -115,7 +121,7 @@ function botRun(sliceSec) {
     if (s.scene === 'shop') {
       L.shops++;
       if (s.hero.hp / s.hero.maxHp < 0.6 && typeof lw.buy === 'function') { try { lw.buy(0); } catch {} }
-      if (!click('#btn-leave-shop')) lw.skip();
+      if (!click('#btn-leave-shop') || lw.state().scene === 'shop') lw.skip();
       s = lw.step(dt, { render: false });
       continue;
     }
@@ -240,11 +246,13 @@ function botRun(sliceSec) {
     if (dash) { lw.input({ ...inp, dash: false }); }
     if (s.runTime > cfg.maxSec) { L.end = 'timeout'; break; }
   }
-  if (B.cur && L.end) { B.cur.secs = s.runTime - B.cur.t; L.chambers.push(B.cur); B.cur = null; }
-  if (L.end && B.lastRegion && L.regions[B.lastRegion] && L.regions[B.lastRegion].end == null) L.regions[B.lastRegion].end = s.runTime;
+  if (B.cur && L.end) { B.cur.secs = rt() - B.cur.t; L.chambers.push(B.cur); B.cur = null; }
+  if (L.end && B.lastRegion && L.regions[B.lastRegion] && L.regions[B.lastRegion].end == null) L.regions[B.lastRegion].end = rt();
+  if (L.end && B.lastBoss) for (const b of L.bosses) if (b.end == null && (L.end === 'won' || b.id !== B.lastBoss)) { b.end = rt(); b.secs = b.end - b.t; b.won = true; }
+  if (s.region != null) { B.lastBoons = s.boons; B.lastBraids = s.braids; }
   return {
     done: !!L.end,
-    s: { scene: s.scene, time: s.time, runTime: s.runTime, region: s.region, chamber: s.chamber, hp: s.hero && s.hero.hp, maxHp: s.hero && s.hero.maxHp, boons: s.boons, braids: s.braids, currency: s.currency, story: s.story, boss: s.boss },
+    s: { scene: s.scene, time: s.time, runTime: rt(), region: s.region ?? B.lastRegion, chamber: s.chamber ?? B.lastChamber, hp: s.hero && s.hero.hp, maxHp: s.hero && s.hero.maxHp, boons: s.region != null ? s.boons : B.lastBoons || s.boons, braids: s.region != null ? s.braids : B.lastBraids || s.braids, currency: s.currency, story: s.story, boss: s.boss },
     log: L,
   };
 }

@@ -33,8 +33,11 @@ function suite() {
   return env;
 }
 
+// LW_ALLOW=<regex> ignores matching problems (for a work-in-progress game
+// that still 404s on modules not written yet); CI never sets it.
+const ALLOW = process.env.LW_ALLOW ? [new RegExp(process.env.LW_ALLOW)] : [];
 const clean = (page, allow = []) => {
-  const p = page.problems.filter((x) => !allow.some((a) => a.test(x)));
+  const p = page.problems.filter((x) => ![...allow, ...ALLOW].some((a) => a.test(x)));
   assert.deepEqual(p, [], `page reported problems:\n${p.join('\n')}`);
 };
 

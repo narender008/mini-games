@@ -45,6 +45,8 @@ async function close(page) { await page.context().close(); }
 // lw('save.export')... Dotted names reach into nested objects.
 async function hook(page, timeout = 15000) {
   await page.waitForFunction(() => window.__lw && typeof window.__lw.state === 'function', null, { timeout });
+  // the contract allows scene 'loading' at boot: wait it out so callers see the title (or ?play's run)
+  await page.waitForFunction(() => { try { return window.__lw.state().scene !== 'loading'; } catch { return false; } }, null, { timeout }).catch(() => {});
   return (name, ...args) => page.evaluate(async ([n, a]) => {
     const parts = n.split('.');
     let self = window.__lw;
