@@ -28,7 +28,7 @@ const DEFEND = ['volley', 'lash', 'shield', 'militia'];
 const GOAL_BUDGET_S = 14400; // the build thread's budget for the bot: 4 h of game time
 
 const SEL = {
-  continue: '#btn-continue', new: '#btn-new', settings: '#btn-settings', profile: (i) => `[data-profile="${i}"]`,
+  continue: '#btn-continue', new: '#btn-new', start: '#btn-start', profiles: '#btn-profiles', placeOk: '#btn-place-ok', placeCancel: '#btn-place-cancel', wonTitle: '#btn-won-title', settings: '#btn-settings', profile: (i) => `[data-profile="${i}"]`,
   export: '#btn-export', import: '#btn-import', importFile: 'input[type=file]', closeSettings: '#btn-close-settings',
   build: '#btn-build', buildItem: (t) => (t ? `[data-build="${t}"]` : '[data-build]'),
   research: '#btn-research', researchNode: (id) => (id ? `[data-research="${id}"]` : '[data-research]'), beginResearch: '#btn-begin-research',
@@ -96,9 +96,12 @@ async function titleToColony(page, sf, profile = 0) {
   for (let i = 0; i < 8 && s.scene !== 'colony'; i++) {
     if (s.scene === 'title') {
       const prof = await firstVisible(page, [SEL.profile(profile)]);
-      if (prof && !trail.includes('picked')) { await prof.click(); trail.push('picked'); }
+      // the new-colony dialog's Start, else a profile slot, else New / Continue
+      const start = await firstVisible(page, [SEL.start]);
+      if (start) { await start.click(); trail.push('start'); }
+      else if (prof && !trail.includes('picked')) { await prof.click(); trail.push('picked'); }
       else { const el = await waitVisible(page, [SEL.new, SEL.continue]); if (el) await el.click(); else await page.keyboard.press('Enter'); }
-    } else if (s.scene === 'profiles') { const el = await waitVisible(page, [SEL.profile(profile)]); if (el) await el.click(); else await page.keyboard.press('Enter'); }
+    } else if (s.scene === 'profiles') { const el = await waitVisible(page, [SEL.start, SEL.profile(profile)]); if (el) await el.click(); else await page.keyboard.press('Enter'); }
     else await page.keyboard.press('Enter');
     await sleep(400);
     s = await sf('state');
@@ -175,6 +178,12 @@ async function keys(sf) {
   return { settings: `${SAVE_PREFIX}.settings`, profiles: [0, 1, 2].map((i) => ({ slots: [`${SAVE_PREFIX}.p${i}.a`, `${SAVE_PREFIX}.p${i}.b`] })) };
 }
 
+// Loads a profile's saved colony the way Continue does (app.continueGame),
+// for tests that import a save through the hook and then need it running.
+async function loadProfile(page, profile = 0) {
+  return page.evaluate((p) => { const r = window.__sf.app.continueGame(p); return !!r; }, profile);
+}
+
 // Every localStorage entry the game owns.
 async function saveEntries(page) {
   return page.evaluate((p) => Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith(p)).map((k) => [k, localStorage.getItem(k)])), SAVE_PREFIX);
@@ -201,5 +210,5 @@ async function writeStorage(ctx, base, entries) {
 module.exports = {
   hook, sleep, SEL, KEYS, SAVE_PREFIX, COLONY_SCENES, PANEL_SCENES, END_SCENES, SCREENS, PRESETS, DEFEND, GOAL_BUDGET_S, xy,
   waitScene, firstVisible, waitVisible, clickOr, titleToColony, stepUntil, freshColony, spot, buildAt, homeIsland,
-  colonyFingerprint, keys, saveEntries, closeTab, writeStorage,
+  colonyFingerprint, keys, loadProfile, saveEntries, closeTab, writeStorage,
 };

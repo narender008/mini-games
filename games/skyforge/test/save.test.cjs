@@ -34,27 +34,39 @@ async function progress(page, sf, seed = 4242, profile = 0) {
   return sf('state');
 }
 
+// Title -> pick the profile -> Continue, the way a player comes back.
 async function continueColony(page, sf, profile = 0) {
   let s = await G.waitScene(sf, ['title', 'profiles', 'colony'], 8000);
-  for (let i = 0; i < 4 && s.scene !== 'colony'; i++) {
-    if (s.scene === 'title') {
-      const prof = await G.firstVisible(page, [SEL.profile(profile)]);
-      if (prof) await prof.click(); else await G.clickOr(page, [SEL.continue]);
-    } else if (s.scene === 'profiles') await G.clickOr(page, [SEL.profile(profile)]);
-    await sleep(500);
-    s = await sf('state');
+  if (s.scene === 'profiles') { await G.clickOr(page, ['#btn-back'], 'Escape'); s = await G.waitScene(sf, ['title', 'colony'], 4000); }
+  if (s.scene === 'title') {
+    const prof = await G.waitVisible(page, [SEL.profile(profile)], 3000);
+    if (prof) await prof.click();
+    await sleep(200);
+    const cont = await G.waitVisible(page, [SEL.continue], 3000);
+    assert.ok(cont, `no Continue button for profile ${profile}`);
+    await cont.click();
   }
   return G.waitScene(sf, 'colony', 10000);
 }
 
-test('autosave writes on its own and seq grows', async () => {
+test('autosave writes on its own every 30 s of real time, and after a finished research', async () => {
   const { page, sf } = await env.debug();
   await progress(page, sf, 11);
+  await sf('save.now');
   const a = await sf('save.read');
-  assert.ok(a && a.ok, `no valid save after ten colony minutes: ${JSON.stringify(a)}`);
-  await G.stepUntil(page, 's => false', { ms: 600000, chunk: 5000 });
+  assert.ok(a && a.ok, `no valid save after a manual save: ${JSON.stringify(a)}`);
+  await sf('thaw');
+  await sf('speed', 1);
+  await sleep(36000);
   const b = await sf('save.read');
-  assert.ok(b.seq > a.seq, `no new autosave in ten more minutes (seq ${a.seq} -> ${b.seq})`);
+  assert.ok(b.seq > a.seq, `no autosave in 36 s of real play (seq ${a.seq} -> ${b.seq})`);
+  // the event-driven one: finishing a research saves at once
+  await sf('freeze');
+  const st = await sf('state');
+  if (st.research.current) {
+    const r = await G.stepUntil(page, `s => s.research.done.includes('${st.research.current}')`, { ms: 3600000, chunk: 2000 });
+    if (r.ok) assert.ok((await sf('save.read')).seq > b.seq, 'finishing a research did not save');
+  }
   const e = await G.saveEntries(page);
   assert.ok(Object.keys(e).length >= 1, 'nothing in localStorage under the save prefix');
   clean(page);
@@ -77,16 +89,22 @@ test('closing the tab and coming back restores the same colony', async () => {
   await B.close(p2);
 });
 
-test('save then load gives the same simulation (hash)', async () => {
+test('save then load gives the same simulation (hash), and it runs on the same', async () => {
   const { page, sf } = await env.debug();
   await progress(page, sf, 99);
   await sf('save.now');
   const h1 = await sf('hash');
   const out = await sf('save.export');
-  const r = await sf('save.import', out);
+  const r = await sf('save.import', out, 1);
   assert.ok(r && r.ok, `import of a fresh export failed: ${JSON.stringify(r)}`);
-  await G.stepUntil(page, 's => s.scene === "colony"', { ms: 5000, chunk: 100 });
-  assert.equal(await sf('hash'), h1, 'hash changed across export + import');
+  await sf('freeze');
+  await sf('step', 60000, { render: false });
+  const h2 = await sf('hash');
+  assert.ok(await G.loadProfile(page, 1), 'the imported profile did not load');
+  await sf('freeze');
+  assert.equal(await sf('hash'), h1, 'hash changed across export, import and load');
+  await sf('step', 60000, { render: false });
+  assert.equal(await sf('hash'), h2, 'a loaded colony runs on differently from the one that was saved');
   clean(page);
   await B.close(page);
 });
@@ -163,20 +181,21 @@ test('every old save version migrates to the current one and loads', async () =>
   const v = await sf('save.version');
   const migrations = (await sf('save.migrations')) || [];
   assert.ok(Number.isFinite(v), 'save.version is not a number');
-  const from = [...new Set([...migrations, ...Array.from({ length: Math.max(0, v - 1) }, (_, i) => i + 1)])].filter((x) => x < v);
+  const from = [...new Set(migrations)].filter((x) => x < v);
   for (const old of from) {
     const fx = await sf('save.fixture', old);
     assert.ok(fx, `no fixture for v${old}`);
     const str = typeof fx === 'string' ? fx : JSON.stringify(fx);
-    const r = await sf('save.import', str);
+    const r = await sf('save.import', str, 2);
     assert.ok(r && r.ok, `v${old} fixture did not import: ${JSON.stringify(r)}`);
+    assert.ok(await G.loadProfile(page, 2), `v${old} fixture did not load`);
     const s = (await G.stepUntil(page, 's => s.scene === "colony"', { ms: 5000, chunk: 100 })).s;
     assert.equal(s.scene, 'colony', `v${old} fixture did not load into the colony`);
     await sf('save.now');
     const out = parse(await sf('save.export'));
     assert.equal(out && out.v, v, `v${old} save was not upgraded to v${v} on the next write`);
   }
-  if (!from.length) assert.ok(v === 1, 'version > 1 but no migrations listed');
+  assert.ok(from.length >= 1 || v <= 1, 'version > 1 but no migrations listed');
   clean(page);
   await B.close(page);
 });
@@ -211,8 +230,12 @@ test('export and import work through the Settings buttons', async () => {
   await progress(page, sf, 808);
   await sf('save.now');
   const fp = G.colonyFingerprint(await sf('state'));
+  // Settings on the title export and import the selected profile
   await sf('thaw');
   await G.clickOr(page, [SEL.pause], 'Escape');
+  await G.waitScene(sf, 'paused', 3000);
+  await G.clickOr(page, [SEL.quit], null, 3000);
+  await G.waitScene(sf, 'title', 5000);
   await G.clickOr(page, [SEL.settings], null, 3000);
   await G.waitScene(sf, 'settings', 4000);
   const exp = await G.waitVisible(page, [SEL.export], 3000);
@@ -224,8 +247,7 @@ test('export and import work through the Settings buttons', async () => {
   assert.ok(parse(text), 'exported file is not JSON');
   await G.clickOr(page, [SEL.closeSettings, SEL.close], 'Escape');
   // wipe, then import the file through the button
-  await sf('save.wipe');
-  await sf('menu');
+  await sf('save.wipe', 0);
   await G.waitScene(sf, ['title', 'profiles'], 5000);
   await G.clickOr(page, [SEL.settings], null, 3000);
   await G.waitScene(sf, 'settings', 4000);

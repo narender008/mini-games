@@ -128,19 +128,22 @@ test('every panel opens and closes: research, sky chart, settings, pause', async
 
 test('research nodes show, one starts by clicks and completes', async () => {
   const { page, sf } = await env.debug();
-  let s = await G.freshColony(page, sf);
+  // research needs scholars at an academy: the 'mid' preset has one
+  let s = await G.freshColony(page, sf, { preset: 'mid' });
   await sf('thaw');
   await G.clickOr(page, [SEL.research], G.KEYS.research);
   await G.waitScene(sf, 'research', 4000);
   s = await sf('state');
   assert.ok(s.research.available.length > 0, 'nothing researchable at the start');
   const id = s.research.available[0];
+  // a fresh colony has no insight yet: hand it the bill so the click is the test
+  const cost = ((await sf('content')).research.find((r) => r.id === id) || {}).cost || {};
+  await sf('give', Object.fromEntries(Object.entries(cost).map(([k, v]) => [k, v * 2])));
   const node = await G.waitVisible(page, [SEL.researchNode(id)], 3000);
   assert.ok(node, `research node ${id} is not on screen`);
   await node.click();
   await G.clickOr(page, [SEL.beginResearch], null, 1500);
   s = await sf('state');
-  if (s.research.current !== id) { await sf('give', 'all', 1e6).catch(() => {}); await node.click(); await G.clickOr(page, [SEL.beginResearch], null); s = await sf('state'); }
   assert.equal(s.research.current, id, `clicking ${id} and Begin did not start it`);
   await G.clickOr(page, [SEL.close], 'Escape');
   await sf('freeze');
@@ -169,9 +172,8 @@ test('speed buttons change the sim speed and pause it', async () => {
 
 test('a pirate raid and a storm play out and the colony comes through', async () => {
   const { page, sf } = await env.debug();
-  await G.freshColony(page, sf);
-  await sf('unlock', 'all');
-  await sf('give', 'all', 5000);
+  // the 'raid' preset has batteries and rods up, so the abilities have guns
+  await G.freshColony(page, sf, { preset: 'raid' });
   await sf('raid');
   let r = await G.stepUntil(page, 's => s.threat.raid && s.threat.raid.active', { ms: 120000, chunk: 500, render: true });
   assert.ok(r.ok, 'raid() did not start a raid');
@@ -179,11 +181,11 @@ test('a pirate raid and a storm play out and the colony comes through', async ()
   const shown = [];
   for (const a of G.DEFEND) if (await G.waitVisible(page, [SEL.defend(a)], a === G.DEFEND[0] ? 4000 : 300)) shown.push(a);
   assert.ok(shown.length >= 1, 'no raid ability buttons [data-defend] during a raid');
-  const before = await sf('state');
+  const before = await sf('game.defend');
   await (await G.firstVisible(page, [SEL.defend(shown[0])])).click();
   await sleep(300);
-  const after = await sf('state');
-  assert.notDeepEqual(after.defend || after.threat, before.defend || before.threat, `clicking ${shown[0]} changed nothing`);
+  const after = await sf('game.defend');
+  assert.notDeepEqual(after, before, `clicking ${shown[0]} changed nothing (no cooldown or charge moved)`);
   await sf('freeze');
   r = await G.stepUntil(page, 's => !s.threat.raid || !s.threat.raid.active', { ms: 600000, chunk: 1000 });
   assert.ok(r.ok, 'the raid never ends');
@@ -219,14 +221,14 @@ test('every preset colony loads, draws and runs a game day without errors', asyn
 test('the won screen shows and Return goes back to the title', async () => {
   const { page, sf } = await env.debug();
   await G.freshColony(page, sf);
-  await sf('win');
-  const r = await G.stepUntil(page, 's => s.scene === "won"', { ms: 30000, chunk: 200, render: true });
-  assert.ok(r.ok, `win() did not reach the won screen (scene '${r.s.scene}')`);
-  await sf('thaw');
+  const w = await sf('win');
+  assert.ok(w && w.ok, `win() failed: ${JSON.stringify(w)}`);
+  await sf('thaw'); // the UI moves to 'won' a moment after the sim's won event
+  await G.waitScene(sf, 'won', 10000);
   await sleep(500);
   const st = await B.frameStats(page);
   assert.ok(st.std > 8, 'won screen looks blank');
-  await G.clickOr(page, [SEL.ret], 'Enter', 4000);
+  await G.clickOr(page, [SEL.wonTitle, SEL.ret], 'Enter', 4000);
   await G.waitScene(sf, ['title', 'profiles', 'colony'], 6000);
   clean(page);
   await B.close(page);

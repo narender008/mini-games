@@ -6,8 +6,12 @@ const { suite, clean, assert, B, G } = require('./lib/suite.cjs');
 const env = suite();
 const { sleep, SEL, KEYS } = G;
 
-async function colony(extra = '', opts) {
+// Tutorial hints are switched off (as the Settings toggle does) so a hint
+// card floating over the world does not take the test's clicks; the last test
+// checks the hints never cover the HUD's own buttons.
+async function colony(extra = '', opts, { hints = false } = {}) {
   const { page, sf } = await env.debug(extra, opts);
+  if (!hints) await page.evaluate(() => { const a = window.__sf.app; a.settings = { ...(a.settings || {}), tutorial: false }; });
   const s = await G.freshColony(page, sf);
   await sf('thaw');
   await sleep(300);
@@ -25,6 +29,7 @@ test('mouse: pick from the palette, click to place, right click cancels a placem
   assert.ok(item, 'no build palette items');
   const type = await item.getAttribute('data-build');
   // cancel first
+  await sleep(400);
   await item.click();
   const p = await G.spot(sf, type, home);
   const xy = await sf('toScreen', home, p.x, p.y);
@@ -35,8 +40,9 @@ test('mouse: pick from the palette, click to place, right click cancels a placem
   await page.mouse.click(xy.x, xy.y);
   await sleep(300);
   assert.equal((await sf('state')).buildings.length, n0, 'a right-click-cancelled placement still placed a building');
-  // then place for real
-  await G.clickOr(page, [SEL.build], KEYS.build);
+  // then place for real (the palette may still be open)
+  if (!(await G.firstVisible(page, [SEL.buildItem(type)]))) await G.clickOr(page, [SEL.build], KEYS.build);
+  await sleep(400); // let the palette finish sliding in
   await (await G.waitVisible(page, [SEL.buildItem(type)], 3000)).click();
   await page.mouse.click(xy.x, xy.y);
   await sleep(300);
@@ -48,17 +54,22 @@ test('mouse: pick from the palette, click to place, right click cancels a placem
 
 test('mouse: clicking a building selects it', async () => {
   const { page, sf, s } = await colony();
-  const b = s.buildings[0];
-  assert.ok(b, 'fresh colony has no starting building to select');
-  const xy = await sf('toScreen', b.island, b.x, b.y);
+  // a building whose spot on screen is the canvas, not a HUD card over it
+  let b = null, xy = null;
+  for (const x of s.buildings) {
+    const p = await sf('toScreen', x.island, x.x, x.y);
+    if (p && await page.evaluate(([px, py]) => document.elementFromPoint(px, py)?.id === 'scene', [p.x, p.y])) { b = x; xy = p; break; }
+  }
+  assert.ok(b, `every starting building is under a HUD element: ${s.buildings.map((x) => x.type).join(', ')}`);
   await page.mouse.click(xy.x, xy.y);
   await sleep(300);
-  const st = await sf('state');
-  assert.equal(st.selected, b.id, `clicking building ${b.id} at ${xy.x},${xy.y} did not select it (selected ${st.selected})`);
+  const sel = (await sf('app.mode')).select;
+  assert.equal(sel, b.id, `clicking ${b.type} (${b.id}) at ${xy.x.toFixed(0)},${xy.y.toFixed(0)} did not select it (selected ${sel})`);
+  assert.ok(await G.waitVisible(page, [SEL.inspector], 2000), 'selecting a building did not open the inspector');
   await page.keyboard.press('Escape');
-  await sleep(200);
+  await sleep(300);
   const after = await sf('state');
-  assert.ok(after.selected == null || after.scene === 'paused', 'Escape did not clear the selection');
+  assert.ok((await sf('app.mode')).select == null || after.scene === 'paused', 'Escape did not clear the selection');
   clean(page);
   await B.close(page);
 });
@@ -81,11 +92,11 @@ test('mouse: drag pans and the wheel zooms', async () => {
   assert.ok(moved(c0, c1) > 1e-3, `drag did not pan the camera: ${JSON.stringify(c0)} -> ${JSON.stringify(c1)}`);
   await page.mouse.move(cx, cy);
   await page.mouse.wheel(0, -600);
-  await sleep(300);
+  await sleep(800); // the zoom eases in
   const c2 = await cam(sf);
   assert.ok(c2.zoom > c1.zoom, `wheel up did not zoom in (${c1.zoom} -> ${c2.zoom})`);
   await page.mouse.wheel(0, 1200);
-  await sleep(300);
+  await sleep(800);
   assert.ok((await cam(sf)).zoom < c2.zoom, 'wheel down did not zoom out');
   clean(page);
   await B.close(page);
@@ -133,19 +144,19 @@ test('keyboard: WASD pans, B/R/M/F open panels, number keys set the speed, Esc p
 
 test('keyboard: raid abilities on Q W E T during a raid', async () => {
   const { page, sf } = await colony();
-  await sf('unlock', 'all');
-  await sf('give', 'all', 5000);
   await sf('freeze');
+  await sf('play', { seed: 1234, preset: 'raid' });
+  await G.stepUntil(page, 's => s.scene === "colony"', { ms: 10000, chunk: 100 });
   await sf('raid');
   const r = await G.stepUntil(page, 's => s.threat.raid && s.threat.raid.active', { ms: 120000, chunk: 500 });
   assert.ok(r.ok, 'raid() did not start a raid');
   await sf('thaw');
   const used = [];
   for (const a of G.DEFEND) {
-    const before = JSON.stringify((await sf('state')).defend || null) + JSON.stringify(await sf('game.defend').catch(() => null));
+    const before = JSON.stringify(await sf('game.defend'));
     await page.keyboard.press(KEYS[a]);
     await sleep(250);
-    const after = JSON.stringify((await sf('state')).defend || null) + JSON.stringify(await sf('game.defend').catch(() => null));
+    const after = JSON.stringify(await sf('game.defend'));
     if (after !== before) used.push(a);
   }
   assert.ok(used.length >= 3, `only ${used.join(', ') || 'none'} of ${G.DEFEND.join(', ')} reacted to their keys`);
@@ -164,10 +175,13 @@ test('touch on a phone: tap the palette and the island to place, drag pans, pinc
   const p = await G.spot(sf, type, home);
   const xy = await sf('toScreen', home, p.x, p.y);
   const n0 = (await sf('state')).buildings.length;
+  const hit = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e && e.id !== 'scene' ? `${e.tagName}#${e.id}.${e.className}` : null; }, [xy.x, xy.y]);
+  assert.equal(hit, null, `on a phone the HUD covers the spot to build on (${hit} is over it)`);
   await page.touchscreen.tap(xy.x, xy.y);
   await sleep(300);
   let n = (await sf('state')).buildings.length;
-  if (n === n0) { await page.touchscreen.tap(xy.x, xy.y); await sleep(300); n = (await sf('state')).buildings.length; }
+  // a tap drops the ghost; the check button (or a second tap) confirms
+  if (n === n0) { if (!(await G.clickOr(page, [SEL.placeOk], null, 800))) await page.touchscreen.tap(xy.x, xy.y); await sleep(300); n = (await sf('state')).buildings.length; }
   assert.equal(n, n0 + 1, `tapping the island did not place a ${type}`);
   // one finger drag and a pinch, through CDP touch events
   const cdp = await page.context().newCDPSession(page);
@@ -196,11 +210,41 @@ test('the HUD fits a phone in portrait and landscape with nothing off screen', a
     const off = await page.evaluate(([W, H]) => [...document.querySelectorAll('button, [data-build], [data-speed]')].filter((el) => {
       const r = el.getBoundingClientRect();
       if (!r.width || !r.height || getComputedStyle(el).visibility === 'hidden') return false;
-      return r.right > W + 1 || r.bottom > H + 1 || r.left < -1 || r.top < -1;
-    }).map((el) => el.id || el.outerHTML.slice(0, 60)), [w, h]);
+      // inside a scrolling strip (the build palette) is fine: it scrolls into view
+      for (let a = el.parentElement; a; a = a.parentElement) { const o = getComputedStyle(a); if (/(auto|scroll)/.test(o.overflowX + o.overflowY) && (a.scrollWidth > a.clientWidth || a.scrollHeight > a.clientHeight)) return false; }
+      // wholly off screen is a panel slid away; cut by an edge is the fault
+      const onScreen = r.right > 0 && r.bottom > 0 && r.left < W && r.top < H;
+      return onScreen && (r.right > W + 1 || r.bottom > H + 1 || r.left < -1 || r.top < -1);
+    }).map((el) => el.id || el.outerHTML.slice(0, 90)), [w, h]);
     assert.deepEqual(off, [], `${w}x${h}: controls off screen`);
     const scroll = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
     assert.ok(!scroll, `${w}x${h}: page scrolls sideways`);
+    clean(page);
+    await B.close(page);
+  }
+});
+
+test('tutorial hints never cover the HUD buttons, on a desktop or a phone', async () => {
+  for (const [w, h, touch] of [[1280, 720, false], [844, 390, true], [390, 844, true]]) {
+    const { page, sf } = await colony(touch ? 'touch' : '', { width: w, height: h, touch, mobile: touch }, { hints: true });
+    const hits = [];
+    // the first chapter's hints, one after another: look after each step is done for it
+    for (let k = 0; k < 6; k++) {
+      await sleep(900);
+      const over = await page.evaluate(() => {
+        const card = document.querySelector('.bubble.tut');
+        if (!card || card.hidden || !card.getBoundingClientRect().width) return null;
+        const c = card.getBoundingClientRect();
+        return [...document.querySelectorAll('#ui button[id], #ui [data-speed]')].filter((el) => !card.contains(el) && el.getBoundingClientRect().width).filter((el) => {
+          const r = el.getBoundingClientRect();
+          return r.left < c.right && r.right > c.left && r.top < c.bottom && r.bottom > c.top;
+        }).map((el) => el.id || el.dataset.speed);
+      });
+      if (over && over.length) hits.push(`step ${k}: ${over.join(', ')}`);
+      // finish the current goal step the cheap way: let a minute of the colony pass
+      await sf('step', 60000, { render: true });
+    }
+    assert.deepEqual(hits, [], `${w}x${h}: the tutorial card covers HUD buttons`);
     clean(page);
     await B.close(page);
   }
