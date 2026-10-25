@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Skyforge panels harness</title>
+    <link rel="stylesheet" href="../panels.css" />
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #2a2450; }
+      #bg { position: fixed; inset: 0; background: radial-gradient(circle at 20% 80%, #f0a878 0, #6a4a80 40%, #1d2050 100%); }
+      #ui { position: fixed; inset: 0; }
+      .sheet { position: fixed; inset: 0; overflow: auto; padding: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; background: #e9dcc0; }
+      .sheet figure { margin: 0; width: 150px; text-align: center; font: 10px sans-serif; color: #3b2a22; }
+      .sheet figure div { display: flex; gap: 2px; align-items: center; justify-content: center; }
+    </style>
+  </head>
+  <body>
+    <div id="bg"></div>
+    <div id="ui"></div>
+    <script type="module">
+      import { mockApp, realApp } from './panels-mock.js';
+      import { icon, GLYPH_IDS } from '../src/ui/icons.js';
+      const Q = new URLSearchParams(location.search), which = Q.get('panel') || 'research';
+      if (which === 'icons') {
+        const s = document.createElement('div'); s.className = 'sheet'; document.body.appendChild(s);
+        const sizes = (Q.get('sizes') || '24,40,64').split(',').map(Number), style = Q.get('style') || 'navy';
+        for (const id of GLYPH_IDS) {
+          const f = document.createElement('figure'), d = document.createElement('div');
+          for (const z of sizes) d.appendChild(icon(id, z, { style }));
+          f.appendChild(d); f.append(id); s.appendChild(f);
+        }
+        document.title = 'ready';
+      } else {
+        const app = Q.has('mock') ? mockApp() : await realApp(Q.get('preset') || 'mid', +(Q.get('seed') || 3)); window.app = app;
+        if (Q.get('setup')) { try { (new Function('app', 'G', Q.get('setup')))(app, app.G); } catch (e) { console.error(e); } }
+        if (Q.has('empty')) { app.G.research = { current: null, progress: 0, done: [], queue: [] }; app.G.routes = []; app.G.contracts = []; app.G.expeditions = []; }
+        const mod = await import(`../src/ui/${which}.js`);
+        const name = 'create' + which[0].toUpperCase() + which.slice(1);
+        const p = mod[name](app);
+        document.getElementById('ui').appendChild(p.el);
+        app.setScene(which === 'stats' ? 'paused' : which);
+        p.open();
+        if (Q.get('select')) p.select?.(isNaN(+Q.get('select')) ? Q.get('select') : +Q.get('select'));
+        let last = performance.now();
+        const loop = (t) => { const dt = Math.min(0.1, (t - last) / 1000); last = t; if (app.tick && Q.has('run')) app.tick(dt); p.update(dt); requestAnimationFrame(loop); };
+        requestAnimationFrame(loop);
+        setTimeout(() => (document.title = 'ready'), 400);
+      }
+    </script>
+  </body>
+</html>

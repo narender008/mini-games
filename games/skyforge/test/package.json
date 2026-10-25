@@ -1,0 +1,17 @@
+{
+  "name": "skyforge-tests",
+  "private": true,
+  "description": "Automated tests for Skyforge Tycoon: browser smoke, input and save-system tests, an economy bot that plays a colony to its long-term goal, a large-colony performance bench and screenshots of every screen.",
+  "scripts": {
+    "test": "node run.cjs",
+    "smoke": "node --test --test-reporter=spec --test-concurrency=1 smoke.test.cjs",
+    "input": "node --test --test-reporter=spec --test-concurrency=1 input.test.cjs",
+    "save": "node --test --test-reporter=spec --test-concurrency=1 save.test.cjs",
+    "bot": "node bot.cjs",
+    "perf": "node perf.cjs",
+    "shots": "node screenshots.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

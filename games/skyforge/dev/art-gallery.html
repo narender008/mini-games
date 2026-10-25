@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skyforge art gallery</title>
+<style>
+  html, body { margin: 0; background: #1b2142; color: #f3e6c8; font: 14px 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', 'DejaVu Sans', Verdana, sans-serif; }
+  #bar { position: sticky; top: 0; z-index: 2; display: flex; gap: 14px; align-items: center; padding: 8px 14px; background: rgba(27,33,66,0.92); border-bottom: 1px solid #c9a050; }
+  #bar a { color: #ffd27a; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <b>Skyforge art gallery</b>
+  <span>?night=0..1 &nbsp; ?t=seconds &nbsp; ?anim=1 &nbsp; ?only=buildings,stages,wonder,defence,farm,props,links,ships,settlers &nbsp; ?zoom=1.5 &nbsp; ?bbox=1</span>
+  <a href="?">day</a><a href="?night=1">night</a><a href="?anim=1">animate</a>
+</div>
+<canvas id="c"></canvas>
+<script type="module" src="art-gallery.js"></script>
+</body>
+</html>

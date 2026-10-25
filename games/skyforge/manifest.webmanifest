@@ -1,0 +1,1 @@
+{ "name": "Skyforge Tycoon", "short_name": "Skyforge", "start_url": "./", "display": "fullscreen", "orientation": "landscape", "background_color": "#1b2142", "theme_color": "#1b2142", "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }] }
