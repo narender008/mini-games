@@ -95,6 +95,18 @@ export function createInput(G, canvas) {
     return { x: (best.x - h.x) / l, y: (best.y - h.y) / l };
   }
 
+  // Touch buttons write T[action] = true/false from DOM events; a tap shorter than one sim tick would fall
+  // between two samples. Each button field becomes an accessor that queues the press the moment it goes
+  // down (like a keydown), so the sim always sees it once.
+  function latchTouch(T) {
+    Object.defineProperty(T, '__latched', { value: true, enumerable: false });
+    for (const a of ACTS) {
+      if (a === 'move' || !(a in T) || typeof T[a] !== 'boolean') continue;
+      let v = T[a];
+      Object.defineProperty(T, a, { enumerable: true, configurable: true, get: () => v, set: (nv) => { nv = !!nv; if (nv && !v && canQueue(a)) { queued[a]++; api.lastDevice = 'touch'; } v = nv; } });
+    }
+  }
+
   let settingsB = null;
   api.sample = function sample(G) {
     const sb = G.settings && G.settings.bindings;
@@ -102,6 +114,7 @@ export function createInput(G, canvas) {
     const I = G.input, h = G.hero;
     const pad = readPad();
     if (pad && pad.active) api.lastDevice = 'pad';
+    if (I.touch && !I.touch.__latched) latchTouch(I.touch);
     const T = I.touch && I.touch.active ? I.touch : null;
     if (T) api.lastDevice = 'touch';
     const held = {};

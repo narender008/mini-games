@@ -372,6 +372,8 @@ const LIGHT_RULES = {
   statue: (o, P) => ({ x: o.x, y: o.y - 70, r: 110, color: P.light[0], i: 0.4 }),
   anvil: (o, P) => ({ x: o.x, y: o.y - 30, r: 120, color: P.light[0], i: 0.45 }),
   chimney: (o, P) => ({ x: o.x, y: o.y - 150, r: 220, color: P.light[0], i: 0.7, flicker: 0.15 }),
+  chorister: (o) => ({ x: o.x, y: o.y - 120, r: 150, color: '#bfe0ff', i: 0.35 }),
+  pew: () => null,
   spindle: (o, P) => ({ x: o.x, y: o.y - 90, r: 140, color: P.light[o.seed % P.light.length], i: 0.55 }),
 };
 
@@ -473,6 +475,16 @@ export function makeChamber(regionId, index, kind = 'combat', seed = 1, opts = {
     if (p.type === 'candles') chamber.lights.push({ x: p.x, y: p.y - 40, r: 170, color: '#ffc870', i: 0.6, flicker: 0.12 });
     if (p.type === 'brazier') chamber.lights.push({ x: p.x, y: p.y - 70, r: 230, color: '#ff9a3a', i: 0.8, flicker: 0.2 });
     if (p.type === 'loompost' && pr() < 0.5) chamber.lights.push({ x: p.x, y: p.y - 120, r: 160, color: P.light[p.seed % P.light.length], i: 0.4 });
+  }
+  // the Forge: furnace mouths along the back walls, each a warm light the painter puts a fire behind
+  if (regionId === 'forge' && kind !== 'boss') {
+    chamber.furnaces = [];
+    for (const p of walkEdge(shape, 330)) {
+      if (p.ny > -0.6) continue;
+      if (chamber.doors.some((d) => Math.hypot(d.ex - p.x, d.ey - p.y) < 220) || Math.hypot(entry.ex - p.x, entry.ey - p.y) < 200) continue;
+      chamber.furnaces.push({ x: Math.round(p.x), y: Math.round(p.y) });
+      chamber.lights.push({ x: Math.round(p.x), y: Math.round(p.y + 50), r: 340, color: '#ff7a2a', i: 0.85, flicker: 0.15, furnace: true });
+    }
   }
   const haz = { molten: ['#ff7a2a', 0.85, 1.9], pit: [regionId === 'choir' ? '#3a9aff' : '#6a5aff', 0.45, 1.3], thorns: [P.danger, 0.5, 1.6], void: ['#b04aff', 0.35, 1.2] };
   const seen = new Set();

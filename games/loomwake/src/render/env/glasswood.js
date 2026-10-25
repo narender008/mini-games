@@ -5,7 +5,7 @@
 
 import {
   TAU, mk, hexA, mix, shade, rng, hashSeed, glow, drawGlow, drawShadow, polyPath, smoothPath, offsetPoly, bbox, edgeSamples, inPoly,
-  noise2, worldCanvas, fillGrain, lip, markStart, mark, marks, strokes, innerShade, cliff, sprite, propOf, screenCache, parallax, compose, drawLayer, sparse, drawSparse, starfield, nebula, aurora, boltPath, drift, viewRect, lerp, clamp,
+  noise2, worldCanvas, fillGrain, lip, markStart, mark, marks, drawDrift, strokes, innerShade, cliff, sprite, propOf, screenCache, parallax, compose, drawLayer, sparse, drawSparse, starfield, nebula, aurora, boltPath, drift, viewRect, lerp, clamp,
 } from './common.js';
 import { REGIONS } from '../../content/regions.js';
 import { DOOR_GEOM, doorXform, archPath } from './doors.js';
@@ -546,7 +546,12 @@ function islandsLayer(W, H, seed, n, scale, dark, hazeCol, haze) {
 }
 const backFar = screenCache((W, H) => islandsLayer(W, H, 11, 14, 0.55, '#141038', '#2a2a6a', 0.45));
 const backNear = screenCache((W, H) => islandsLayer(W, H, 23, 5, 0.65, '#100c2c', '#1a1a4a', 0.4));
-const backAll = screenCache((W, H) => compose(W, H, [backSky(W, H), [backAur(W, H), 'lighter', 0.9], backFar(W, H), backNear(W, H)]));
+const backAll = screenCache((W, H) => compose(W, H, [backSky(W, H), [backAur(W, H), 'lighter', 0.35], backFar(W, H)]));
+// animated second layers: the auroras breathe and sway; the near islands slide with a stronger parallax
+const backStill = screenCache((W, H) => compose(W, H, [backSky(W, H), [backAur(W, H), 'lighter', 0.9], backFar(W, H), backNear(W, H)]));
+let ANIM = true; // animated sky layers only on the high tier (env quality >= 0.95)
+const aurS = screenCache((W, H) => sparse(compose(W, H, [[backAur(W, H), 'lighter', 0.7]])));
+const nearS = screenCache((W, H) => sparse(backNear(W, H)));
 
 let bolt = { k: -1, pts: null };
 function lightning(t) {
@@ -560,7 +565,12 @@ function lightning(t) {
 }
 function back(ctx, cam, t) {
   const W = cam.w, H = cam.h;
-  drawLayer(ctx, backAll(W, H), cam, 0.05);
+  if (!ANIM) drawLayer(ctx, backStill(W, H), cam, 0.05);
+  else {
+    drawLayer(ctx, backAll(W, H), cam, 0.05);
+    drawDrift(ctx, aurS(W, H), cam, 0.03, t, { sway: 70, period: 80, op: 'lighter', alpha: 0.65 + 0.35 * Math.sin(t * 0.25) });
+    drawDrift(ctx, nearS(W, H), cam, 0.12, t, { sway: 12, period: 47 });
+  }
   // distant storm lightning: only while a flash is live
   const L = lightning(t);
   if (L) {
@@ -692,6 +702,7 @@ function buildProps(ch, q) {
 }
 
 export function paint(ch, q) {
+  ANIM = q >= 0.95;
   markStart();
   const { W, E } = paintFloor(ch, q);
   const props = buildProps(ch, q);

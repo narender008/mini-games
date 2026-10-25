@@ -5,7 +5,7 @@
 import {
   TAU, mk, hexA, mix, rng, hashSeed, glow, drawGlow, drawShadow, polyPath, smoothPath, bbox, edgeSamples, inPoly,
   noise2, worldCanvas, strokes, innerShade, sprite, propOf, screenCache, parallax, compose, drawLayer, starfield, nebula, aurora, drift, viewRect, lerp, clamp,
-  fillGrain, lip, markStart, mark, marks,
+  fillGrain, lip, markStart, mark, marks, drawDrift, sparse, drawSparse,
 } from './common.js';
 import { REGIONS } from '../../content/regions.js';
 import { paintFeature, paintEntry, paintBakedLights, featureProps } from './features.js';
@@ -354,9 +354,17 @@ function fragmentsLayer(W, H, seed) {
 }
 const backThreads = screenCache((W, H) => threadsLayer(W, H, 83, 26, 0.35));
 const backFrag = screenCache((W, H) => fragmentsLayer(W, H, 89));
-const backAll = screenCache((W, H) => compose(W, H, [backSky(W, H), [backAur(W, H), 'lighter', 0.9], backThreads(W, H), backFrag(W, H)]));
+const backAll = screenCache((W, H) => compose(W, H, [backSky(W, H), [backAur(W, H), 'lighter', 0.35], backFrag(W, H)]));
+const backStill = screenCache((W, H) => compose(W, H, [backSky(W, H), [backAur(W, H), 'lighter', 0.9], backThreads(W, H), backFrag(W, H)]));
+let ANIM = true; // animated sky layers only on the high tier (env quality >= 0.95)
+const aurS = screenCache((W, H) => sparse(compose(W, H, [[backAur(W, H), 'lighter', 0.7]])));
+const threadS = screenCache((W, H) => sparse(backThreads(W, H)));
 function back(ctx, cam, t) {
-  drawLayer(ctx, backAll(cam.w, cam.h), cam, 0.05);
+  const W = cam.w, H = cam.h;
+  if (!ANIM) { drawLayer(ctx, backStill(W, H), cam, 0.05); return; }
+  drawLayer(ctx, backAll(W, H), cam, 0.05);
+  drawDrift(ctx, aurS(W, H), cam, 0.03, t, { sway: 90, period: 70, op: 'lighter', alpha: 0.6 + 0.4 * Math.sin(t * 0.3) });
+  drawDrift(ctx, threadS(W, H), cam, 0.1, t, { sway: 26, period: 23 });
 }
 
 // ---------------------------------------------------------------- foreground
@@ -421,6 +429,7 @@ function buildProps(ch, q) {
 }
 
 export function paint(ch, q) {
+  ANIM = q >= 0.95;
   markStart();
   const { W, E } = paintFloor(ch, q);
   const props = buildProps(ch, q);

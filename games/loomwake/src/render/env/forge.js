@@ -5,7 +5,7 @@
 import {
   TAU, mk, hexA, mix, rng, hashSeed, glow, drawGlow, drawShadow, polyPath, bbox, edgeSamples, inPoly,
   noise2, worldCanvas, strokes, innerShade, cliff, sprite, propOf, screenCache, parallax, compose, drawLayer, sparse, drawSparse, starfield, nebula, drift, viewRect, lerp, clamp,
-  fillGrain, lip, markStart, mark, marks, slabs, paintSlab,
+  fillGrain, lip, markStart, mark, marks, slabs, paintSlab, drawDrift,
 } from './common.js';
 import { REGIONS } from '../../content/regions.js';
 import { paintFeature, paintEntry, paintBakedLights, featureProps } from './features.js';
@@ -269,7 +269,15 @@ function paintFloor(ch, q) {
   // warm bounce light from every pool and channel of melt
   g.globalCompositeOperation = 'lighter';
   for (const h of ch.hazards) if (h.type === 'molten') { const R = h.r + 240; g.globalAlpha = 0.16; g.drawImage(glow('#ff7a2a', 1), h.x - R, h.y - R * 0.66, R * 2, R * 1.32); }
+  // furnace light spilling across the plates from the back walls
+  for (const f of ch.furnaces || []) { g.globalAlpha = 0.3; g.drawImage(glow('#ff7a2a', 1), f.x - 260, f.y - 60, 520, 380); }
+  // the foundry's own air: broad washes of orange and sunset magenta, never a cold grey
+  for (let i = 0; i < 14; i++) { const x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1), rr = r.range(220, 480); g.globalAlpha = 0.09; g.drawImage(glow(i % 2 ? '#ff6a2a' : '#d0306a', 1), x - rr, y - rr * 0.62, rr * 2, rr * 1.24); }
   g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+  // live embers fallen between the plates
+  ge.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < (b.w * b.h) / 16000; i++) { const x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1), s2 = r.range(4, 10); ge.globalAlpha = r.range(0.4, 0.9); ge.drawImage(glow(r() < 0.7 ? '#ff8a2a' : '#ff4a6a'), x - s2, y - s2, s2 * 2, s2 * 2); }
+  ge.globalAlpha = 1; ge.globalCompositeOperation = 'source-over';
   // soot, oil and slag splashes
   for (let i = 0; i < 18; i++) {
     const x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1), rr = r.range(90, 260);
@@ -312,13 +320,13 @@ function paintFloor(ch, q) {
 
   paintWalls(g, ge, shape, {
     H: 340, sideH: 170, base: '#1a0e12', top: '#3a2228', trim: '#c08a4a',
-    detail: (g, ge, s, H) => wallDetail(g, ge, s, H, r),
+    detail: (g, ge, s, H) => wallDetail(g, ge, s, H, r, ch),
   }, r);
   for (const d of ch.doors) doorFrame(g, ge, d);
   mark('walls');
   return { W, E };
 }
-function wallDetail(g, ge, s, H, r) {
+function wallDetail(g, ge, s, H, r, ch) {
   const tx = (s.x2 - s.x1) / s.len, ty = (s.y2 - s.y1) / s.len;
   // brick courses
   g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 2;
@@ -330,28 +338,42 @@ function wallDetail(g, ge, s, H, r) {
   const lg = g.createLinearGradient(0, Math.min(s.y1, s.y2), 0, Math.min(s.y1, s.y2) - H);
   lg.addColorStop(0, 'rgba(255,90,40,0.18)'); lg.addColorStop(0.5, 'rgba(0,0,0,0)'); lg.addColorStop(1, 'rgba(0,0,0,0.35)');
   g.fillStyle = lg; g.fillRect(Math.min(s.x1, s.x2) - 2, Math.min(s.y1, s.y2) - H - 2, Math.abs(s.x2 - s.x1) + 4, H + Math.abs(s.y2 - s.y1) + 6);
+  // furnace mouths where the chamber put furnace lights (they sit on the wall's foot line)
+  const furn = (ch.furnaces || []).filter((f) => { const u = ((f.x - s.x1) * tx + (f.y - s.y1) * ty); if (u < -10 || u > s.len + 10) return false; const px = s.x1 + tx * u, py = s.y1 + ty * u; return Math.hypot(px - f.x, py - f.y) < 24; });
+  for (const f of furn) {
+    const x = f.x, y = f.y, mw = 74, mh = 120;
+    const mouth = (c) => { c.beginPath(); c.moveTo(x - mw, y - 4); c.lineTo(x - mw, y - mh * 0.5); c.quadraticCurveTo(x - mw, y - mh, x, y - mh); c.quadraticCurveTo(x + mw, y - mh, x + mw, y - mh * 0.5); c.lineTo(x + mw, y - 4); c.closePath(); };
+    // brick arch around the mouth, scorched black above it
+    g.globalAlpha = 0.6; g.drawImage(glow('#000000', 1), x - mw * 1.4, y - mh * 2.6, mw * 2.8, mh * 1.8); g.globalAlpha = 1;
+    mouth(g); g.fillStyle = '#0a0204'; g.fill();
+    g.save(); mouth(g); g.clip();
+    const fg = g.createRadialGradient(x, y - 10, 4, x, y - 30, mh); fg.addColorStop(0, M[0]); fg.addColorStop(0.35, M[1]); fg.addColorStop(0.75, M[2]); fg.addColorStop(1, '#1a0204');
+    g.fillStyle = fg; g.fillRect(x - mw, y - mh, mw * 2, mh);
+    // coals and the grate bars
+    g.fillStyle = '#3a0a06'; for (let k = 0; k < 9; k++) { g.beginPath(); g.ellipse(x - mw + 12 + k * 16, y - 10, 9, 6, 0, 0, TAU); g.fill(); }
+    g.strokeStyle = '#1a0a08'; g.lineWidth = 6; for (let k = -3; k <= 3; k++) { g.beginPath(); g.moveTo(x + k * 20, y - mh); g.lineTo(x + k * 20, y); g.stroke(); }
+    g.restore();
+    mouth(g); g.strokeStyle = '#5a3a30'; g.lineWidth = 14; g.stroke(); g.strokeStyle = '#d0904a'; g.lineWidth = 2; g.stroke();
+    // a hot spill of light across the floor in front
+    g.globalCompositeOperation = 'lighter'; g.globalAlpha = 0.35; g.drawImage(glow('#ff7a2a', 1), x - mw * 2.6, y - 30, mw * 5.2, 200); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+    ge.globalCompositeOperation = 'lighter'; ge.drawImage(glow('#ff7a2a'), x - mw * 2.4, y - mh * 1.7, mw * 4.8, mh * 2.6); ge.globalAlpha = 0.7; ge.drawImage(glow('#ff9a3a', 1), x - mw * 3, y - 40, mw * 6, 240); ge.globalAlpha = 1; ge.globalCompositeOperation = 'source-over';
+  }
   if (s.len < 200 || s.side) return;
+  // pipes and gauges where no furnace burns, chains hanging from the cornice
   const n = Math.max(1, Math.floor(s.len / 300));
   for (let i = 0; i < n; i++) {
     const u = (i + 0.5) / n, x = s.x1 + tx * s.len * u, y = s.y1 + ty * s.len * u;
-    if (i % 2 === 0) {
-      // a furnace mouth with fire inside
-      const mw = 70, mh = 110;
-      const mouth = (c) => { c.beginPath(); c.moveTo(x - mw, y - 4); c.lineTo(x - mw, y - mh * 0.5); c.quadraticCurveTo(x - mw, y - mh, x, y - mh); c.quadraticCurveTo(x + mw, y - mh, x + mw, y - mh * 0.5); c.lineTo(x + mw, y - 4); c.closePath(); };
-      mouth(g); g.fillStyle = '#0a0204'; g.fill();
-      g.save(); mouth(g); g.clip();
-      const fg = g.createRadialGradient(x, y - 10, 4, x, y - 30, mh); fg.addColorStop(0, M[0]); fg.addColorStop(0.35, M[1]); fg.addColorStop(0.75, M[2]); fg.addColorStop(1, '#1a0204');
-      g.fillStyle = fg; g.fillRect(x - mw, y - mh, mw * 2, mh);
-      g.restore();
-      mouth(g); g.strokeStyle = '#5a3a30'; g.lineWidth = 12; g.stroke(); g.strokeStyle = '#c08a4a'; g.lineWidth = 2; g.stroke();
-      ge.globalCompositeOperation = 'lighter'; ge.drawImage(glow('#ff7a2a'), x - mw * 2.2, y - mh * 1.6, mw * 4.4, mh * 2.4); ge.globalCompositeOperation = 'source-over';
-    } else {
-      // pipes and a pressure gauge
-      g.fillStyle = '#2a1c20'; g.fillRect(x - 18, y - H, 36, H);
-      g.fillStyle = 'rgba(255,180,120,0.18)'; g.fillRect(x - 18, y - H, 6, H);
-      g.fillStyle = '#c08a4a'; g.beginPath(); g.arc(x, y - H * 0.5, 22, 0, TAU); g.fill();
-      g.fillStyle = '#f0e0c0'; g.beginPath(); g.arc(x, y - H * 0.5, 17, 0, TAU); g.fill();
-      g.strokeStyle = '#a01a10'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y - H * 0.5); g.lineTo(x + 12, y - H * 0.5 - 8); g.stroke();
+    if (furn.some((f) => Math.abs(f.x - x) < 200)) continue;
+    g.fillStyle = '#2a1c20'; g.fillRect(x - 18, y - H, 36, H);
+    g.fillStyle = 'rgba(255,180,120,0.18)'; g.fillRect(x - 18, y - H, 6, H);
+    g.fillStyle = '#c08a4a'; g.beginPath(); g.arc(x, y - H * 0.5, 22, 0, TAU); g.fill();
+    g.fillStyle = '#f0e0c0'; g.beginPath(); g.arc(x, y - H * 0.5, 17, 0, TAU); g.fill();
+    g.strokeStyle = '#a01a10'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y - H * 0.5); g.lineTo(x + 12, y - H * 0.5 - 8); g.stroke();
+    for (const dx of [-90, 70]) {
+      const L = r.range(80, 200);
+      g.strokeStyle = '#0e0608'; g.lineWidth = 3.5;
+      for (let yy = y - H; yy < y - H + L; yy += 11) { g.beginPath(); g.ellipse(x + dx, yy, 3, 5.5, 0, 0, TAU); g.stroke(); }
+      g.lineWidth = 5; g.beginPath(); g.arc(x + dx + 8, y - H + L + 10, 10, Math.PI, Math.PI * 2.4); g.stroke();
     }
   }
 }
@@ -435,10 +457,12 @@ const backSuns = screenCache(sunsLayer);
 const backFar = screenCache((W, H) => towersLayer(W, H, 51, 12, 0.6, '#2a0a16', 0.5));
 const backNear = screenCache((W, H) => towersLayer(W, H, 57, 6, 1, '#12040a', 0.8));
 const backSea = screenCache((W, H) => { const c = mk(W, H), g = c.getContext('2d'); const lg = g.createLinearGradient(0, H * 0.62, 0, H); lg.addColorStop(0, 'rgba(255,80,20,0)'); lg.addColorStop(1, 'rgba(255,90,20,0.4)'); g.fillStyle = lg; g.fillRect(0, 0, W, H); return c; });
-const backAll = screenCache((W, H) => compose(W, H, [backSky(W, H), backSuns(W, H), backFar(W, H), backNear(W, H), backSea(W, H)]));
+const backAll = screenCache((W, H) => compose(W, H, [backSky(W, H), backSuns(W, H), backFar(W, H), backSea(W, H)]));
+const nearS = screenCache((W, H) => sparse(backNear(W, H)));
 function back(ctx, cam, t) {
   const W = cam.w, H = cam.h;
   drawLayer(ctx, backAll(W, H), cam, 0.05);
+  drawDrift(ctx, nearS(W, H), cam, 0.12, t, { sway: 8, period: 61 });
   // a few smoke plumes drifting across the towers
   ctx.globalAlpha = 0.16;
   for (let i = 0; i < 3; i++) {
@@ -501,6 +525,26 @@ function makeAmbient(ch) {
   const stacks = ch.obstacles.filter((o) => o.type === 'chimney');
   return (ctx, G, t) => {
     ctx.globalCompositeOperation = 'lighter';
+    // heat haze: thin wavering ribbons of light rising off the melt
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,170,90,0.10)';
+    ctx.beginPath();
+    for (let i = 0; i < Math.min(8, molten.length); i++) {
+      const h = molten[(i * 5) % molten.length];
+      for (let k = 0; k < 2; k++) {
+        const ph = ((t * 0.35 + k * 0.5 + i * 0.17) % 1), y0 = h.y - 20 - ph * 140;
+        ctx.moveTo(h.x - h.r * 0.8, y0);
+        for (let x = -h.r * 0.8; x <= h.r * 0.8; x += 14) ctx.lineTo(h.x + x, y0 + Math.sin(x / 18 + t * 4 + k) * 4);
+      }
+    }
+    ctx.stroke();
+    // sparks drifting through the whole hall, lifted on the heat
+    const v = viewRect(ctx, 40);
+    for (let i = 0; i < 26; i++) {
+      const [x, y] = drift(i, t, 3.3, v.x1 - v.x0, v.y1 - v.y0, Math.sin(t * 0.8 + i) * 22, -38 - (i % 5) * 10);
+      ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t * 5 + i * 1.7);
+      ctx.drawImage(glow(i % 4 ? '#ff9a3a' : '#ff5a8a'), v.x0 + x - 5, v.y0 + y - 5, 10, 10);
+    }
+    ctx.globalAlpha = 1;
     // embers boiling off the molten
     for (let i = 0; i < Math.min(60, molten.length * 4); i++) {
       const h = molten[i % molten.length], life = 1.6, ph = ((t + i * 0.37) % life) / life, cyc = Math.floor((t + i * 0.37) / life);
@@ -552,6 +596,6 @@ export function paint(ch, q) {
     floor: W.c, glow: E.c, origin: { x: W.x0, y: W.y0 }, w: W.w, h: W.h,
     glowPulse: (t) => 0.8 + Math.sin(t * 2.1) * 0.1 + Math.sin(t * 5.3) * 0.05,
     back, front, props, ambient: makeAmbient(ch),
-    dark: P.dark, tint: null, prof: marks(),
+    dark: P.dark, tint: '#ff6a3a', prof: marks(),
   };
 }

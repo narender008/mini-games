@@ -9,7 +9,10 @@
 import { clamp, lerp } from '../core/math.js';
 import { BOSSES } from '../content/bosses.js';
 
-function bossHeight(B) { if (B.height) return B.height; const d = BOSSES[B.kind] || BOSSES[B.id]; return d?.height || (B.r || 40) * 3.5; }
+// painted extent above the feet (measured from the boss painters: crowns, staffs, helms), used for framing;
+// content/bosses.js may give frameHeight to override
+const FRAME_H = { veyl: 345, morrow: 400, aurum: 500, sable: 240 };
+function bossHeight(B) { const d = BOSSES[B.kind] || BOSSES[B.id]; return d?.frameHeight || FRAME_H[B.kind] || (B.height || d?.height || (B.r || 40) * 3.5) * 1.12 + 16; }
 
 export function createCamera(G) {
   const cam = { x: 0, y: 0, zoom: 1, zoomTarget: 1, shake: 0, sx: 0, sy: 0, kx: 0, ky: 0, punchZ: 0, t: 0, shakeMul: 1 };

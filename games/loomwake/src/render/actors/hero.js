@@ -572,8 +572,11 @@ export function drawHeroXray(ctx, h, G, P, k = 1) {
   g.globalCompositeOperation = 'source-over';
   const x = h.x, y = h.y - (h.z || 0);
   ctx.save();
-  for (const [ox, oy] of OUTLINE) { ctx.globalAlpha = 0.5 * k; ctx.drawImage(inkC, x - SPR.ox + ox, y - SPR.oy + oy, inkC.width / sprScale, inkC.height / sprScale); }
-  blit(ctx, xrayC, x, y, 0.42 * k);
+  // bright rim (the silhouette shifted around) then a soft warm fill: reads as "Iri is here", not a hole
+  for (const [ox, oy] of OUTLINE) blit(ctx, xrayC, x + ox * 2, y + oy * 2, 0.75 * k);
+  ctx.globalCompositeOperation = 'source-over';
+  const g2 = xrayC.getContext('2d'); g2.globalCompositeOperation = 'source-in'; g2.fillStyle = '#7a3a2a'; g2.fillRect(0, 0, xrayC.width, xrayC.height); g2.globalCompositeOperation = 'source-over';
+  blit(ctx, xrayC, x, y, 0.55 * k);
   ctx.restore();
 }
 
@@ -581,7 +584,7 @@ export function heroLights(h, G, push) {
   if (!h || (h.state === 'dead' && h.st > 1.2)) return;
   push(h.x, h.y - 40, 300, '#ffc073', 0.9, 0.4); // low haze: Iri's own light must not wash her sprite
   const a = h.anim;
-  if (a.pose?.swinging && a.tip) push(h.x + a.tip[0], h.y + a.tip[1], 170, '#ffc35a', 0.7);
+  if (a.pose?.swinging && a.tip) push(h.x + a.tip[0], h.y + a.tip[1], 170, '#ffc35a', 0.7, 0.35);
   if (h.snare) push(h.snare.x, h.snare.y - 36, 130, '#ffd27a', 0.8);
   if (h.state === 'call') push(h.x, h.y - 30, 520, '#ffd27a', 1.2 * (1 - clamp(h.st / 0.5, 0, 1)));
   if (h.state === 'respawn') push(h.x, h.y - 40, 360, '#ffd27a', 1);

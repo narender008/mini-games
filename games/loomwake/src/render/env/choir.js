@@ -6,7 +6,7 @@ import {
   TAU, mk, hexA, mix, rng, hashSeed, glow, drawGlow, drawShadow, polyPath, offsetPoly, bbox, edgeSamples, inPoly,
   noise2, worldCanvas, strokes, innerShade, cliff, sprite, propOf, screenCache, parallax, compose, drawLayer, sparse, drawSparse, starfield, nebula, aurora, drift, viewRect, lerp, clamp,
   fillGrain, lip, markStart, mark, marks,
-  slabs, paintSlab, smoothPath,
+  slabs, paintSlab, smoothPath, drawDrift,
 } from './common.js';
 import { REGIONS } from '../../content/regions.js';
 import { paintFeature, paintEntry, paintBakedLights, featureProps } from './features.js';
@@ -88,6 +88,64 @@ function statueSprite(seed, k) {
     g.fillStyle = '#fff6d0'; g.fillRect(26 * S, -116 * S, 8 * S, 12 * S);
     g.globalCompositeOperation = 'source-over';
     c.ax = w / 2; c.ay = h - 18 * S; c.k = k;
+    return c;
+  });
+}
+// a drowned chorister in stone: robed, head thrown back mid-hymn, an open book held to the chest
+function choristerSprite(seed, k) {
+  return sprite(`ch-chorister:${seed % 3}:${k}`, () => {
+    const S = k, w = 150 * S, h = 300 * S, c = mk(w, h), g = c.getContext('2d'), r = rng(seed % 3 + 21);
+    g.translate(w / 2, h - 16 * S); g.scale(S, S);
+    drawShadow(g, 4, 2, 56, 16, 0.8);
+    g.fillStyle = '#18244a'; g.fillRect(-40, -34, 80, 34); g.fillStyle = GOLD; g.fillRect(-40, -36, 80, 3);
+    const sg = g.createLinearGradient(-36, 0, 36, 0); sg.addColorStop(0, '#a8bce0'); sg.addColorStop(0.45, '#6a80b0'); sg.addColorStop(1, '#22335f');
+    g.fillStyle = sg;
+    // robe flaring at the hem, narrow shoulders
+    g.beginPath(); g.moveTo(-40, -36); g.quadraticCurveTo(-34, -120, -22, -176); g.lineTo(22, -176); g.quadraticCurveTo(34, -120, 40, -36); g.closePath(); g.fill();
+    // ruff collar
+    g.fillStyle = '#c8d4f0'; g.beginPath(); for (let i = 0; i <= 10; i++) { const a = Math.PI + (i / 10) * Math.PI, rr = i % 2 ? 26 : 30; g.lineTo(Math.cos(a) * rr, -176 - Math.sin(a) * rr * 0.32); } g.closePath(); g.fill();
+    // head thrown back, mouth open in song
+    g.fillStyle = '#8ea4d0'; g.beginPath(); g.ellipse(2, -200, 17, 20, -0.35, 0, TAU); g.fill();
+    g.fillStyle = '#0a1028'; g.beginPath(); g.ellipse(6, -194, 5, 7, -0.35, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(10,16,40,0.5)'; g.lineWidth = 2; g.beginPath(); g.moveTo(-6, -206); g.lineTo(2, -208); g.moveTo(8, -209); g.lineTo(14, -210); g.stroke();
+    // folds
+    g.strokeStyle = 'rgba(10,16,40,0.35)'; g.lineWidth = 2; for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(i * 9, -150); g.quadraticCurveTo(i * 13, -96, i * 15, -38); g.stroke(); }
+    // the open hymnal
+    g.fillStyle = '#e8e0c8'; g.beginPath(); g.moveTo(-24, -128); g.lineTo(0, -120); g.lineTo(24, -128); g.lineTo(24, -104); g.lineTo(0, -96); g.lineTo(-24, -104); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(40,50,90,0.6)'; g.lineWidth = 1; for (let i = 0; i < 3; i++) { g.beginPath(); g.moveTo(-20, -120 + i * 6); g.lineTo(-4, -115 + i * 6); g.moveTo(4, -115 + i * 6); g.lineTo(20, -120 + i * 6); g.stroke(); }
+    g.fillStyle = '#6a80b0'; g.beginPath(); g.ellipse(-26, -114, 8, 6, 0, 0, TAU); g.ellipse(26, -114, 8, 6, 0, 0, TAU); g.fill();
+    // barnacles, weed, a gilded halo worn thin
+    for (let i = 0; i < 9; i++) { g.fillStyle = 'rgba(220,226,240,0.7)'; g.beginPath(); g.arc(r.range(-34, 34), r.range(-90, -40), r.range(2, 4), 0, TAU); g.fill(); }
+    g.strokeStyle = 'rgba(60,140,110,0.8)'; g.lineWidth = 3; g.beginPath(); g.moveTo(-30, -40); g.quadraticCurveTo(-40, -90, -26, -130); g.stroke();
+    g.strokeStyle = hexA(GOLD, 0.7); g.lineWidth = 3; g.beginPath(); g.ellipse(-4, -214, 26, 9, -0.35, 0, TAU); g.stroke();
+    c.ax = w / 2; c.ay = h - 16 * S; c.k = k;
+    return c;
+  });
+}
+// a pew, waterlogged and listing, one end snapped
+function pewSprite(seed, k) {
+  return sprite(`ch-pew:${seed % 2}:${k}`, () => {
+    const S = k, w = 190 * S, h = 130 * S, c = mk(w, h), g = c.getContext('2d'), broken = seed % 2;
+    g.translate(w / 2, h - 16 * S); g.scale(S, S);
+    drawShadow(g, 0, 0, 84, 18, 0.8);
+    g.rotate(broken ? 0.04 : -0.02);
+    const wood = '#3a2418', woodL = '#6a4430', woodD = '#1e120c';
+    // back rest
+    g.fillStyle = woodD; g.fillRect(-78, -86, broken ? 120 : 156, 46);
+    g.fillStyle = wood; g.fillRect(-78, -90, broken ? 120 : 156, 8);
+    g.strokeStyle = 'rgba(255,220,180,0.15)'; g.lineWidth = 1; for (let x = -70; x < (broken ? 40 : 76); x += 22) { g.strokeRect(x, -78, 18, 30); }
+    // seat
+    g.fillStyle = woodL; g.fillRect(-80, -44, 160, 12);
+    g.fillStyle = wood; g.fillRect(-80, -32, 160, 10);
+    // carved ends
+    for (const x of broken ? [-82] : [-82, 70]) { g.fillStyle = woodD; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, -96); g.quadraticCurveTo(x + 6, -106, x + 12, -96); g.lineTo(x + 12, 0); g.closePath(); g.fill(); g.fillStyle = GOLD; g.beginPath(); g.arc(x + 6, -96, 3, 0, TAU); g.fill(); }
+    if (broken) { g.fillStyle = woodD; g.beginPath(); g.moveTo(70, 0); g.lineTo(70, -40); g.lineTo(76, -48); g.lineTo(82, -36); g.lineTo(82, 0); g.closePath(); g.fill(); }
+    // legs, weed and a hymnal left on the seat
+    g.fillStyle = woodD; for (const x of [-60, 0, 56]) g.fillRect(x, -22, 8, 22);
+    g.strokeStyle = 'rgba(60,140,110,0.75)'; g.lineWidth = 3; g.beginPath(); g.moveTo(-40, 0); g.quadraticCurveTo(-46, -20, -36, -36); g.moveTo(30, 0); g.quadraticCurveTo(38, -16, 30, -30); g.stroke();
+    g.fillStyle = '#5a1a24'; g.fillRect(10, -52, 26, 8); g.fillStyle = '#e8e0c8'; g.fillRect(12, -50, 22, 2);
+    g.strokeStyle = 'rgba(160,200,255,0.25)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(-80, -44); g.lineTo(80, -44); g.stroke();
+    c.ax = w / 2; c.ay = h - 16 * S; c.k = k;
     return c;
   });
 }
@@ -230,9 +288,17 @@ function paintFloor(ch, q) {
     const { pts, cx, cy, w, h } = sl;
     if (inAisle(cx, cy) && r() < 0.8) continue; // the mosaic aisle replaces most slabs
     const dp = depth(cx, cy);
-    if (r() < 0.035 + dp * 0.06) {
+    if (w * h < 26000 && r() < 0.05 + dp * 0.06) {
       // a lost slab: dark water where it was, a cold reflection on its surface
       polyPath(g, pts); const wg = g.createLinearGradient(0, cy - h / 2, 0, cy + h / 2); wg.addColorStop(0, '#02050f'); wg.addColorStop(1, '#0a1a3a'); g.fillStyle = wg; g.fill();
+      // the sea of stars far below, seen through the gap
+      g.save(); polyPath(g, pts); g.clip();
+      g.globalAlpha = 0.5; g.drawImage(glow(r.pick(['#3a4aa0', '#5a3a8a', '#1a6a8a']), 1), cx - w * 0.6, cy - h * 0.6, w * 1.2, h * 1.2); g.globalAlpha = 1;
+      for (let k = 0; k < w * h / 500; k++) { g.fillStyle = r() < 0.8 ? 'rgba(220,230,255,0.8)' : '#ffd27a'; const s2 = r() < 0.9 ? 1.4 : 2.6; g.fillRect(cx + r.range(-w / 2, w / 2), cy + r.range(-h / 2, h / 2), s2, s2); }
+      g.restore();
+      ge.globalCompositeOperation = 'lighter'; for (let k = 0; k < 3; k++) { ge.globalAlpha = 0.6; ge.drawImage(glow('#cfe0ff'), cx + r.range(-w * 0.35, w * 0.35) - 7, cy + r.range(-h * 0.35, h * 0.35) - 7, 14, 14); } ge.globalAlpha = 1; ge.globalCompositeOperation = 'source-over';
+      // broken stone lip round the gap
+      polyPath(g, pts); g.strokeStyle = '#3a4a78'; g.lineWidth = 4; g.stroke(); g.strokeStyle = 'rgba(200,225,255,0.3)'; g.lineWidth = 1.2; g.stroke();
       g.strokeStyle = 'rgba(140,200,255,0.25)'; g.lineWidth = 1.2; for (let k = 1; k < 3; k++) { g.beginPath(); g.ellipse(cx, cy + 4, w * 0.12 * k, h * 0.07 * k, 0, 0, TAU); g.stroke(); }
       ge.globalCompositeOperation = 'lighter'; ge.fillStyle = 'rgba(150,210,255,0.35)'; ge.fillRect(cx - w * 0.3, cy - 2, w * 0.25, 2); ge.fillRect(cx + w * 0.05, cy + 6, w * 0.15, 2); ge.globalCompositeOperation = 'source-over';
       continue;
@@ -290,7 +356,7 @@ function paintFloor(ch, q) {
       const jx = r.range(-1, 1), jy = r.range(-1, 1);
       if (longX) byCol[r() < 0.08 ? 2 : ci].rect(u + jx, v + jy, T - 2, T - 2); else byCol[r() < 0.08 ? 2 : ci].rect(v + jx, u + jy, T - 2, T - 2);
     }
-    g.globalAlpha = 0.8; byCol.forEach((path, i) => { g.fillStyle = cols[i]; g.fill(path); }); g.globalAlpha = 1;
+    g.globalAlpha = 0.55; byCol.forEach((path, i) => { g.fillStyle = cols[i]; g.fill(path); }); g.globalAlpha = 1;
     { const sh = new Path2D(); if (longX) sh.rect(L0, -half, L1 - L0, half * 2); else sh.rect(-half, L0, half * 2, L1 - L0); g.save(); g.clip(sh); for (let k = 0; k < (L1 - L0) / 300; k++) { const u = L0 + r() * (L1 - L0), rr = r.range(60, 160); g.globalAlpha = 0.35; const [px, py] = longX ? [u, r.range(-half, half)] : [r.range(-half, half), u]; g.drawImage(glow('#020614', 1), px - rr, py - rr * 0.6, rr * 2, rr * 1.2); } g.globalAlpha = 1; g.restore(); }
     g.strokeStyle = hexA(GOLD, 0.5); g.lineWidth = 2;
     if (longX) { g.beginPath(); g.moveTo(L0, -half); g.lineTo(L1, -half); g.moveTo(L0, half); g.lineTo(L1, half); g.stroke(); }
@@ -389,10 +455,12 @@ function paintFloor(ch, q) {
   mark('details');
 
   // walls with lancet windows, then door arches in front of them
+  WIN.length = 0;
   paintWalls(g, ge, shape, {
     H: 380, sideH: 200, base: '#101a38', top: '#22335f', trim: GOLD,
     detail: (g, ge, s, H) => wallDetail(g, ge, s, H, r),
   }, r);
+  paintWindowPools(g, ge, ch);
   for (const d of ch.doors) doorFrame(g, ge, d);
   mark('walls');
   return { W, E };
@@ -410,6 +478,26 @@ function floodedPit(g, ge, h, r) {
   ge.strokeStyle = 'rgba(150,210,255,0.35)'; ge.lineWidth = 1.5;
   for (let k = 1; k <= 3; k++) { ge.beginPath(); ge.ellipse(h.x, h.y + 6, h.r * 0.25 * k, h.r * 0.15 * k, 0, 0, TAU); ge.stroke(); }
   ge.globalCompositeOperation = 'source-over';
+}
+// Stained-glass light: each lancet window throws its coloured panes onto the drowned floor in front
+const WIN = [];
+function paintWindowPools(g, ge, ch) {
+  g.save(); polyPath(g, ch.shape); g.clip();
+  ge.save(); polyPath(ge, ch.shape); ge.clip();
+  g.globalCompositeOperation = 'lighter'; ge.globalCompositeOperation = 'lighter';
+  for (const w of WIN) {
+    const px = w.x + 40, py = w.y + 70, sx = 1.25, sy = 0.42, shear = 0.35;
+    for (const [c, a, G2] of [[g, 0.34, 0], [ge, 0.4, 1]]) {
+      c.save(); c.translate(px, py); c.transform(sx, 0, shear * sx, -sy, 0, 0); // flip: the window's top lands farthest out on the floor
+      c.globalAlpha = a;
+      for (const [cx, cy, col] of w.cells) c.drawImage(glow(col, 1), cx - 10, -cy - 26, 36, 36);
+      c.restore();
+    }
+    // a soft halo round the whole pool
+    g.globalAlpha = 0.22; g.drawImage(glow('#ffd27a', 1), px - w.ww * 1.8, py - 20, w.ww * 3 + w.wh * 0.4, w.wh * 0.8); g.globalAlpha = 0.18; g.drawImage(glow('#5a9aff', 1), px - w.ww * 0.8, py - 10, w.ww * 3 + w.wh * 0.4, w.wh * 0.8); g.globalAlpha = 1;
+  }
+  g.globalCompositeOperation = 'source-over'; ge.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; ge.globalAlpha = 1;
+  g.restore(); ge.restore();
 }
 function wallDetail(g, ge, s, H, r) {
   const tx = (s.x2 - s.x1) / s.len, ty = (s.y2 - s.y1) / s.len;
@@ -440,10 +528,12 @@ function wallDetail(g, ge, s, H, r) {
     g.strokeStyle = '#3e5490'; g.lineWidth = 8; g.stroke();
     g.strokeStyle = GOLD; g.lineWidth = 2; g.stroke();
     g.save(); path(g); g.clip();
-    const cols = ['#2a6ad0', '#e2b85a', '#3ab0c8', '#5a3ab0', '#c84a6a'];
+    const cols = ['#2a6ad0', '#e2b85a', '#3ab0c8', '#5a3ab0', '#c84a6a'], cells = [];
     for (let yy = wy - wh; yy < wy; yy += 16) for (let xx = x - ww; xx < x + ww; xx += 16) {
-      g.fillStyle = hexA(r.pick(cols), 0.85); g.fillRect(xx + 1, yy + 1, 14, 14);
+      const c = r.pick(cols); cells.push([xx - x, yy - wy, c]);
+      g.fillStyle = hexA(c, 0.85); g.fillRect(xx + 1, yy + 1, 14, 14);
     }
+    WIN.push({ x, y, ww, wh, cells });
     g.strokeStyle = '#0a1028'; g.lineWidth = 3;
     g.beginPath(); g.moveTo(x, wy); g.lineTo(x, wy - wh); g.moveTo(x - ww, wy - wh * 0.45); g.lineTo(x + ww, wy - wh * 0.45); g.stroke();
     g.restore();
@@ -520,10 +610,12 @@ function spireLayer(W, H, seed, n, scale, col, glowCol, alpha) {
 }
 const backFar = screenCache((W, H) => spireLayer(W, H, 41, 12, 0.6, '#0a1a3a', '#f2c46b', 0.5));
 const backNear = screenCache((W, H) => spireLayer(W, H, 47, 5, 1, '#050c22', '#ffd27a', 0.8));
-const backAll = screenCache((W, H) => compose(W, H, [backSky(W, H), backFar(W, H), backNear(W, H)]));
+const backAll = screenCache((W, H) => compose(W, H, [backSky(W, H), backFar(W, H)]));
+const nearS = screenCache((W, H) => sparse(backNear(W, H)));
 function back(ctx, cam, t) {
   const W = cam.w, H = cam.h;
   drawLayer(ctx, backAll(W, H), cam, 0.05);
+  drawDrift(ctx, nearS(W, H), cam, 0.12, t, { sway: 10, period: 53 });
   // a slow shoal of light-fish crossing the sea
   ctx.globalCompositeOperation = 'lighter';
   const k = H / 900;
@@ -656,6 +748,8 @@ function buildProps(ch, q) {
       const img = columnSprite(o.seed, o.r / 38, k, o.r < 50 && o.seed % 5 === 0);
       out.push(propOf(img, o.x, o.y, o.y, { solid: true, occlude: { x0: o.x - 60, y0: o.y - 290, x1: o.x + 60, y1: o.y - 10 } }));
     } else if (o.type === 'statue') out.push(propOf(statueSprite(o.seed, k), o.x, o.y, o.y, { solid: true }));
+    else if (o.type === 'chorister') out.push(propOf(choristerSprite(o.seed, k), o.x, o.y, o.y, { solid: true, occlude: { x0: o.x - 50, y0: o.y - 250, x1: o.x + 50, y1: o.y - 10 } }));
+    else if (o.type === 'pew') out.push(propOf(pewSprite(o.seed, k), o.x, o.y + 14, o.y, { solid: true }));
   }
   for (const p of ch.props) {
     if (p.type === 'candles') out.push(propOf(candleSprite(p.seed, k), p.x, p.y));

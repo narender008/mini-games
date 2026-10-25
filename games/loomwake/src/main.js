@@ -24,7 +24,7 @@
 //                  memoryThreads, tapestry, configVersion }
 //   input(o | null)    hold { move:{x,y}, aim:{x,y} world point, attack, special, snare, dash, call, interact, pause }
 //   play(opts) -> Promise<state>   { seed, weapon, region, chamber, boons:[ids], keepsake }
-//   hub(), menu(), choose(i|id), reroll(), door(i), talk(npcId), advance(), skip(), clear(), kill(), boss(id), bossKill(),
+//   hub(), menu(), choose(i|id), reroll(), door(i), talk(npcId), advance(), skip() (answers 0 if asked), answer(i), clear(), kill(), boss(id), bossKill(),
 //   god(on), heal(), damage(n), give(boonId, rarity), spawn(kind, n, x, y), set(path, value), hash(),
 //   auto(on), region(id), buy(i), fountain(), stress({ enemies, particles, lights }), frames() -> [{ dt, js }],
 //   game (the live G), renderer, save (save.js saveApi(G): keys, now, read, export, import, version, migrations,
@@ -113,7 +113,12 @@ async function boot() {
     if (apply) { try { await apply(G, Q); } catch (err) { console.error('[loomwake] applyUrl failed', err); } }
     if (G.scene === 'loading') G.scene = 'title';
   } else await startArena();
-  if (Q.has('bench')) stress({ enemies: 40, particles: 5000, lights: 32 });
+  // ?bench: straight into a run (no clicks), god mode so the stress chamber lasts, then the plan's maxima
+  if (Q.has('bench')) {
+    if (Run && G.scene !== 'run') { const play = fnOf(Run, 'play'); if (play) { try { await play(G, { seed: G.seed, region: Q.get('region') || undefined, chamber: Q.has('chamber') ? +Q.get('chamber') : 1 }); } catch (err) { console.error('[loomwake] bench start failed', err); } } }
+    G.god = true; G.dialogue = null; if (G.scene === 'dialogue') G.scene = 'run';
+    stress({ enemies: 40, particles: 5000, lights: 32 });
+  }
   document.getElementById('loader')?.remove();
   requestAnimationFrame(frame);
 }
@@ -227,7 +232,7 @@ function stateOf(Run) {
     pickups: G.pickups.map((p) => ({ kind: p.kind, x: p.x, y: p.y })),
     boss: b ? { id: b.kind, hp: b.hp, maxHp: b.maxHp, phase: b.phase ?? 1, armor: b.armor } : null,
     offer: G.offer ? G.offer.map((o) => ({ id: o.id, slot: o.slot, patron: o.patron, rarity: o.rarity, braid: !!o.braid })) : null,
-    dialogue: G.dialogue ? { speaker: G.dialogue.speaker, lineId: G.dialogue.lineId } : null,
+    dialogue: G.dialogue ? { speaker: G.dialogue.speaker, lineId: G.dialogue.lineId, choices: G.dialogue.choices && G.dialogue.choices.length ? G.dialogue.choices.map((c, i) => ({ i, id: c.id ?? i, text: c.text ?? String(c) })) : null } : null,
     story: st,
     saveKey: G.saves?.key ? G.saves.key(G.profile) : `loomwake.p${G.profile | 0}`,
     lastSave: G.lastSave ?? null,
@@ -259,7 +264,10 @@ function installHook(Run) {
     },
     hub: () => { call('hub'); return st(); }, menu: () => { call('menu'); return st(); },
     choose: (i) => call('choose', i), reroll: () => call('reroll'), door: (i) => call('door', i), talk: (id) => call('talk', id),
-    advance: () => call('advance'), skip: () => call('skip'), buy: (i) => call('buy', i), fountain: () => call('fountain'),
+    advance: () => call('advance'),
+    // skip(): ends the conversation; a pending question is answered with choice 0
+    skip: () => { let r = call('skip'); if (G.dialogue && G.dialogue.choices && G.dialogue.choices.length) r = call('answer', 0); return r; },
+    answer: (i = 0) => call('answer', i), buy: (i) => call('buy', i), fountain: () => call('fountain'),
     region: (id, o) => call('region', id, o), boss: (id, o) => (Run ? call('boss', id, o) : (fnOf(MODS.bosses, 'startBoss') ? MODS.bosses.startBoss(G, id) : null)),
     clear: () => { if (Run && Run.clear) return call('clear'); for (const e of G.foes.slice()) if (!e.dead) killFoe(G, e, { kind: 'debug' }); return st(); },
     kill: () => { if (Run && Run.kill) return call('kill'); killHero(G); return st(); },
@@ -293,6 +301,10 @@ async function buildContent() {
   const R = regions?.REGIONS || {};
   let dialogue = [];
   try {
+    const D = await get('./content/dialogue/index.js');
+    if (D && Array.isArray(D.DIALOGUE)) dialogue = D.DIALOGUE.map((l) => strip(l, ['id', 'speaker', 'when', 'priority', 'once', 'kind']));
+  } catch { /* none yet */ }
+  if (!dialogue.length) try {
     const story = MODS.story || await get('./sim/story.js');
     const lines = story && (typeof story.allLines === 'function' ? story.allLines() : story.LINES);
     if (lines) dialogue = asArr(lines).map((l) => strip(l, ['id', 'speaker', 'when', 'priority', 'once']));

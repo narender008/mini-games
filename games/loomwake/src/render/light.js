@@ -42,7 +42,7 @@ export function drawGlow(ctx, x, y, r, color, a = 1) {
 }
 const hole = (() => { const c = mk(128, 128); const g = c.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.45, 'rgba(255,255,255,0.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return c; })();
 
-const HAZE_BUDGET = 0.12;
+const HAZE_BUDGET = 0.09;
 
 export function createLight() {
   let layer = null, lctx = null;
@@ -82,7 +82,7 @@ export function createLight() {
     // coloured haze rather than a pure add, which is how the painted look wants it anyway. `extra(lctx)` lets the
     // renderer add world-space glow (the floor glow's pulse) in the same pass.
     lctx.globalCompositeOperation = 'lighter';
-    const gr = L.cheap ? 0.7 : 0.8, gi0 = L.cheap ? 0.3 : 0.26;
+    const gr = L.cheap ? 0.7 : 0.8, gi0 = L.cheap ? 0.26 : 0.2;
     // haze budget (soft tone-map): the summed haze coverage of all lights, weighted by strength and screen
     // area, is held under HAZE_BUDGET, so a pile of boon flashes and boss lights tints the scene instead of
     // washing it out. Each light's own strength is capped too.

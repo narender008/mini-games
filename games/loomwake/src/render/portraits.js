@@ -34,41 +34,64 @@ function curve(ctx, pts, closed = true, k = 1) {
 }
 const mirror = (half, cx = 256) => { const r = half.map(([x, y]) => [x, y]); for (let i = half.length - 1; i >= 0; i--) r.push([2 * cx - half[i][0], half[i][1]]); return r; };
 
-// Paint a volume: fill, form shading from the key light (upper left), soft inner edge shadow, a highlight,
-// a rim of coloured back light on the right, and an optional painterly stroke texture.
+// the element colour of the speaker being painted: it tints rim light and the bounce light in every shadow
+let ELEM = '#f2c46b';
+
+// Paint a volume like a painter would: flat fill, a lit side from the key light (upper left), a soft core
+// shadow past the terminator, reflected bounce light in the speaker's element colour at the far edge, an inner
+// edge shadow for roundness, a highlight, cloth folds on busts, texture, and a glowing rim of element light.
 function part(ctx, build, o) {
   const base = o.base, b = o.box ?? [0, 0, D, D];
   ctx.save();
   ctx.beginPath(); build(ctx); ctx.fillStyle = base; ctx.fill();
   ctx.clip();
-  // form: darker away from the light
   const [x0, y0, x1, y1] = b;
   const fx = Math.min(0, x0) - 60, fy = Math.min(0, y0) - 60, fw = Math.max(D, x1) - fx + 60, fh = Math.max(D, y1) - fy + 60;
+  const sA = o.shadeA ?? 0.75;
   const g = ctx.createLinearGradient(x0, y0, x1, y1);
-  g.addColorStop(0, hexA(tint(base, 0.25), o.lightA ?? 0.55)); g.addColorStop(0.5, hexA(base, 0)); g.addColorStop(1, hexA(shade(base, 0.55), o.shadeA ?? 0.75));
+  g.addColorStop(0, hexA(tint(base, 0.3), o.lightA ?? 0.6)); g.addColorStop(0.4, hexA(base, 0));
+  g.addColorStop(0.68, hexA(shade(base, 0.62), sA * 0.95)); g.addColorStop(0.86, hexA(shade(base, 0.5), sA * 0.6));
+  g.addColorStop(1, hexA(mix(shade(base, 0.2), ELEM, 0.55), o.bounceA ?? 0.5));
   ctx.fillStyle = g; ctx.fillRect(fx, fy, fw, fh);
-  // inner edge shadow (roundness)
   if (o.edge !== 0) { ctx.beginPath(); build(ctx); const e = o.edge ?? 22; for (const [w, a] of [[e * 2.2, 0.16], [e * 1.2, 0.18], [e * 0.5, 0.22]]) { ctx.strokeStyle = hexA(shade(base, 0.7), a); ctx.lineWidth = w; ctx.stroke(); } }
-  // highlight
   if (o.hl) { const [hx, hy, hr] = o.hl; const h = ctx.createRadialGradient(hx, hy, 0, hx, hy, hr); h.addColorStop(0, hexA(tint(base, 0.6), o.hlA ?? 0.5)); h.addColorStop(1, hexA(tint(base, 0.6), 0)); ctx.fillStyle = h; ctx.fillRect(hx - hr, hy - hr, hr * 2, hr * 2); }
-  // texture strokes
+  if (build.fold && o.folds !== false) folds(ctx, build.fold, base);
   if (o.tex) o.tex(ctx);
-  // rim light: the same outline, shifted toward the back light, seen only inside the shape
-  if (o.rim) { ctx.translate(-(o.rimW ?? 6) * 0.8, (o.rimW ?? 6) * 0.25); ctx.beginPath(); build(ctx); ctx.strokeStyle = hexA(o.rim, o.rimA ?? 0.75); ctx.lineWidth = o.rimW ?? 6; ctx.stroke(); }
+  if (o.rim) {
+    const rw = o.rimW ?? 6, rc = mix(o.rim, ELEM, 0.45);
+    ctx.translate(-rw * 0.8, rw * 0.25); ctx.beginPath(); build(ctx);
+    ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = hexA(rc, (o.rimA ?? 0.75) * 0.3); ctx.lineWidth = rw * 3.2; ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = hexA(rc, o.rimA ?? 0.75); ctx.lineWidth = rw; ctx.stroke();
+  }
   ctx.restore();
   if (o.line) { ctx.save(); ctx.beginPath(); build(ctx); ctx.strokeStyle = o.line; ctx.lineWidth = o.lineW ?? 2; ctx.stroke(); ctx.restore(); }
+}
+// soft cloth folds hanging from the shoulders: a shadow trough with a lit ridge beside it
+function folds(ctx, f, base) {
+  const { w, top, cx } = f; const r = prng((w * 7 + top) | 0);
+  ctx.save(); ctx.lineCap = 'round';
+  for (let i = 0; i < 8; i++) {
+    const s = i % 2 ? 1 : -1, x = cx + s * (24 + r() * w * 0.8), y = top + 30 + r() * 50, L = 110 + r() * 140, bend = (r() - 0.5) * 50;
+    const pts = [[x, y], [x + bend * 0.5 + s * 8, y + L * 0.5], [x + bend + s * 14, y + L]];
+    ctx.strokeStyle = hexA(shade(base, 0.72), 0.3); ctx.lineWidth = 12 + r() * 16; ctx.beginPath(); curve(ctx, pts, false); ctx.stroke();
+    ctx.strokeStyle = hexA(tint(base, 0.5), 0.2); ctx.lineWidth = 3 + r() * 4; ctx.beginPath(); curve(ctx, pts.map(([a, b2]) => [a - 11, b2]), false); ctx.stroke();
+  }
+  // shadow cast by the head and collar onto the chest
+  const sh = ctx.createRadialGradient(cx + 14, top + 20, 10, cx + 14, top + 30, w * 0.55); sh.addColorStop(0, hexA(shade(base, 0.85), 0.45)); sh.addColorStop(1, hexA(shade(base, 0.85), 0));
+  ctx.fillStyle = sh; ctx.fillRect(cx - w, top - 40, w * 2, w);
+  ctx.restore();
 }
 function blob(ctx, x, y, r, color, a = 1, op = 'source-over') {
   const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, hexA(color, a)); g.addColorStop(1, hexA(color, 0));
   const o = ctx.globalCompositeOperation; ctx.globalCompositeOperation = op; ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); ctx.globalCompositeOperation = o;
 }
 const glow = (ctx, x, y, r, color, a = 1) => blob(ctx, x, y, r, color, a, 'lighter');
-function strands(ctx, pts, n, spread, color, w, seed, a = 0.5) { // painterly hair or fibre strokes along a guide
+function strands(ctx, pts, n, spread, color, w, seed, a = 0.5) { // painterly hair or fibre strokes along a guide, light and dark
   const r = prng(seed);
   ctx.save(); ctx.lineCap = 'round';
   for (let i = 0; i < n; i++) {
-    const off = (r() - 0.5) * spread, off2 = (r() - 0.5) * spread;
-    ctx.strokeStyle = hexA(color, a * (0.4 + r() * 0.6)); ctx.lineWidth = w * (0.5 + r());
+    const off = (r() - 0.5) * spread, off2 = (r() - 0.5) * spread, dark = r() < 0.35;
+    ctx.strokeStyle = hexA(dark ? shade(color, 0.6) : color, a * (0.4 + r() * 0.6)); ctx.lineWidth = w * (0.5 + r()) * (dark ? 1.4 : 1);
     ctx.beginPath(); curve(ctx, pts.map(([x, y], j) => [x + off + (off2 - off) * (j / pts.length), y + (r() - 0.5) * 4]), false); ctx.stroke();
   }
   ctx.restore();
@@ -78,92 +101,138 @@ function thread(ctx, pts, color, w = 3, a = 1) {
   for (const [k, al] of [[5, 0.12], [2.2, 0.35], [1, 1]]) { ctx.strokeStyle = hexA(color, al * a); ctx.lineWidth = w * k; ctx.beginPath(); curve(ctx, pts, false); ctx.stroke(); }
   ctx.restore();
 }
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
 
 // ------------------------------------------------------------------ expressions
+// brow: + lowers the inner ends (anger), - raises them (sorrow). lid: how far the upper lids fall (lidIn and
+// lidOut add at the inner and outer corners, lidR on the right eye only). squint: lower lids pushed up.
+// shape: the mouth. pose: [lean radians, dx, dy, scale] for the whole bust. light: the mood's colour.
 const EXPR = {
-  neutral: { brow: 0, lift: 0, eye: 1, smile: 0.05, open: 0, smirk: 0, look: [0, 0] },
-  happy: { brow: -0.15, lift: 0.12, eye: 0.62, smile: 0.95, open: 0.4, smirk: 0, look: [0, 0], cheek: 1 },
-  warm: { brow: -0.25, lift: 0.06, eye: 0.82, smile: 0.55, open: 0.05, smirk: 0, look: [0, 0], cheek: 0.6 },
-  wry: { brow: 0.15, lift: 0.1, eye: 0.84, smile: 0.35, open: 0, smirk: 1, look: [0.25, 0], browUp: 1 },
-  sad: { brow: -0.9, lift: 0.12, eye: 0.68, smile: -0.5, open: 0, smirk: 0, look: [0, 0.3] },
-  grave: { brow: 0.45, lift: -0.05, eye: 0.82, smile: -0.2, open: 0, smirk: 0, look: [0, 0.05] },
-  angry: { brow: 1, lift: -0.1, eye: 0.88, smile: -0.6, open: 0.35, smirk: 0, look: [0, 0], teeth: 1 },
-  surprised: { brow: -0.35, lift: 0.6, eye: 1.28, smile: 0, open: 0.75, smirk: 0, look: [0, 0] },
-  afraid: { brow: -1, lift: 0.4, eye: 1.18, smile: -0.4, open: 0.3, smirk: 0, look: [-0.25, 0.1] },
+  neutral: { brow: 0, lift: 0, eye: 1, smile: 0.05, open: 0, smirk: 0, look: [0, 0], lid: 0.14, squint: 0.05, shape: 'flat', pose: [0, 0, 0, 1] },
+  happy: { brow: -0.2, lift: 0.25, eye: 0.85, smile: 1, open: 0.5, smirk: 0, look: [0, 0], cheek: 1, lid: 0.04, squint: 0.62, shape: 'grin', pose: [-0.04, 0, -8, 1.01], light: '#ffd27a' },
+  warm: { brow: -0.35, lift: 0.1, eye: 0.85, smile: 0.6, open: 0.05, smirk: 0, look: [0, 0.08], cheek: 0.7, lid: 0.34, squint: 0.3, shape: 'smile', pose: [0.065, 4, 2, 1], light: '#ffb070' },
+  wry: { brow: 0.2, lift: 0.1, eye: 0.9, smile: 0.35, open: 0, smirk: 1, look: [0.4, 0], browUp: 1, lid: 0.34, lidR: -0.28, squint: 0.18, shape: 'smirk', pose: [-0.075, -6, 0, 1], light: '#c8a0ff' },
+  sad: { brow: -1.1, lift: 0.18, eye: 0.85, smile: -0.6, open: 0, smirk: 0, look: [0, 0.5], lid: 0.22, lidOut: 0.38, squint: 0, shape: 'frown', tear: 1, pose: [0.08, 0, 18, 0.97], light: '#5a7ad0' },
+  grave: { brow: 0.6, lift: -0.1, eye: 0.85, smile: -0.25, open: 0, smirk: 0, look: [0, 0.12], lid: 0.44, squint: 0.1, shape: 'pressed', pose: [0, 0, 6, 1.03], light: '#2a2850' },
+  angry: { brow: 1.3, lift: -0.15, eye: 0.95, smile: -0.7, open: 0.45, smirk: 0, look: [0, 0], teeth: 1, lid: 0.22, lidIn: 0.48, squint: 0.32, shape: 'snarl', irisS: 0.88, pose: [-0.03, 0, 14, 1.08], light: '#ff3020' },
+  surprised: { brow: -0.4, lift: 0.9, eye: 1.3, smile: 0, open: 0.8, smirk: 0, look: [0, 0], lid: 0, squint: 0, shape: 'o', irisS: 0.72, pose: [0, 0, -16, 0.96], light: '#ffffff' },
+  afraid: { brow: -1.2, lift: 0.6, eye: 1.25, smile: -0.45, open: 0.4, smirk: 0, look: [-0.4, 0.1], lid: 0, squint: 0, shape: 'grimace', irisS: 0.64, sweat: 1, pose: [0.075, -14, 8, 0.94], light: '#70c0a0' },
 };
 export const MOODS = Object.keys(EXPR);
 const exprFor = (mood) => EXPR[mood] ?? EXPR.neutral;
 
 // ------------------------------------------------------------------ face kit (human-ish faces)
-// eye at (x, y): w half width, h half height, side -1 left / +1 right of the face
+// eye at (x, y): w half width, h half height, side -1 left / +1 right of the face. Drawn in a mirrored local
+// space where +x points to the nose, so lids and tilt read the same on both eyes.
 function eye(ctx, x, y, w, h, side, ex, o) {
-  const open = Math.max(0.08, ex.eye) * h;
-  const tilt = (o.tilt ?? 0.08) * side + (ex.brow < -0.5 ? -0.1 * side : 0);
-  ctx.save(); ctx.translate(x, y); ctx.rotate(tilt);
-  // socket shadow
+  const open = clamp(ex.eye, 0.08, 1.4) * h;
+  ctx.save(); ctx.translate(x, y); ctx.scale(-side, 1); ctx.rotate(o.tilt ?? 0.08);
   blob(ctx, 0, -h * 0.4, w * 1.5, shade(o.skin, 0.45), 0.35);
-  const lower = ex.smile > 0.6 ? open * 0.25 : open * 0.75;
-  const almond = (c) => { c.moveTo(-w, 0); c.bezierCurveTo(-w * 0.5, -open * 1.25, w * 0.5, -open * 1.25, w, -open * 0.1); c.bezierCurveTo(w * 0.5, lower * 1.1, -w * 0.5, lower * 1.1, -w, 0); c.closePath(); };
-  if (ex.eye < 0.2 || o.closed) { // closed lids
+  if (ex.eye < 0.2 || o.closed) {
     ctx.strokeStyle = o.lash ?? '#2a1620'; ctx.lineWidth = 3.2; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(-w, 0); ctx.quadraticCurveTo(0, h * 0.55, w, -h * 0.05); ctx.stroke();
+    ctx.strokeStyle = hexA(shade(o.skin, 0.4), 0.5); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(-w * 0.8, -h * 0.5); ctx.quadraticCurveTo(0, -h * 0.9, w * 0.8, -h * 0.5); ctx.stroke();
     ctx.restore(); return;
   }
-  ctx.save(); ctx.beginPath(); almond(ctx); ctx.fillStyle = o.white ?? '#f4ece6'; ctx.fill(); ctx.clip();
-  // iris
-  const ir = h * (o.iris ?? 0.95), lx = (ex.look?.[0] ?? 0) * w * 0.35, ly = (ex.look?.[1] ?? 0) * h * 0.4;
-  const ig = ctx.createRadialGradient(lx, ly - ir * 0.3, ir * 0.1, lx, ly, ir);
-  ig.addColorStop(0, tint(o.iris_c, 0.35)); ig.addColorStop(0.65, o.iris_c); ig.addColorStop(1, shade(o.iris_c, 0.6));
-  ctx.fillStyle = ig; ctx.beginPath(); ctx.arc(lx, ly, ir, 0, TAU); ctx.fill();
-  ctx.fillStyle = '#0c0610'; ctx.beginPath(); ctx.arc(lx, ly, ir * (ex.eye > 1.1 ? 0.32 : 0.42), 0, TAU); ctx.fill();
-  if (o.glowEye) glow(ctx, lx, ly, ir * 2.2, o.glowEye, 0.6);
-  // lid shadow across the top of the eye
-  const ls = ctx.createLinearGradient(0, -open, 0, open * 0.2); ls.addColorStop(0, 'rgba(30,10,20,0.55)'); ls.addColorStop(1, 'rgba(30,10,20,0)');
-  ctx.fillStyle = ls; ctx.fillRect(-w, -open * 1.3, w * 2, open * 1.5);
-  ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.beginPath(); ctx.arc(lx - ir * 0.35, ly - ir * 0.4, ir * 0.22, 0, TAU); ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.arc(lx + ir * 0.35, ly + ir * 0.3, ir * 0.1, 0, TAU); ctx.fill();
-  ctx.restore();
-  // upper lid line and lashes
-  ctx.strokeStyle = o.lash ?? '#2a1620'; ctx.lineCap = 'round'; ctx.lineWidth = o.lashW ?? 4;
-  ctx.beginPath(); ctx.moveTo(-w * 1.05, 0.5); ctx.bezierCurveTo(-w * 0.5, -open * 1.28, w * 0.5, -open * 1.28, w * 1.08, -open * 0.12); ctx.stroke();
-  if (o.lashes) { ctx.lineWidth = 2; for (let i = 0; i < 3; i++) { const t = 0.55 + i * 0.2; const px = w * (t * 2 - 1) * 0.9 + w * 0.15, py = -open * (1.1 - Math.abs(t - 0.6)); ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + side * 6 + 4, py - 6); ctx.stroke(); } }
-  // crease
-  ctx.strokeStyle = hexA(shade(o.skin, 0.5), 0.5); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(-w * 0.8, -open * 1.2 - 5); ctx.quadraticCurveTo(0, -open * 1.55 - 7, w * 0.85, -open * 0.6 - 6); ctx.stroke();
-  // lower lid
-  ctx.strokeStyle = hexA(shade(o.skin, 0.45), 0.55); ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(-w * 0.85, 2); ctx.quadraticCurveTo(0, lower * 1.15 + 2, w * 0.9, 0); ctx.stroke();
-  ctx.restore();
-}
-function brow(ctx, x, y, w, side, ex, o) {
-  const up = (ex.lift + (ex.browUp && side > 0 ? 0.35 : 0)) * 14;
-  const inner = ex.brow * 9, outer = -ex.brow * 3;
-  ctx.save(); ctx.strokeStyle = o.brow ?? '#3a2018'; ctx.lineCap = 'round';
-  const pts = [[x - side * w, y - up + inner], [x, y - up - 5 + inner * 0.3], [x + side * w, y - up + 2 + outer]];
-  for (let i = 0; i < 3; i++) { ctx.lineWidth = (o.browW ?? 6) - i * 1.6; ctx.globalAlpha = 0.6 + i * 0.2; ctx.beginPath(); curve(ctx, pts.map(([px, py]) => [px, py - i]), false); ctx.stroke(); }
-  ctx.restore();
-}
-function mouth(ctx, x, y, w, ex, o) {
-  const sm = ex.smile, op = ex.open, sk = ex.smirk ?? 0;
-  const ly = y - sm * 9 - sk * 2, ry = y - sm * 9 - sk * 9;
-  const lip = o.lip ?? shade(mix(o.skin, '#c04050', 0.45), 0.1);
-  ctx.save(); ctx.lineCap = 'round';
-  if (op > 0.05) {
-    const h = op * 26;
-    ctx.beginPath(); ctx.moveTo(x - w, ly); ctx.quadraticCurveTo(x, y + sm * 7 - 2, x + w, ry); ctx.quadraticCurveTo(x, y + h + sm * 10, x - w, ly); ctx.closePath();
-    ctx.fillStyle = '#3a1220'; ctx.fill();
-    ctx.save(); ctx.clip();
-    if (sm > 0.3 || ex.teeth) { ctx.fillStyle = '#f6ece4'; ctx.fillRect(x - w, y - 12, w * 2, 8 + (ex.teeth ? 2 : 0) + sm * 4); }
-    ctx.fillStyle = '#c0505a'; ctx.beginPath(); ctx.ellipse(x, y + h + sm * 6, w * 0.6, h * 0.5, 0, 0, TAU); ctx.fill();
-    ctx.restore();
-    ctx.strokeStyle = lip; ctx.lineWidth = 2.5; ctx.stroke();
-  } else {
-    ctx.strokeStyle = shade(lip, 0.35); ctx.lineWidth = 3.4;
-    ctx.beginPath(); ctx.moveTo(x - w, ly); ctx.quadraticCurveTo(x, y + sm * 9, x + w, ry); ctx.stroke();
+  const N = 14, U = [], L = [], LID = [], SQ = [];
+  const dOut = clamp((ex.lid ?? 0.12) + (ex.lidOut ?? 0) + (side > 0 ? ex.lidR ?? 0 : 0), 0, 0.92);
+  const dIn = clamp((ex.lid ?? 0.12) + (ex.lidIn ?? 0) + (side > 0 ? ex.lidR ?? 0 : 0), 0, 0.92);
+  const sq = ex.squint ?? 0;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N, px = -w + 2 * w * t, bump = Math.pow(4 * t * (1 - t), 0.8);
+    const yU = -open * 1.02 * bump, yL = open * 0.72 * bump;
+    U.push([px, yU]); L.push([px, yL]); LID.push([px, yU * (1 - lerp(dOut, dIn, t))]); SQ.push([px, yL * (1 - sq * 2.1)]);
   }
-  // lower lip light and corner shadows
-  blob(ctx, x, y + 7 + op * 22 + Math.max(0, sm) * 6, w * 0.55, lip, 0.35);
-  blob(ctx, x - 2, y + 6 + op * 22 + Math.max(0, sm) * 6, w * 0.22, '#fff0e8', 0.22);
-  blob(ctx, x, y + 17 + op * 22 + Math.max(0, sm) * 6, w * 0.45, shade(o.skin, 0.5), 0.18);
-  if (sm > 0.3) { ctx.strokeStyle = hexA(shade(o.skin, 0.45), 0.4); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x - w - 4, ly - 4, 7, 0.8, 2.2); ctx.stroke(); ctx.beginPath(); ctx.arc(x + w + 4, ry - 4, 7, 0.9, 2.3); ctx.stroke(); }
+  const poly = (c, pts) => { c.moveTo(pts[0][0], pts[0][1]); for (const q of pts) c.lineTo(q[0], q[1]); };
+  ctx.save(); ctx.beginPath(); poly(ctx, U); for (let i = N; i >= 0; i--) ctx.lineTo(L[i][0], L[i][1]); ctx.closePath();
+  ctx.fillStyle = o.white ?? '#f4ece6'; ctx.fill(); ctx.clip();
+  // the white is shaded round, darker at the corners
+  const wg = ctx.createRadialGradient(0, 0, w * 0.2, 0, 0, w * 1.1); wg.addColorStop(0, 'rgba(0,0,0,0)'); wg.addColorStop(1, hexA(shade(o.skin, 0.6), 0.45)); ctx.fillStyle = wg; ctx.fillRect(-w, -h * 2, w * 2, h * 4);
+  const ir = h * (o.iris ?? 0.95) * (ex.irisS ?? 1), lx = (ex.look?.[0] ?? 0) * w * 0.35 * -side, ly = (ex.look?.[1] ?? 0) * h * 0.4;
+  const ig = ctx.createRadialGradient(lx, ly - ir * 0.3, ir * 0.1, lx, ly, ir);
+  ig.addColorStop(0, tint(o.iris_c, 0.4)); ig.addColorStop(0.6, o.iris_c); ig.addColorStop(1, shade(o.iris_c, 0.65));
+  ctx.fillStyle = ig; ctx.beginPath(); ctx.arc(lx, ly, ir, 0, TAU); ctx.fill();
+  ctx.strokeStyle = hexA(shade(o.iris_c, 0.7), 0.8); ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#0c0610'; ctx.beginPath(); ctx.arc(lx, ly, ir * (ex.eye > 1.1 ? 0.3 : 0.42), 0, TAU); ctx.fill();
+  if (o.glowEye) glow(ctx, lx, ly, ir * 2.2, o.glowEye, 0.6);
+  ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.beginPath(); ctx.arc(lx + ir * 0.35 * side, ly - ir * 0.4, ir * 0.22, 0, TAU); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.beginPath(); ctx.arc(lx - ir * 0.35 * side, ly + ir * 0.3, ir * 0.1, 0, TAU); ctx.fill();
+  // the upper lid falls over the eye and casts a shadow on it
+  const lidSkin = shade(o.skin, 0.06);
+  ctx.beginPath(); ctx.moveTo(-w - 4, -h * 3); ctx.lineTo(w + 4, -h * 3); for (let i = N; i >= 0; i--) ctx.lineTo(LID[i][0], LID[i][1]); ctx.closePath();
+  const lg = ctx.createLinearGradient(0, -open, 0, 0); lg.addColorStop(0, tint(lidSkin, 0.12)); lg.addColorStop(1, lidSkin); ctx.fillStyle = lg; ctx.fill();
+  ctx.strokeStyle = 'rgba(30,10,20,0.35)'; ctx.lineWidth = 7; ctx.beginPath(); ctx.save(); ctx.translate(0, 3); poly(ctx, LID); ctx.restore(); ctx.stroke();
+  // the lower lid pushes up when the cheeks do
+  if (sq > 0.02) { ctx.beginPath(); ctx.moveTo(-w - 4, h * 3); ctx.lineTo(w + 4, h * 3); for (let i = N; i >= 0; i--) ctx.lineTo(SQ[i][0], SQ[i][1]); ctx.closePath(); ctx.fillStyle = tint(o.skin, 0.05); ctx.fill(); }
+  ctx.restore();
+  // lash line along the lid, heavier at the outer corner
+  ctx.strokeStyle = o.lash ?? '#2a1620'; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = o.lashW ?? 4;
+  ctx.beginPath(); poly(ctx, LID); ctx.stroke();
+  if (o.lashes) { ctx.fillStyle = o.lash ?? '#2a1620'; ctx.beginPath(); ctx.moveTo(-w * 0.55, LID[3][1] - 1); ctx.quadraticCurveTo(-w * 1.05, LID[1][1] - 2, -w * 1.32, -open * 0.45 - 4); ctx.quadraticCurveTo(-w * 1.0, 1, -w * 0.6, LID[3][1] + 2.5); ctx.fill(); }
+  // crease stays at the fold, so a heavy lid shows a wide band of skin
+  ctx.strokeStyle = hexA(shade(o.skin, 0.5), 0.5); ctx.lineWidth = 1.8; ctx.beginPath(); poly(ctx, U.slice(2, N - 1).map(([a, b2]) => [a, b2 * 1.06 - 7 - open * 0.15])); ctx.stroke();
+  ctx.strokeStyle = hexA(shade(o.skin, 0.45), 0.55); ctx.lineWidth = 1.5; ctx.beginPath(); poly(ctx, SQ.map(([a, b2]) => [a, b2 + 1.5])); ctx.stroke();
+  if (sq > 0.4) { ctx.strokeStyle = hexA(shade(o.skin, 0.45), 0.35); ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(-w * 0.6, open * 0.9 + 6); ctx.quadraticCurveTo(0, open * 1.1 + 10, w * 0.5, open * 0.9 + 6); ctx.stroke(); }
+  ctx.restore();
+}
+// a brow: a tapered stroke of hair, thick at the inner end
+function brow(ctx, x, y, w, side, ex, o) {
+  const up = (ex.lift + (ex.browUp && side > 0 ? 0.4 : 0)) * 18;
+  const inner = ex.brow * 13, outer = -ex.brow * 4;
+  const p0 = [x - side * w, y - up + inner], p1 = [x - side * w * 0.05, y - up - 7 + inner * 0.35], p2 = [x + side * w * 1.05, y - up + 3 + outer];
+  const q = (t) => { const a = (1 - t) * (1 - t), b2 = 2 * (1 - t) * t, c = t * t; return [a * p0[0] + b2 * p1[0] + c * p2[0], a * p0[1] + b2 * p1[1] + c * p2[1]]; };
+  const th = o.browW ?? 7, top = [], bot = [];
+  for (let i = 0; i <= 10; i++) { const t = i / 10, [px, py] = q(t), k = th * (1 - t * 0.7); top.push([px, py - k * 0.55]); bot.push([px, py + k * 0.45]); }
+  ctx.save(); ctx.fillStyle = o.brow ?? '#3a2018'; ctx.beginPath(); ctx.moveTo(top[0][0], top[0][1]); for (const p of top) ctx.lineTo(p[0], p[1]); for (let i = bot.length - 1; i >= 0; i--) ctx.lineTo(bot[i][0], bot[i][1]); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = hexA(tint(o.brow ?? '#3a2018', 0.35), 0.5); ctx.lineWidth = 1; ctx.lineCap = 'round';
+  for (let i = 1; i < 9; i += 2) { const [px, py] = q(i / 10); ctx.beginPath(); ctx.moveTo(px - side * 3, py + 2); ctx.lineTo(px + side * 5, py - 2); ctx.stroke(); }
+  ctx.restore();
+}
+// mouth shapes, in units of the mouth's half width: corner heights, upper and lower lip curves, and whether it opens
+const MOUTH = {
+  flat: { cw: 1, cl: 0, cr: 0, top: 0.02, bot: 0.06 },
+  smile: { cw: 1.08, cl: -0.3, cr: -0.3, top: 0.12, bot: 0.25 },
+  grin: { cw: 1.2, cl: -0.42, cr: -0.42, top: 0.06, bot: 1.1, open: 1, tt: 1, tongue: 1 },
+  smirk: { cw: 1.0, cl: 0.0, cr: -0.42, top: 0.1, bot: 0.18, dimple: 1 },
+  frown: { cw: 0.92, cl: 0.34, cr: 0.3, top: -0.2, bot: -0.08, pout: 1 },
+  pressed: { cw: 0.88, cl: 0.12, cr: 0.12, top: 0, bot: 0, thin: 1 },
+  snarl: { cw: 1.12, cl: 0.2, cr: 0.24, top: -0.34, bot: 0.78, open: 1, tt: 1, tb: 1, crease: 1 },
+  o: { cw: 0.5, cl: 0, cr: 0, top: -0.5, bot: 0.95, open: 1, round: 1 },
+  grimace: { cw: 1.25, cl: 0.24, cr: 0.12, top: -0.12, bot: 0.5, open: 1, tt: 1, tb: 1, gaps: 1 },
+};
+function mouth(ctx, x, y, w, ex, o) {
+  const m = MOUTH[ex.shape] ?? MOUTH.flat, W = w * m.cw;
+  const L = [x - W, y + m.cl * w], R = [x + W, y + m.cr * w], ty = y + m.top * w, by = y + m.bot * w;
+  const lip = o.lip ?? shade(mix(o.skin, '#c04050', 0.45), 0.1);
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (m.open) {
+    const path = (c) => { c.beginPath(); if (m.round) c.ellipse(x, (ty + by) / 2, W, (by - ty) / 2, 0, 0, TAU); else { c.moveTo(L[0], L[1]); c.quadraticCurveTo(x, 2 * ty - (L[1] + R[1]) / 2, R[0], R[1]); c.quadraticCurveTo(x, 2 * by - (L[1] + R[1]) / 2, L[0], L[1]); c.closePath(); } };
+    path(ctx); ctx.fillStyle = '#2a0c16'; ctx.fill();
+    ctx.save(); ctx.clip();
+    if (m.tongue) { ctx.fillStyle = '#c0505a'; ctx.beginPath(); ctx.ellipse(x, by + 2, W * 0.6, (by - ty) * 0.35, 0, 0, TAU); ctx.fill(); }
+    if (m.tt) { ctx.fillStyle = '#f6ece4'; ctx.fillRect(x - W, ty - w, W * 2, w + w * 0.3); }
+    if (m.tb) { ctx.fillStyle = '#e8dcd4'; ctx.fillRect(x - W, by - w * 0.28, W * 2, w); }
+    if (m.gaps || m.tb) { ctx.strokeStyle = 'rgba(60,30,40,0.35)'; ctx.lineWidth = 1.2; for (let i = -2; i <= 2; i++) { const gx = x + i * W * 0.32; ctx.beginPath(); ctx.moveTo(gx, ty - 4); ctx.lineTo(gx, by + 4); ctx.stroke(); } }
+    const sh = ctx.createLinearGradient(0, ty - 4, 0, by); sh.addColorStop(0, 'rgba(20,0,10,0.45)'); sh.addColorStop(0.5, 'rgba(20,0,10,0)'); ctx.fillStyle = sh; ctx.fillRect(x - W, ty - 10, W * 2, by - ty + 20);
+    ctx.restore();
+    path(ctx); ctx.strokeStyle = shade(lip, 0.15); ctx.lineWidth = 2.6; ctx.stroke();
+    blob(ctx, x, by + w * 0.32, W * 0.55, lip, 0.4); blob(ctx, x - 3, by + w * 0.26, W * 0.2, '#fff0e8', 0.22);
+    if (m.crease) { ctx.strokeStyle = hexA(shade(o.skin, 0.5), 0.45); ctx.lineWidth = 2; for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(x + s * W * 0.55, ty - w * 0.9); ctx.quadraticCurveTo(x + s * W * 1.15, ty - w * 0.2, x + s * W * 1.12, y + w * 0.5); ctx.stroke(); } }
+  } else {
+    const cy = 2 * ((ty + by) / 2) - (L[1] + R[1]) / 2;
+    ctx.strokeStyle = shade(lip, 0.4); ctx.lineWidth = m.thin ? 2.6 : 3.4;
+    ctx.beginPath(); ctx.moveTo(L[0], L[1]); ctx.quadraticCurveTo(x, cy, R[0], R[1]); ctx.stroke();
+    // lips as soft colour above and below the line
+    blob(ctx, x, (ty + by) / 2 - w * 0.18, W * 0.6, lip, m.thin ? 0.15 : 0.28);
+    blob(ctx, x, (ty + by) / 2 + w * (m.pout ? 0.42 : 0.32), W * (m.pout ? 0.62 : 0.5), lip, m.thin ? 0.2 : m.pout ? 0.55 : 0.38);
+    blob(ctx, x - 3, (ty + by) / 2 + w * 0.3, W * 0.18, '#fff0e8', 0.2);
+    if (m.pout) blob(ctx, x, (ty + by) / 2 + w * 0.95, W * 0.4, shade(o.skin, 0.5), 0.3);
+  }
+  // corners: creases when smiling, a dimple on a smirk
+  if (m.cl < -0.2) { ctx.strokeStyle = hexA(shade(o.skin, 0.45), 0.45); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(L[0] - 5, L[1] - 4, 8, 0.9, 2.3); ctx.stroke(); }
+  if (m.cr < -0.2) { ctx.strokeStyle = hexA(shade(o.skin, 0.45), 0.45); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(R[0] + 5, R[1] - 4, 8, 0.85, 2.25); ctx.stroke(); }
+  if (m.cl > 0.2) { ctx.strokeStyle = hexA(shade(o.skin, 0.5), 0.35); ctx.lineWidth = 1.6; for (const [cx2, cy2, s] of [[L[0], L[1], -1], [R[0], R[1], 1]]) { ctx.beginPath(); ctx.moveTo(cx2, cy2); ctx.lineTo(cx2 + s * 4, cy2 + 8); ctx.stroke(); } }
   ctx.restore();
 }
 // a whole face. o: { cx, cy, w, h, skin, iris_c, brow, hairline?, jaw, nose, cheek, freckles, ... }
@@ -171,11 +240,17 @@ function face(ctx, o, ex) {
   const { cx, cy, w, h } = o;
   const jaw = o.jaw ?? 0.82;
   const build = (c) => curve(c, [[cx, cy - h], [cx + w * 0.82, cy - h * 0.78], [cx + w, cy - h * 0.2], [cx + w * 0.92, cy + h * 0.35], [cx + w * 0.55 * jaw, cy + h * 0.82], [cx, cy + h], [cx - w * 0.55 * jaw, cy + h * 0.82], [cx - w * 0.92, cy + h * 0.35], [cx - w, cy - h * 0.2], [cx - w * 0.82, cy - h * 0.78]]);
-  part(ctx, build, { base: o.skin, box: [cx - w, cy - h, cx + w * 1.2, cy + h * 1.1], edge: w * 0.18, hl: [cx - w * 0.35, cy - h * 0.35, w * 0.9], hlA: 0.4, rim: o.rim, rimW: 5, rimA: 0.6 });
-  // cheeks
-  const ck = 0.18 + (ex.cheek ?? 0) * 0.22 + (o.blush ?? 0);
-  blob(ctx, cx - w * 0.55, cy + h * 0.22, w * 0.38, o.cheek ?? '#e07070', ck);
-  blob(ctx, cx + w * 0.55, cy + h * 0.22, w * 0.38, o.cheek ?? '#e07070', ck * 0.8);
+  part(ctx, build, { base: o.skin, box: [cx - w, cy - h, cx + w * 1.2, cy + h * 1.1], edge: w * 0.18, hl: [cx - w * 0.35, cy - h * 0.35, w * 0.9], hlA: 0.4, rim: o.rim, rimW: 5, rimA: 0.6, bounceA: 0.35 });
+  // planes of the face: temple and cheekbone shadow on the far side, a lit forehead and cheek on the near side
+  ctx.save(); ctx.beginPath(); build(ctx); ctx.clip();
+  blob(ctx, cx + w * 0.82, cy - h * 0.1, w * 0.55, shade(o.skin, 0.55), 0.3);
+  blob(ctx, cx + w * 0.55, cy + h * 0.5, w * 0.45, shade(o.skin, 0.5), 0.22);
+  blob(ctx, cx - w * 0.5, cy + h * 0.12, w * 0.3, tint(o.skin, 0.5), 0.3);
+  blob(ctx, cx, cy + h * 0.95, w * 0.5, mix(o.skin, ELEM, 0.6), 0.35);
+  ctx.restore();
+  const ck = 0.18 + (ex.cheek ?? 0) * 0.3 + (o.blush ?? 0);
+  blob(ctx, cx - w * 0.55, cy + h * 0.22 - (ex.squint ?? 0) * 8, w * 0.4, o.cheek ?? '#e07070', ck);
+  blob(ctx, cx + w * 0.55, cy + h * 0.22 - (ex.squint ?? 0) * 8, w * 0.4, o.cheek ?? '#e07070', ck * 0.8);
   if (o.freckles) { const r = prng(5); ctx.fillStyle = hexA(shade(o.skin, 0.35), 0.5); for (let i = 0; i < 18; i++) { const sx = (r() < 0.5 ? -1 : 1); ctx.beginPath(); ctx.arc(cx + sx * w * (0.3 + r() * 0.35), cy + h * (0.05 + r() * 0.25), 1.3 + r(), 0, TAU); ctx.fill(); } }
   // nose: a soft shadow down the far side, a lit bridge, nostrils
   const ny = cy + h * 0.3;
@@ -185,24 +260,74 @@ function face(ctx, o, ex) {
   blob(ctx, cx - w * 0.04, ny - h * 0.06, w * 0.1, tint(o.skin, 0.7), 0.45);
   ctx.strokeStyle = hexA(shade(o.skin, 0.55), 0.45); ctx.lineWidth = 2.2;
   ctx.beginPath(); ctx.moveTo(cx - w * 0.12, ny + 4); ctx.quadraticCurveTo(cx - w * 0.02, ny + 9, cx + w * 0.12, ny + 4); ctx.stroke();
-  // shade under the brow ridge and along the far cheek
-  blob(ctx, cx + w * 0.75, cy + h * 0.1, w * 0.5, shade(o.skin, 0.5), 0.18);
   // eyes and brows
   const ey = cy - h * 0.08, ew = w * (o.eyeW ?? 0.28), eh = w * (o.eyeH ?? 0.185), ex0 = w * (o.eyeX ?? 0.43);
   const eo = { skin: o.skin, iris_c: o.iris_c ?? '#5a3a2a', lash: o.lash, lashes: o.lashes, white: o.white, glowEye: o.glowEye, closed: o.closed, iris: o.iris, tilt: o.tilt };
   eye(ctx, cx - ex0, ey, ew, eh, -1, ex, eo); eye(ctx, cx + ex0, ey, ew, eh, 1, ex, eo);
-  if (o.brows !== false) { brow(ctx, cx - ex0, ey - eh * 2.3, ew * 1.05, -1, ex, o); brow(ctx, cx + ex0, ey - eh * 2.3, ew * 1.05, 1, ex, o); }
+  if (o.brows !== false) {
+    brow(ctx, cx - ex0, ey - eh * 2.3, ew * 1.05, -1, ex, o); brow(ctx, cx + ex0, ey - eh * 2.3, ew * 1.05, 1, ex, o);
+    // a knit between the brows in anger, worry lines across the forehead in fear and sorrow
+    ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = hexA(shade(o.skin, 0.5), 0.4); ctx.lineWidth = 2;
+    if (ex.brow > 0.8) for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s * 7, ey - eh * 2.2); ctx.quadraticCurveTo(cx + s * 4, ey - eh * 3, cx + s * 8, ey - eh * 3.8); ctx.stroke(); }
+    if (ex.brow < -0.8 && !o.noWorry) for (let i = 0; i < 2; i++) { ctx.beginPath(); ctx.moveTo(cx - w * 0.3, ey - eh * (3.6 + i * 0.8)); ctx.quadraticCurveTo(cx, ey - eh * (4.3 + i * 0.8), cx + w * 0.3, ey - eh * (3.6 + i * 0.8)); ctx.stroke(); }
+    ctx.restore();
+  }
   mouth(ctx, cx + w * 0.02, cy + h * 0.56, w * (o.mouthW ?? 0.26), ex, o);
+  // a tear on the near cheek; a bead of sweat at the temple
+  if (ex.tear && !o.closed) { const tx = cx - ex0 - ew * 0.6, ty = ey + eh * 1.4; ctx.save(); ctx.strokeStyle = 'rgba(220,240,255,0.55)'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(tx, ty); ctx.quadraticCurveTo(tx - 4, ty + 20, tx - 2, ty + 34); ctx.stroke(); ctx.fillStyle = 'rgba(230,246,255,0.9)'; ctx.beginPath(); ctx.ellipse(tx - 2, ty + 38, 4.5, 6, 0, 0, TAU); ctx.fill(); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(tx - 3.5, ty + 36, 1.6, 0, TAU); ctx.fill(); ctx.restore(); }
+  if (ex.sweat) { const tx = cx + w * 0.78, ty = cy - h * 0.45; ctx.save(); ctx.fillStyle = 'rgba(220,240,255,0.85)'; ctx.beginPath(); ctx.moveTo(tx, ty - 10); ctx.quadraticCurveTo(tx + 7, ty + 2, tx, ty + 7); ctx.quadraticCurveTo(tx - 7, ty + 2, tx, ty - 10); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(tx - 2, ty, 1.5, 0, TAU); ctx.fill(); ctx.restore(); }
   return build;
+}
+
+// ------------------------------------------------------------------ hands and props
+// A painted hand in local space (palm about 60 across, wrist toward +y). pose: 'fist' grips a vertical shaft
+// through x = 0, 'open' is palm up and cupped with something resting above at (0, -46), 'pinch' holds a thread
+// between thumb and finger at (-4, -66). o: { color, rim, cuff, cuffRim, flip, nails }
+function capsule(c, x0, y0, x1, y1, r0, r1 = r0) {
+  const a = Math.atan2(y1 - y0, x1 - x0), q = Math.PI / 2;
+  c.moveTo(x0 + Math.cos(a + q) * r0, y0 + Math.sin(a + q) * r0); c.arc(x1, y1, r1, a + q, a - q, true); c.arc(x0, y0, r0, a - q, a + q, true); c.closePath();
+}
+function hand(ctx, x, y, s, rot, pose, o) {
+  const col = o.color, rim = o.rim ?? '#ffffff';
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(s * (o.flip ? -1 : 1), s);
+  const P0 = { base: col, edge: 6, rim, rimW: 3, rimA: 0.6, box: [-40, -70, 40, 40] };
+  if (o.cuff) part(ctx, (c) => curve(c, [[-34, 26], [-30, 90], [30, 90], [34, 26], [0, 18]]), { base: o.cuff, edge: 8, rim: o.cuffRim ?? rim, rimW: 4, box: [-34, 18, 34, 90] });
+  else part(ctx, (c) => capsule(c, 0, 30, 0, 80, 20, 22), { ...P0, box: [-22, 20, 22, 80] });
+  if (pose === 'fist') {
+    part(ctx, (c) => { c.roundRect ? c.roundRect(-28, -32, 56, 64, 16) : c.rect(-28, -32, 56, 64); }, P0);
+    for (let i = 0; i < 4; i++) { const fy = -22 + i * 14.5; part(ctx, (c) => capsule(c, -24, fy, 22, fy + 1, 7.6, 7), { ...P0, edge: 3, hl: [10, fy - 3, 10], hlA: 0.6, box: [-24, fy - 8, 26, fy + 8] }); }
+    part(ctx, (c) => capsule(c, -30, -16, 4, -36, 9, 7.5), { ...P0, edge: 3, hl: [-10, -30, 12], hlA: 0.6, box: [-34, -44, 8, -8] });
+  } else if (pose === 'open') {
+    part(ctx, (c) => c.ellipse(0, 0, 32, 26, 0, 0, TAU), P0);
+    const F = [[-22, -14, -30, -48], [-8, -20, -10, -58], [7, -20, 9, -58], [21, -14, 30, -46]];
+    for (const [ax, ay, bx, by] of F) part(ctx, (c) => capsule(c, ax, ay, bx, by, 8, 6.5), { ...P0, edge: 3, hl: [bx - 2, by + 6, 10], hlA: 0.5 });
+    part(ctx, (c) => capsule(c, -28, 6, -50, -18, 9, 7), { ...P0, edge: 3 });
+    // palm crease
+    ctx.strokeStyle = hexA(shade(col, 0.5), 0.5); ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(-18, -2); ctx.quadraticCurveTo(0, 6, 22, -6); ctx.stroke();
+  } else if (pose === 'pinch') {
+    part(ctx, (c) => { c.roundRect ? c.roundRect(-26, -26, 52, 56, 16) : c.rect(-26, -26, 52, 56); }, P0);
+    for (let i = 1; i < 4; i++) { const fy = -20 + i * 14; part(ctx, (c) => capsule(c, -20, fy, 22, fy + 1, 7, 6.5), { ...P0, edge: 3, box: [-24, fy - 8, 26, fy + 8] }); }
+    part(ctx, (c) => capsule(c, 0, -22, -2, -64, 7.5, 6), { ...P0, edge: 3, hl: [-4, -56, 8], hlA: 0.6 });
+    part(ctx, (c) => capsule(c, -28, -8, -10, -62, 9, 6.5), { ...P0, edge: 3, hl: [-20, -40, 10], hlA: 0.5 });
+  }
+  ctx.restore();
+}
+// where the held point of a pose lands in design space
+function handPoint(x, y, s, rot, pose, flip) {
+  const [lx, ly] = pose === 'open' ? [0, -78] : pose === 'pinch' ? [-6, -70] : [0, 0];
+  const fx = lx * (flip ? -1 : 1) * s, fy = ly * s;
+  return [x + fx * Math.cos(rot) - fy * Math.sin(rot), y + fx * Math.sin(rot) + fy * Math.cos(rot)];
 }
 
 // ------------------------------------------------------------------ backgrounds and finishing
 function backdrop(ctx, color, o = {}) {
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); // the backdrop never leans with the figure
   const g = ctx.createRadialGradient(256, 210, 20, 256, 256, 330);
   g.addColorStop(0, hexA(tint(color, 0.15), o.a ?? 0.55)); g.addColorStop(0.45, hexA(shade(color, 0.55), 0.55)); g.addColorStop(0.8, hexA(shade(color, 0.85), 0.35)); g.addColorStop(1, hexA(shade(color, 0.9), 0));
   ctx.fillStyle = g; ctx.fillRect(0, 0, D, D);
   const r = prng(o.seed ?? 1);
   for (let i = 0; i < (o.motes ?? 14); i++) glow(ctx, r() * D, r() * D * 0.8, 6 + r() * 16, tint(color, 0.4), 0.18 + r() * 0.2);
+  ctx.restore();
 }
 let grain = null;
 function finish(ctx, color) {
@@ -211,15 +336,16 @@ function finish(ctx, color) {
   ctx.drawImage(grain, 0, 0, D, D);
   // warm key light wash and coloured bounce from below-right
   const k = ctx.createLinearGradient(0, 0, D, D); k.addColorStop(0, 'rgba(255,220,170,0.10)'); k.addColorStop(1, hexA(color, 0.12)); ctx.fillStyle = k; ctx.fillRect(0, 0, D, D);
-  // fade to transparent at the edges (bottom fades into the dialogue plate)
+  // fade to transparent at the edges (an oval wider than tall, so hands and props at the lower corners stay)
   ctx.globalCompositeOperation = 'destination-in';
-  const m = ctx.createRadialGradient(256, 230, 200, 256, 256, 365); m.addColorStop(0, 'rgba(0,0,0,1)'); m.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = m; ctx.fillRect(0, 0, D, D);
+  ctx.translate(256, 0); ctx.scale(1.22, 1); ctx.translate(-256, 0);
+  const m = ctx.createRadialGradient(256, 240, 210, 256, 262, 350); m.addColorStop(0, 'rgba(0,0,0,1)'); m.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = m; ctx.fillRect(-120, 0, D + 240, D);
   ctx.restore();
 }
 
 // shoulders/bust silhouette helpers
-const bust = (w, top, cx = 256) => (c) => curve(c, [[cx - w, D + 40], [cx - w * 0.98, top + 90], [cx - w * 0.7, top + 20], [cx - w * 0.3, top], [cx + w * 0.3, top], [cx + w * 0.7, top + 20], [cx + w * 0.98, top + 90], [cx + w, D + 40]]);
+const bust = (w, top, cx = 256) => { const f = (c) => curve(c, [[cx - w, D + 40], [cx - w * 0.98, top + 90], [cx - w * 0.7, top + 20], [cx - w * 0.3, top], [cx + w * 0.3, top], [cx + w * 0.7, top + 20], [cx + w * 0.98, top + 90], [cx + w, D + 40]]); f.fold = { w, top, cx }; return f; };
 const neck = (ctx, skin, cx = 256, y0 = 300, w = 34, rim) => {
   part(ctx, (c) => { c.moveTo(cx - w * 0.85, y0 - 60); c.quadraticCurveTo(cx - w * 0.9, y0 + 10, cx - w * 1.35, y0 + 34); c.lineTo(cx + w * 1.35, y0 + 34); c.quadraticCurveTo(cx + w * 0.9, y0 + 10, cx + w * 0.85, y0 - 60); c.closePath(); }, { base: shade(skin, 0.1), edge: 10, rim, rimA: 0.35, box: [cx - w, y0 - 60, cx + w * 1.5, y0 + 40] });
   // shadow under the jaw and where the neck meets the collar
@@ -641,6 +767,41 @@ P.ash = (ctx, ex) => {
   ctx.globalAlpha = 0.9; ctx.drawImage(lay, 0, 0); ctx.globalAlpha = 1;
 };
 
+// ------------------------------------------------------------------ staging: mood light, pose and menace
+const MENACE = new Set(['veyl', 'morrow', 'aurum', 'sable']);
+function paint(ctx, speaker, painter, ex) {
+  const color = SPEAKERS[speaker]?.color ?? '#f2c46b';
+  ELEM = color;
+  const ml = ex.light ?? color, menace = MENACE.has(speaker);
+  // an aura behind the figure, in the element colour pulled toward the mood
+  const auraC = mix(color, ml, ex.light ? 0.55 : 0);
+  const ag = ctx.createRadialGradient(256, 230, 30, 256, 250, 300);
+  ag.addColorStop(0, hexA(tint(auraC, 0.2), menace ? 0.35 : 0.45)); ag.addColorStop(0.55, hexA(auraC, menace ? 0.16 : 0.2)); ag.addColorStop(1, hexA(auraC, 0));
+  ctx.fillStyle = ag; ctx.fillRect(0, 0, D, D);
+  // the whole bust leans with the mood: drooping in sorrow, pressing forward in anger, pulling back in fright
+  const [lean, dx, dy, sc] = ex.pose ?? [0, 0, 0, 1];
+  ctx.save(); ctx.translate(256 + dx, 470 + dy); ctx.rotate(lean); ctx.scale(sc, sc); ctx.translate(-256, -470);
+  painter(ctx, ex);
+  ctx.restore();
+  ctx.save(); ctx.globalCompositeOperation = 'source-atop';
+  if (menace) {
+    // lit from below by their own fire, the brow in shadow
+    const u = ctx.createLinearGradient(0, D, 0, 0); u.addColorStop(0, hexA(color, 0.3)); u.addColorStop(0.45, hexA(color, 0)); ctx.fillStyle = u; ctx.fillRect(0, 0, D, D);
+    const t = ctx.createLinearGradient(0, 0, 0, 260); t.addColorStop(0, 'rgba(6,2,12,0.5)'); t.addColorStop(1, 'rgba(6,2,12,0)'); ctx.fillStyle = t; ctx.fillRect(0, 0, D, D);
+  }
+  if (ex.light) {
+    const k = { happy: 0.14, warm: 0.14, wry: 0.1, sad: 0.24, grave: 0.32, angry: 0.2, surprised: 0.12, afraid: 0.22 };
+    const a = k[Object.keys(EXPR).find((n) => EXPR[n] === ex)] ?? 0.12;
+    let g;
+    if (ex === EXPR.angry) { g = ctx.createLinearGradient(0, D, 0, 120); g.addColorStop(0, hexA(ml, a * 1.6)); g.addColorStop(1, hexA(ml, 0)); }
+    else if (ex === EXPR.sad || ex === EXPR.grave) { g = ctx.createLinearGradient(0, 0, 0, D); g.addColorStop(0, hexA(ml, a * 1.4)); g.addColorStop(1, hexA(ml, a * 0.5)); }
+    else { g = ctx.createLinearGradient(0, 0, D, D); g.addColorStop(0, hexA(ml, a * 1.3)); g.addColorStop(1, hexA(ml, 0)); }
+    ctx.fillStyle = g; ctx.fillRect(0, 0, D, D);
+  }
+  ctx.restore();
+  finish(ctx, color);
+}
+
 // ------------------------------------------------------------------ public API
 const cache = new Map();
 const base = new Map(); // 512 design renders per speaker+mood, downscaled per size
@@ -660,7 +821,7 @@ export function getPortrait(speaker, mood = 'neutral', size = 256) {
   let full = base.get(bk);
   if (!full) {
     full = mk(D, D); const ctx = full.getContext('2d');
-    try { painter(ctx, exprFor(m)); finish(ctx, SPEAKERS[speaker]?.color ?? '#f2c46b'); } catch (e) { console.error('portrait', speaker, e); }
+    try { paint(ctx, speaker, painter, exprFor(m)); } catch (e) { console.error('portrait', speaker, e); }
     base.set(bk, full);
   }
   if (size === D) c = full;
@@ -673,7 +834,7 @@ export function getPortrait(speaker, mood = 'neutral', size = 256) {
   return c;
 }
 // painting kit shared with the world sprites (render/actors/npcs.js)
-export const PAINT = { part, curve, blob, glow, strands, thread, hexA, mix, shade, tint, prng, mk, face, EXPR };
+export const PAINT = { part: (ctx, b, o) => { const e = ELEM; ELEM = o.elem ?? "#e8d8c0"; part(ctx, b, o); ELEM = e; }, curve, blob, glow, strands, thread, hexA, mix, shade, tint, prng, mk, face, EXPR };
 
 // warm the cache for a list of speakers (e.g. the hub cast) so the first line never hitches
 export function preloadPortraits(speakers, moods = ['neutral'], size = 256) { for (const s of speakers) for (const m of moods) getPortrait(s, m, size); }

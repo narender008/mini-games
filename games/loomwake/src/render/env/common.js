@@ -415,3 +415,14 @@ export function paintSlab(g, pts, base, o = {}) {
   g.strokeStyle = o.edgeHi || 'rgba(255,240,220,0.22)'; g.beginPath(); g.moveTo(d[0], d[1]); g.lineTo(a[0], a[1]); g.lineTo(b2[0], b2[1]); g.stroke();
   g.strokeStyle = o.edgeLo || 'rgba(0,0,0,0.5)'; g.beginPath(); g.moveTo(b2[0], b2[1]); g.lineTo(c[0], c[1]); g.lineTo(d[0], d[1]); g.stroke();
 }
+
+// A second, animated parallax layer: a sparse overlay (sparse()) that moves with its own camera
+// factor and sways slowly with time, clamped so its edges never show.
+export function drawDrift(ctx, sp, cam, f, t, { sway = 0, period = 60, op = 'source-over', alpha = 1 } = {}) {
+  const W = cam.w, H = cam.h, mx = (sp.w - W) / 2, my = (sp.h - H) / 2;
+  const ox = clamp(-mx - cam.x * f * cam.scale + Math.sin((t * TAU) / period) * sway, -2 * mx, 0);
+  const oy = clamp(-my - cam.y * f * 0.7 * cam.scale, -2 * my, 0);
+  ctx.globalCompositeOperation = op; ctx.globalAlpha = alpha;
+  drawSparse(ctx, sp, ox, oy);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}

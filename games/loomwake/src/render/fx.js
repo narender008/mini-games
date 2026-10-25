@@ -213,8 +213,11 @@ export function createFx(G, Q) {
       } else if (d.type === 'tide') { drawGlow(ctx, d.x, d.y, d.r * (1.4 - a * 0.4), '#3fb0ff', a * 0.45); }
     }
   };
+  // additive budget: when many additive particles overlap (boon storms), each one dims so the pile
+  // saturates in colour instead of clipping to white. P.addK carries it to other additive painters.
+  let addK = 1;
   const drawPart = (ctx, p, P) => {
-    const a = clamp(p.life / p.max, 0, 1);
+    const a = clamp(p.life / p.max, 0, 1) * (p.add && p.type !== 'mote' ? addK : 1);
     if (p.type === 'spark') { const vx = p.vx * 0.03, vy = (p.vy - p.vz) * 0.03; ctx.strokeStyle = p.color; ctx.globalAlpha = a; ctx.lineWidth = p.size; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(p.x, p.y - p.z); ctx.lineTo(p.x - vx, p.y - p.z - vy * 0.7); ctx.stroke(); ctx.globalAlpha = 1; }
     else if (p.type === 'ring') { const t = 1 - a, r = lerp(p.size, p.r1, 1 - Math.pow(1 - t, 3)); ctx.strokeStyle = p.color; ctx.globalAlpha = a; ctx.lineWidth = p.width * a + 1; ctx.beginPath(); ctx.ellipse(p.x, p.y, Math.max(0.1, r), Math.max(0.1, r * p.squash), 0, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1; }
     else if (p.type === 'ember') drawGlow(ctx, p.x, p.y - p.z, p.size * 4, p.color, a);
@@ -235,6 +238,10 @@ export function createFx(G, Q) {
   const SORTED = new Set(['shard', 'dust', 'thread', 'ash', 'leaf']);
   fx.sorted = (push, ctx, P) => { for (const p of parts) if (SORTED.has(p.type)) push(p.y, () => drawPart(ctx, p, P)); };
   fx.drawAdd = (ctx, P) => {
+    let n = 0; for (const p of parts) if (p.add && p.type !== 'mote') n++;
+    n += flashes.length * 4 + bolts.length * 6;
+    addK = clamp(Math.sqrt(160 / Math.max(1, n)), 0.5, 1);
+    if (P) P.addK = addK;
     for (const p of parts) if (p.add && !SORTED.has(p.type) && p.type !== 'mote') drawPart(ctx, p, P);
     for (const b of bolts) drawBolt(ctx, b);
   };
@@ -255,7 +262,7 @@ export function createFx(G, Q) {
     ctx.globalAlpha = 1;
   };
   fx.lights = (push) => {
-    for (const f of flashes) push(f.x, f.y, f.r, f.color, (f.life / f.max) * f.i, 0.5);   // flashes open the dark more than they tint
+    for (const f of flashes) push(f.x, f.y, f.r, f.color, (f.life / f.max) * f.i, 0.35);   // flashes open the dark more than they tint
     for (const b of bolts) push(b.b[0], b.b[1], 150, b.color, b.life / b.max);
   };
   fx.flashes = flashes;
