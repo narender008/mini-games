@@ -7,7 +7,7 @@ function botInit(cfg) {
   const tb = window.__tb;
   let a = cfg.seed * 9301 + 49297 | 0;
   const rnd = () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-  window.__bot = { cfg, rnd, log: { picks: [], waves: [], bossAt: null, bosses: [], hpLow: Infinity, end: null, shots0: 0 }, reaction: 0, target: null, aimOff: { x: 0, y: 0 } };
+  window.__bot = { cfg, rnd, log: { picks: [], waves: [], bossAt: null, bosses: [], abilities: {}, hpLow: Infinity, end: null, shots0: 0 }, reaction: 0, target: null, aimOff: { x: 0, y: 0 } };
   tb.freeze();
   return tb.state();
 }
@@ -23,7 +23,7 @@ function botRun(sliceSec) {
     if (cfg.build.rule === 'last') return ids.length - 1;
     if (cfg.build.rule === 'random') return Math.floor(B.rnd() * ids.length);
     for (const p of cfg.build.prefer || []) {
-      const i = ids.findIndex((id) => re(p).test(id));
+      const i = ids.findIndex((id) => id === p || re(`^(?:${p})$`).test(id));
       if (i >= 0) return i;
     }
     // stack what we already have, else the first
@@ -67,7 +67,10 @@ function botRun(sliceSec) {
     let ax = t?.x, ay = t?.y;
     if (t && B.prev && B.prev.kind === t.kind && Math.hypot(B.prev.x - t.x, B.prev.y - t.y) < 30) { ax += (t.x - B.prev.x) * cfg.lead; ay += (t.y - B.prev.y) * cfg.lead; }
     B.prev = t ? { x: t.x, y: t.y, kind: t.kind } : null;
-    tb.input(t ? { fire: true, aim: { x: ax + B.aimOff.x, y: ay + B.aimOff.y }, move } : { fire: false, move });
+    // use abilities as they come ready, aimed at the target like the guns
+    const ability = t && s.abilities ? Object.keys(s.abilities).find((k) => s.abilities[k].ready) : undefined;
+    if (ability) L.abilities[ability] = (L.abilities[ability] || 0) + 1;
+    tb.input(t ? { fire: true, aim: { x: ax + B.aimOff.x, y: ay + B.aimOff.y }, move, ability } : { fire: false, move });
     tb.step(dt);
     s = tb.state();
     if (s.time > cfg.maxSec) { L.end = 'timeout'; break; }

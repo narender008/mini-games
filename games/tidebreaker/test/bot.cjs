@@ -18,14 +18,14 @@ const SEEDS = +(process.env.TB_SEEDS || 3);
 const MIN = +(process.env.TB_MIN || 8), MAX = +(process.env.TB_MAX || 17);
 const CONC = +(process.env.TB_CONC || 3);
 
-// Builds pick by id patterns first; the generic rules make sure every card
-// path gets played even if ids change.
+// Builds pick the first offered card in their list (ids from src/upgrades.js),
+// else one they already own; the generic rules play every card path.
 const BUILDS = [
-  { name: 'firepower', rule: 'prefer', prefer: ['chain', 'shot', 'cannon', 'broadside', 'powder', 'reload'] },
-  { name: 'storm', rule: 'prefer', prefer: ['lightning', 'mast', 'storm', 'thunder'] },
-  { name: 'fire', rule: 'prefer', prefer: ['fire', 'barrel', 'burn', 'flame'] },
-  { name: 'ally', rule: 'prefer', prefer: ['kraken', 'ally', 'gull', 'crew', 'drone'] },
-  { name: 'tank', rule: 'prefer', prefer: ['hull', 'armou?r', 'repair', 'plank', 'shield', 'heal'] },
+  { name: 'firepower', rule: 'prefer', prefer: ['heavy', 'cannons', 'reload', 'gunners', 'explosive', 'longnines', 'hellfire'] },
+  { name: 'storm', rule: 'prefer', prefer: ['lightning', 'stormgunners', 'thunderfire', 'gunners', 'reload'] },
+  { name: 'fire', rule: 'prefer', prefer: ['fire', 'hellfire', 'thunderfire', 'cannons', 'explosive'] },
+  { name: 'ally', rule: 'prefer', prefer: ['kraken', 'abyssal', 'chain', 'grapeshot'] },
+  { name: 'tank', rule: 'prefer', prefer: ['hull', 'armor', 'surgeon', 'repair', 'rigging'] },
   { name: 'first-card', rule: 'first' },
   { name: 'random', rule: 'random' },
 ].filter((b) => !process.env.TB_BUILDS || process.env.TB_BUILDS.split(',').includes(b.name));
@@ -48,7 +48,7 @@ async function runOne(browser, url, build, seed, skill) {
       if (Date.now() - wall > 8 * 60 * 1000) { r.log.end = r.log.end || 'wall-timeout'; break; }
     } while (!r.done);
     if (page.problems.length) r.log.problems = page.problems.slice(0, 10);
-    return { build: build.name, seed, skill, result: r.log.end, minutes: r.s.time / 60, bossAtMin: r.log.bossAt == null ? null : r.log.bossAt / 60, waveReached: r.s.stage ?? r.s.wave, leg: r.s.leg, bosses: r.log.bosses, hpLow: r.log.hpLow === Infinity ? null : r.log.hpLow, hpEnd: r.s.maxHp ? r.s.hp / r.s.maxHp : null, score: r.s.score, shots: r.s.shots, hits: r.s.hits, upgrades: r.s.upgrades, picks: r.log.picks.map((p) => p.id), waves: r.log.waves, problems: r.log.problems || [], wallSec: (Date.now() - wall) / 1000 };
+    return { build: build.name, seed, skill, result: r.log.end, minutes: r.s.time / 60, bossAtMin: r.log.bossAt == null ? null : r.log.bossAt / 60, waveReached: r.s.stage ?? r.s.wave, leg: r.s.leg, bosses: r.log.bosses, hpLow: r.log.hpLow === Infinity ? null : r.log.hpLow, hpEnd: r.s.maxHp ? r.s.hp / r.s.maxHp : null, score: r.s.score, shots: r.s.shots, hits: r.s.hits, upgrades: r.s.upgrades, picks: r.log.picks.map((p) => p.id), abilityUses: r.log.abilities, waves: r.log.waves, problems: r.log.problems || [], wallSec: (Date.now() - wall) / 1000 };
   } finally { await close(page); }
 }
 
