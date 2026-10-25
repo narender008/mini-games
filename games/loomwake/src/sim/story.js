@@ -194,7 +194,7 @@ export function onEvent(G, type, data = {}) {
       if (data.region) fl[`seen_${data.region}`] = true;
       break;
     }
-    case 'chamberEnter': run.chambers = (run.chambers | 0) + 1; run.barked = false; break;
+    case 'chamberEnter': run.chambers = (run.chambers | 0) + 1; run.barked = false; if (data.kind === 'shop') fl.metPellStall = 1; break;
     case 'waveStart': {
       // one decision per chamber (a chamber has several waves), at most one line, never a line twice in a run
       if (run.barked || run.rolledCh === run.chambers) break;

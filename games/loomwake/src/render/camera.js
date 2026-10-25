@@ -73,10 +73,12 @@ export function createCamera(G) {
       if (Math.hypot(n.x - h.x, n.y - h.y) > 900) continue;   // a far speaker is a voice, not a framing target
       x0 = Math.min(x0, n.x - 60); x1 = Math.max(x1, n.x + 60); y0 = Math.min(y0, n.y - 170); y1 = Math.max(y1, n.y + 24);
     }
-    const availW = Math.max(200, cam.viewW - TS * 2), availH = Math.max(160, cam.viewH - TT - TB);
-    const zoom = clamp(Math.min(zMax, availW / ((x1 - x0) * cam.base), availH / ((y1 - y0) * cam.base)), 0.6, zMax);
+    // the reserves shrink with short screens (a phone in landscape is ~390 px tall)
+    const tt = Math.min(TT, cam.viewH * 0.12), tb = Math.min(TB, cam.viewH * 0.42), ts = Math.min(TS, cam.viewW * 0.08);
+    const availW = Math.max(200, cam.viewW - ts * 2), availH = Math.max(120, cam.viewH - tt - tb);
+    const zoom = clamp(Math.min(zMax, availW / ((x1 - x0) * cam.base), availH / ((y1 - y0) * cam.base)), cam.viewH < 500 ? 0.42 : 0.6, zMax);
     const k = cam.base * zoom;
-    return { zoom, x: (x0 + x1) / 2, y: (y0 + y1) / 2 - (TT + availH / 2 - cam.viewH / 2) / k };
+    return { zoom, x: (x0 + x1) / 2, y: (y0 + y1) / 2 - (tt + availH / 2 - cam.viewH / 2) / k };
   }
   cam.update = (G, dt) => {
     const c = G.cfg.camera, h = G.hero;

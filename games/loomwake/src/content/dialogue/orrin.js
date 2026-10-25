@@ -13,7 +13,7 @@ export default normalise([
   {
     id: 'orrin_intro', on: 'hubEnter', p: 100, when: (S) => S.runs === 0 && S.started === 0, sets: ['metOrrin'],
     lines: [
-      '@narrator A thread of gold pulls tight, and you wake on cold stone beneath a tapestry that has no ending.',
+      '@narrator A thread of gold pulls tight, and you wake on worn wooden boards beneath a tapestry that has no ending.',
       '#surprised Oh! Oh, mind the inkwell. You are awake. You are actually awake.',
       '#warm Forgive me. I have watched that thread glow in its basket for so long that I had begun to think I had imagined it.',
       '@iri Who are you? Where is this?',
@@ -42,7 +42,7 @@ export default normalise([
   {
     id: 'orrin_first_clear_home', on: 'hubEnter', p: 96, when: (S) => S.ev.from === 'victory' && S.clears === 1,
     lines: [
-      '@narrator The golden thread does not pull you home this time. You climb it, hand over hand, all the way up.',
+      '@narrator The Loomhall is as you left it, only quieter, as if the whole hall is holding its breath.',
       '#surprised Iri. You... you went all the way down. To the heart of it.',
       '#sad And she did not wake. I felt her stir, every page in the archive turned at once. And then nothing.',
     ],

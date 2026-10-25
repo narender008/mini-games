@@ -103,6 +103,9 @@ function pumpTalk(G) {
   if (!q || !q.length || G.dialogue) return false;
   if (G.scene !== 'run' && G.scene !== 'hub') return false;
   if (G.scene === 'run' && (!G.run || G.run.over || (G.hero && G.hero.dead))) return false;
+  // back from a death: Iri re-weaves first (the world is still while a conversation is open, so talking
+  // over the re-weave would leave her unwoven, out of the picture, for all her own lines)
+  if (G.scene === 'hub' && G.hero && G.hero.state === 'respawn') return false;
   return !!openDialogue(G, q.shift(), G.scene);
 }
 function setScene(G, to) {
@@ -580,7 +583,7 @@ function arrive(G, { fresh = false, resume = null } = {}) {
   emit(G, 'chamberEnter', { chamber });
   story(G, 'chamberEnter', { chamber, depth: run.depth, kind, region: run.region, index: run.chamber });
   // non-combat chambers are cleared on arrival
-  if (kind === 'shop') { run.ch.shop = rollShop(G); G.shop = run.ch.shop; markCleared(G, true); }
+  if (kind === 'shop') { run.ch.shop = rollShop(G); G.shop = run.ch.shop; markCleared(G, true); placeStallKeeper(G); }
   else if (kind === 'fountain') { run.ch.fountain = { used: false, healed: 0, npc: null, memory: null }; prepareFountain(G); markCleared(G, true); }
   if (kind === 'fountain') placeWanderer(G);
   else if (kind === 'memory') {
@@ -1056,6 +1059,15 @@ function prepareFountain(G) {
   const run = G.run, f = run.ch.fountain;
   const id = run.memoryRegions.includes(run.region) ? null : safe(Story.pickMemory, G) ?? pickMemoryFallback(G);
   f.memory = id || null;
+}
+// Pell minds his Reverie stall, standing beside the cart. Painted only: the stall's own 'Trade' prompt is how you
+// deal with him down here (id 'pell_stall' so no hub talk marker shows over him; the painter draws e.npc).
+function placeStallKeeper(G) {
+  const f = (G.chamber.features || []).find((x) => x.type === 'shop');
+  if (!f) return null;
+  const n = { id: 'pell_stall', npc: 'pell', kind: 'keeper', x: Math.round(f.x + 150), y: Math.round(f.y + 14), r: 0, talkR: -1e6, facing: Math.PI };
+  G.npcs.push(n);
+  return n;
 }
 // The region's wanderer (Hob, Lisle, Gilt, Ash) waits beside a fountain when story says they are about.
 function placeWanderer(G) {

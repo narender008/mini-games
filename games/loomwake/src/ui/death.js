@@ -50,6 +50,8 @@ export function createDeath(ui) {
     }
   }
 
+  const NOFOE = { fall: 'Lost to the dark below', hazard: 'Caught in the chamber’s snares', spikes: 'Caught on the spikes', thorns: 'Caught in the thorns', molten: 'Burned on the molten floor' };
+  const GENERIC = new Set(['unknown', 'zone', 'telegraph', 'projectile', 'slash', 'melee', 'boon', 'hero']);
   function render(G) {
     const r = G.lastRun || {};
     let killer = '';
@@ -59,7 +61,10 @@ export function createDeath(ui) {
     else if (typeof k === 'string') killer = k.replace(/[_-]/g, ' ');
     if (killer && killer === killer.toUpperCase()) killer = killer.toLowerCase().replace(/(^|[\s-])(\w)/g, (m) => m.toUpperCase()).replace(/\b(The|Of|In)\b(?!$)/g, (w, _, i) => (i ? w.toLowerCase() : w));
     const rg = r.region ? region(r.region) : null;
-    cause.textContent = killer ? `Undone by ${killer}${rg ? ' in ' + rg.name : ''}.` : rg ? `The thread snapped in ${rg.name}.` : 'The thread snapped.';
+    // deaths with no foe behind them (a pit, the floor's snares) get their own words, never "Undone by fall"
+    const how = typeof k === 'string' && !(typeof r.boss === 'string') ? NOFOE[k] : null;
+    const where = rg ? ' in ' + rg.name : '';
+    cause.textContent = how ? `${how}${where}.` : killer && !GENERIC.has(k) ? `Undone by ${killer}${where}.` : rg ? `The thread snapped in ${rg.name}.` : 'The thread snapped.';
     const recent = lastBark && performance.now() - lastBark.at < 12000 ? lastBark : null;
     const sp = speaker(recent?.speaker || 'sable', G);
     sable.dataset.who = sp.name.toUpperCase();

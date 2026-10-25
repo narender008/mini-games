@@ -14,7 +14,7 @@ function boss(id, list) { return normalise(list, { speaker: id, kind: 'boss' });
 
 // ======================================================================== Queen Veyl, the Thorn Regent
 const veyl = boss('veyl', [
-  { id: 'veyl_intro_1', on: 'bossIntro', p: 100, when: meet('veyl', 1), lines: ['#angry Another thief in my garden.', 'Every rose here was planted by her hand. You will not take one more.'] },
+  { id: 'veyl_intro_1', on: 'bossIntro', p: 100, when: meet('veyl', 1), lines: ['#angry Another thief in my garden.', 'Every rose here was planted by her hand. You will not take one more.', '@iri #wry I didn’t come for your roses. I came to wake her up.'] },
   { id: 'veyl_intro_loss1', on: 'bossIntro', p: 80, when: (S) => lostLast('veyl')(S) && S.losses('veyl') === 1, lines: ['#wry Back, little weed? I pulled you up by the roots. You grew again. How tiresome.'] },
   { id: 'veyl_intro_loss3', on: 'bossIntro', p: 78, when: (S) => lostLast('veyl')(S) && S.losses('veyl') >= 3 && !S.kills('veyl'), lines: ['#grave You keep coming back. Like bindweed. Like hope. I have never been able to kill either.'] },
   { id: 'veyl_intro_won1', on: 'bossIntro', p: 85, when: (S) => is('veyl')(S) && S.kills('veyl') === 1, lines: ['#sad You again. I told you his name. Was that not enough? Must you take the garden too?'] },
@@ -69,7 +69,7 @@ const veyl = boss('veyl', [
 
 // ======================================================================== Cantor Morrow, the Drowned Choirmaster
 const morrow = boss('morrow', [
-  { id: 'morrow_intro_1', on: 'bossIntro', p: 100, when: meet('morrow', 1), lines: ['#grave Hush. The choir is in session.', 'Every name I sing is a name the world forgets. Shall I learn yours?'] },
+  { id: 'morrow_intro_1', on: 'bossIntro', p: 100, when: meet('morrow', 1), lines: ['#grave Hush. The choir is in session.', 'Every name I sing is a name the world forgets. Shall I learn yours?', '@iri It’s Iri. Try not to forget it.'] },
   { id: 'morrow_intro_loss1', on: 'bossIntro', p: 80, when: (S) => lostLast('morrow')(S) && S.losses('morrow') === 1, lines: ['#wry The golden one returns for an encore. I did not catch your name last time. I shall try harder.'] },
   { id: 'morrow_intro_won1', on: 'bossIntro', p: 85, when: (S) => is('morrow')(S) && S.kills('morrow') === 1, lines: ['#sad You again. I told you what she did. Why are you still trying to wake her?'] },
   { id: 'morrow_intro_5', on: 'bossIntro', p: 82, when: meet('morrow', 5), lines: ['#wry Our fifth performance. The choir has learned your part. They hum it in the dark.'] },
@@ -98,7 +98,7 @@ const morrow = boss('morrow', [
       '#sad The song breaks. Listen. How quiet it is.',
       '@iri Why sing the names away? Why help him?',
       '#grave Help him? Child. I sing the names away so they cannot be unpicked. A forgotten thread is a hidden thread. I hide them from him.',
-      '#sad And you think she merely fell asleep? Oh, little one. She closed her eyes on purpose, child. To keep him in.',
+      '#sad And you think she merely fell asleep? Oh, little one. She closed her eyes on purpose. To keep him in.',
       '#grave Her dream is a prison. The Reverie is the wall around him. Every night she sleeps, he stays below.',
       '#sad And every run you make, every door you open, the walls grow thinner. Ask yourself who you are really helping.',
     ],
@@ -112,7 +112,7 @@ const morrow = boss('morrow', [
 
 // ======================================================================== Aurum, the Gilded Colossus
 const aurum = boss('aurum', [
-  { id: 'aurum_intro_1', on: 'bossIntro', p: 100, when: meet('aurum', 1), lines: ['#grave So. The golden thread comes to the forge at last.', '#sad I made the shears. I have been making amends ever since. Come. Let me test the metal of you.'] },
+  { id: 'aurum_intro_1', on: 'bossIntro', p: 100, when: meet('aurum', 1), lines: ['#grave So. The golden thread comes to the forge at last.', '#sad I made the shears. I have been making amends ever since. Come. Let me test the metal of you.', '@iri Then test it. I didn’t climb down all this way to be sent home.'] },
   { id: 'aurum_intro_loss1', on: 'bossIntro', p: 80, when: (S) => lostLast('aurum')(S) && S.losses('aurum') === 1, lines: ['#grave You came back tempered. Good. Metal that does not break the first time is worth hammering.'] },
   { id: 'aurum_intro_won1', on: 'bossIntro', p: 85, when: (S) => is('aurum')(S) && S.kills('aurum') === 1, lines: ['#sad Now you know what you are. And still you come to me with a sword. I respect that.'] },
   { id: 'aurum_intro_5', on: 'bossIntro', p: 82, when: meet('aurum', 5), lines: ['#happy Five times at my anvil. Any apprentice who lasted five days I gave a hammer. You, I give a fight.'] },

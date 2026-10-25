@@ -8,7 +8,17 @@ const last = (S) => S.last || {};
 
 export default normalise([
   {
-    id: 'pell_intro', p: 90,
+    // met first at his stall down in the Reverie: he knows the golden customer already
+    id: 'pell_intro_met', p: 91, when: (S) => !S.seen('pell_intro') && (S.f('metPellStall') || S.seen('pell_buy_first')), sets: ['pellIntroDone'],
+    lines: [
+      '#happy Well, look who it is! My golden customer from down below. Lost things find their way to me. So do customers, it turns out.',
+      '@iri You were down there. Right in the middle of the Reverie, with a stall.',
+      '#warm Where else would I be, love? Lost things fall down, not up. Buttons, mostly. When somebody in the waking world is unpicked, their name goes, their thread goes. But a button stays. Buttons are stubborn.',
+      '#wry Bring me Dream Shards from below, and I’ll find you something useful up here too. Same fox, two counters.',
+    ],
+  },
+  {
+    id: 'pell_intro', p: 90, when: (S) => !S.f('pellIntroDone'),
     lines: [
       '#happy A customer! A real live golden customer! Pell, purveyor of lost things. Buttons, mostly. Buttons are what’s left.',
       '@iri Left of what?',

@@ -36,6 +36,9 @@ function smooth(ctx, pts, closed = true, k = 0.5) {
   if (closed) ctx.closePath();
 }
 
+// a small child, arms a little out, feet at 0 (the head is a circle at 0, -262, r 40, added by the hole painter)
+const CHILD_HOLE = [[-12, -222], [12, -222], [44, -206], [66, -172], [86, -112], [74, -102], [54, -150], [50, -96], [46, -46], [42, 0], [12, 0], [2, -52], [-8, -52], [-14, 0], [-44, 0], [-48, -46], [-52, -96], [-56, -150], [-76, -102], [-88, -112], [-68, -172], [-46, -206]];
+
 // ------------------------------------------------------------------ the vignette kit
 const glowCache = new Map();
 function glowSprite(color) {
@@ -134,15 +137,32 @@ export const VK = {
     // hair of threads behind
     if (o.hair !== false) VK.strands(ctx, -30, -470, 9, 260, Math.PI * 0.62, 0.5, o.hairColor ?? '#ffcf7a', t, 11, 1.4, 0.6);
     const body = (c) => smooth(c, [[0 + bow, -528], [32 + bow, -514], [50 + bow * 0.8, -480], [50, -442], [80, -402], [96, -330], [106, -228], [124, -120], [152, -24], [168, 0], [-168, 0], [-150, -24], [-120, -120], [-100, -230], [-90, -330], [-74, -402], [-48, -442], [-50 + bow * 0.6, -484], [-30 + bow, -514]]);
-    VK.sil(ctx, body, { rim, lx: o.lx ?? -1, ly: -0.3, rimW: 7 });
+    // she is the white veiled figure of the Loomhall (render/actors/npcs.js drawWeaver): pale cloth, gauze over it
+    const veiled = o.veiled !== false;
+    let fill = '#0b0816';
+    if (veiled) { const g = ctx.createLinearGradient(0, -528, 0, 0); g.addColorStop(0, '#fbf4e6'); g.addColorStop(0.45, '#e2d8e4'); g.addColorStop(1, '#9a90b4'); fill = g; }
+    VK.sil(ctx, body, { rim, fill, lx: o.lx ?? -1, ly: -0.3, rimW: 7 });
+    if (veiled) {
+      ctx.save(); ctx.beginPath(); body(ctx); ctx.clip();
+      // soft fold shadows down the cloth, and the veil's sheer strands over it
+      for (let i = 0; i < 9; i++) {
+        const fx = -150 + i * 38, sw = Math.sin(t * 0.5 + i * 1.7) * 6;
+        ctx.strokeStyle = i % 2 ? 'rgba(90,70,130,0.16)' : 'rgba(255,255,250,0.35)'; ctx.lineWidth = i % 2 ? 14 : 5;
+        ctx.beginPath(); ctx.moveTo(fx * 0.3 + bow, -500); ctx.quadraticCurveTo(fx * 0.7 + sw, -260, fx + sw * 1.5, 0); ctx.stroke();
+      }
+      const sh = ctx.createLinearGradient(-160, 0, 160, 0); sh.addColorStop(0, 'rgba(60,40,100,0.35)'); sh.addColorStop(0.4, 'rgba(60,40,100,0)'); sh.addColorStop(1, 'rgba(60,40,100,0.3)');
+      ctx.fillStyle = sh; ctx.fillRect(-180, -540, 360, 540);
+      ctx.restore();
+    }
     // arms
-    const arm = (sx, sy, hx, hy) => { ctx.strokeStyle = '#0b0816'; ctx.lineCap = 'round'; ctx.lineWidth = 26; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo((sx + hx) / 2, Math.min(sy, hy) - 10, hx, hy); ctx.stroke(); ctx.strokeStyle = hexA(rim, 0.6); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(sx, sy - 12); ctx.quadraticCurveTo((sx + hx) / 2, Math.min(sy, hy) - 22, hx, hy - 10); ctx.stroke(); };
+    const arm = (sx, sy, hx, hy) => { ctx.strokeStyle = veiled ? '#ddd2e0' : '#0b0816'; ctx.lineCap = 'round'; ctx.lineWidth = 26; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo((sx + hx) / 2, Math.min(sy, hy) - 10, hx, hy); ctx.stroke(); ctx.strokeStyle = hexA(rim, 0.6); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(sx, sy - 12); ctx.quadraticCurveTo((sx + hx) / 2, Math.min(sy, hy) - 22, hx, hy - 10); ctx.stroke(); };
     if (pose === 'weave') { arm(60, -400, 230, -350); arm(-40, -400, 180, -300); }
     else if (pose === 'hold') { arm(56, -400, 120, -300); arm(-50, -400, 60, -290); }
     else if (pose === 'reach') { arm(60, -400, 260, -470); }
     else if (pose === 'cradle') { arm(56, -400, 40, -300); arm(-50, -400, 10, -290); }
     // face: a pale crescent inside the hood
-    ctx.fillStyle = hexA(o.face ?? '#f6e7c1', pose === 'sleep' ? 0.35 : 0.55);
+    if (veiled) { ctx.fillStyle = 'rgba(70,50,110,0.35)'; ctx.beginPath(); ctx.ellipse(14 + bow, -474, 20, 28, 0.15, 0, TAU); ctx.fill(); }
+    ctx.fillStyle = veiled ? hexA(o.face ?? '#fffaf0', 0.9) : hexA(o.face ?? '#f6e7c1', pose === 'sleep' ? 0.35 : 0.55);
     ctx.beginPath(); ctx.ellipse(16 + bow, -476, 13, 20, 0.15, -1.2, 1.9); ctx.fill();
     if (pose === 'sleep' || o.eyesClosed) { ctx.strokeStyle = 'rgba(40,30,50,0.8)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(22 + bow, -480, 5, 0.2, Math.PI - 0.2); ctx.stroke(); }
     ctx.restore();
@@ -216,6 +236,16 @@ export const VK = {
   sableKnight(ctx, x, y, s = 1, o = {}) {
     const t = o.t ?? 0;
     ctx.save(); ctx.translate(x, y); ctx.scale(s * (o.flip ? -1 : 1), s);
+    if (o.kneel) {
+      // down on one knee, head thrown back (laughing): the cloak pools forward over the front knee
+      VK.strands(ctx, -30, -200, 10, 200, Math.PI * 0.8, 0.9, '#8a7cff', t, 41, 1.4, 0.5);
+      const shake = Math.sin(t * 9) * 1.5;
+      VK.sil(ctx, (c) => smooth(c, [[-14, -262 + shake], [16, -258 + shake], [26, -228], [54, -206], [72, -150], [86, -104], [138, -92], [160, -54], [164, 0], [-110, 0], [-118, -24], [-92, -70], [-74, -150], [-56, -200], [-34, -222], [-34, -248 + shake]]), { fill: '#05030c', rim: o.rim ?? '#b3a8ff', rimW: 5 });
+      ctx.strokeStyle = '#05030c'; ctx.lineCap = 'round'; ctx.lineWidth = 20; ctx.beginPath(); ctx.moveTo(40, -190); ctx.quadraticCurveTo(84, -150, 100, -104); ctx.stroke(); // an arm braced on the knee
+      ctx.strokeStyle = hexA(o.rim ?? '#b3a8ff', 0.6); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(44, -200); ctx.quadraticCurveTo(90, -160, 108, -110); ctx.stroke();
+      ctx.restore();
+      return;
+    }
     VK.strands(ctx, -20, -300, 10, 220, Math.PI * 0.75, 0.9, '#8a7cff', t, 41, 1.4, 0.5);
     VK.sil(ctx, (c) => smooth(c, [[0, -380], [30, -366], [38, -330], [70, -300], [86, -180], [100, -40], [120, 0], [-120, 0], [-100, -40], [-86, -180], [-70, -300], [-38, -330], [-30, -366]]), { fill: '#05030c', rim: o.rim ?? '#b3a8ff', rimW: 5 });
     if (o.mask !== false) { ctx.fillStyle = '#d8d4f0'; ctx.beginPath(); ctx.ellipse(10, -345, 16, 22, 0, 0, TAU); ctx.fill(); ctx.fillStyle = '#05030c'; ctx.fillRect(2, -350, 7, 3); ctx.fillRect(14, -350, 7, 3); }
@@ -273,7 +303,34 @@ export const VK = {
     ctx.fillStyle = 'rgba(10,6,20,0.16)'; for (let xx = 0; xx < w; xx += 6) ctx.fillRect(xx, 0, 1.5, h + 20);
     // glints running along the threads, like breath
     for (let k = 0; k < 14; k++) { const gx = ((r() * w + t * 30 * (0.5 + r())) % w), gy = Math.floor(r() * rows) * gap + 4; blob(gx, gy, 10, '#fff2c8', 0.55 * (0.5 + 0.5 * Math.sin(t * 2 + k))); }
-    if (o.hole) { ctx.globalCompositeOperation = 'destination-out'; ctx.beginPath(); smooth(ctx, o.hole); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; }
+    // a hole in the cloth: o.hole is a free shape, o.childHole { x, y, s, mended } is the hole the shape of a child
+    // (feet at x, y; about 330*s tall). The dark of outside shows through; cut weft ends hang into it. With
+    // mended 0..1 the braided gold-and-violet thread draws round it and the dark closes up.
+    if (o.hole || o.childHole) {
+      const ch = o.childHole, hs = ch ? ch.s ?? 1 : 1;
+      const outline = ch ? CHILD_HOLE.map(([px, py]) => [ch.x + px * hs, ch.y + py * hs]) : o.hole;
+      const holePath = () => { ctx.beginPath(); smooth(ctx, outline); if (ch) { ctx.moveTo(ch.x + 40 * hs, ch.y - 262 * hs); ctx.arc(ch.x, ch.y - 262 * hs, 40 * hs, 0, TAU); } };
+      const mend = ch ? Math.max(0, Math.min(1, ch.mended ?? 0)) : 0;
+      ctx.save(); holePath(); ctx.clip();
+      ctx.globalAlpha = 1 - mend; ctx.fillStyle = '#04030a'; ctx.fillRect(-20, -20, w + 40, h + 40);
+      let cx = 0, cy = 0; for (const [px, py] of outline) { cx += px; cy += py; } cx /= outline.length; cy /= outline.length;
+      ctx.globalAlpha = 1; blob(cx, cy, 160 * hs, '#8a7cff', 0.16 * (1 - mend)); blob(cx, cy, 200 * hs, '#ffc35a', 0.35 * mend);
+      ctx.restore();
+      // cut weft ends: short threads sticking in from the edges, sideways, the way the weft ran
+      const fr = prng((o.seed ?? 9) + 77);
+      ctx.lineCap = 'round';
+      for (let i = 0; i < outline.length; i++) {
+        const a = outline[i], b = outline[(i + 1) % outline.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        for (let d = 0; d < L; d += 11) {
+          const f = d / L, px = a[0] + (b[0] - a[0]) * f, py = a[1] + (b[1] - a[1]) * f, dir = px < cx ? 1 : -1, len = (6 + fr() * 14) * (1 - mend);
+          if (len < 1) continue;
+          ctx.strokeStyle = hexA(pal[Math.floor(fr() * pal.length)], 0.8); ctx.lineWidth = 2.4;
+          ctx.beginPath(); ctx.moveTo(px - dir * 2, py); ctx.quadraticCurveTo(px + dir * len * 0.6, py + 1, px + dir * len, py + 3 + fr() * 4 + Math.sin(t * 1.5 + d) * 1.5); ctx.stroke();
+        }
+      }
+      if (mend > 0) { ctx.save(); ctx.globalAlpha = mend; holePath(); ctx.lineWidth = 7 * hs; ctx.strokeStyle = 'rgba(255,195,90,0.9)'; ctx.stroke(); ctx.setLineDash([10 * hs, 10 * hs]); ctx.lineDashOffset = -t * 20; ctx.strokeStyle = 'rgba(138,124,255,0.95)'; ctx.lineWidth = 4 * hs; ctx.stroke(); ctx.restore(); }
+      else { ctx.save(); holePath(); ctx.strokeStyle = 'rgba(138,124,255,0.35)'; ctx.lineWidth = 3; ctx.stroke(); ctx.restore(); }
+    }
     const shade = ctx.createLinearGradient(0, 0, w, 0); shade.addColorStop(0, 'rgba(0,0,0,0.45)'); shade.addColorStop(0.15, 'rgba(0,0,0,0)'); shade.addColorStop(0.85, 'rgba(0,0,0,0)'); shade.addColorStop(1, 'rgba(0,0,0,0.45)'); ctx.fillStyle = shade; ctx.fillRect(0, 0, w, h + 20);
     ctx.restore();
     // fringe along the hem

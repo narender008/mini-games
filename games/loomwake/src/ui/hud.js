@@ -91,6 +91,7 @@ export function createHUD(ui) {
   let barkT = 0, barkOn = false, curBark = null;
   // barks age by game time (G.t), so a frozen or stepped game keeps them in step
   const BARK_TTL = 6;
+  let barkGrp = 0;
   const clock = () => (typeof ui.G.t === 'number' ? ui.G.t : ui.time || 0);
   const cardLines = new Set(); // flavour already shown on a title card is not narrated again
   const norm = (t) => String(t || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -182,6 +183,7 @@ export function createHUD(ui) {
     while (b && clock() - (b.at || 0) > BARK_TTL) b = barkQ.shift();
     curBark = b || null;
     if (!b) { bark.classList.remove('on'); barkOn = false; return; }
+    if (b.grp) for (const q of barkQ) if (q.grp === b.grp) q.at = clock(); // the rest of this exchange is not stale while it plays
     const sp = speaker(b.speaker, ui.G);
     bark.style.setProperty('--sc', sp.color);
     toggle(bark, 'boss', b.kind === 'boss');
@@ -192,6 +194,11 @@ export function createHUD(ui) {
     g.clearRect(0, 0, 84, 84);
     if (pc) g.drawImage(pc, 0, 0, 84, 84);
     barkCv.hidden = !pc; toggle(bark, "noport", !pc);
+    // in a boss fight the line goes to the side of the screen away from the boss (decided as it appears, so it never jumps)
+    const G = ui.G, B = G && G.boss && !G.boss.dead && !G.boss.gone ? G.boss : null;
+    let side = '';
+    if (B && G.view && typeof G.view.toScreen === 'function') { const p = G.view.toScreen(B.x, B.y, 0); const W = G.view.w || innerWidth; if (p && Number.isFinite(p.x)) side = p.x >= W / 2 ? 'l' : 'r'; }
+    toggle(bark, 'side', !!side); toggle(bark, 'l', side === 'l'); toggle(bark, 'r', side === 'r');
     bark.classList.add('on'); barkOn = true;
     barkT = Math.max(2.6, Math.min(6, 1.4 + b.text.length * 0.055));
   }
@@ -200,7 +207,7 @@ export function createHUD(ui) {
     el, modal: false,
     show(G) { lastBoons = ''; lastDepthKey = ''; api.update(G, 0); },
     dataReady() { lastBoons = ''; lastDepthKey = ''; },
-    hide() { bark.classList.remove('on'); barkQ.length = 0; barkOn = false; },
+    hide() { bark.classList.remove('on'); barkQ.length = 0; barkOn = false; hideArrows(); },
     hurt(p) {
       const G = ui.G;
       const mh = G.hero?.maxHp || 100;
@@ -210,8 +217,10 @@ export function createHUD(ui) {
     bark(p) {
       if (p && (p.mode === 'dialogue' || p.kind === 'dialogue')) return; // it plays as a conversation
       const lines = p.lines || (p.text ? [{ speaker: p.speaker, text: p.text, mood: p.mood }] : []);
+      const grp = lines.length > 1 ? ++barkGrp : 0; // the lines of one exchange (a boss's first meeting) age together
       for (const l of lines.slice(0, 3)) if (l && l.text) {
-        const item = { speaker: l.speaker || p.speaker, text: l.text, mood: l.mood, kind: p.kind, at: clock() };
+        const who = l.speaker || p.speaker;
+        const item = { speaker: who, text: l.text, mood: l.mood, kind: who === 'iri' && p.kind === 'boss' ? 'line' : p.kind, at: clock(), grp };
         if (cardLines.has(norm(item.text))) continue;
         // narration is for quiet moments: never over a boss fight
         if (item.speaker === 'narrator' && bossUp(ui.G)) continue;
@@ -267,6 +276,7 @@ export function createHUD(ui) {
       if (barkOn && ui.cardsBusy?.()) { bark.classList.remove('on'); barkOn = false; curBark = null; } // a title card takes the stage
       if (barkOn) { barkT -= dt; if (barkT <= 0 || G.dialogue) showBark(); }
       else if (barkQ.length && !ui.cardsBusy?.() && !G.dialogue) showBark();
+      if (hub || G.scene !== 'run' || (G.hero && G.hero.hp <= 0)) hideArrows(); // never carried into the hub or the death screen
       if (hub) return;
       boonsRender(G);
       // health, armour, shield
@@ -334,7 +344,7 @@ export function createHUD(ui) {
       }
       // boss
       // the guardian, or a region's champion (miniboss) when no guardian is up
-      let b = G.boss && !G.boss.dead ? G.boss : null;
+      let b = G.boss && !G.boss.dead && !G.boss.dying ? G.boss : null; // the bar goes with the lethal blow, not after the unravel
       let mini = false;
       if (!b && G.scene === 'run') { b = (G.foes || []).find((e) => e.miniboss && !e.dead && !e.gone && !e.spawning) || null; mini = !!b; }
       if (b) {
@@ -372,11 +382,12 @@ export function createHUD(ui) {
     },
   };
 
+  function hideArrows() { for (const a of arrows) a.hidden = true; }
   // prompt and compass are positioned from world coordinates through G.view
   function compass(G) {
     const v = G.view;
     let n = 0;
-    if (v && typeof v.toScreen === 'function' && G.scene === 'run') {
+    if (v && typeof v.toScreen === 'function' && G.scene === 'run' && !(G.hero && G.hero.hp <= 0)) {
       const W = v.w || innerWidth, H = v.h || innerHeight;
       const m = 34;
       for (const e of G.foes || []) {

@@ -96,12 +96,13 @@ export function createEnding(ui) {
     panels.hidden = true; prog.hidden = true; seqTitle.style.opacity = '0';
     credits.hidden = false;
     roll.innerHTML = '';
-    roll.appendChild(h('div', { html: '<svg class="lg" viewBox="0 0 640 170" style="width:min(520px,80vw)"><text x="320" y="118" text-anchor="middle" style="font-family:var(--display);font-size:92px;letter-spacing:14px;fill:#ffe3a0">LOOMWAKE</text></svg>' }));
+    roll.appendChild(h('div', { class: 'cr-logo', html: '<svg class="lg" viewBox="0 0 640 170"><text x="320" y="118" text-anchor="middle" style="font-family:var(--display);font-size:92px;letter-spacing:14px;fill:#ffe3a0">LOOMWAKE</text></svg>' }));
     const cr = D.credits || [{ role: 'A game for', name: 'Narender' }];
     for (const c of cr) roll.appendChild(h('div', { class: 'cr-r' }, h('span', { text: c.role }), h('b', { text: c.name })));
     roll.appendChild(h('div', { class: 'cr-h', text: ui.G.ending?.kind === 'true' ? 'The Weaver is awake' : 'The dream goes on' }));
     roll.appendChild(h('div', { class: 'cr-r' }, h('b', { text: ui.G.ending?.kind === 'true' ? 'Fates can be rewoven now. Thank you for playing.' : 'There is more to remember. Sable is waiting.' })));
-    rollY = 0; rollH = 0; creditsAt = performance.now();
+    // the title starts in full view, low on the screen, and the roll rises from there
+    rollY = Math.round((credits.offsetHeight || innerHeight) * 0.42); rollH = 0; creditsAt = performance.now();
     // the roll gets a few seconds before the way home appears
     bNext.hidden = true; bSkip.hidden = true; bHome.hidden = true;
     clearTimeout(homeT);
@@ -123,6 +124,8 @@ export function createEnding(ui) {
     el, modal: true, fadeOut: 700,
     show(G) {
       mode = G.scene === 'victory' ? 'victory' : 'panels';
+      // the victory card lets the frozen last moment of the fight show through, as the death screen does
+      el.classList.toggle('vicmode', mode === 'victory');
       victory.hidden = mode !== 'victory';
       panels.hidden = mode !== 'panels'; prog.hidden = mode !== 'panels';
       credits.hidden = true; ctl.hidden = mode === 'victory';

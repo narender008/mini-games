@@ -289,6 +289,11 @@
 .lw-ui .bark.boss { --sc: #ff8a9a; }
 /* (engine seam fix) while the boss bar is up, barks sit below it, never over it */
 .lw-ui .hud-boss.on ~ .bark { top: calc(122px + var(--safe-t)); }
+/* boss fights: the line stands at the side away from the boss (hud.js showBark), never across its body */
+.lw-ui .bark.side { max-width: min(470px, 38vw); }
+.lw-ui .bark.side.l { left: var(--gut); transform: translate(0, -8px); }
+.lw-ui .bark.side.r { left: auto; right: var(--gut-r); transform: translate(0, -8px); }
+.lw-ui .bark.side.on { transform: translate(0, 0); }
 .lw-ui .bosscard.out { animation: lw-bc-out 0.35s ease forwards; }
 @keyframes lw-bc-out { from { opacity: 1; } to { opacity: 0; } }
 
@@ -325,6 +330,7 @@
 .lw-ui #btn-dreamdoor .dd-t { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1; }
 .lw-ui #btn-dreamdoor .dd-t small { font: 700 10px var(--sans); letter-spacing: 0.18em; color: var(--muted); }
 .lw-ui #btn-dreamdoor.far { opacity: 0.72; }
+.lw-ui #btn-dreamdoor.top:not(.anchored) { bottom: auto; top: calc(12px + var(--safe-t)); }
 .lw-ui .hub-help { position: absolute; left: 50%; top: calc(16px + var(--safe-t)); transform: translateX(-50%); display: flex; gap: 14px; font-size: 12px; color: var(--muted); letter-spacing: 0.06em; text-shadow: 0 1px 2px #000; }
 .lw-ui .hub-help span { display: inline-flex; gap: 6px; align-items: center; }
 .lw-ui .hub-loadout { position: absolute; left: var(--gut); bottom: calc(18px + var(--safe-b)); display: flex; gap: 10px; align-items: center; }
@@ -514,6 +520,9 @@
 .lw-ui .end-prog i { width: 26px; height: 3px; border-radius: 2px; background: rgba(242, 196, 107, 0.2); }
 .lw-ui .end-prog i.on { background: var(--gold); box-shadow: 0 0 6px var(--gold); }
 .lw-ui .credits { position: absolute; inset: 0; overflow: hidden; mask-image: linear-gradient(transparent, #000 15%, #000 85%, transparent); -webkit-mask-image: linear-gradient(transparent, #000 15%, #000 85%, transparent); }
+.lw-ui .credits .cr-logo svg { display: block; margin: 0 auto; width: min(520px, 80vw); height: auto; overflow: visible; }
+.lw-ui .scr-ending.vicmode { background: radial-gradient(ellipse at 50% 42%, rgba(60, 40, 12, 0.42), rgba(3, 3, 10, 0.88) 72%); }
+.lw-ui .scr-ending.vicmode .end-stage { text-shadow: 0 2px 10px #000; }
 .lw-ui .credits .roll { position: absolute; left: 0; right: 0; top: 100%; text-align: center; will-change: transform; }
 .lw-ui .credits .cr-h { margin: 46px 0 14px; font-family: var(--display); font-size: 30px; letter-spacing: 0.3em; color: var(--gold-hi); }
 .lw-ui .credits .cr-r { margin: 10px 0; }
@@ -781,6 +790,7 @@
   .lw-ui .card .ctext { font-size: 12px; line-height: 1.35; padding: 0 12px; }
   .lw-ui .card .cdiv { margin: 6px auto; }
   .lw-ui .card .cnote { margin: 6px 10px 10px; font-size: 10.5px; padding: 5px 8px; }
+  .lw-ui .card .ctext em.kw::after { top: 28px; left: 8px; right: 8px; padding: 5px 7px; font-size: 10.5px; }
   .lw-ui .card .cbraid { top: 34px; }
   .lw-ui .bo-head { margin-bottom: 8px; }
   .lw-ui .bo-head .sig { width: 36px; height: 36px; } .lw-ui .bo-head .sig svg { width: 20px; height: 20px; }
@@ -957,9 +967,10 @@
 .lw-ui .cx-page canvas.foe { width: 128px; height: 128px; border-radius: 14px; background: radial-gradient(circle at 50% 70%, #1e1636, #0b0a1d 75%); }
 /* boon cards: a quicker deal, and keyword definitions on hover */
 .lw-ui .card:not(.pick):not(.gone) { animation-duration: 0.35s; animation-delay: calc(var(--i, 0) * 0.05s + 0.03s); }
-.lw-ui .card .ctext em.kw { position: relative; text-decoration: underline dotted color-mix(in srgb, currentColor 55%, transparent); text-underline-offset: 3px; cursor: help; }
-.lw-ui .card .ctext em.kw::after { content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translate(-50%, 4px); width: max-content; max-width: 220px; padding: 7px 10px; border-radius: 8px; background: rgba(6, 5, 18, 0.97); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6); font: 600 12px/1.4 var(--sans); font-style: normal; color: var(--ink); text-align: left; white-space: normal; opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s; z-index: 5; }
-.lw-ui .card .ctext em.kw:hover::after, .lw-ui .card:focus-visible .ctext em.kw:first-of-type::after { opacity: 1; transform: translate(-50%, 0); }
+.lw-ui .card .ctext em.kw { position: static; text-decoration: underline dotted color-mix(in srgb, currentColor 55%, transparent); text-underline-offset: 3px; cursor: help; }
+.lw-ui .card .ctext em.kw::after { content: attr(data-tip); position: absolute; left: 12px; right: 12px; top: 44px; transform: translateY(4px); width: auto; z-index: 6; padding: 7px 10px; border-radius: 8px; background: rgba(6, 5, 18, 0.97); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6); font: 600 12px/1.4 var(--sans); font-style: normal; color: var(--ink); text-align: center; white-space: normal; opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s; }
+/* the keyword's gloss sits over the card's sigil (positioned against the card, not the word), never over its text */
+.lw-ui .card .ctext em.kw:hover::after, .lw-ui .card:focus-visible .ctext em.kw:first-of-type::after { opacity: 1; transform: translateY(0); }
 /* one highlight in the shop: focus is the selection; hover only moves it */
 .lw-ui .scr-shop .item:hover:not(:focus) { border-color: rgba(242, 196, 107, 0.22); box-shadow: none; transform: none; }
 @media (max-height: 500px) {

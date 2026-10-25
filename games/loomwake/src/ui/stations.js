@@ -86,7 +86,8 @@ export function createStation(ui) {
   function showDetail({ icon: ic, color, name, ep, text, extra, action }) {
     detail.innerHTML = '';
     detail.style.setProperty('--c', color || '#f2c46b');
-    detail.append(h('div', { class: 'big', html: icon(ic) }), h('h3', { text: name }), ep ? h('div', { class: 'ep', text: ep }) : null);
+    detail.append(h('div', { class: 'big', html: icon(ic) }), h('h3', { text: name })); // (append(null) would print "null")
+    if (ep) detail.appendChild(h('div', { class: 'ep', text: ep }));
     if (text) detail.appendChild(h('p', { text }));
     if (extra) detail.appendChild(extra);
     if (action) detail.appendChild(action);

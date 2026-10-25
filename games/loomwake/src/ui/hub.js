@@ -56,6 +56,11 @@ export function createHubLayer(ui) {
       }
       toggle(bDoor, 'anchored', anchored);
       if (!anchored) { bDoor.style.left = ''; bDoor.style.top = ''; }
+      // off-screen door: the pill waits at the bottom unless Iri stands there (a phone at the hub's start); then it
+      // goes to the top, which is the way to the door anyway
+      let top = false;
+      if (!anchored && G.hero && v && typeof v.toScreen === 'function') { const hp = v.toScreen(G.hero.x, G.hero.y, 40); top = !!hp && hp.y > innerHeight * 0.5; }
+      toggle(bDoor, 'top', top);
       const near = G.prompt?.kind === 'dreamdoor';
       toggle(bDoor, 'far', !near && anchored);
       setText(ddSub, near ? (touch ? 'TAP TO DESCEND' : 'PRESS E TO DESCEND') : 'DESCEND INTO THE REVERIE');

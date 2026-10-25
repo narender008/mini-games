@@ -61,7 +61,7 @@ export function makeHub(meta = {}) {
   const nellHere = (wins.veyl || 0) > 0 || !!flags.nellArrived || !!flags.reveal1 || (meta.reveals || []).includes('sable');
   const sableHere = meta.ending === 'true';
   const npcs = [
-    { id: 'orrin', name: 'Orrin', x: -580, y: 120, r: 26, talkR: 90, facing: 0, present: true, pose: 'reading' },
+    { id: 'orrin', name: 'Orrin', x: -560, y: -40, r: 26, talkR: 90, facing: 0, present: true, pose: 'reading' },
     { id: 'thimbleby', name: 'Sir Thimbleby', x: 470, y: 30, r: 24, talkR: 90, facing: Math.PI, present: true, pose: 'guard' },
     { id: 'pell', name: 'Pell', x: -320, y: 160, r: 24, talkR: 90, facing: 0, present: true, pose: 'merchant' },
     { id: 'nell', name: 'Nell Halfspun', x: 230, y: 175, r: 20, talkR: 100, facing: Math.PI, present: nellHere, pose: 'hearth' },
