@@ -80,6 +80,8 @@ export function computeEnv(tod, weather = null, t = 0) {
   // light for painters (screen space toward the light)
   e.lx = e.sun && e.sun.x > 0.6 ? 0.6 : -0.6; e.ly = -0.75;
   e.key = `${Math.round(tod * 96)}|${kind}|${Math.round(p * 8)}`;
+  // cloud strips are costly to repaint: a coarser key (they crossfade between versions)
+  e.stripKey = `${Math.round(tod * 32)}|${kind}|${Math.round(p * 4)}`;
   e.windowLit = smoothstep(0.25, 0.65, e.night);
   return e;
 }
@@ -96,9 +98,9 @@ export function createSky(Q) {
 
   // layer recipes, painted at CSS px into a strip `W` wide (wraps horizontally)
   const LAYERS = {
-    high: { h: 0.5, paint(g, W, H, e) {
+    high: { h: 0.5, res: 0.45, paint(g, W, H, e) {
       const R = rng(61);
-      g.save(); if ('filter' in g && Q().blur) g.filter = 'blur(1.4px)';
+      g.save();
       const n = Math.max(3, Math.round(W / 520));
       for (let i = 0; i < n; i++) {
         const x = (i + R() * 0.6) / n * W, y = H * (0.18 + R() * 0.5), w = 260 + R() * 260, s = 0.9 + R() * 0.5;
@@ -109,9 +111,9 @@ export function createSky(Q) {
       }
       g.restore();
     } },
-    distant: { h: 0.42, paint(g, W, H, e) {
+    distant: { h: 0.42, res: 0.6, paint(g, W, H, e) {
       const R = rng(71);
-      g.save(); if ('filter' in g && Q().blur) g.filter = 'blur(1.1px)';
+      g.save();
       const n = Math.max(3, Math.round(W / 480));
       for (let i = 0; i < n; i++) {
         const x = (i + 0.2 + R() * 0.6) / n * W, rx = 22 + R() * 70, y = H * (0.25 + R() * 0.25) + rx * 0.2;
@@ -119,18 +121,18 @@ export function createSky(Q) {
       }
       g.restore();
     } },
-    horizon: { h: 0.6, paint(g, W, H, e) {
-      g.save(); if ('filter' in g && Q().blur) g.filter = 'blur(1.2px)';
+    horizon: { h: 0.6, res: 0.5, paint(g, W, H, e) {
+      g.save();
       cloudBank(g, { x0: 0, x1: W, wrap: W, y: H * 0.32, rmin: 28, rmax: 66, lit: e.far[0], dark: e.far[1], seed: 13, amp: 46, lx: e.lx, ly: e.ly });
       g.restore();
       g.fillStyle = vgrad(g, H * 0.5, H, [[0, rgba(e.cl[2], 0)], [1, rgba(e.cl[2], 0.5)]]); g.fillRect(0, H * 0.5, W, H * 0.5);
     } },
-    front: { h: 0.7, paint(g, W, H, e) {
+    front: { h: 0.7, res: 1, paint(g, W, H, e) {
       cloudBank(g, { x0: 0, x1: W, wrap: W, y: H * 0.3, rmin: 46, rmax: 104, lit: e.cl[0], dark: e.cl[1], seed: 23, amp: 54, lx: e.lx, ly: e.ly, rim: e.night > 0.5 ? null : '#ffffff' });
       g.fillStyle = vgrad(g, H * 0.55, H, [[0, rgba(e.cl[2], 0)], [1, rgba(e.cl[2], 0.6)]]); g.fillRect(0, H * 0.55, W, H * 0.45);
     } },
-    stormtop: { h: 0.55, paint(g, W, H, e) {
-      g.save(); if ('filter' in g && Q().blur) g.filter = 'blur(1px)';
+    stormtop: { h: 0.55, res: 0.5, paint(g, W, H, e) {
+      g.save();
       const lits = ['#8a8cc0', '#7a7cb0', '#6a6aa0'], darks = ['#262844', '#1e203a', '#161830'];
       for (let i = 0; i < 3; i++) {
         g.save(); g.translate(0, H * 0.62 - i * H * 0.16); g.scale(1, -1);
@@ -144,8 +146,11 @@ export function createSky(Q) {
 
   function ensure(name, e, cssW, cssH, k) {
     const L = LAYERS[name], W = Math.ceil(Math.max(cssW, 1280) * 1.3), H = Math.ceil(Math.max(360, cssH * L.h));
+    // far layers are painted at a fraction of the pixel ratio: upscaling softens
+    // them like aerial haze, for far less than a canvas blur filter
+    k = Math.max(0.35, +(k * (L.res ?? 1) * (Q().blur ? 1 : 0.85)).toFixed(2));
     let s = strips[name];
-    const key = name === 'stormtop' ? 'storm' : e.key;
+    const key = name === 'stormtop' ? 'storm' : e.stripKey || e.key;
     if (s && s.key === key && s.W === W && s.H === H && s.k === k) return s;
     if (s && s.pending === key + W + H + k) return s;
     if (!queue.some((q) => q.name === name)) queue.push({ name, e, W, H, k, key });

@@ -31,7 +31,8 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
   const waitT = {}, count = {};
   let G = null, reserved = {}, budget = 0, lastT = 0, dt = 1, shortOf = [];
   const noSpot = new Map(), spotCache = new Map();
-  let aimAt = null, lastNoSpot = -1e9;
+  let aimAt = null, lastNoSpot = -1e9, lastSell = -1e9;
+  const needCap = {};
 
   const say = (t) => log && log(t);
   const tally = (k) => { count[k] = (count[k] || 0) + 1; };
@@ -63,7 +64,7 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
     const m = missing(cost, isl);
     if (cheat && give && Object.keys(m).length) { for (const [k, v] of Object.entries(m)) give(k, Math.ceil(v) + 1); return true; }
     if (Object.keys(m).length) {
-      for (const [k, v] of Object.entries(m)) reserved[k] = Math.max(reserved[k] || 0, (cost[k] || 0));
+      for (const [k, v] of Object.entries(m)) { reserved[k] = Math.max(reserved[k] || 0, (cost[k] || 0)); if (cost[k] > cap(k, isl) * 0.98) needCap[k] = G.t; }
       waitT[key] = (waitT[key] || 0) + dt;
       return false;
     }
@@ -130,6 +131,7 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
     if (def.needs && !done(def.needs)) return false;
     if (def.req && !built(def.req)) return false;
     const key = `build ${type}`;
+    if (sites() >= 2 + Math.floor(pop() / 12) && !why.startsWith('goal')) { waitT['builders busy'] = (waitT['builders busy'] || 0) + dt; return false; }
     if ((noSpot.get(type + '@' + (strict ? prefer : '*')) || 0) > G.t) { lastNoSpot = G.t; waitT[`${key}: no spot`] = (waitT[`${key}: no spot`] || 0) + dt; return false; }
     let firstSpot = null, lastErr = null;
     for (const islId of strict ? [prefer] : islandsFor(type, prefer)) {
@@ -145,6 +147,7 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
       waitT[`${key}: ${r.error}`] = (waitT[`${key}: ${r.error}`] || 0) + dt;
     }
     if (firstSpot) canPay(key, def.cost, 'hearthrock');     // record the wait and reserve the goods
+    else if (IMPORTANT.has(type) && !strict && makeRoom(type)) { /* retried next think */ }
     else { lastNoSpot = G.t; noSpot.set(type + '@' + (strict ? prefer : '*'), G.t + 45); waitT[`${key}: no spot`] = (waitT[`${key}: no spot`] || 0) + dt; }
     return false;
   }
@@ -254,6 +257,38 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
     return false;
   }
 
+  // The home network is full: knock down the most redundant building so an important one fits.
+  const IMPORTANT = new Set(['refinery', 'academy', 'workshop', 'mooring', 'bastion', 'shipyard', 'smelter', 'observatory', 'shieldgen', 'bakery', 'sawmill']);
+  function makeRoom(type) {
+    const [w, d] = B[type].size;
+    const homeNet = (b) => netOf(b.island) === netOf('hearthrock') && b.state === 'built' && !b.upgrading;
+    const cnt = (t) => G.buildings.filter((b) => b.type === t && homeNet(b)).length;
+    const p = pop();
+    const surplus = [
+      ['lumber', stock('wood') > 150 && cnt('lumber') > 3],
+      ['sawmill', stock('planks') > 150 && cnt('sawmill') > 2],
+      ['quarry', stock('stone') > 150 && cnt('quarry') > 2],
+      ['windmill', stock('flour') > 100 && cnt('windmill') > 1],
+      ['well', cnt('well') > Math.ceil(p / 30) + 1],
+      ['tavern', cnt('tavern') > Math.ceil(p / 40) + 1],
+      ['warehouse', type !== 'warehouse' && cnt('warehouse') > 6],
+      ['cottage', idle() > 8],
+      ['smelter', stock('iron') > 300 && cnt('smelter') > 2],
+      ['farm', foodRate() > p * 0.3 && stock('grain') > 400 && cnt('farm') > 3],
+    ];
+    for (const [t, ok] of surplus) {
+      if (!ok) continue;
+      // prefer one whose footprint is at least as big as what we need
+      const list = G.buildings.filter((b) => b.type === t && homeNet(b));
+      const fit = list.filter((b) => { const [bw, bd] = B[t].size; return bw * bd >= w * d; });
+      const b = (fit.length ? fit : list)[0];
+      if (!b) continue;
+      const r = act.demolish(b.id);
+      if (r.ok) { tally(`demolish for ${type}`); say(`demolish ${t} #${b.id} to make room for a ${type}`); spotCache.clear(); noSpot.clear(); return true; }
+    }
+    return false;
+  }
+
   // No room for a cable station: knock down the cheapest building nearest the far end.
   const CHEAP = new Set(['cottage', 'lumber', 'quarry', 'sawmill', 'well', 'warehouse', 'tavern', 'windmill', 'farm']);
   function clearFor(islId) {
@@ -274,7 +309,7 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
     if (moor && done('cargoholds')) {
       const ch = G.goals.chapter;
       const plan = [
-        { to: 'brassreach', orders: [{ res: 'bread', mode: 'sell', n: 20 }, { res: 'parts', mode: 'buy', n: 25 }, { res: 'iron', mode: 'buy', n: 15 }] },
+        { to: 'brassreach', orders: [{ res: 'bread', mode: 'sell', n: 20 }, { res: 'parts', mode: 'buy', n: 20 }, { res: 'iron', mode: 'buy', n: 10 }, { res: 'coal', mode: 'buy', n: 10 }] },
         { to: 'porthalcyon', orders: [{ res: 'planks', mode: 'sell', n: 30 }, { res: 'ore', mode: 'buy', n: 40 }] },
       ];
       if (foodRate() < (G.colony.pop || 0) * 0.3 * 0.2) plan.splice(1, 0, { to: 'verdantdrift', orders: [{ res: 'planks', mode: 'sell', n: 20 }, { res: 'bread', mode: 'buy', n: 40 }] });
@@ -296,7 +331,7 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
     }
     // contracts: accept anything we can likely deliver
     for (const c of G.contracts || []) {
-      if (c.accepted || c.done) continue;
+      if (c.accepted || c.state === 'done' || c.state === 'failed') continue;
       const need = c.n - (c.delivered || 0);
       const plenty = ['iron', 'parts', 'skystone', 'aether'].includes(c.res) ? stock(c.res) >= need + 80 : stock(c.res) >= need + 30;
       if (plenty) {
@@ -306,7 +341,7 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
     }
     // deliver accepted contracts by quick sale when the goods are in the stores
     for (const c of G.contracts || []) {
-      if (!c.accepted || c.done) continue;
+      if (!c.accepted || c.state !== 'active') continue;
       const left = c.n - (c.delivered || 0);
       const have = Math.floor(stock(c.res));
       if (left > 0 && have > 0) {
@@ -318,11 +353,15 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
   }
   // Sell what is piling up against the cap for coin.
   function sellSurplus() {
-    for (const k of ['planks', 'stone', 'wood', 'bread', 'iron', 'parts']) {
+    if (G.t - lastSell < 10) return false;
+    const keep = { wood: 300, stone: 350, planks: 350, grain: 400, flour: 300, bread: 500, iron: 400, parts: 400, coal: 300, ore: 300 };
+    for (const [k, v] of Object.entries(keep)) {
       const c = cap(k), s = stock(k);
-      if (Number.isFinite(c) && s > c * 0.9 && s > 60) {
-        const r = act.sell(k, Math.floor(s - c * 0.6));
-        if (r.ok) { tally('sell'); say(`sell ${Math.floor(s - c * 0.6)} ${k}`); return true; }
+      const top = Math.min(v * 1.5, Number.isFinite(c) ? c * 0.9 : Infinity);
+      if (s > top && s > 80) {
+        const q = Math.floor(s - Math.min(v, top * 0.7));
+        const r = act.sell(k, q);
+        if (r.ok) { lastSell = G.t; tally('sell'); say(`sell ${q} ${k}`); return true; }
       }
     }
     return false;
@@ -374,6 +413,12 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
       if (h.type && B[h.type] && !n(h.type)) { if (build(h.type, h.island, `goal ${s.id}`)) return true; }
       if (h.type === 'bridge' && linkUp()) return true;
       if (h.target && !isOwned(h.target) && claim(h.target)) return true;
+      const cc = s.check?.contracts || (C.CHAPTERS.flatMap((c) => c.steps).find((x) => x.id === s.id)?.check?.contracts);
+      if (cc && !G.contracts.some((c) => c.port === cc.port && c.accepted && c.state !== 'failed' && c.state !== 'done')) {
+        const offers = G.contracts.filter((c) => c.port === cc.port && !c.accepted && c.state !== 'failed' && c.state !== 'done')
+          .sort((a, b) => (a.n - stock(a.res)) - (b.n - stock(b.res)));
+        if (offers[0]) { const r = act.contract(offers[0].id); if (r.ok) { tally('contract'); say(`accept contract ${offers[0].id} for goal`); return true; } }
+      }
     }
     return false;
   }
@@ -381,6 +426,7 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
   // The producer of each good, from content (resources[].from).
   const FROM = Object.fromEntries(C.RESOURCES.filter((r) => r.from && B[r.from]).map((r) => [r.id, r.from]));
   const siteOf = (type) => G.buildings.some((b) => b.type === type && b.state === 'site');
+  const CAP = { lumber: 6, sawmill: 6, quarry: 5, windmill: 3, bakery: 4, smelter: 5, workshop: 5, farm: 8, coalpit: 3, mine: 4, academy: 6, drill: 4, refinery: 3, market: 2 };
   const PREFER = { farm: 'millbrook', mine: 'orespur', coalpit: 'orespur', smelter: 'kilnshelf', drill: 'kilnshelf', refinery: 'kilnshelf' };
   // Build one more producer of `res` if hands are free and its inputs flow.
   function more(res, why) {
@@ -389,6 +435,7 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
     const def = B[type];
     if (def.needs && !done(def.needs)) return false;
     if (stock(res) >= 120 && rate(res) > 0) return false;
+    if (n(type) >= (CAP[type] ?? 99)) return false;
     if (G.buildings.some((b) => b.type === type && b.state === 'built' && b.stall && b.stall !== 'workers')) return false;
     if (labourShort() || (idle() < Math.max(1, (def.workers || 0) - 1) && popCap() - pop() < 2)) return false;
     for (const k of Object.keys(def.consumes || {})) if (rate(k) < (def.consumes[k] || 0) * 0.5 && stock(k) < 30 && k !== 'coal') return more(k, `${why} <- ${res}`);
@@ -416,11 +463,24 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
     }
     return false;
   }
+  // Converters pause when their output piles up, so their inputs go where they are short.
+  const THROTTLE = [['workshop', 'parts', 320, 160], ['sawmill', 'planks', 450, 200], ['windmill', 'flour', 400, 150], ['bakery', 'bread', 800, 300], ['smelter', 'iron', 600, 300]];
+  function throttle() {
+    for (const [type, out, hi, lo] of THROTTLE) {
+      const s = stock(out);
+      const want = s > hi ? false : s < lo ? true : null;
+      if (want === null) continue;
+      const b = G.buildings.find((x) => x.type === type && x.state === 'built' && (x.on !== false) !== want);
+      if (b) { const r = act.toggle(b.id, want); if (r.ok) { tally(`toggle ${type}`); say(`${want ? 'resume' : 'pause'} ${type} #${b.id} (${out} ${Math.round(s)})`); return true; } }
+    }
+    return false;
+  }
   function economy() {
     const p = pop();
+    throttle();
     if (G.t % 20 < dt + 0.01 && trimSurplus()) return true;
     const eat = p * 0.3;
-    if (labourShort() && idle() < 3 && popCap() - p < 4 && foodRate() > eat * 0.1 && build('cottage', 'hearthrock', 'workers wanted')) return true;
+    if (!siteOf('cottage') && labourShort() && idle() < 3 && popCap() - p < 4 && foodRate() > eat * 0.1 && build('cottage', 'hearthrock', 'workers wanted')) return true;
     // food first: settlers eat perSettler units a minute
     if (foodRate() < eat * 0.15 + 1 && !siteOf('farm') && build('farm', 'millbrook', 'food')) return true;
     // the basics
@@ -434,7 +494,7 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
     for (const [k, v] of Object.entries(want)) if (rate(k) < v && more(k, `${k} rate ${rate(k).toFixed(1)} < ${v.toFixed(1)}`)) return true;
     // housing: keep a few beds free while there is work
     const jobs = (G.tmp.jobs?.want || 0) + (G.tmp.jobs?.builders || 0);
-    if (popCap() - p < 3 && jobs >= p - 3 && idle() < 4 && foodRate() > eat * 0.1 && build('cottage', 'hearthrock', 'housing')) return true;
+    if (!siteOf('cottage') && popCap() - p < 3 && jobs >= p - 3 && idle() < 4 && foodRate() > eat * 0.1 && build('cottage', 'hearthrock', 'housing')) return true;
     if (p >= 8 && ensure('well', Math.ceil(p / 30), 'hearthrock', 'water')) return true;
     if (p >= 10 && ensure('windmill', 1, 'hearthrock', 'flour')) return true;
     if (p >= 10 && ensure('bakery', 1, 'hearthrock', 'bread')) return true;
@@ -461,11 +521,10 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
     }
     if (idle() >= 8 && n('academy') < 6 && !siteOf('academy') && build('academy', 'hearthrock', 'idle hands to scholars')) return true;
     if (p >= 30 && rate('insight') < 6 + G.goals.chapter * 2 && n('academy') < 3 && !siteOf('academy') && build('academy', 'hearthrock', 'research')) return true;
-    // storage when anything sits at the cap
-    for (const k of ['wood', 'stone', 'planks', 'iron', 'grain', 'parts', 'skystone', 'aether']) {
-      const c = cap(k);
-      if (Number.isFinite(c) && stock(k) > c * 0.9 && !siteOf('warehouse') && build('warehouse', 'hearthrock', `cap ${k}`)) return true;
-    }
+    // storage only when something we want costs more than the cap, or a precious good is capped
+    const tight = Object.keys(needCap).some((k) => needCap[k] > G.t - 60)
+      || (n('warehouse') < 5 && ['iron', 'parts', 'skystone', 'aether'].some((k) => Number.isFinite(cap(k)) && stock(k) > cap(k) * 0.9));
+    if (tight && !siteOf('warehouse') && build('warehouse', 'hearthrock', 'storage')) return true;
     if (built('bakery') && stock('parts') > 60 && jobs >= p - 3 && idle() < 4 && upgradeOne('cottage', 'townhouse')) return true;
     return false;
   }

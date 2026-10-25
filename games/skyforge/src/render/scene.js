@@ -17,7 +17,7 @@
 import { T, DX, DY, wpx, toScreen, toWorld, applyCamera } from './camera.js';
 import { CFG } from '../config.js';
 import * as ART from './art/index.js';
-import { ENV, rng, mix, rgba, clamp, lerp, layer, glow, catenary, airship, PIRATE_LOOK, vgrad, ell, circ, OUT, face } from './kit.js';
+import { ENV, rng, mix, rgba, clamp, lerp, layer, glow, catenary, airship, PIRATE_LOOK, vgrad, ell, circ, OUT, face, vignetteImage } from './kit.js';
 import { computeEnv, createSky } from './sky.js';
 import { islandGeometry, paintIsland, islandProps, paintProp, PROP_BOUNDS, waterfalls, drawWaterfall, cellAt, local, pal } from './islands.js';
 import { createQuality } from './quality.js';
@@ -185,17 +185,59 @@ export function createRenderer(canvas, app) {
     return Math.atan2(py - ay, px - ax);
   }
 
+  // Live parts (smoke, sails, blades, fire) cost about as much as the whole body,
+  // so they share a time budget: the buildings nearest the middle of the screen
+  // (chosen from the previous frame) draw them live; the rest show a sprite with
+  // the live parts frozen in, which reads the same at the distance they sit.
+  const animCost = new Map();           // type -> ms (EMA)
+  let liveSet = new Set(), seen = [], liveAll = true;
+  function animBudget() { return { high: 6, medium: 4, low: 2.5 }[quality.tier] || 4; }
+  function animFrameStart() {
+    // pick this frame's live set from the buildings seen last frame
+    let total = 0; for (const e of seen) total += e.c;
+    liveAll = total <= animBudget();
+    if (!liveAll) {
+      seen.sort((a, b) => a.d - b.d);
+      liveSet = new Set(); let sum = 0;
+      for (const e of seen) { if (sum + e.c > animBudget()) break; sum += e.c; liveSet.add(e.id); }
+    }
+    seen = [];
+  }
   function drawBuilding(gg, b, I, X, Y, G, s, alpha = 1) {
     const type = b.type, o = bOpts(b, G, I);
     if (!ART.drawBuilding || !ART.buildingInfo?.(type, o)) { fallbackBuilding(gg, b, X, Y); return o; }
     const inf = ART.buildingInfo(type, o), bb = inf.bbox;
-    const key = 'b|' + ART.spriteKey(type, o);
-    const sp = sprite(key, [bb.x - 4, bb.y - 4, bb.x + bb.w + 4, bb.y + bb.h + 4], s, (cg) => ART.drawBuilding(cg, type, 0, 0, { ...o, part: 'base' }));
+    const sk = ART.spriteKey(type, o);
+    o.__key = sk;
+    const cost = animCost.get(type) ?? 0.6;
+    const m = gg.getTransform(), sx = m.a * X + m.c * Y + m.e, sy = m.b * X + m.d * Y + m.f;
+    seen.push({ id: b.id, c: cost, d: Math.hypot(sx / m.a - W * dpr / 2 / m.a, sy / m.d - H * dpr / 2 / m.d) });
+    const live = liveAll || liveSet.has(b.id) || o.fire > 0.02 || o.firing || alpha < 1 || b.state === 'site';
     if (alpha < 1) gg.globalAlpha = alpha;
-    blit(gg, sp, X, Y);
-    ART.drawBuilding(gg, type, X, Y, { ...o, part: 'anim' });
+    if (live) {
+      const sp = sprite('b|' + sk, [bb.x - 4, bb.y - 4, bb.x + bb.w + 4, bb.y + bb.h + 4], s, (cg) => ART.drawBuilding(cg, type, 0, 0, { ...o, part: 'base' }));
+      blit(gg, sp, X, Y);
+      const t0 = performance.now();
+      ART.drawBuilding(gg, type, X, Y, { ...o, part: 'anim' });
+      animCost.set(type, cost + (performance.now() - t0 - cost) * 0.2);
+    } else {
+      const nb = Math.round(o.night * 3) / 3;
+      const sp = sprite('F|' + sk + '|' + nb, [bb.x - 40, bb.y - 90, bb.x + bb.w + 40, bb.y + bb.h + 8], s, (cg) => {
+        ART.drawBuilding(cg, type, 0, 0, { ...o, part: 'base' });
+        ART.drawBuilding(cg, type, 0, 0, { ...o, night: nb, t: 1.3 + (b.id % 5) * 0.7, part: 'anim' });
+      });
+      blit(gg, sp, X, Y);
+    }
     if (alpha < 1) gg.globalAlpha = 1;
     return o;
+  }
+  // a building's lights (window glow, lamps, furnace mouths): halos are static per
+  // body and night level, so they come from a sprite blitted additively; fire stays live
+  function drawBuildingLight(g2, b, X, Y, o) {
+    if (o.fire > 0.02 || o.firing || o.charge > 0.05 || !o.__key) { ART.drawBuilding(g2, b.type, X, Y, { ...o, part: 'light' }); return; }
+    const nb = Math.round(o.night * 6) / 6, inf = ART.buildingInfo(b.type, o), bb = inf.bbox, s = Math.min(bucket(app.cam.zoom * dpr), 1);
+    const sp = sprite('L|' + o.__key + '|' + nb, [bb.x - 70, bb.y - 70, bb.x + bb.w + 70, bb.y + bb.h + 70], s, (cg) => ART.drawBuilding(cg, b.type, 0, 0, { ...o, night: nb, part: 'light' }));
+    const op = g2.globalCompositeOperation; g2.globalCompositeOperation = 'lighter'; blit(g2, sp, X, Y); g2.globalCompositeOperation = op;
   }
   // plain box until ART paints the type
   function fallbackBuilding(gg, b, X, Y) {
@@ -291,14 +333,14 @@ export function createRenderer(canvas, app) {
     const A = anchorOf(G, L.a, L.au, L.av, cable ? 1.35 : 0.05), B = anchorOf(G, L.b, L.bu, L.bv, cable ? 1.35 : 0.05);
     if (!A || !B) return;
     const len = Math.hypot(B[0] - A[0], B[1] - A[1]);
-    const night = env.windowLit, st = L.state === 'site' || L.state === 'broken' ? L.state : 'built', prog = clamp(L.progress ?? 1, 0, 1);
+    const night = env.windowLit, st = L.state === 'site' || L.state === 'broken' ? L.state : 'built', lprog = clamp(L.progress ?? 1, 0, 1);
     if (cable && ART.drawCable) {
       const cab = st === 'built' ? agents.cabins(L) : [];
-      ART.drawCable(gg, A[0], A[1], B[0], B[1], { state: st, progress: prog, cabins: cab.map((c) => c.t), loads: cab.map((c) => c.load), t: clock, night });
+      ART.drawCable(gg, A[0], A[1], B[0], B[1], { state: st, progress: lprog, cabins: cab.map((c) => c.t), loads: cab.map((c) => c.load), t: clock, night });
       return;
     }
     if (!cable && ART.drawBridge) {
-      ART.drawBridge(gg, A[0], A[1], B[0], B[1], { state: st, progress: prog, t: clock, night, seed: L.id });
+      ART.drawBridge(gg, A[0], A[1], B[0], B[1], { state: st, progress: lprog, t: clock, night, seed: L.id });
       if (st === 'built') {
         const sag = Math.min(40, len * 0.09);
         for (const c of agents.carts(L)) { const [x, y] = ART.cablePoint ? ART.cablePoint(A[0], A[1], B[0], B[1], c.t, sag * 0.9) : [lerp(A[0], B[0], c.t), lerp(A[1], B[1], c.t)]; c.draw(gg, x, y); }
@@ -430,7 +472,7 @@ export function createRenderer(canvas, app) {
       } else if (it.b) {
         const b = it.b, [X, Y] = local(b.u, b.v);
         const bo = drawBuilding(gg, b, I, ox + X, oy + Y, G, s);
-        if (ART.drawBuilding && ART.DEFS?.[b.type]) lights.push(() => ART.drawBuilding(g, b.type, ox + X, oy + Y, { ...bo, part: 'light' }));
+        if (ART.drawBuilding && ART.DEFS?.[b.type]) lights.push(() => drawBuildingLight(g, b, ox + X, oy + Y, bo));
         fx.building(b, ox + X, oy + Y, bo, I, sizeOf(b.type));
       } else if (it.draw) {
         it.draw(gg, ox, oy);
@@ -481,11 +523,12 @@ export function createRenderer(canvas, app) {
     g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, canvas.width, canvas.height);
     g.setTransform(dpr, 0, 0, dpr, shx * dpr, shy * dpr); applyCamera(g, cam);
     const lights = [];
+    animFrameStart();
     const X = app.rdbg || {};
     if (!X.noWorld) drawWorld(g, G, lights);
     fx.drawWorld(g, clock);
     // time-of-day grade over the world only (the sky is not drawn yet)
-    if (env.grade[1] > 0.005) {
+    if (!X.noGrade && env.grade[1] > 0.005) {
       g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-atop';
       g.fillStyle = rgba(env.grade[0], env.grade[1]); g.fillRect(0, 0, canvas.width, canvas.height);
       g.globalCompositeOperation = 'source-over';
@@ -507,9 +550,9 @@ export function createRenderer(canvas, app) {
     fx.drawScreen(g, env, W, H, clock, dt);
     // overlay in world space then screen space
     g.setTransform(dpr, 0, 0, dpr, shx * dpr, shy * dpr); applyCamera(g, cam);
-    overlay.drawWorld(g, G, clock);
+    if (!X.noOver) overlay.drawWorld(g, G, clock);
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    overlay.drawScreen(g, G, clock, W, H);
+    if (!X.noOver) overlay.drawScreen(g, G, clock, W, H);
     fx.drawLabels(g, cam, W, H);
     if (!X.noVig) vignette(g);
   }
@@ -523,8 +566,7 @@ export function createRenderer(canvas, app) {
   function vignette(gg) {
     const a = 0.22 + env.night * 0.18 + env.storm * 0.2;
     const col = env.storm > 0.3 ? '#05040e' : env.night > 0.5 ? '#0a0820' : '#3a2030';
-    const gr = gg.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.38, W / 2, H / 2, Math.max(W, H) * 0.75);
-    gr.addColorStop(0, rgba(col, 0)); gr.addColorStop(1, rgba(col, a)); gg.fillStyle = gr; gg.fillRect(0, 0, W, H);
+    gg.drawImage(vignetteImage(col, Math.round(a * 20) / 20, 0.38, 0.75, W / H), 0, 0, W, H);
   }
 
   // pieces that need the renderer's painters

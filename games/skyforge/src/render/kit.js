@@ -300,3 +300,18 @@ export function pirateEmblem(g) {
   g.strokeStyle = '#efe6d4'; g.lineWidth = 4; g.beginPath(); g.moveTo(2, -18); g.lineTo(38, 14); g.moveTo(38, -18); g.lineTo(2, 14); g.stroke();
 }
 export const PIRATE_LOOK = { env: ['#6a2a30', '#2a1018'], band: '#161216', hull: '#3a2a26', cabin: '#5a4a40', roof: '#2a1a1a', flag: '#161216', fin: '#2a1a1e', patches: true, cannons: true, emblem: pirateEmblem, lamp: 0.9 };
+
+// A full-screen vignette from a small cached image (smooth radial gradients upscale
+// cleanly), so the frame never fills a big radial gradient. key -> canvas.
+const vigCache = new Map();
+export function vignetteImage(col, a, inner = 0.38, outer = 0.75, aspect = 16 / 9) {
+  const w = 192, h = Math.max(32, Math.round(w / Math.max(0.3, Math.min(3, aspect)) / 8) * 8);
+  const key = col + a.toFixed(2) + inner + outer + w + 'x' + h;
+  let c = vigCache.get(key);
+  if (c) return c;
+  if (vigCache.size > 24) vigCache.clear();
+  c = layer(w, h); const g = c.getContext('2d');
+  const gr = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * inner, w / 2, h / 2, Math.max(w, h) * outer);
+  gr.addColorStop(0, rgba(col, 0)); gr.addColorStop(1, rgba(col, a)); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  vigCache.set(key, c); return c;
+}

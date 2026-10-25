@@ -281,11 +281,13 @@ export function createResearch(app) {
           ui.scroll),
         ui.card));
       sig = ''; fit(); refresh(true);
+      // refit once laid out in the host, and whenever the board's box changes size
+      if (typeof ResizeObserver === 'function') { ui.ro = new ResizeObserver(() => { if (ui.scroll && `${ui.scroll.clientWidth}x${ui.scroll.clientHeight}` !== ui.fitKey) fit(); }); ui.ro.observe(ui.scroll); }
       if (G && G.research.current && L.pos[G.research.current]) requestAnimationFrame(() => scrollTo(sel));
     },
     resize() { fit(); refresh(true); },
     update(dt) { acc += dt; if (acc > 0.2) { acc = 0; refresh(false); } },
-    teardown() { nodes = {}; ui = {}; },
+    teardown() { ui.ro?.disconnect(); nodes = {}; ui = {}; },
   });
   function pickDefault() {
     const G = app.G; if (!G || !L) return L?.list[0]?.id || null;
@@ -294,6 +296,7 @@ export function createResearch(app) {
   }
   function fit() {
     if (!ui.scroll) return;
+    ui.fitKey = `${ui.scroll.clientWidth}x${ui.scroll.clientHeight}`;
     const narrow = innerWidth < 760 || innerWidth / innerHeight < 0.9;
     const aw = ui.scroll.clientWidth || innerWidth * 0.7, ah = ui.scroll.clientHeight || innerHeight * 0.7;
     k = narrow ? Math.max(0.6, Math.min(0.7, aw / SW)) : Math.max(0.42, Math.min(aw / SW, ah / SH, 1.35));

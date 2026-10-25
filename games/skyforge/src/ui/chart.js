@@ -180,10 +180,15 @@ export function createChart(app) {
       if (!sel || !island(sel)) sel = pickDefault();
       view = null; staticKey = ''; cardKey = ''; labelKey = ''; dirty = true;
       requestAnimationFrame(() => { fit(); frame(); });
+      // refit when the host changes size (late stylesheet, rotation, UI scale)
+      if (typeof ResizeObserver === 'function') {
+        ui.ro = new ResizeObserver(() => { if (view && ui.mapbox && `${ui.mapbox.clientWidth}x${ui.mapbox.clientHeight}` !== ui.fitKey) { fit(); frame(); } });
+        ui.ro.observe(ui.mapbox);
+      }
     },
     resize() { fit(); },
     update(dt) { t += dt; acc += dt; if (acc > 0.5) { acc = 0; buildCard(false); } frame(); },
-    teardown() { ui = {}; ptrs.clear(); },
+    teardown() { ui.ro?.disconnect(); ui = {}; ptrs.clear(); },
   });
   const island = (id) => app.G?.islands.find((i) => i.id === id) || null;
   const A = () => ({ short: innerHeight < 800 });
@@ -206,13 +211,14 @@ export function createChart(app) {
   function fit() {
     if (!ui.canvas) return;
     const A = area(), d = DPR();
+    ui.fitKey = `${ui.mapbox.clientWidth}x${ui.mapbox.clientHeight}`;
     ui.canvas.width = Math.round(A.W * d); ui.canvas.height = Math.round(A.H * d);
     ui.canvas.style.width = A.W + 'px'; ui.canvas.style.height = A.H + 'px';
     // frame the discovered world (plus a margin), not the whole bounds
     const G = app.G; let x0 = B.x0, x1 = B.x1, y0 = B.y0, y1 = B.y1;
-    if (G) { const pts = [...G.islands.filter((i) => i.discovered).flatMap((i) => [[i.ox, i.oy], [i.ox + i.w, i.oy + i.h]]), ...content(app).ports.map((p) => [p.x, p.y]), ...(CHART.tempestWall ? [[CHART.tempestWall.x, CHART.tempestWall.y + CHART.tempestWall.r + 8]] : [])]; if (pts.length) { x0 = Math.min(...pts.map((p) => p[0])) - 18; x1 = Math.max(...pts.map((p) => p[0])) + 30; y0 = Math.min(...pts.map((p) => p[1])) - 22; y1 = Math.max(...pts.map((p) => p[1])) + 22; } }
+    if (G) { const pts = [...G.islands.filter((i) => i.discovered).flatMap((i) => [[i.ox, i.oy], [i.ox + i.w, i.oy + i.h]]), ...content(app).ports.map((p) => [p.x, p.y]), ...(CHART.tempestWall ? [[CHART.tempestWall.x, CHART.tempestWall.y + CHART.tempestWall.r + 8]] : [])]; if (pts.length) { x0 = Math.min(...pts.map((p) => p[0])) - 18; x1 = Math.max(...pts.map((p) => p[0])) + 30; y0 = Math.min(...pts.map((p) => p[1])) - 34; y1 = Math.max(...pts.map((p) => p[1])) + 22; } }
     const ww = (x1 - x0) * S, hh = (y1 - y0) * S;
-    const k = Math.min((A.x1 - A.x0) / ww, (A.y1 - A.y0) / hh) * (A.narrow ? 1.25 : 1.02);
+    const k = Math.min((A.x1 - A.x0) / ww, (A.y1 - A.y0) / hh) * (A.narrow ? 1.25 : 0.98);
     const cx = (mx(x0) + mx(x1)) / 2, cy = (my(y0) + my(y1)) / 2;
     view = { k, x: cx - (A.x0 + A.x1) / 2 / k, y: cy - (A.y0 + A.y1) / 2 / k, min: k * 0.6, max: k * 4 };
     dirty = true; labelKey = '';
@@ -456,6 +462,10 @@ export function createChart(app) {
     for (const p of content(app).ports) want.push({ id: 'port:' + p.id, attr: 'data-port', aid: p.id, name: p.name, ic: 'coin', x: mx(p.x), y: my(p.y - 12) + 6, cls: 'port' });
     if (CHART.tempestWall) want.push({ id: 'tempestwall', attr: 'data-feature', aid: 'tempestwall', name: 'Tempest Wall', ic: 'storm', x: mx(CHART.tempestWall.x), y: my(CHART.tempestWall.y) - CHART.tempestWall.r * S * 0.9 - 30, cls: 'storm' });
     const have = new Map([...ui.labels.children].map((c) => [c.dataset.key, c]));
+    // place the most important first; a label that would cover another moves below or above its spot
+    const rank = (w) => (w.id === sel ? 0 : w.cls.includes('home') ? 1 : w.attr === 'data-island' ? (w.cls.includes('mini') ? 4 : 2) : w.attr === 'data-port' ? 3 : 5);
+    want.sort((a, b) => rank(a) - rank(b));
+    const placed = [];
     for (const w of want) {
       let b = have.get(w.id);
       if (!b) {
@@ -464,7 +474,14 @@ export function createChart(app) {
       } else have.delete(w.id);
       setText(b.lastChild, w.name);
       const [sx, sy] = toScr(w.x, w.y);
-      b.style.transform = `translate(${Math.round(sx)}px, ${Math.round(sy)}px) translate(-50%, 0)`;
+      const bw = b.offsetWidth || 120, bh = b.offsetHeight || 28, hidden = w.cls.includes('mini') && getComputedStyle(b).display === 'none';
+      const free = (y) => !placed.some((r) => sx - bw / 2 < r.x1 + 4 && sx + bw / 2 > r.x0 - 4 && y < r.y1 + 3 && y + bh > r.y0 - 3);
+      const dy = w.attr === 'data-feature' ? [0, -(bh + 6), -2 * (bh + 6)] : [0, bh + 6, -(bh + 6), 2 * (bh + 6)];
+      let y = sy, ok = hidden;
+      if (!hidden) for (const d of dy) if (free(sy + d)) { y = sy + d; ok = true; break; }
+      if (!hidden && ok) placed.push({ x0: sx - bw / 2, x1: sx + bw / 2, y0: y, y1: y + bh });
+      b.classList.toggle('crowd', !ok);
+      b.style.transform = `translate(${Math.round(sx)}px, ${Math.round(y)}px) translate(-50%, 0)`;
       b.classList.toggle('sel', sel === w.id);
     }
     for (const b of have.values()) b.remove();
@@ -522,7 +539,7 @@ export function createChart(app) {
     }
     const label = kind === 'attack' ? 'Storm the Roost' : kind === 'scout' ? 'Send Scouts' : 'Send Expedition';
     const claimOk = i.scouted && info?.direct && i.kind !== 'roost';
-    const claimLabel = !i.scouted ? 'Scout first' : i.kind === 'roost' ? 'Militia only' : info?.direct ? 'Claim now' : 'Too far to claim directly';
+    const claimLabel = !i.scouted ? 'Scout first' : i.kind === 'roost' ? 'Militia only' : info?.direct ? 'Claim now' : 'Too far away';
     out.push(h('div', { class: 'ch-btns' },
       h('button', { id: 'btn-expedition', class: 'sfp-btn primary big', type: 'button', disabled: (!chk.ok || !!exp) || null, onclick: () => act('expedition', i.id, kind) }, label, tt && !exp ? h('span', { class: 'sub' }, tt) : null),
       h('button', { id: 'btn-claim', class: 'sfp-btn', type: 'button', disabled: !claimOk || null, onclick: () => act('claim', i.id) }, claimLabel)));

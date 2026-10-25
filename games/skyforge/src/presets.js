@@ -14,20 +14,31 @@
 //   raid   mid colony with batteries under a Crimson Gale raid
 //   stress late colony plus extra buildings, ships, pirates (opts)
 // applyPreset(G, name, app, opts) -> { ok, error?, chapter, seconds, ms }
-import { tick } from './sim/index.js';
-import { MODULES } from './sim/index.js';
+import { tick, MODULES } from './sim/index.js';
+import { DAY } from './config.js';
 import { makeActions } from './sim/actions.js';
 import * as C from './content/index.js';
+import { createBus } from './core/events.js';
 import { createBrain } from './bot.js';
 
 const PLAN = {
-  early: { chapter: 2, maxT: 2400, settle: 120 },
-  mid: { chapter: 4, maxT: 6000, settle: 240 },
-  late: { chapter: 7, maxT: 12000, settle: 240, stage: 2 },
-  storm: { chapter: 4, maxT: 6000, settle: 240 },
-  raid: { chapter: 5, maxT: 7000, settle: 120 },
-  stress: { chapter: 7, maxT: 12000, settle: 120, stage: 2 },
+  early: { chapter: 2, pop: 22, maxT: 2400, settle: 90 },
+  mid: { chapter: 4, pop: 70, maxT: 6000, settle: 180 },
+  late: { chapter: 7, pop: 150, maxT: 12000, settle: 180, stage: 2 },
+  storm: { chapter: 4, pop: 70, maxT: 6000, settle: 180 },
+  raid: { chapter: 5, pop: 80, maxT: 7000, settle: 120 },
+  stress: { chapter: 7, pop: 150, maxT: 12000, settle: 120, stage: 2 },
 };
+
+// Coarse steps for growing a preset quickly: the same modules in the same
+// order as sim/index.js tick(), with a bigger dt (raids and storms are off).
+const ORDER = ['weather', 'links', 'economy', 'islands', 'fleet', 'trade', 'chart', 'research', 'raids', 'defence', 'combat', 'goals'];
+function coarse(G, dt) {
+  G.t += dt;
+  G.tod += dt / DAY;
+  if (G.tod >= 1) { G.tod -= 1; G.day += 1; G.bus.emit('day', { day: G.day }); }
+  for (const k of ORDER) MODULES[k].step?.(G, dt);
+}
 
 const clock = () => (globalThis.performance?.now ? performance.now() : Date.now());
 
@@ -39,14 +50,17 @@ export function applyPreset(G, name, app, opts = {}) {
   const act = makeActions(() => G);
   const give = (k, n) => MODULES.economy.give?.(G, k, n);
   const brain = createBrain({ getG: () => G, act, C, cheat: true, give });
+  // grow it on a private bus: render, audio and UI hear none of the hundreds of events
+  const bus = G.bus;
+  G.bus = createBus();
   const quiet = G.tmp.quiet;
   G.tmp.quiet = true;                       // no raids or storms while it grows
   const tod = G.tod;
-  const reached = () => G.goals.chapter >= plan.chapter && (!plan.stage || (G.buildings.find((b) => b.type === 'skyforge')?.level || 0) >= plan.stage);
+  const reached = () => G.goals.chapter >= plan.chapter && (G.colony.pop || 0) >= (plan.pop || 0) && (!plan.stage || (G.buildings.find((b) => b.type === 'skyforge')?.level || 0) >= plan.stage);
   let settleUntil = null;
   const startT = G.t;
   while (G.t - startT < plan.maxT) {
-    for (let i = 0; i < 30; i++) tick(G);
+    if (opts.fine) { for (let i = 0; i < 30; i++) tick(G); } else { coarse(G, 0.5); coarse(G, 0.5); }
     if (G.event) brain.onEvent();
     // research is the slow part: pay its insight up front so it never waits
     if (!G.research.current) give('insight', 200);
@@ -59,6 +73,8 @@ export function applyPreset(G, name, app, opts = {}) {
   // presets start in daylight unless they say otherwise; storm at dusk
   G.tod = name === 'storm' ? 0.72 : (tod ?? 0.42);
   G.raid = null; G.pirates = []; G.shots = [];
+  G.bus = bus;
+  G.log = (G.log || []).slice(-6);
   if (name === 'storm') MODULES.weather.startStorm?.(G, 0.85);
   if (name === 'raid') MODULES.raids.startRaid?.(G, 1.2, { now: true });
   if (name === 'stress') stress(G, act, give, opts);
