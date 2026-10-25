@@ -56,7 +56,7 @@ function found(seed, { difficulty = 'standard', chapter = 5, defences = false, f
   G.tmp.netOf = Object.fromEntries(G.islands.map((i) => [i.id, i.owned ? 'hearthrock' : i.id]));
   if (final) G.pools.hearthrock.res.aether = 60;
   Object.assign(G.colony, { pop: 60, popCap: 70, workers: 50, idle: 6, coin: 800, insight: 0 });
-  G.research.done = [...research];
+  G.research.done = [...research]; delete G.tmp.bonus;  // PROGRESSION caches research bonuses
   G.weather.kind = 'clear'; G.weather.until = G.t + 1e6; G.weather.plan = [];  // calm unless a test sets it
   return G;
 }
@@ -141,6 +141,19 @@ function det(seed) {
   for (const G of [a, b]) { raids.startRaid(G, 1.4, { now: true }); weather.startStorm(G, 0.8); run(G, 200, null, abilities); }
   const h = (G) => JSON.stringify(snapshot(G));
   return h(a) === h(b);
+}
+
+// Save mid-raid in a storm, restore, run both on: the threat modules alone must agree.
+function saveLoad(seed) {
+  const mine = [weather, raids, defence, MODULES.combat];
+  const step = (G) => { G.t += DT; for (const m of mine) m.step(G, DT); };
+  const A = found(seed, { defences: true, research: ['harpoons', 'rods', 'militia'] });
+  raids.startRaid(A, 1.3, { now: true }); weather.startStorm(A, 0.9);
+  for (let i = 0; i < 750; i++) step(A);
+  const B = restore(JSON.parse(JSON.stringify(snapshot(A)))); B.tmp = { netOf: A.tmp.netOf };
+  for (const m of mine) m.hydrate(B);
+  for (let i = 0; i < 2700; i++) { step(A); step(B); if (i % 15 === 0 && A.defend.sumT === 0) { abilities(A); abilities(B); } }
+  return JSON.stringify(snapshot(A)) === JSON.stringify(snapshot(B));
 }
 
 // ---- a colony grown by the autopilot (ECONOMY + PROGRESSION sims running) ------------------
@@ -233,7 +246,7 @@ for (const d of ['breezy', 'standard', 'squall']) {
   const s = schedule(seeds[0], d);
   console.log(d, 'first storm ch', s.first.storm, 'first raid ch', s.first.raid, JSON.stringify(s.by));
 }
-console.log('deterministic:', det(seeds[0]));
+console.log('deterministic:', det(seeds[0]), '| save/load mid-raid continues identically (threat modules):', saveLoad(seeds[0]));
 if (REAL) {
   const t0 = Date.now();
   const bases = seeds.slice(0, 3).map((s) => realBase(s));

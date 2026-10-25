@@ -114,7 +114,7 @@ export function createAgents(app, quality) {
       const n = 2, out = [];
       for (let i = 0; i < n; i++) {
         const ph = ((t * 0.045 + (L.id % 7) * 0.13 + i / n) % 2), f = ph < 1 ? ph : 2 - ph;
-        out.push({ t: 0.04 + f * 0.92, col: i % 2 ? '#7a8aa8' : '#c9a050', load: i % 2 ? '#7ce0f0' : '#e8963a' });
+        out.push({ t: 0.04 + f * 0.92, col: i % 2 ? '#7a8aa8' : '#c9a050', load: i % 2 ? 'skystone' : 'ore' });
       }
       return out;
     },

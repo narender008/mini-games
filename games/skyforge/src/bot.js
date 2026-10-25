@@ -148,7 +148,7 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
     else { lastNoSpot = G.t; noSpot.set(type + '@' + (strict ? prefer : '*'), G.t + 45); waitT[`${key}: no spot`] = (waitT[`${key}: no spot`] || 0) + dt; }
     return false;
   }
-  const ensure = (type, k, prefer, why) => (n(type) < k ? build(type, prefer, why) : false);
+  const ensure = (type, k, prefer, why, strict = false) => (n(type) < k ? build(type, prefer, why, strict) : false);
 
   function upgradeOne(type, why = type) {
     const def = B[type];
@@ -331,14 +331,19 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
   // ---------- raids ----------
   function defend() {
     if (!G.raid || G.raid.phase === 'warn') return false;
+    const ab = G.tmp.abilities || {};
     for (const a of ['volley', 'lash', 'militia', 'shield']) {
-      const st = G.defend?.[a];
-      if (!st || st.cd > 0 || (a === 'shield' && st.on)) continue;
-      const target = a === 'shield' ? (G.pirates[0]?.target?.island || 'hearthrock') : undefined;
+      const st = ab[a];
+      if (st ? !st.ready : (G.defend?.[a]?.cd > 0)) continue;
+      let target;
+      if (a === 'shield') {
+        const hit = G.pirates.map((p) => p.isle).find(Boolean) || 'hearthrock';
+        if (!G.buildings.some((b) => b.type === 'shieldgen' && b.state === 'built' && b.island === hit)) continue;
+        target = hit;
+      }
       const r = act.defend(a, target);
       if (r.ok) { tally(`defend ${a}`); say(`defend ${a}`); }
     }
-    // repair what burns or broke once the raid passes
     return false;
   }
   function repairs() {
@@ -502,10 +507,18 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
   function defences() {
     const ch = G.goals.chapter;
     if (ch < 4) return false;
-    if (done('harpoons') && n('harpoon') < Math.min(6, 1 + Math.floor(pop() / 30)) && build('harpoon', 'hearthrock', 'defence')) return true;
-    if (done('rods')) for (const i of owned()) if (!G.buildings.some((b) => b.type === 'rod' && b.island === i.id) && build('rod', i.id, 'storms', true)) return true;
-    if (done('bastion') && n('bastion') < 2 && build('bastion', isOwned('glimmerreach') ? 'glimmerreach' : 'hearthrock', 'dreadnought')) return true;
-    if (done('shields') && stock('aether') > 30 && ensure('shieldgen', 1, isOwned('glimmerreach') ? 'glimmerreach' : 'hearthrock', 'shield')) return true;
+    if (done('harpoons') && n('harpoon') < Math.min(6, 2 + Math.floor(pop() / 50)) && build('harpoon', 'hearthrock', 'defence')) return true;
+    if (done('rods')) {
+      if (G.buildings.filter((b) => b.type === 'rod' && b.island === 'hearthrock').length < 2 && build('rod', 'hearthrock', 'storms', true)) return true;
+      for (const i of owned()) if (!G.buildings.some((b) => b.type === 'rod' && b.island === i.id) && build('rod', i.id, 'storms', true)) return true;
+    }
+    // the Dreadnought comes for the forge: guns on Glimmerreach before stage 5
+    if (isOwned('glimmerreach') && n('skyforge')) {
+      const here = (t) => G.buildings.filter((b) => b.type === t && b.island === 'glimmerreach').length;
+      if (done('harpoons') && here('harpoon') < 3 && build('harpoon', 'glimmerreach', 'guard the forge', true)) return true;
+      if (done('bastion') && here('bastion') < 1 && build('bastion', 'glimmerreach', 'dreadnought', true)) return true;
+      if (done('shields') && stock('aether') > 40 && here('shieldgen') < 1 && build('shieldgen', 'glimmerreach', 'shield the forge', true)) return true;
+    }
     return false;
   }
 
@@ -520,9 +533,11 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
 
   function skyforge() {
     if (!isOwned('glimmerreach')) return false;
-    if (ensure('skyforge', 1, 'glimmerreach', 'victory')) return true;
+    if (ensure('skyforge', 1, 'glimmerreach', 'victory', true)) return true;
     const sf = G.buildings.find((b) => b.type === 'skyforge' && b.state === 'built');
-    if (!sf || G.tmp.skyforgeBusy || sf.stage) return false;
+    if (!sf || sf.forge) return false;
+    // before lighting it (stage 5 calls the Dreadnought) wait for the guns on Glimmerreach
+    if ((sf.level || 0) === 4 && done('harpoons') && G.buildings.filter((b) => b.type === 'harpoon' && b.island === 'glimmerreach' && b.state === 'built').length < 2) { waitT['skyforge: guns first'] = (waitT['skyforge: guns first'] || 0) + dt; return false; }
     const r = act.upgrade(sf.id);
     if (r.ok) { tally('skyforge stage'); say(`skyforge stage ${(sf.level || 0) + 1}`); return true; }
     waitT[`skyforge: ${r.error}`] = (waitT[`skyforge: ${r.error}`] || 0) + dt;

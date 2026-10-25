@@ -171,7 +171,7 @@ export function createTitle(app, quality, R) {
   }
 
   function ship(g, x, y, s, dir, look, t) {
-    if (ART.drawShip) { ART.drawShip(g, x, y, { kind: s > 1.2 ? 'galleon' : 'trader', dir, t, night: 0.75, scale: s, seed: Math.round(x) }); return; }
+    if (ART.drawShip) { ART.drawShip(g, s > 1.2 ? 'galleon' : 'cargo', x, y, { hdg: dir > 0 ? 0 : Math.PI, t, night: 0.75, s: s / (s > 1.2 ? 0.9 : 0.62), seed: Math.round(Math.abs(x)) % 97 }); return; }
     airship(g, x, y, s, { ...look, dir, night: 0.75, prop: t * 20 });
   }
 

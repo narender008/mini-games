@@ -29,6 +29,7 @@ import { createTitle } from './title.js';
 const RC = () => CFG.render || {};
 const WILD_HAZE = '#c8d6e8';   // unowned islands are painted a little hazed (the grade tints them by time of day)
 const TITLE_SCENES = new Set(['title', 'profiles', 'loading']);
+const ART_SHIP_KINDS = new Set(['skiff', 'cargo', 'galleon', 'militia', 'corsair', 'raider', 'frigate', 'dreadnought']);
 const SHIP_SCALE = { skiff: 0.42, cutter: 0.5, trader: 0.62, hauler: 0.7, clipper: 0.62, galleon: 0.9, militia: 0.55, corsair: 0.48, raider: 0.62, frigate: 0.85, dreadnought: 1.45 };
 
 export function viewIslands(G) {
@@ -270,8 +271,10 @@ export function createRenderer(canvas, app) {
     const dmg = e.maxHp ? 1 - clamp(e.hp / e.maxHp, 0, 1) : 0;
     // shadow on the cloud sea far below is skipped; a soft glow under the gondola at night
     if (ART.drawShip) {
-      const o = { kind: e.kind, dir, pirate, t: clock + e.id, night, damage: dmg, bank: e.bank || 0, cargo: e.cargo, state: e.state, scale, seed: e.id, progress: e.buildT ? 1 - e.t / e.buildT : 1 };
-      ART.drawShip(gg, px, py + bob, o);
+      const kind = ART_SHIP_KINDS.has(e.kind) ? e.kind : (pirate ? 'raider' : e.kind === 'trader' || e.kind === 'hauler' ? 'cargo' : 'skiff');
+      const hdg = Number.isFinite(e.hdg) ? e.hdg : (dir < 0 ? Math.PI : 0);
+      const o = { hdg, bank: Number.isFinite(e.bank) ? clamp(e.bank, -1, 1) : 0, t: clock, night, damage: Number.isFinite(dmg) ? dmg : 0, seed: (e.id | 0) % 997, cargo: e.cargo };
+      if (Number.isFinite(px) && Number.isFinite(py)) ART.drawShip(gg, kind, px, py, o);
       return;
     }
     const look = pirate ? { ...PIRATE_LOOK } : { env: ['#f8ecd2', '#c0946e'], band: ['#3e7ac8', '#c84a3a', '#4f8f45', '#e8b448'][e.id % 4], cargo: Object.keys(e.cargo || {}).length ? '#c08a4e' : null, flag: '#e8b448' };
@@ -288,7 +291,20 @@ export function createRenderer(canvas, app) {
     const A = anchorOf(G, L.a, L.au, L.av, cable ? 1.35 : 0.05), B = anchorOf(G, L.b, L.bu, L.bv, cable ? 1.35 : 0.05);
     if (!A || !B) return;
     const len = Math.hypot(B[0] - A[0], B[1] - A[1]);
-    if (ART.drawLink) { ART.drawLink(gg, L.kind, A[0], A[1], B[0], B[1], { state: L.state, progress: L.progress ?? 1, t: clock, seed: L.id, cars: cable ? agents.cabins(L) : null, carts: agents.carts(L), night: env.windowLit, damage: L.maxHp ? 1 - L.hp / L.maxHp : 0 }); return; }
+    const night = env.windowLit, st = L.state === 'site' || L.state === 'broken' ? L.state : 'built', prog = clamp(L.progress ?? 1, 0, 1);
+    if (cable && ART.drawCable) {
+      const cab = st === 'built' ? agents.cabins(L) : [];
+      ART.drawCable(gg, A[0], A[1], B[0], B[1], { state: st, progress: prog, cabins: cab.map((c) => c.t), loads: cab.map((c) => c.load), t: clock, night });
+      return;
+    }
+    if (!cable && ART.drawBridge) {
+      ART.drawBridge(gg, A[0], A[1], B[0], B[1], { state: st, progress: prog, t: clock, night, seed: L.id });
+      if (st === 'built') {
+        const sag = Math.min(40, len * 0.09);
+        for (const c of agents.carts(L)) { const [x, y] = ART.cablePoint ? ART.cablePoint(A[0], A[1], B[0], B[1], c.t, sag * 0.9) : [lerp(A[0], B[0], c.t), lerp(A[1], B[1], c.t)]; c.draw(gg, x, y); }
+      }
+      return;
+    }
     const built = L.state === 'built', prog = L.state === 'site' ? clamp(L.progress ?? 0, 0, 1) : 1;
     if (cable) {
       const sag = len * 0.07, P = catenary(A[0], A[1], B[0], B[1], sag, 40);
@@ -358,6 +374,7 @@ export function createRenderer(canvas, app) {
     const flyers = [];
     for (const e of G.ships || []) if (e.state !== 'building' || e.x || e.y) flyers.push([e, false]);
     for (const e of G.pirates || []) flyers.push([e, true]);
+    for (const e of G.defend?.fleet || []) if (e.ship == null) flyers.push([e.kind ? e : { ...e, kind: 'militia' }, false]);
     for (const [e, pirate] of flyers) {
       const [x, y, z, dir] = smoothPos(pirate ? 'p' : 's', e, G);
       let k = y;

@@ -54,7 +54,7 @@ export function createFleet(app) {
   function refresh(force) {
     const g = G(); if (!ui.cols) return;
     setText(ui.coin, fmt(stock(g, 'coin')));
-    setText(ui.sub, g ? `${g.ships.length} airship${g.ships.length === 1 ? '' : 's'} · ${g.routes.length} trade route${g.routes.length === 1 ? '' : 's'} · ${(g.contracts || []).filter((c) => c.state === 'active').length} contracts under way` : '');
+    setText(ui.sub, g ? `${g.ships.length} airship${g.ships.length === 1 ? '' : 's'} · ${g.routes.length} trade route${g.routes.length === 1 ? '' : 's'} · ${(g.contracts || []).filter((c) => c.state === 'active').length} contract${(g.contracts || []).filter((c) => c.state === 'active').length === 1 ? '' : 's'} under way` : '');
     const s1 = JSON.stringify([g?.ships.map((s) => [s.id, s.state, s.route, s.home, Math.round(s.hp), Math.round((s.t || 0) / 3), Object.values(s.cargo || {}).reduce((a, n) => a + n, 0)]), docks().map((d) => d.id), msg.ships, Math.floor(stock(g, 'coin') / 20)]);
     if (force || s1 !== sig.ships) { sig.ships = s1; shipsCol(); }
     const s2 = JSON.stringify([g?.routes.map((r) => [r.id, r.state, r.ship, r.on, r.trips, Math.round(r.earned || 0), r.orders]), msg.routes, !!edit]);
@@ -81,7 +81,7 @@ export function createFleet(app) {
         h('p', { class: 'fl-status' }, status),
         h('div', { class: 'fl-row' }, h('div', { class: 'sfp-bar ' + (hp > 0.6 ? 'green' : hp > 0.3 ? '' : 'red'), title: `Hull ${Math.round(s.hp)}/${s.maxHp}` }, h('i', { style: { width: Math.round(hp * 100) + '%' } })),
           cap ? h('span', { class: 'fl-cargo' }, iconImg('crate', 18, { style: 'plain' }), `${fmt(load)}/${fmt(cap)}`) : h('span', { class: 'fl-cargo' }, iconImg('harpoon', 18, { style: 'plain' }), 'armed')),
-        load ? h('div', { class: 'fl-chips' }, Object.entries(s.cargo).filter(([, n]) => n > 0).map(([r, n]) => h('span', { class: 'fl-mini' }, iconImg(r, 16, { style: 'plain' }), fmt(n)))) : null));
+        load ? h('div', { class: 'fl-chips' }, Object.entries(s.cargo).filter(([, n]) => n >= 0.5).map(([r, n]) => h('span', { class: 'fl-mini' }, iconImg(r, 16, { style: 'plain' }), fmt(n)))) : null));
   }
   function shipsCol() {
     const g = G(), col = ui.cols.ships;
@@ -119,7 +119,7 @@ export function createFleet(app) {
       h('div', { class: 'fl-row' }, iconImg('route', 30, { style: 'plain' }), h('b', null, r.name || `${nameOf(app, r.from)} - ${placeName(r.to)}`)),
       h('p', { class: 'fl-status' }, s ? `${s.name} · ${STATE[r.state] || humanize(r.state || '')}${r.eta ? ' · ' + clock(r.eta) : ''}` : 'No ship assigned'),
       orderChips(r),
-      h('div', { class: 'fl-row fl-stats' }, h('span', null, `${r.trips || 0} trip${r.trips === 1 ? '' : 's'}`), h('span', null, iconImg('coin', 16, { style: 'plain' }), fmt(r.earned || r.profit || 0))));
+      h('div', { class: 'fl-row fl-stats' }, h('span', null, `${r.trips || 0} trip${r.trips === 1 ? '' : 's'}`), h('span', { class: (r.earned || r.profit || 0) < 0 ? 'neg' : 'pos', title: 'Net coin from this route' }, iconImg('coin', 16, { style: 'plain' }), ((r.earned || r.profit || 0) > 0 ? '+' : '') + fmt(Math.round(r.earned || r.profit || 0)))));
   }
   function routesCol() {
     const g = G(), col = ui.cols.routes;

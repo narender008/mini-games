@@ -8,6 +8,7 @@ import { wpx, toScreen } from './camera.js';
 import { CFG } from '../config.js';
 import { rgba, mix, clamp, lerp, circ, ell, glow, softDot, vgrad, rr, TAU, SANS, BRASS, rng } from './kit.js';
 import * as ICONS from '../ui/icons.js';
+import * as ART from './art/index.js';
 
 const RC = () => CFG.render || {};
 const RES_COL = { wood: '#c08a4e', planks: '#d8a868', stone: '#c8bcae', grain: '#e8c35a', flour: '#f4ecdc', bread: '#d89a50', ore: '#e8963a', coal: '#5a5060', iron: '#b8c0cc', parts: '#d4a84a', skystone: '#64e0f0', aether: '#9ef0ff', coin: '#ffd24a', insight: '#b48aff' };
@@ -99,6 +100,8 @@ export function createFX(app, quality) {
     const p = bpos(b); if (!p) return;
     for (let i = 0; i < 26 * P(); i++) { const a = -Math.PI * (0.15 + Math.random() * 0.7); add('spark', p[0], p[1] - 20, { vx: Math.cos(a) * (40 + Math.random() * 90), vy: Math.sin(a) * (60 + Math.random() * 120), life: 0.9 + Math.random() * 0.6, r: 1.6, col: ['#ffe27a', '#9cf0a0', '#ffffff', '#9ef0ff'][i % 4], g: 160, drag: 0.8 }); }
   });
+  let shieldHitAt = -9;
+  B.on('shield:hit', () => { shieldHitAt = t; });
   B.on('defend', ({ action } = {}) => { if (action === 'volley') shake(3); });
   function bpos(b) {
     if (!b || !app.G) return null;
@@ -235,7 +238,11 @@ export function createFX(app, quality) {
         const ids = sh.island ? [sh.island] : G.islands.filter((i) => i.owned).map((i) => i.id);
         for (const id of ids) {
           const I = G.islands.find((i) => i.id === id); if (!I) continue;
-          if (ART_DOME()) { const [cx, cy] = wpx(I.ox + I.w / 2, I.oy + I.h / 2, I.alt); ART_DOME()(g, cx, cy, { rx: (I.w + I.h * 0.55) * 24 * 1.02, t: clock, a: 1 }); continue; }
+          if (ART.drawShieldDome) {
+            const [cx, cy] = wpx(I.ox + I.w / 2, I.oy + I.h / 2, I.alt), r = (I.w / 2 + 1.5 + (I.h / 2 + 1.5) * 0.55) * 48;
+            ART.drawShieldDome(g, cx, cy, r, { t: clock, hit: clamp(1 - (t - shieldHitAt) * 3, 0, 1), power: 1 });
+            continue;
+          }
           drawDome(g, I, clock);
         }
       }
@@ -296,9 +303,6 @@ export function createFX(app, quality) {
   return api;
 }
 
-let artMod = null;
-import('./art/index.js').then((m) => { artMod = m; }).catch(() => {});
-const ART_DOME = () => (artMod && typeof artMod.drawShieldDome === 'function' && artMod.drawShieldDome.length > 0 ? artMod.drawShieldDome : null);
 
 // storm shield dome over a whole island (concept 4)
 function drawDome(g, I, clock) {
