@@ -75,7 +75,7 @@ function botRun(sliceSec) {
       if (d > (tg.r || 0) + pad) return false;
       let da = Math.atan2(dy, dx) - (tg.angle || 0);
       da = Math.atan2(Math.sin(da), Math.cos(da));
-      return Math.abs(da) < (tg.arc || 1) / 2 + pad / Math.max(d, 1);
+      return Math.abs(da) < (tg.arc || 0.5) + pad / Math.max(d, 1); // arc is the half angle
     }
     return Math.hypot(dx, dy) < (tg.r || 60) + pad;
   };
