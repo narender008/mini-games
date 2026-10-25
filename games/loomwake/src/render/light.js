@@ -15,7 +15,10 @@
 //     L.count
 import { hexA } from '../core/math.js';
 
-function mk(w, h) { const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h)); c.getContext('2d', { willReadFrequently: true }); return c; }
+// Static sprites (glow, hole) are CPU canvases, uploaded once when first drawn. The darkness layer is redrawn
+// every frame and never read back, so it gets a plain context: on a GPU browser it then rasterises on the GPU
+// instead of on the main thread with a full-layer texture upload per frame (willReadFrequently forces CPU).
+function mk(w, h, live = false) { const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h)); c.getContext('2d', live ? undefined : { willReadFrequently: true }); return c; }
 
 const glowCache = new Map();
 export function normHex(c) {
@@ -61,7 +64,7 @@ export function createLight() {
   L.render = (ctx, cam, view, dark, res, extra) => {
     if (res && res !== L.res) { L.res = res; layer = null; }
     const W = Math.ceil(view.W * L.res), H = Math.ceil(view.H * L.res);
-    if (!layer || layer.width !== W || layer.height !== H) { layer = mk(W, H); lctx = layer.getContext('2d'); }
+    if (!layer || layer.width !== W || layer.height !== H) { layer = mk(W, H, true); lctx = layer.getContext('2d'); }
     // keep the strongest lights when over budget
     let use = n;
     if (n > cap) { const arr = list.slice(0, n).sort((a, b) => b.i * b.r - a.i * a.r); for (let k = 0; k < n; k++) list[k] = arr[k]; use = cap + Math.min(n - cap, 24); }
