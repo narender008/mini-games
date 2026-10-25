@@ -561,7 +561,7 @@ function drawReweave(ctx, h, P) {
 
 export function heroLights(h, G, push) {
   if (!h || (h.state === 'dead' && h.st > 1.2)) return;
-  push(h.x, h.y - 40, 300, '#ffc073', 0.9);
+  push(h.x, h.y - 40, 300, '#ffc073', 0.9, 0.4); // low haze: Iri's own light must not wash her sprite
   const a = h.anim;
   if (a.pose?.swinging && a.tip) push(h.x + a.tip[0], h.y + a.tip[1], 170, '#ffc35a', 0.7);
   if (h.snare) push(h.snare.x, h.snare.y - 36, 130, '#ffd27a', 0.8);

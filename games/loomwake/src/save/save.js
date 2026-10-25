@@ -89,6 +89,9 @@ export function freshMeta(now = 0) {
     },
     flags: {}, seen: {}, reveals: [], memories: [], affinity: {}, gifts: {},
     ending: null,
+    // story's per-run and per-hub-visit scratch (src/sim/story.js ensureStoryMeta)
+    storyRun: { active: false, patrons: {}, region: null, chambers: 0, barked: false, winsAtStart: 0, lastBarkT: -99, talked: {}, weapon: null },
+    storyHub: { visit: 0, talked: {} },
     codex: { foes: {}, boons: {} },
   };
 }

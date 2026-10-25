@@ -21,18 +21,19 @@ function spindleSprite(seed, k) {
     g.translate(w / 2, h - 16 * S); g.scale(S, S);
     drawShadow(g, 4, 2, 54, 16, 0.8);
     // a giant bobbin standing on end, half unwound
-    const wood = g.createLinearGradient(-40, 0, 40, 0); wood.addColorStop(0, '#8a7a70'); wood.addColorStop(0.4, '#5a4a44'); wood.addColorStop(1, '#1e1820');
+    const wood = g.createLinearGradient(-40, 0, 40, 0); wood.addColorStop(0, '#c08a5a'); wood.addColorStop(0.4, '#7a4a2a'); wood.addColorStop(1, '#2a140c');
     g.fillStyle = wood;
     g.beginPath(); g.ellipse(0, -8, 46, 15, 0, 0, TAU); g.fill();
     g.fillRect(-14, -230, 28, 222);
     g.beginPath(); g.ellipse(0, -230, 40, 13, 0, 0, TAU); g.fill();
-    g.fillStyle = '#9a8a80'; g.beginPath(); g.ellipse(0, -234, 38, 11, 0, 0, TAU); g.fill();
+    g.fillStyle = '#d8a070'; g.beginPath(); g.ellipse(0, -234, 38, 11, 0, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(60,24,10,0.6)'; g.lineWidth = 1.5; for (let i = 1; i < 4; i++) { g.beginPath(); g.ellipse(0, -234, i * 9, i * 2.6, 0, 0, TAU); g.stroke(); }
     // wound thread bands, colour draining upward
     const col = TH[seed % TH.length];
     for (let y = -30; y > -200; y -= 5) {
       const fade = clamp((-y - 30) / 170, 0, 1);
       const bw = 34 - Math.abs(y + 110) * 0.08;
-      g.fillStyle = mix(col, '#8a8494', fade * 0.85);
+      g.fillStyle = mix(mix(col, '#ffffff', (y % 10 === 0) ? 0.15 : 0), '#8a8494', fade * 0.6);
       g.fillRect(-bw, y - 5, bw * 2, 5);
       g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(bw * 0.3, y - 5, bw * 0.7, 5);
     }
@@ -142,11 +143,15 @@ function paintFloor(ch, q) {
   polyPath(g, shape); g.fillStyle = '#3a3242'; g.fill();
   g.save(); polyPath(g, shape); g.clip();
   ge.save(); polyPath(ge, shape); ge.clip();
-  const CW = 170, CH = 116;
-  const ox = Math.floor(b.x0 / CW) * CW, oy = Math.floor(b.y0 / CH) * CH;
-  for (let y = oy; y < b.y1; y += CH) for (let x = ox; x < b.x1; x += CW) {
-    const ix = Math.round(x / CW), iy = Math.round(y / CH);
-    const fieldCol = (ix + iy) % 2 ? '#4a2a3a' : '#2a3448';
+  // panels of uneven size, row by row, like a tapestry pieced from many older ones
+  const cells = [];
+  for (let y = b.y0 - 20, iy = 0; y < b.y1; iy++) {
+    const CH = r.pick([92, 116, 116, 150]);
+    for (let x = b.x0 - r.range(0, 120), ix = 0; x < b.x1; ix++) { const CW = r.pick([120, 170, 170, 230, 300]); cells.push([x, y, CW, CH, ix, iy]); x += CW; }
+    y += CH;
+  }
+  for (const [x, y, CW, CH, ix, iy] of cells) {
+    const fieldCol = r.pick(['#4a2a3a', '#2a3448', '#3e2a4e', '#24403e', '#4a3424']);
     g.fillStyle = mix(fieldCol, '#3a3242', n(x / 300, y / 300) * 0.5); g.fillRect(x, y, CW, CH);
     const cols = [TH[(ix * 3 + iy) % TH.length], TH[(ix + iy * 2 + 1) % TH.length], '#e8e0d0'];
     motif(g, x + 6, y + 6, CW - 12, CH - 12, (Math.abs(ix * 7 + iy * 3)) % 5, cols, r);
@@ -162,15 +167,19 @@ function paintFloor(ch, q) {
   polyPath(g, shape); fillGrain(g, 'cloth', 0.5);
   // colour bleeds out: desaturate in noisy patches and toward the edges
   g.globalCompositeOperation = 'saturation';
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < 14; i++) {
     const x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1), rr = r.range(140, 380);
     const cg = g.createRadialGradient(x, y, 0, x, y, rr);
-    cg.addColorStop(0, 'rgba(128,128,128,0.95)'); cg.addColorStop(1, 'rgba(128,128,128,0)');
+    cg.addColorStop(0, 'rgba(128,128,128,0.8)'); cg.addColorStop(1, 'rgba(128,128,128,0)');
     g.fillStyle = cg; g.fillRect(x - rr, y - rr, rr * 2, rr * 2);
   }
   g.lineJoin = 'round';
-  for (let k = 6; k > 0; k--) { g.strokeStyle = `rgba(128,128,128,${0.25})`; g.lineWidth = k * 50; polyPath(g, shape); g.stroke(); }
+  for (let k = 6; k > 0; k--) { g.strokeStyle = `rgba(128,128,128,${0.17})`; g.lineWidth = k * 50; polyPath(g, shape); g.stroke(); }
   g.globalCompositeOperation = 'source-over';
+  // where colour still lives: soft pools of thread colour glowing up through the cloth
+  ge.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 7; i++) { const x = r.range(b.x0 + 100, b.x1 - 100), y = r.range(b.y0 + 80, b.y1 - 80), rr = r.range(160, 300); ge.globalAlpha = 0.22; ge.drawImage(glow(r.pick(TH), 1), x - rr, y - rr * 0.62, rr * 2, rr * 1.24); }
+  ge.globalAlpha = 1; ge.globalCompositeOperation = 'source-over';
   // wear: dark shading, worn patches where threads show through
   for (let i = 0; i < 14; i++) {
     const x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1), rr = r.range(140, 320);

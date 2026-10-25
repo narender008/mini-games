@@ -54,9 +54,10 @@ export function createDeath(ui) {
     const r = G.lastRun || {};
     let killer = '';
     const k = r.boss || r.killer;
-    if (r.boss) killer = bossInfo(r.boss, G).name;
+    if (typeof r.boss === 'string') killer = bossInfo(r.boss, G).name;
     else if (k && (D.enemies[k] || D.enemies[camel(k)])) killer = (D.enemies[k] || D.enemies[camel(k)]).name || k;
     else if (typeof k === 'string') killer = k.replace(/[_-]/g, ' ');
+    if (killer && killer === killer.toUpperCase()) killer = killer.toLowerCase().replace(/(^|[\s-])(\w)/g, (m) => m.toUpperCase()).replace(/\b(The|Of|In)\b(?!$)/g, (w, _, i) => (i ? w.toLowerCase() : w));
     const rg = r.region ? region(r.region) : null;
     cause.textContent = killer ? `Undone by ${killer}${rg ? ' in ' + rg.name : ''}.` : rg ? `The thread snapped in ${rg.name}.` : 'The thread snapped.';
     const recent = lastBark && performance.now() - lastBark.at < 12000 ? lastBark : null;

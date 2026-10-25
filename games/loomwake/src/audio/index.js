@@ -78,6 +78,7 @@ function tick() {
   const now = E.now();
   const look = typeof document !== 'undefined' && document.hidden ? LOOK_HIDDEN : LOOK;
   if (S.G) direct(now);
+  if (S.muted) { bakeStep(E, 2); return; } // nothing to hear: skip scheduling (the scheduler skips ahead on unmute)
   S.M.tick(now + look);
   S.amb.tick(now);
   bakeStep(E, 4);
@@ -97,7 +98,7 @@ export function sfx(name, opts = {}) {
   return playSfx(S.E, name, spatial(opts));
 }
 export function voice(speaker, text, opts = {}) {
-  if (!S.E) return { dur: 0 };
+  if (!S.E || S.muted) return { dur: 0 };
   try { return speak(S.E, speaker, text, opts); } catch (e) { return { dur: 0 }; }
 }
 export function stopVoice() { if (S.E) stopV(S.E); }
@@ -163,6 +164,7 @@ function desire(G, now) {
   // hold the silence after a boss falls so the defeat sting can ring
   if (S.holdUntil && now < S.holdUntil) return null;
   const sc = G.scene;
+  if (sc === 'loading') return null;
   if (sc === 'title' || sc === 'profiles') return { track: 'title', i: 0.5 };
   if (sc === 'ending') return { track: trueEnding(G) ? 'ending_true' : 'ending', i: 0.5 };
   if (sc === 'dead') return { track: null };

@@ -169,8 +169,8 @@ export const TARGETS = [
   [/^(swing|spear|bow|punch|chakram|dash|snare_|bind|call_ready|shield|cloak|teleport|leap|claw|stagger|veyl_(volley|ring)|proc_storm)/, -20],
   [/^tell/, -21],
   [/^(proc_|needle|orb|hammer_throw|sizzle|projectile|censer|growl|clank|rasp|spawn|aurum_step|thorn_warn|pickup|reroll|purchase|save|fountain|door_|offer|dialogue_open|ui_(upgrade|open|close|confirm))/, -24],
-  [/^(ui_(click|back|error)|dialogue_next|arrow)$/, -28],
-  [/^(ui_(hover|tick|slider)|footstep)$/, -33],
+  [/^(ui_(click|back|error)|dialogue_next|arrow)$/, -31],
+  [/^(ui_(hover|tick|slider)|footstep)$/, -37],
 ];
 export const MUSIC_TARGETS = [[/^boss_/, -21], [/^(glasswood|choir|forge|unwoven)$/, -22.5], [/^(hub|ending|ending_true)$/, -24], [/./, -25.5]];
 export const VOICE_TARGET = -21;

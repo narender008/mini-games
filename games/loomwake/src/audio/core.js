@@ -24,13 +24,13 @@ export const pick = (arr) => arr[(Math.random() * arr.length) | 0];
 const P = (param, v, t) => { try { param.setValueAtTime(v, t); } catch (e) { param.value = v; } };
 
 // Room reverbs, generated once each and cached on the engine.
-export const ROOMS = {
-  hub:       { len: 2.0, decay: 1.9, damp: 0.55, pre: 0.014, er: 5, bright: 0.55, width: 0.8 },
-  title:     { len: 2.6, decay: 2.4, damp: 0.6, pre: 0.02, er: 4, bright: 0.5, width: 0.9 },
-  glasswood: { len: 2.6, decay: 2.3, damp: 0.25, pre: 0.018, er: 7, bright: 0.85, width: 1 },
-  choir:     { len: 3.4, decay: 3.2, damp: 0.6, pre: 0.035, er: 6, bright: 0.45, width: 1 },
-  forge:     { len: 1.6, decay: 1.3, damp: 0.4, pre: 0.008, er: 11, bright: 0.7, width: 0.7 },
-  unwoven:   { len: 3.2, decay: 3.0, damp: 0.75, pre: 0.05, er: 3, bright: 0.35, width: 1 },
+export const ROOMS = { // len is kept short (convolution cost scales with it); the tail fades out smoothly
+  hub:       { len: 1.5, decay: 1.8, damp: 0.55, pre: 0.014, er: 5, bright: 0.55, width: 0.8 },
+  title:     { len: 2.0, decay: 2.4, damp: 0.6, pre: 0.02, er: 4, bright: 0.5, width: 0.9 },
+  glasswood: { len: 1.9, decay: 2.2, damp: 0.25, pre: 0.018, er: 7, bright: 0.85, width: 1 },
+  choir:     { len: 2.4, decay: 3.0, damp: 0.6, pre: 0.035, er: 6, bright: 0.45, width: 1 },
+  forge:     { len: 1.2, decay: 1.2, damp: 0.4, pre: 0.008, er: 11, bright: 0.7, width: 0.7 },
+  unwoven:   { len: 2.4, decay: 2.9, damp: 0.75, pre: 0.05, er: 3, bright: 0.35, width: 1 },
 };
 
 export function createEngine(ctx, opts = {}) {
@@ -169,6 +169,8 @@ export function impulse(ctx, room) {
     }
     const fi = Math.floor(0.003 * sr);
     for (let i = 0; i < fi && pre + i < n; i++) d[pre + i] *= i / fi;
+    const fo = Math.floor(n * 0.3); // cosine fade over the last 30% so the cut is inaudible
+    for (let i = 0; i < fo; i++) d[n - fo + i] *= 0.5 + 0.5 * Math.cos((Math.PI * i) / fo);
   }
   return b;
 }

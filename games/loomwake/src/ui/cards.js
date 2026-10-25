@@ -24,6 +24,8 @@ export function createCards(ui) {
 
   return {
     el,
+    // a title card is on screen: barks wait for it
+    busy() { return now() < quietUntil - 800 && (bossEl.classList.contains('on') || regEl.classList.contains('on')); },
     boss(id, p = {}) {
       if (hidden()) return;
       const info = bossInfo(id, ui.G);

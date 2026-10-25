@@ -13,6 +13,8 @@
 //   reflectOffWalls(ch, p)               mirrors p.vx/p.vy off the nearest wall (bouncing projectiles)
 //   moveEntity(G, e, dt)                 integrates e.vx/vy + knock e.kx/ky, collides, wall slam
 //   clampToChamber(ch, x, y, margin) -> {x, y}      nearest point at least `margin` inside
+//   safeSpot(ch, x, y, r = 20) -> {x, y, moved}   nearest spot inside the shape, clear of obstacles and hazards
+//                                        (every hero placement goes through it, so Iri never spawns in a pit or the void)
 //   nearestFoe(G, x, y, maxD = 1e9, filter?) -> foe | null
 //   testChamber(seed) -> chamber        the motion-test Glasswood island arena (fallback / ?play without run.js)
 //   spawnDummy(G, x, y, opts) -> foe    placeholder Hollow used only when sim/enemies/index.js is missing
@@ -65,6 +67,24 @@ export function insideChamber(ch, x, y, margin = 0) {
   if (x < b[0] || x > b[2] || y < b[1] || y > b[3]) return false;
   if (!pointInPoly(x, y, ch.shape)) return false;
   return margin <= 0 || nearestWall(ch, x, y).d >= margin;
+}
+
+export function spotIsSafe(ch, x, y, r = 20) {
+  if (!ch) return true;
+  if (ch.shape && ch.shape.length >= 3 && !insideChamber(ch, x, y, r + 10)) return false;
+  if (ch.obstacles) for (const o of ch.obstacles) if (Math.hypot(x - o.x, y - o.y) < (o.r || 0) + r + 8) return false;
+  if (ch.hazards) for (const z of ch.hazards) if (Math.hypot(x - z.x, y - z.y) < (z.r || 0) + r + 12) return false;
+  return true;
+}
+export function safeSpot(ch, x, y, r = 20) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) { x = 0; y = 0; }
+  if (spotIsSafe(ch, x, y, r)) return { x, y, moved: false };
+  for (let d = 24; d <= 1400; d += 24) {
+    const n = Math.max(8, Math.round((TAU * d) / 30));
+    for (let k = 0; k < n; k++) { const a = (k / n) * TAU; const px = x + Math.cos(a) * d, py = y + Math.sin(a) * d; if (spotIsSafe(ch, px, py, r)) return { x: px, y: py, moved: true }; }
+  }
+  const c = clampToChamber(ch, x, y, r + 10);
+  return { x: c.x, y: c.y, moved: true };
 }
 
 export function clampToChamber(ch, x, y, margin = 30) {

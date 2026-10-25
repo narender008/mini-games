@@ -80,8 +80,6 @@ export function makeHub(meta = {}) {
     { type: 'shelf', x: S.archive.x - 40, y: S.archive.y - 120, r: 60, seed: 3 },
     { type: 'shelf', x: S.archive.x - 40, y: S.archive.y + 140, r: 60, seed: 4 },
     { type: 'rack', x: S.weapons.x + 40, y: S.weapons.y, r: 60, seed: 5 },
-    { type: 'pillar', x: -300, y: -330, r: 40, seed: 6 },
-    { type: 'pillar', x: 300, y: -330, r: 40, seed: 7 },
     { type: 'pillar', x: -820, y: 420, r: 40, seed: 8 },
     { type: 'pillar', x: 860, y: 420, r: 40, seed: 9 },
   ];

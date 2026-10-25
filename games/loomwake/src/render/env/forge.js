@@ -5,7 +5,7 @@
 import {
   TAU, mk, hexA, mix, rng, hashSeed, glow, drawGlow, drawShadow, polyPath, bbox, edgeSamples, inPoly,
   noise2, worldCanvas, strokes, innerShade, cliff, sprite, propOf, screenCache, parallax, compose, drawLayer, sparse, drawSparse, starfield, nebula, drift, viewRect, lerp, clamp,
-  fillGrain, lip, markStart, mark, marks,
+  fillGrain, lip, markStart, mark, marks, slabs, paintSlab,
 } from './common.js';
 import { REGIONS } from '../../content/regions.js';
 import { paintFeature, paintEntry, paintBakedLights, featureProps } from './features.js';
@@ -211,58 +211,75 @@ function paintFloor(ch, q) {
   ge.globalAlpha = 1; ge.globalCompositeOperation = 'source-over';
   mark('cliff');
 
-  // riveted plates, tempered by heat near the molten
-  polyPath(g, shape); g.fillStyle = '#1a1418'; g.fill();
+  // riveted iron plates, hand-laid in uneven courses, tempered by heat near the molten
+  polyPath(g, shape); g.fillStyle = '#0a0608'; g.fill();
   g.save(); polyPath(g, shape); g.clip();
   ge.save(); polyPath(ge, shape); ge.clip();
   const heat = (x, y) => { let hmax = 0; for (const h of ch.hazards) if (h.type === 'molten') { const d = Math.hypot(h.x - x, h.y - y) - h.r; hmax = Math.max(hmax, 1 - clamp(d / 260, 0, 1)); } return hmax; };
-  const PW = 150, PH = 100;
-  for (let row = 0, y = Math.floor(b.y0 / PH) * PH - PH; y < b.y1 + PH; y += PH, row++) {
-    for (let x = Math.floor(b.x0 / PW) * PW - PW + (row % 2) * PW * 0.5; x < b.x1 + PW; x += PW) {
-      const tone = n.fbm(x / 400, y / 400), hv = heat(x + PW / 2, y + PH / 2);
-      let col = mix(r.pick(P.floor), '#4a4250', tone * 0.5);
-      if (hv > 0.05) col = mix(col, TEMPER[Math.min(3, Math.floor((1 - hv) * 4))], hv * 0.55);
-      g.fillStyle = col; g.fillRect(x + 3, y + 3, PW - 6, PH - 6);
-      const pg = g.createLinearGradient(x, y, x + PW, y + PH);
-      pg.addColorStop(0, 'rgba(255,220,200,0.12)'); pg.addColorStop(0.5, 'rgba(0,0,0,0)'); pg.addColorStop(1, 'rgba(0,0,0,0.3)');
-      g.fillStyle = pg; g.fillRect(x + 3, y + 3, PW - 6, PH - 6);
-      // rivets
-      for (const [rx, ry] of [[10, 10], [PW - 10, 10], [10, PH - 10], [PW - 10, PH - 10], [PW / 2, 10], [PW / 2, PH - 10]]) {
-        g.fillStyle = 'rgba(0,0,0,0.5)'; g.beginPath(); g.arc(x + rx + 1, y + ry + 1.5, 3.2, 0, TAU); g.fill();
-        g.fillStyle = '#8a7a80'; g.beginPath(); g.arc(x + rx, y + ry, 2.8, 0, TAU); g.fill();
-        g.fillStyle = 'rgba(255,230,210,0.6)'; g.fillRect(x + rx - 1.5, y + ry - 1.5, 1.4, 1.4);
-      }
-      // scratches and hammer marks
-      if (r() < 0.5) { g.strokeStyle = 'rgba(200,180,190,0.12)'; g.lineWidth = 1; g.beginPath(); const sx = x + r.range(20, PW - 20), sy = y + r.range(20, PH - 20); g.moveTo(sx, sy); g.lineTo(sx + r.range(-40, 40), sy + r.range(-10, 10)); g.stroke(); }
-      // molten seams: some plate gaps glow
-      if (hv > 0.3 || r() < 0.07) {
-        ge.globalCompositeOperation = 'lighter';
-        ge.strokeStyle = hexA(M[1], 0.5 + hv * 0.4); ge.lineWidth = 3;
-        ge.beginPath(); if (r() < 0.5) { ge.moveTo(x + 2, y + PH); ge.lineTo(x + PW - 2, y + PH); } else { ge.moveTo(x + PW, y + 2); ge.lineTo(x + PW, y + PH - 2); } ge.stroke();
-        ge.globalCompositeOperation = 'source-over';
-      }
+  const rivetsD = new Path2D(), rivetsL = new Path2D(), rivetsH = new Path2D(), brushL = new Path2D(), brushD = new Path2D();
+  for (const sl of slabs(b, r, { rowH: [86, 128], colW: [110, 270], jitter: 4, inset: 3 })) {
+    const { pts, cx, cy, w, h } = sl;
+    const hv = heat(cx, cy), tone = n.fbm(cx / 420, cy / 420);
+    let col = mix(r.pick(P.floor), '#5a4a58', tone * 0.5);
+    col = mix(col, '#140e12', r() * 0.25);
+    const kind = r();
+    if (kind < 0.08) col = mix(col, '#8a4a2a', 0.45);            // a copper patch plate
+    else if (kind < 0.14) col = mix(col, '#6a5a3a', 0.35);       // old brass
+    if (hv > 0.05) col = mix(col, TEMPER[Math.min(3, Math.floor((1 - hv) * 4))], hv * 0.5);
+    paintSlab(g, pts, col, { hi: 'rgba(255,214,190,0.13)', lo: 'rgba(8,2,6,0.42)', edgeHi: 'rgba(255,200,170,0.26)', edgeLo: 'rgba(0,0,0,0.6)', edge: 2 });
+    // diamond tread on some plates, embossed (lit and shadowed dashes)
+    if (kind > 0.84) {
+      g.save(); polyPath(g, pts); g.clip(); g.lineCap = 'round';
+      const tl = new Path2D(), td = new Path2D();
+      for (let ty = cy - h / 2 + 8, rr2 = 0; ty < cy + h / 2; ty += 14, rr2++) for (let tx = cx - w / 2 + 8 + (rr2 % 2) * 9; tx < cx + w / 2; tx += 18) { const o = (rr2 % 2) ? 4 : -4; tl.moveTo(tx - o, ty - 3); tl.lineTo(tx + o, ty + 3); td.moveTo(tx - o + 1.2, ty - 2); td.lineTo(tx + o + 1.2, ty + 4); }
+      g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 2.6; g.stroke(td); g.strokeStyle = 'rgba(255,220,200,0.16)'; g.lineWidth = 2; g.stroke(tl);
+      g.restore();
+    }
+    // a soft painted sheen where the plate catches the furnace light
+    g.globalAlpha = 0.07 + hv * 0.1; g.drawImage(glow(hv > 0.3 ? '#ffb070' : '#d8c0d0', 1), cx - w * 0.55, cy - h * 0.6, w * 0.8, h * 0.7); g.globalAlpha = 1;
+    // brushed-metal strokes along the plate
+    for (let k = 0; k < 5; k++) { const bx = cx + r.range(-w * 0.4, w * 0.3), by = cy + r.range(-h * 0.35, h * 0.35), L = r.range(20, w * 0.4); const P2 = r() < 0.5 ? brushL : brushD; P2.moveTo(bx, by); P2.lineTo(bx + L, by + r.range(-2, 2)); }
+    // rivets at the corners and along the long edges, each with a lit cap
+    const [a, b2, c, d] = pts;
+    const rv = [[a, b2, c, d].map(([x, y], k) => [x + (k === 0 || k === 3 ? 10 : -10), y + (k < 2 ? 10 : -10)])].flat();
+    if (w > 200) rv.push([(a[0] + b2[0]) / 2, a[1] + 10], [(d[0] + c[0]) / 2, d[1] - 10]);
+    for (const [x, y] of rv) { rivetsD.moveTo(x + 6, y + 2); rivetsD.arc(x + 1, y + 2, 5, 0, TAU); rivetsL.moveTo(x + 4.2, y); rivetsL.arc(x, y, 4.2, 0, TAU); rivetsH.moveTo(x - 0.6, y - 1.6); rivetsH.arc(x - 1.6, y - 1.6, 1.6, 0, TAU); }
+    // scorch: a burnt bloom with a blue temper ring
+    if (r() < 0.12 + hv * 0.3) {
+      const sx = cx + r.range(-w * 0.25, w * 0.25), sy = cy + r.range(-h * 0.2, h * 0.2), rr = r.range(26, 60);
+      const sg = g.createRadialGradient(sx, sy, 0, sx, sy, rr);
+      sg.addColorStop(0, 'rgba(10,4,6,0.5)'); sg.addColorStop(0.55, 'rgba(40,20,40,0.3)'); sg.addColorStop(0.85, 'rgba(60,70,140,0.1)'); sg.addColorStop(1, 'rgba(60,70,140,0)');
+      g.fillStyle = sg; g.beginPath(); g.ellipse(sx, sy, rr, rr * 0.62, 0, 0, TAU); g.fill();
+    }
+    // a hot seam: the gap under a plate near the melt glows
+    if (hv > 0.35 || r() < 0.05) {
+      ge.globalCompositeOperation = 'lighter'; ge.strokeStyle = hexA(M[1], 0.45 + hv * 0.45); ge.lineWidth = 3; ge.lineCap = 'round';
+      ge.beginPath(); if (r() < 0.6) { ge.moveTo(d[0], d[1] + 2); ge.lineTo(c[0], c[1] + 2); } else { ge.moveTo(b2[0] + 2, b2[1]); ge.lineTo(c[0] + 2, c[1]); } ge.stroke();
+      ge.globalCompositeOperation = 'source-over';
+      g.strokeStyle = hexA(M[2], 0.5); g.lineWidth = 2; g.stroke();
     }
   }
-  // grout lines between plates
-  g.strokeStyle = 'rgba(6,2,6,0.8)'; g.lineWidth = 5;
-  g.beginPath();
-  for (let row = 0, y = Math.floor(b.y0 / PH) * PH - PH; y < b.y1 + PH; y += PH, row++) {
-    g.moveTo(b.x0 - 20, y + 0.5); g.lineTo(b.x1 + 20, y + 0.5);
-    for (let x = Math.floor(b.x0 / PW) * PW - PW + (row % 2) * PW * 0.5; x < b.x1 + PW; x += PW) { g.moveTo(x, y); g.lineTo(x, y + PH); }
-  }
-  g.stroke();
-  polyPath(g, shape); fillGrain(g, 'metal', 0.5);
+  g.strokeStyle = 'rgba(255,220,200,0.07)'; g.lineWidth = 1.2; g.stroke(brushL);
+  g.strokeStyle = 'rgba(0,0,0,0.12)'; g.lineWidth = 1.5; g.stroke(brushD);
+  g.fillStyle = 'rgba(0,0,0,0.55)'; g.fill(rivetsD);
+  g.fillStyle = '#7a6a70'; g.fill(rivetsL);
+  g.fillStyle = 'rgba(255,230,210,0.7)'; g.fill(rivetsH);
+  polyPath(g, shape); fillGrain(g, 'soft', 0.22);
+  // warm bounce light from every pool and channel of melt
+  g.globalCompositeOperation = 'lighter';
+  for (const h of ch.hazards) if (h.type === 'molten') { const R = h.r + 240; g.globalAlpha = 0.16; g.drawImage(glow('#ff7a2a', 1), h.x - R, h.y - R * 0.66, R * 2, R * 1.32); }
+  g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
   // soot, oil and slag splashes
-  for (let i = 0; i < 22; i++) {
-    const x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1), rr = r.range(80, 260);
-    const cg = g.createRadialGradient(x, y, 0, x, y, rr);
-    cg.addColorStop(0, `rgba(8,4,8,${r.range(0.15, 0.35)})`); cg.addColorStop(1, 'rgba(8,4,8,0)');
-    g.fillStyle = cg; g.fillRect(x - rr, y - rr, rr * 2, rr * 2);
+  for (let i = 0; i < 18; i++) {
+    const x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1), rr = r.range(90, 260);
+    g.globalAlpha = r.range(0.25, 0.5); g.drawImage(glow('#08040a', 1), x - rr, y - rr * 0.62, rr * 2, rr * 1.24);
   }
-  for (let i = 0; i < (b.w * b.h) / 30000; i++) {
-    const x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1), rr = r.range(3, 9);
-    g.fillStyle = r() < 0.6 ? '#120a0c' : '#c8a050'; g.globalAlpha = 0.7;
-    g.beginPath(); g.ellipse(x, y, rr, rr * 0.6, 0, 0, TAU); g.fill();
+  g.globalAlpha = 1;
+  strokes(g, r, b, 1400 * Math.min(1, q + 0.3), ['#08040a', '#ffb080', '#5a3a4a'], { len: [8, 26], width: [1, 2.5], alpha: [0.04, 0.09] });
+  for (let i = 0; i < (b.w * b.h) / 60000; i++) {
+    const x = r.range(b.x0, b.x1), y = r.range(b.y0, b.y1), rr = r.range(3, 8);
+    g.fillStyle = r() < 0.6 ? '#120a0c' : '#c8a050'; g.globalAlpha = 0.6;
+    g.beginPath(); g.ellipse(x, y, rr, rr * 0.6, r() * 3, 0, TAU); g.fill();
   }
   g.globalAlpha = 1;
   // grates over the melt

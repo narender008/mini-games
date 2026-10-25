@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loomwake: patron sigils (dev)</title>
+<style>
+  html, body { margin: 0; background: #070614; color: #e8e0cc; font: 13px 'Segoe UI', system-ui, sans-serif; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+// Dev sheet for the six patron sigils (src/render/powers.js drawSigil) at card sizes,
+// with a sample boon card per patron. ?t animates the rim glint.
+import { drawSigil } from '../src/render/powers.js';
+import { PATRONS, PATRON_IDS } from '../src/content/patrons.js';
+import { BOONS, RARITY, boonText } from '../src/content/boons.js';
+
+const cv = document.getElementById('c'), c = cv.getContext('2d');
+const DPR = devicePixelRatio || 1, W = 1280, H = 760;
+cv.width = W * DPR; cv.height = H * DPR; cv.style.width = W + 'px'; cv.style.height = H + 'px';
+const anim = new URLSearchParams(location.search).has('t');
+function wrap(s, x, y, w, lh) {
+  let line = '';
+  for (const word of s.split(' ')) { const t = line ? line + ' ' + word : word; if (c.measureText(t).width > w && line) { c.fillText(line, x, y); y += lh; line = word; } else line = t; }
+  if (line) c.fillText(line, x, y);
+}
+function draw(time) {
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0d0b22'); g.addColorStop(1, '#05040c');
+  c.fillStyle = g; c.fillRect(0, 0, W, H);
+  PATRON_IDS.forEach((id, i) => {
+    const p = PATRONS[id], x = 110 + i * 212;
+    c.save(); c.translate(x, 120); drawSigil(c, id, 150, { t: anim ? time / 1000 : null }); c.restore();
+    c.save(); c.translate(x - 40, 240); drawSigil(c, id, 64); c.restore();
+    c.save(); c.translate(x + 30, 240); drawSigil(c, id, 32, { glow: false }); c.restore();
+    c.save(); c.translate(x + 66, 240); drawSigil(c, id, 20, { glow: false }); c.restore();
+    c.fillStyle = p.color; c.font = '600 18px Georgia, serif'; c.textAlign = 'center'; c.fillText(p.name, x, 300);
+    c.fillStyle = '#b8b0a0'; c.font = 'italic 13px Georgia, serif'; c.fillText(p.title, x, 320);
+    // a sample card
+    const b = BOONS.find((q) => q.patron === id && q.slot === 'attack') || BOONS.find((q) => q.patron === id);
+    const rar = ['common', 'rare', 'epic', 'mythic'][i % 4], rc = RARITY[rar];
+    const cx = x - 95, cy = 360, cw = 190, ch = 360;
+    c.fillStyle = 'rgba(14,12,30,0.92)'; c.strokeStyle = rc.color; c.lineWidth = 2;
+    c.beginPath(); c.roundRect(cx, cy, cw, ch, 12); c.fill(); c.stroke();
+    c.save(); c.translate(x, cy + 70); drawSigil(c, id, 96, { t: anim ? time / 1000 + i : null }); c.restore();
+    c.textAlign = 'center'; c.fillStyle = '#f4ead2'; c.font = '600 16px Georgia, serif'; c.fillText(b.name, x, cy + 150);
+    c.fillStyle = rc.color; c.font = '12px system-ui'; c.fillText(rc.name + ' · ' + b.slot, x, cy + 170);
+    c.textAlign = 'left'; c.fillStyle = '#d8d0bc'; c.font = '13px Georgia, serif'; wrap(boonText(b.id, rar, 1), cx + 14, cy + 198, cw - 28, 18);
+  });
+  if (anim) requestAnimationFrame(draw);
+}
+draw(0);
+window.__ready = true;
+</script>
+</body>
+</html>

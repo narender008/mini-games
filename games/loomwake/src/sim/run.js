@@ -61,6 +61,7 @@ import * as TapestryData from '../content/tapestry.js';
 import * as KeepsakeData from '../content/keepsakes.js';
 import * as PactData from '../content/pacts.js';
 import * as MemoryData from '../content/memories.js';
+import { WANDERERS } from '../content/dialogue/index.js';
 
 export const REGION_IDS = ['glasswood', 'choir', 'forge', 'unwoven'];
 export const BOSS_OF = { glasswood: 'veyl', choir: 'morrow', forge: 'aurum', unwoven: 'sable' };
@@ -78,9 +79,29 @@ function safe(fn, ...args) {
   try { return fn(...args); } catch (e) { console.error('[loomwake run]', fn.name || 'call', e); return undefined; }
 }
 function emit(G, type, p) { if (G.bus) G.bus.emit(type, p); }
+// Story results with mode 'dialogue' become portrait conversations: queued on G.storyQueue and opened by
+// tick() as soon as the hero is free in the run or the hub (a death's lines wait for the Loomhall).
+// Barks reach the HUD through story's own 'bark' bus event. Events whose caller presents the result
+// itself (hubEnter, fountain, talk, gift) are not queued here.
+const STORY_SELF = new Set(['boot', 'hubEnter', 'fountain', 'talk', 'gift']);
 function story(G, type, data = {}) {
   const out = safe(Story.onEvent, G, type, data);
-  return Array.isArray(out) ? out : [];
+  const arr = Array.isArray(out) ? out : [];
+  if (!STORY_SELF.has(type)) for (const e of arr) queueTalk(G, e);
+  return arr;
+}
+const isConversation = (e) => e && e.lines && e.lines.length && (e.mode === 'dialogue' || e.kind === 'talk' || (e.choices && e.choices.length));
+function queueTalk(G, e) {
+  if (!isConversation(e)) return;
+  (G.storyQueue = G.storyQueue || []).push(e);
+}
+// open the next queued conversation when the scene allows it
+function pumpTalk(G) {
+  const q = G.storyQueue;
+  if (!q || !q.length || G.dialogue) return false;
+  if (G.scene !== 'run' && G.scene !== 'hub') return false;
+  if (G.scene === 'run' && (!G.run || G.run.over || (G.hero && G.hero.dead))) return false;
+  return !!openDialogue(G, q.shift(), G.scene);
 }
 function setScene(G, to) {
   const from = G.scene;
@@ -289,7 +310,7 @@ function recomputeStats(G) {
 
 // ------------------------------------------------------------------ hub
 export function toHub(G, from = 'quit') {
-  G.run = null; G.offer = null; G.dialogue = null; G.fountain = null; G.shop = null; G.ending = null; G.talkQueue = null;
+  G.run = null; G.offer = null; G.dialogue = null; G.fountain = null; G.shop = null; G.ending = null; G.storyQueue = null;
   G.checkpoint = null;
   clearArena(G);
   let hub = safe(Hub.makeHub, G.meta, G);
@@ -310,8 +331,8 @@ export function toHub(G, from = 'quit') {
   const said = story(G, 'hubEnter', { from });
   persist(G, null, 'hub');
   // hub conversations the story wants told (onboarding, reactions): portrait dialogue, one after another
-  const talks = said.filter((e) => e && e.kind === 'talk' && e.lines && e.lines.length);
-  if (talks.length) { G.talkQueue = talks.slice(1); openDialogue(G, talks[0], 'hub'); }
+  for (const e of said) queueTalk(G, e);
+  pumpTalk(G);
   return G.scene;
 }
 function fallbackHub() {
@@ -489,6 +510,7 @@ function arrive(G, { fresh = false, resume = null } = {}) {
   for (const d of chamber.doors) d.open = false;
   clearArena(G);
   G.chamber = chamber;
+  G.npcs = [];
   const offerSeed = hashSeed(run.seed, 'offer', run.depth);
   run.ch = { wave: -1, waveT: 0.9, cleared: false, rewardDone: false, rewardDropped: false, offerSeed, rerollN: 0, shop: null, fountain: null, memory: null,
     bossId: null, entryHp: G.hero ? G.hero.hp : run.hp, deathT: 0, enterT: 0, waves: chamber.waves ? chamber.waves.length : 0 };
@@ -517,6 +539,7 @@ function arrive(G, { fresh = false, resume = null } = {}) {
   // non-combat chambers are cleared on arrival
   if (kind === 'shop') { run.ch.shop = rollShop(G); G.shop = run.ch.shop; markCleared(G, true); }
   else if (kind === 'fountain') { run.ch.fountain = { used: false, healed: 0, npc: null, memory: null }; prepareFountain(G); markCleared(G, true); }
+  if (kind === 'fountain') placeWanderer(G);
   else if (kind === 'memory') { run.ch.memory = { id: safe(Story.pickMemory, G) ?? pickMemoryFallback(G), done: false }; markCleared(G, true); }
   else if (kind === 'boss') { run.ch.bossId = BOSS_OF[run.region]; }
   if (G.scene !== 'run') setScene(G, 'run');
@@ -980,6 +1003,21 @@ function prepareFountain(G) {
   const id = run.memoryRegions.includes(run.region) ? null : safe(Story.pickMemory, G) ?? pickMemoryFallback(G);
   f.memory = id || null;
 }
+// The region's wanderer (Hob, Lisle, Gilt, Ash) waits beside a fountain when story says they are about.
+function placeWanderer(G) {
+  const run = G.run, c = G.chamber;
+  const id = WANDERERS && WANDERERS[run.region];
+  if (!id || safe(Story.npcPresent, G, id) === false) return null;
+  const st = (c.stations || []).find((s) => s.id === 'fountain') || { x: 0, y: 0 };
+  const hz = (c.hazards || []).filter((z) => z.r > 0), ob = c.obstacles || [];
+  const free = (x, y) => (!c.shape || pointIn(x, y, c.shape)) && !hz.some((z) => Math.hypot(x - z.x, y - z.y) < z.r + 50) && !ob.some((o) => Math.hypot(x - o.x, y - o.y) < (o.r || 30) + 50);
+  let at = null;
+  for (const [dx, dy] of [[170, -30], [-170, -30], [150, 90], [-150, 90], [0, 170], [240, 0], [-240, 0]]) if (free(st.x + dx, st.y + dy)) { at = { x: st.x + dx, y: st.y + dy }; break; }
+  if (!at) at = { x: st.x + 170, y: st.y - 30 };
+  const n = { id, kind: 'wanderer', x: Math.round(at.x), y: Math.round(at.y), r: 26, talkR: 100, face: at.x > st.x ? -1 : 1 };
+  G.npcs.push(n);
+  return n;
+}
 function pickMemoryFallback(G) {
   const list = MemoryData.MEMORIES || MemoryData.MEMORY_THREADS || MemoryData.default;
   const arr = Array.isArray(list) ? list : list && typeof list === 'object' ? Object.values(list) : [];
@@ -1075,7 +1113,7 @@ export function skip(G) {
   G.dialogue = null;
   setScene(G, PLAY_SCENES.has(d.back) || ['shop', 'fountain', 'victory'].includes(d.back) ? d.back : (G.run ? 'run' : 'hub'));
   emit(G, 'dialogueEnd', { id: d.lineId });
-  if (G.scene === 'hub' && G.talkQueue && G.talkQueue.length) { openDialogue(G, G.talkQueue.shift(), 'hub'); return { ok: true }; }
+  if (pumpTalk(G)) return { ok: true };
   // chained: fountain conversation then its memory
   if (G.run && G.run.ch && G.run.ch.fountain && G.run.ch.fountain.talked && G.run.ch.fountain.memory && !G.run.ch.fountain.memoryDone && G.scene === 'run') {
     G.run.ch.fountain.memoryDone = true; playMemoryThread(G, G.run.ch.fountain.memory);
@@ -1373,6 +1411,7 @@ function applyResume(G, s) {
 export function tick(G, dt) {
   if (G.meta && G.scene !== 'title' && G.scene !== 'loading' && G.scene !== 'profiles') G.meta.playTime = (G.meta.playTime || 0) + dt;
   if (G.input && G.input.pauseP && PLAY_SCENES.has(G.scene) && !(G.hero && G.hero.dead)) { pause(G); return; }
+  if (pumpTalk(G)) return;
   if (G.scene === 'hub') return hubTick(G, dt);
   const run = G.run;
   if (!run || !run.ch) return;
@@ -1438,6 +1477,13 @@ export function tick(G, dt) {
           else if (s.id === 'fountain') useFountain(G);
           else if (s.id === 'memory') rememberHere(G);
         }
+        break;
+      }
+    }
+    if (!G.prompt) for (const n of G.npcs || []) {
+      if (dist(n, h) < (n.talkR || 90) + (h.r || 20)) {
+        G.prompt = { kind: 'npc', id: n.id, text: `Talk to ${safe(Story.speakerName, G, n.id) || n.id}`, x: n.x, y: n.y };
+        if (G.input && G.input.interactP && G.scene === 'run') talk(G, n.id);
         break;
       }
     }
@@ -1624,12 +1670,14 @@ function keepsakeList() {
 export function gift(G, npcId) {
   if ((G.meta.currency.shards | 0) < 1) return { ok: false, error: 'no Dream Shards' };
   G.meta.currency.shards -= 1;
-  const n = inc(G.meta.gifts, npcId);
-  inc(G.meta.affinity, npcId, 1);
+  // story counts the gift and the affinity (src/sim/story.js 'gift'); count only if it is missing
+  const before = G.meta.gifts[npcId] | 0;
+  const b = story(G, 'gift', { npc: npcId, count: before + 1 });
+  if ((G.meta.gifts[npcId] | 0) === before) { inc(G.meta.gifts, npcId); inc(G.meta.affinity, npcId, 2); }
+  const n = G.meta.gifts[npcId] | 0;
   // a keepsake from that character at their first gift
   const ks = keepsakeList().find((k) => k.unlock && k.unlock.gift === npcId && !G.meta.unlocks.keepsakes.includes(k.id));
   if (ks && n >= (ks.unlock.gifts || 1)) { G.meta.unlocks.keepsakes.push(ks.id); emit(G, 'ui', { toast: `${ks.name} added to your keepsakes.` }); }
-  const b = story(G, 'gift', { npc: npcId, count: n });
   const entry = b.find((x) => x && x.lines && x.lines.length);
   if (entry) openDialogue(G, entry, 'hub');
   saveMeta(G);

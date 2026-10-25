@@ -17,6 +17,7 @@
 //   boss:beam       { x, y, ang, len, w, on }                          Morrow's lantern beam (visual; the move does the hit)
 //   boss:tether     { a: id, b: id, on }                               Sable's snare thread (visual)
 //   boss:burst      { x, y, r, warn, color }                           a delayed circle blast (mirrored powers)
+import { onEvent as storyEvent } from '../story.js';
 import { TAU, clamp, segDist, pointInPoly, wrapAng } from '../../core/math.js';
 import { spawn as spawnFoe } from '../enemies/index.js';
 import { hurtHero, telegraph as pushTelegraph, shoot as pushShot, addStatus, knock } from '../combat.js';
@@ -287,7 +288,23 @@ function fits(G, e, w, log) {
   if (w.trueEnding != null && !!e.trueEnding !== w.trueEnding) return false;
   return true;
 }
+// Mid-fight barks go to the story system first (src/sim/story.js onEvent 'bossBark' {id, cue}); its
+// lines know the whole save. It rate-limits itself, so when it stays quiet the boss's own pool speaks.
+const STORY_CUE = { taunt: 'hurtHero', hurt: 'armor', heavy: 'heavy', low: 'low', summon: 'summon', idle: 'idle' };
+function storyBark(G, e, trigger) {
+  const cue = STORY_CUE[trigger];
+  if (!cue) return null;
+  try {
+    const out = storyEvent(G, 'bossBark', { id: e.kind, cue });
+    const r = out && out.find((x) => x && x.lines && x.lines.length);
+    if (!r) return null;
+    return { id: r.id, text: r.lines.map((l) => l.text).join(' '), mood: r.lines[0].mood, story: true };
+  } catch (err) { return null; }
+}
 export function pickLine(G, e, trigger, def) {
+  const sl = storyBark(G, e, trigger);
+  if (sl) return sl;
+  if (trigger === 'heavy' || trigger === 'low') trigger = 'hurt';
   try {
     if (G.story && typeof G.story.bossLine === 'function') {
       const l = G.story.bossLine(G, e.kind, trigger, e);
@@ -311,11 +328,11 @@ export function bark(G, e, trigger, def, opts = {}) {
   const l = pickLine(G, e, trigger, def);
   if (!l) return null;
   e.lastLine = l.id;
-  e.bark = { text: l.text, t: opts.dur ?? Math.max(2.4, 1.2 + l.text.length * 0.055), max: 0, lineId: l.id, trigger, pri: opts.pri || 0, at: G.t };
+  e.bark = { text: l.text, mood: l.mood, t: opts.dur ?? Math.max(2.4, 1.2 + l.text.length * 0.055), max: 0, lineId: l.id, trigger, pri: opts.pri || 0, at: G.t };
   e.bark.max = e.bark.t;
   const log = bossLog(G, e.kind);
   if (!log.said.includes(l.id)) { log.said.push(l.id); if (log.said.length > 80) log.said.shift(); }
-  G.bus.emit('bossBark', { id: e.kind, speaker: e.kind, lineId: l.id, text: l.text, trigger });
+  G.bus.emit('bossBark', { id: e.kind, speaker: e.kind, lineId: l.id, text: l.text, mood: l.mood, trigger, source: l.story ? 'story' : 'boss' });
   return l;
 }
 

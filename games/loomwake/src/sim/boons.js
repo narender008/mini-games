@@ -541,7 +541,10 @@ function newPower(G, kind, o) {
   const p = Object.assign({ id: G.nextId++, x: 0, y: 0, t: 0, life: 1, r: 60, delay: 0, acc: 0, seed: Math.floor(G.rng.combat() * 1e6) }, o);
   if (o && o.kind && !o.hitKind) p.hitKind = o.kind;   // o.kind is the damage kind ('call', 'boon'); p.kind is the power kind
   p.kind = kind;
-  (G.powers || (G.powers = [])).push(p);
+  const L = G.powers || (G.powers = []);
+  // a hard cap keeps a stacked build from flooding the room: the oldest lingering pool makes way
+  if (L.length >= 120) { const i = L.findIndex((q) => !q.dead && !q.follow && q.t < q.life); if (i >= 0) L[i].t = L[i].life; }
+  L.push(p);
   G.bus.emit('powerSpawn', { p });
   return p;
 }

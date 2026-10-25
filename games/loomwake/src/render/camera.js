@@ -23,7 +23,7 @@ export function createCamera(G) {
   cam.update = (G, dt) => {
     const c = G.cfg.camera, h = G.hero;
     cam.t += dt;
-    const sceneZoom = G.ui?.camZoom ?? (G.scene === 'hub' ? 1.02 : G.boss ? 0.9 : c.zoom);
+    const sceneZoom = G.ui?.camZoom ?? (G.scene === 'hub' ? 1.1 : G.boss ? 1.0 : c.zoom);
     cam.zoomTarget = sceneZoom;
     cam.zoom = lerp(cam.zoom, cam.zoomTarget + cam.punchZ, 1 - Math.exp(-dt * 6));
     cam.punchZ = Math.max(0, cam.punchZ - dt * 0.4);

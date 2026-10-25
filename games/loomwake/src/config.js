@@ -54,7 +54,7 @@ export const FEEL = {
     perTaken: 1 / 90,     // gauge per point of damage taken
     burstR: 280, burstDmg: 70, burstKnock: 720, burstStun: 1.4,
   },
-  camera: { follow: 5, lead: 60, leadPad: 70, zoom: 1, kickDecay: 10, maxShake: 18 },
+  camera: { follow: 5, lead: 60, leadPad: 70, zoom: 1.12, kickDecay: 10, maxShake: 18 },
   hazards: { spikeCycle: 2.2, spikeUp: 0.6, spikeDmg: 14, thornDmg: 8, moltenDmg: 6, fallDmg: 12 },
 };
 

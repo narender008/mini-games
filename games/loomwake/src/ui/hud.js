@@ -78,7 +78,9 @@ export function createHUD(ui) {
   prompt.addEventListener('click', () => call(['interact']));
   const bPause = h('button', { id: 'btn-pause', type: 'button', 'aria-label': 'Pause', html: icon('pause') });
   bPause.addEventListener('click', () => call(['pause']));
-  const el = h('section', { class: 'scr hud', hidden: true, 'aria-label': 'Heads-up display' }, vig, cmp, tl, tr, bl, boss, bark, prompt, bPause);
+  const fps = h('div', { class: 'fps', hidden: true });
+  let fpsT = 0;
+  const el = h('section', { class: 'scr hud', hidden: true, 'aria-label': 'Heads-up display' }, vig, cmp, tl, tr, bl, boss, bark, prompt, bPause, fps);
   bPause.classList.add('live');
 
   // ------------------------------------------------------------- state
@@ -86,7 +88,7 @@ export function createHUD(ui) {
   let hpLagT = 0, lastHp = -1, bossLast = -1;
   let vigA = 0;
   const barkQ = [];
-  let barkT = 0, barkOn = false;
+  let barkT = 0, barkOn = false, curBark = null;
   const arrows = [];
   let lastDepthKey = '';
 
@@ -167,7 +169,10 @@ export function createHUD(ui) {
   }
 
   function showBark() {
-    const b = barkQ.shift();
+    // stale lines (queued behind a title card, or from a room left behind) are dropped
+    let b = barkQ.shift();
+    while (b && performance.now() - (b.at || 0) > 7000) b = barkQ.shift();
+    curBark = b || null;
     if (!b) { bark.classList.remove('on'); barkOn = false; return; }
     const sp = speaker(b.speaker, ui.G);
     bark.style.setProperty('--sc', sp.color);
@@ -178,7 +183,7 @@ export function createHUD(ui) {
     const g = barkCv.getContext('2d');
     g.clearRect(0, 0, 84, 84);
     if (pc) g.drawImage(pc, 0, 0, 84, 84);
-    barkCv.hidden = !pc;
+    barkCv.hidden = !pc; toggle(bark, "noport", !pc);
     bark.classList.add('on'); barkOn = true;
     barkT = Math.max(2.6, Math.min(6, 1.4 + b.text.length * 0.055));
   }
@@ -196,9 +201,9 @@ export function createHUD(ui) {
     },
     bark(p) {
       const lines = p.lines || (p.text ? [{ speaker: p.speaker, text: p.text, mood: p.mood }] : []);
-      for (const l of lines.slice(0, 3)) if (l && l.text) barkQ.push({ speaker: l.speaker || p.speaker, text: l.text, mood: l.mood, kind: p.kind });
+      for (const l of lines.slice(0, 3)) if (l && l.text) barkQ.push({ speaker: l.speaker || p.speaker, text: l.text, mood: l.mood, kind: p.kind, at: performance.now() });
       while (barkQ.length > 4) barkQ.shift();
-      if (!barkOn) showBark();
+      if (!barkOn && !ui.cardsBusy?.()) showBark();
     },
     update(G, dt) {
       const hub = G.scene === 'hub' || (!G.run && G.scene === 'dialogue');
@@ -229,6 +234,18 @@ export function createHUD(ui) {
       setCur('shards', mc.shards);
       cur.keys.el.hidden = !hub && !(mc.keys > 0);
       cur.shards.el.hidden = !hub && !(mc.shards > 0);
+      if (G.dialogue) barkQ.length = 0;
+      // frame counter (Settings > Display > Show FPS); the engine keeps a smoothed frame interval
+      const showFps = !!G.settings?.showFps;
+      fps.hidden = !showFps;
+      if (showFps && (fpsT -= dt) <= 0) { fpsT = 0.5; const ms = G.engine?.quality?.ema; fps.textContent = ms > 0 ? `${Math.round(1000 / ms)} fps · ${ms.toFixed(1)} ms` : '— fps'; }
+      if (barkOn && ui.cardsBusy?.()) {
+        // a title card took the stage: step aside, and say it again after unless it was idle narration
+        if (curBark && curBark.kind !== 'line' && !curBark.again) barkQ.unshift({ ...curBark, at: performance.now(), again: true });
+        bark.classList.remove('on'); barkOn = false; curBark = null;
+      }
+      if (barkOn) { barkT -= dt; if (barkT <= 0 || G.dialogue) showBark(); }
+      else if (barkQ.length && !ui.cardsBusy?.()) showBark();
       if (hub) return;
       boonsRender(G);
       // health, armour, shield
@@ -297,7 +314,7 @@ export function createHUD(ui) {
       // boss
       const b = G.boss && !G.boss.dead ? G.boss : null;
       if (b) {
-        const id = b.bossId || b.boss || b.kind;
+        const id = [b.bossId, b.boss, b.kind, b.type].find((x) => typeof x === 'string');
         const info = bossInfo(id, G);
         setText(bnm, info.name);
         setText(bep, info.title);
@@ -314,7 +331,6 @@ export function createHUD(ui) {
         tl.style.opacity = '0.6';
       } else { toggle(boss, 'on', false); bossLast = -1; tl.style.opacity = ''; }
       // barks
-      if (barkOn) { barkT -= dt; if (barkT <= 0) showBark(); }
       // vignette
       const low = hp > 0 && hp / mh < 0.3;
       const reduce = ui.G.settings?.flashes === false || ui.G.settings?.flashes === 'reduced';

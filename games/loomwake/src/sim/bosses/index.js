@@ -28,6 +28,7 @@
 // Hooks for story/run: G.story.bossLine(G, id, trigger, e) may return { id, text } to override any line
 // (or false to silence one); opts.trueEnding or G.run.trueEnding turns on Sable's choice; history is read
 // from G.meta.stats (see common.js bossLog).
+import { canTrueEnding } from '../story.js';
 import { BOSSES, BOSS_IDS } from '../../content/bosses.js';
 import { makeEntity } from '../../state.js';
 import { TAU, clamp } from '../../core/math.js';
@@ -65,7 +66,7 @@ export function startBoss(G, id, opts = {}) {
     phase: 1, phases: def.phases.length + 1,
     pose: 'idle', pt: 0, aim: Math.PI / 2, act: null, cd: {}, gap: 1.0,
     tempo: 1, dmgMul: opts.dmgMul ?? 1, speed: def.speed,
-    trueEnding: !!(opts.trueEnding ?? (G.run && G.run.trueEnding)),
+    trueEnding: !!(opts.trueEnding ?? (G.run && G.run.trueEnding) ?? (id === 'sable' && storyTrueEnding(G))),
     meet: opts.meet, bark: null, dying: false, regrowT: 0, wasArmored: true,
     tauntCd: 0, idleBarkT: 14, heroHits: 0, pendingPhase: 0, summons: [],
   });
@@ -105,7 +106,8 @@ function onDamaged(G, e, dmg, o) {
     e.regrowT = def.armorRegrow;
     bark(G, e, 'hurt', def, { pri: 3 });
     G.bus.emit('bossStagger', { id: e.kind, x: e.x, y: e.y, e });
-  } else if (dmg >= 60 && G.rng.ai() < 0.25) bark(G, e, 'hurt', def, { pri: 1 });
+  } else if (!e.saidLow && e.phase === e.phases && e.hp > 0 && e.hp <= 0.25 * e.maxHp) { e.saidLow = true; bark(G, e, 'low', def, { pri: 2 }); }
+  else if (dmg >= 60 && G.rng.ai() < 0.25) bark(G, e, 'heavy', def, { pri: 1 });
   // phase thresholds: never skip a phase in one hit
   const th = def.phases[e.phase - 1];
   if (th != null && e.hp <= th * e.maxHp && !e.pendingPhase && e.state !== 'phase') {
@@ -193,6 +195,10 @@ export function updateBosses(G, dt) {
     }
     case 'choice': {
       e.vx = e.vy = 0;
+      // the UI answers through story.chooseEnding(G, 'braid'|'cut'), which sets meta.flags.endingChoice
+      // (or calls resolveBossChoice directly)
+      const ch = G.meta && G.meta.flags && G.meta.flags.endingChoice;
+      if ((ch === 'braid' || ch === 'cut') && ch !== e.choiceWas) resolveBossChoice(G, ch);
       return;
     }
     case 'braided': {
@@ -230,6 +236,7 @@ export function updateBosses(G, dt) {
     abort(G, e); clearHazards(G, e); clearShots(G, e);
     for (const f of G.foes) if (!f.boss && !f.dead && f.owner === e.kind) { f.hp = 0; f.dead = true; f.state = 'dying'; f.st = 0; G.bus.emit('kill', { e: f, noReward: true }); }
     e.untargetable = true; toState(e, 'choice');
+    e.choiceWas = G.meta && G.meta.flags ? G.meta.flags.endingChoice : undefined;
     bark(G, e, 'choice', def, { force: true, pri: 9, dur: 99 });
     G.bus.emit('bossChoice', { id: e.kind, options: ['braid', 'cut'] });
     return;
@@ -289,6 +296,8 @@ export function updateBosses(G, dt) {
     if (name) begin(G, e, name); else e.gap = 0.25;
   }
 }
+
+function storyTrueEnding(G) { try { return !!canTrueEnding(G); } catch (err) { return false; } }
 
 // ---------- debug and story hooks ----------
 export function killBoss(G) {

@@ -249,14 +249,39 @@ export const VK = {
   tapestry(ctx, x, y, w, h, t = 0, o = {}) {
     ctx.save(); ctx.translate(x, y);
     const r = prng(o.seed ?? 9);
-    const rows = Math.floor(h / 14);
+    const pal = o.colors ?? ['#c0405a', '#e0a040', '#4070c0', '#40a080', '#9050c0', '#e07050'];
+    const sway = (u) => Math.sin(t * 0.6 + u * 3) * 4;
+    // the cloth: a hanging shape with a softly waving hem
+    ctx.save(); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(w, 0);
+    for (let k = 0; k <= 20; k++) { const u = 1 - k / 20; ctx.lineTo(u * w + sway(u) * 0.5, h + sway(u) + Math.sin(u * 17) * 3); }
+    ctx.closePath(); ctx.clip();
+    const bg = ctx.createLinearGradient(0, 0, 0, h); bg.addColorStop(0, '#3a1838'); bg.addColorStop(0.5, '#2a1840'); bg.addColorStop(1, '#1a1030'); ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h + 20);
+    // pictures woven into it, soft and large: a sun, hills, a tree of light
+    const blob = (bx, by, br, col, a) => { const g = ctx.createRadialGradient(bx, by, 0, bx, by, br); g.addColorStop(0, hexA(col, a)); g.addColorStop(1, hexA(col, 0)); ctx.fillStyle = g; ctx.fillRect(bx - br, by - br, br * 2, br * 2); };
+    blob(w * (0.2 + r() * 0.2), h * 0.3, h * 0.35, '#ffc860', 0.45); blob(w * (0.65 + r() * 0.2), h * 0.55, h * 0.4, '#50c0a0', 0.3); blob(w * 0.5, h * 0.9, h * 0.5, '#c04070', 0.3);
+    // the life-threads, each a gently wandering weft
+    const gap = 9, rows = Math.ceil(h / gap) + 1;
+    ctx.lineCap = 'round';
     for (let i = 0; i < rows; i++) {
-      const hue = o.colors ? o.colors[i % o.colors.length] : ['#c0405a', '#e0a040', '#4070c0', '#40a080', '#9050c0'][i % 5];
-      ctx.fillStyle = hexA(hue, 0.55 + r() * 0.3); ctx.fillRect(0, i * 14, w, 12);
-      for (let j = 0; j < w / 30; j++) if (r() < 0.4) { ctx.fillStyle = hexA('#ffe7b0', 0.25 + 0.2 * Math.sin(t + i + j)); ctx.fillRect(j * 30 + r() * 10, i * 14 + 3, 12, 5); }
+      const col = pal[Math.floor(r() * pal.length)], y0 = i * gap + 4, ph = r() * 6, amp = 1 + r() * 2;
+      ctx.strokeStyle = hexA(col, 0.5 + r() * 0.3); ctx.lineWidth = 4.2; ctx.beginPath();
+      for (let xx = 0; xx <= w; xx += 20) { const yy = y0 + Math.sin(xx * 0.012 + ph) * amp + sway(xx / w) * (y0 / h); xx ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); }
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,240,210,0.12)'; ctx.lineWidth = 1.2; ctx.stroke();
     }
+    // the warp: fine vertical threads the wefts pass over and under
+    ctx.fillStyle = 'rgba(10,6,20,0.16)'; for (let xx = 0; xx < w; xx += 6) ctx.fillRect(xx, 0, 1.5, h + 20);
+    // glints running along the threads, like breath
+    for (let k = 0; k < 14; k++) { const gx = ((r() * w + t * 30 * (0.5 + r())) % w), gy = Math.floor(r() * rows) * gap + 4; blob(gx, gy, 10, '#fff2c8', 0.55 * (0.5 + 0.5 * Math.sin(t * 2 + k))); }
     if (o.hole) { ctx.globalCompositeOperation = 'destination-out'; ctx.beginPath(); smooth(ctx, o.hole); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; }
-    ctx.strokeStyle = hexA('#ffd27a', 0.7); ctx.lineWidth = 3; ctx.strokeRect(0, 0, w, h);
+    const shade = ctx.createLinearGradient(0, 0, w, 0); shade.addColorStop(0, 'rgba(0,0,0,0.45)'); shade.addColorStop(0.15, 'rgba(0,0,0,0)'); shade.addColorStop(0.85, 'rgba(0,0,0,0)'); shade.addColorStop(1, 'rgba(0,0,0,0.45)'); ctx.fillStyle = shade; ctx.fillRect(0, 0, w, h + 20);
+    ctx.restore();
+    // fringe along the hem
+    ctx.lineWidth = 1.5; for (let xx = 4; xx < w; xx += 8) { const u = xx / w, hy = h + sway(u) + Math.sin(u * 17) * 3; ctx.strokeStyle = hexA(pal[(xx / 8) % pal.length | 0], 0.6); ctx.beginPath(); ctx.moveTo(xx, hy - 2); ctx.quadraticCurveTo(xx + Math.sin(t + xx) * 2, hy + 8, xx + Math.sin(t * 1.3 + xx) * 3, hy + 16); ctx.stroke(); }
+    // the rod it hangs from
+    const rod = ctx.createLinearGradient(0, -10, 0, 6); rod.addColorStop(0, '#ffe2a0'); rod.addColorStop(0.5, '#b07a30'); rod.addColorStop(1, '#5a3a18');
+    ctx.fillStyle = rod; ctx.fillRect(-24, -8, w + 48, 12);
+    for (const ex of [-24, w + 24]) { ctx.fillStyle = '#ffd27a'; ctx.beginPath(); ctx.arc(ex, -2, 10, 0, Math.PI * 2); ctx.fill(); }
     ctx.restore();
   },
   glassTree(ctx, x, y, s = 1, color = '#8ff0e0', seed = 1) {

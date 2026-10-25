@@ -62,7 +62,9 @@ let npcs = null;
 try { npcs = await import('../src/render/actors/npcs.js'); } catch (e) { console.warn('npcs.js not ready', e); }
 if (npcs && (!only || only === 'npcs')) {
   const cv = document.getElementById('stage'), ctx = cv.getContext('2d');
-  const ids = ['orrin', 'thimbleby', 'pell', 'nell', 'weaver', 'sable', 'hob', 'lisle', 'gilt', 'ash'];
+  const ids = q.get('who') ? q.get('who').split(',') : ['orrin', 'thimbleby', 'pell', 'nell', 'weaver', 'sable', 'hob', 'lisle', 'gilt', 'ash'];
+  const Z = Number(q.get('zoom') ?? 1);
+  if (Z !== 1) { cv.width = Math.round(1400); cv.height = Math.round(420 * Z * 0.75); }
   const ents = ids.map((id, i) => ({ id: i + 1, art: 'npc', npc: id, x: 0, y: 0, z: 0, facing: Math.PI / 2, anim: {} }));
   const G = { t: 0, meta: {}, hero: { x: 700, y: 330 } };
   story.ensureStoryMeta(G);
@@ -71,13 +73,13 @@ if (npcs && (!only || only === 'npcs')) {
     G.t = q.has('t') ? Number(q.get('t')) : (now - t0) / 1000;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const bg = ctx.createLinearGradient(0, 0, 0, cv.height); bg.addColorStop(0, '#1a1430'); bg.addColorStop(1, '#3a2a40'); ctx.fillStyle = bg; ctx.fillRect(0, 0, cv.width, cv.height);
-    ctx.fillStyle = 'rgba(242,196,107,0.08)'; for (let x = 0; x < cv.width; x += 40) ctx.fillRect(x, 330, 20, 90);
+    ctx.fillStyle = 'rgba(242,196,107,0.08)'; for (let x = 0; x < cv.width; x += 40) ctx.fillRect(x, cv.height - 90, 20, 90);
     ents.forEach((e, i) => {
-      const x = 70 + i * 133, y = e.npc === 'weaver' ? 360 : 340;
-      ctx.save(); ctx.translate(x, y); const s = e.npc === 'weaver' ? 0.42 : 0.9; ctx.scale(s, s);
+      const step = cv.width / ids.length, x = step * (i + 0.5), y = cv.height - (e.npc === 'weaver' ? 60 : 80);
+      ctx.save(); ctx.translate(x, y); const s = (e.npc === 'weaver' ? 0.42 : 0.9) * Z; ctx.scale(s, s);
       try { npcs.default(ctx, e, G, {}); } catch (err) { console.error(e.npc, err); }
       ctx.restore();
-      ctx.fillStyle = '#f2c46b'; ctx.font = '13px Georgia'; ctx.textAlign = 'center'; ctx.fillText(SPEAKERS[e.npc]?.name || e.npc, x, 405);
+      ctx.fillStyle = '#f2c46b'; ctx.font = '13px Georgia'; ctx.textAlign = 'center'; ctx.fillText(SPEAKERS[e.npc]?.name || e.npc, x, cv.height - 15);
     });
     if (!q.has('t')) requestAnimationFrame(frame);
   };
@@ -89,11 +91,12 @@ if (!only || only === 'dialogue') {
   const host = document.getElementById('dialogue');
   const G = { t: 0, meta: {}, bus: { emit() {} } };
   const m = story.ensureStoryMeta(G), st = m.stats;
+  const copy = (c) => { if (!c) return c; const k = document.createElement('canvas'); k.width = c.width; k.height = c.height; k.getContext('2d').drawImage(c, 0, 0); return k; };
   const show = (rs) => { for (const r of rs) for (const l of r.lines) {
     if (l.speaker === 'narrator') { const d = document.createElement('div'); d.className = 'narr'; d.textContent = l.text; host.appendChild(d); continue; }
     const info = story.speakerInfo(G, l.speaker);
     const d = document.createElement('div'); d.className = 'dlg';
-    const pc = getPortrait(l.speaker, l.mood, 96); if (pc) { pc.style.width = '96px'; d.appendChild(pc); }
+    const pc = copy(getPortrait(l.speaker, l.mood, 96)); if (pc) { pc.style.width = '96px'; d.appendChild(pc); }
     const b = document.createElement('div'); b.innerHTML = `<div class="tag">${r.kind} · ${r.id} · ${l.mood}</div><div class="who">${info.name}<small>${info.title}</small></div><div class="txt"></div>`;
     b.querySelector('.txt').textContent = l.text; d.appendChild(b); host.appendChild(d);
   } };

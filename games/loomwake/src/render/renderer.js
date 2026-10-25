@@ -81,21 +81,24 @@ export function createRenderer(G, canvas, opts = {}) {
     env = null;
     if (paint) { try { env = paint(ch, eq); } catch (err) { console.error('[loomwake] env painter failed', err); env = null; } }
     if (!env) env = paintFallbackChamber(ch, eq);
-    // static layers: ImageBitmaps blit ~40% faster than CPU canvases; the low tier bakes the glow into the floor
+    // static layers: the floor glow is always baked into the floor (one full-screen floor blit), and
+    // ImageBitmaps blit ~40% faster than CPU canvases. At full quality the bake uses the pulse's minimum and the
+    // light pass adds the pulse above it into the darkness layer (same single composite); otherwise the mean.
     const E0 = env;
-    E0.floorImg = E0.floor; E0.glowImg = E0.glow;
-    // the high tier below full resolution scale (governor under pressure) bakes it too, at the pulse's mean,
-    // which saves one full-screen pass; the pulse returns when the scale climbs back to 1
-    if ((Q.tier === 'low' || eq < 0.95) && E0.glow && !E0.bakedGlow) {
-      let mean = 0.8;
-      if (typeof E0.glowPulse === 'function') { mean = 0; for (let k = 0; k < 32; k++) mean += E0.glowPulse(k * 0.37) / 32; }
+    E0.floorImg = E0.floor; E0.glowImg = null; E0.pulseImg = null; E0.pulseMin = 0;
+    if (E0.glow) {
+      const pulse = typeof E0.glowPulse === 'function' ? E0.glowPulse : null;
+      let mean = 0.8, lo = 0.8;
+      if (pulse) { mean = 0; lo = 1; for (let k = 0; k < 64; k++) { const v = clamp(pulse(k * 0.173), 0, 1); mean += v / 64; lo = Math.min(lo, v); } }
+      const live = !!pulse && Q.tier === 'high' && eq >= 0.95;
       const c = mk(E0.floor.width, E0.floor.height), g = c.getContext('2d');
-      g.drawImage(E0.floor, 0, 0); g.globalCompositeOperation = 'lighter'; g.globalAlpha = Math.max(0, Math.min(1, mean)); g.drawImage(E0.glow, 0, 0, c.width, c.height);
-      E0.floorImg = c; E0.glowImg = null; E0.bakedGlow = true;
+      g.drawImage(E0.floor, 0, 0); g.globalCompositeOperation = 'lighter'; g.globalAlpha = live ? lo : mean; g.drawImage(E0.glow, 0, 0, c.width, c.height);
+      E0.floorImg = c;
+      if (live) { E0.pulseImg = E0.glow; E0.pulseMin = lo; }
     }
     if (typeof createImageBitmap === 'function') {
       createImageBitmap(E0.floorImg).then((b) => { if (env === E0) E0.floorImg = b; }).catch(() => {});
-      if (E0.glowImg) createImageBitmap(E0.glowImg).then((b) => { if (env === E0 && E0.glowImg) E0.glowImg = b; }).catch(() => {});
+      if (E0.pulseImg) createImageBitmap(E0.pulseImg).then((b) => { if (env === E0 && E0.pulseImg) E0.pulseImg = b; }).catch(() => {});
     }
     G.ui.moteColors = env.motes || null;
     return env;
@@ -205,6 +208,8 @@ export function createRenderer(G, canvas, opts = {}) {
   let listN = 0;
   const push = (y, f) => { let o = list[listN]; if (!o) o = list[listN] = { y: 0, f: null }; o.y = y; o.f = f; listN++; };
 
+  const darkO = { color: '#04051a', a: 0.8 };
+  const AMBIENT_LIFT = 0.84;
   const PROF = R.prof = {};
   let pT = 0;
   const mark = (k) => { if (!R.profOn) return; if (R.profFlush) ctx.getImageData(0, 0, 1, 1); const n = performance.now(); PROF[k] = (PROF[k] || 0) * 0.95 + (n - pT) * 0.05; pT = n; };
@@ -230,7 +235,6 @@ export function createRenderer(G, canvas, opts = {}) {
     P.world(ctx);
     if (E) {
       blitVisible(E.floorImg || E.floor, E);
-      if (E.glowImg) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = clamp(E.glowPulse ? E.glowPulse(t) : 0.8, 0, 1); blitVisible(E.glowImg, E); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
     }
     fx.drawGround(ctx, P);
     mark('floor');
@@ -309,7 +313,18 @@ export function createRenderer(G, canvas, opts = {}) {
     fx.lights(lp);
     const pl = pick(M.powers, 'powerLights'); if (pl) pl(G, lp);
     const fl = pick(M.enemies, 'foeFxLights'); if (fl) { const arr = fl(G); if (arr) for (const l of arr) lp(l.x, l.y, l.r, l.color, l.i); }
-    light.render(ctx, cam, { W, H, scale: SCALE }, E?.dark, Q.lightRes);
+    // ambient lift: regions paint their darkness at 0.74..0.84; the painted floors should read, so the engine
+    // scales it (settings.brightness 0..2 on top, 1 = default)
+    const dk = E?.dark, br = G.settings?.brightness ?? 1;
+    darkO.color = dk?.color || '#04051a'; darkO.a = clamp((dk?.a ?? 0.8) * AMBIENT_LIFT * clamp(2 - br, 0.3, 1.6), 0, 0.95);
+    const pk = E && E.pulseImg ? clamp(E.glowPulse(t), 0, 1) - E.pulseMin : 0;
+    light.render(ctx, cam, { W, H, scale: SCALE }, darkO, Q.lightRes, pk > 0.01 ? (lc, vr) => {
+      // the floor glow's pulse above its baked minimum, drawn at the light layer's resolution (visible part only)
+      const x0 = Math.max(E.origin.x, vr.x0), y0 = Math.max(E.origin.y, vr.y0), x1 = Math.min(E.origin.x + E.w, vr.x1), y1 = Math.min(E.origin.y + E.h, vr.y1);
+      if (x1 <= x0 || y1 <= y0) return;
+      const img = E.pulseImg, kx = img.width / E.w, ky = img.height / E.h;
+      lc.globalAlpha = pk; lc.drawImage(img, (x0 - E.origin.x) * kx, (y0 - E.origin.y) * ky, (x1 - x0) * kx, (y1 - y0) * ky, x0, y0, x1 - x0, y1 - y0); lc.globalAlpha = 1;
+    } : null);
     mark('light');
     // ---- above the darkness
     if (E && E.ambient) E.ambient(ctx, G, t);

@@ -278,6 +278,7 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 window.__devStep = (n) => { for (let i = 0; i < n; i++) frame(performance.now()); };
+setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(() => { window.__ready = true; })), 300);
 </script>
 </body>
 </html>

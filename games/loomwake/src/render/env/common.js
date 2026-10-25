@@ -303,8 +303,8 @@ export function grain(kind = 'stone', size = 256) {
   const hsh = (i, j, per) => { i = ((i % per) + per) % per; j = ((j % per) + per) % per; let n = Math.imul(i, 374761393) + Math.imul(j, 668265263) + seed; n = Math.imul(n ^ (n >>> 13), 1274126177); return ((n ^ (n >>> 16)) >>> 0) / 4294967296; };
   const sm = (t) => t * t * (3 - 2 * t);
   const vn = (x, y, per) => { const xi = Math.floor(x), yi = Math.floor(y), xf = sm(x - xi), yf = sm(y - yi); const a = hsh(xi, yi, per), b = hsh(xi + 1, yi, per), cc = hsh(xi, yi + 1, per), dd = hsh(xi + 1, yi + 1, per); return (a + (b - a) * xf) * (1 - yf) + (cc + (dd - cc) * xf) * yf; };
-  const oct = kind === 'cloth' ? [[64, 0.2], [16, 0.5], [4, 0.3]] : kind === 'metal' ? [[32, 0.45], [8, 0.3], [2, 0.25]] : [[16, 0.5], [8, 0.3], [4, 0.2]];
-  const strength = kind === 'metal' ? 0.5 : kind === 'cloth' ? 0.35 : 0.42;
+  const oct = kind === 'soft' ? [[4, 0.5], [8, 0.35], [16, 0.15]] : kind === 'cloth' ? [[64, 0.2], [16, 0.5], [4, 0.3]] : kind === 'metal' ? [[32, 0.45], [8, 0.3], [2, 0.25]] : [[16, 0.5], [8, 0.3], [4, 0.2]];
+  const strength = kind === 'metal' ? 0.5 : kind === 'cloth' ? 0.35 : kind === 'soft' ? 0.7 : 0.42;
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     let n = 0;
     for (const [per, w] of oct) n += vn((x / size) * per, (y / size) * per, per) * w;
@@ -385,4 +385,33 @@ export function sparse(c, T = 128) {
 }
 export function drawSparse(ctx, sp, ox, oy) {
   for (const t of sp.tiles) ctx.drawImage(bitmapOf(t.c), Math.round(ox + t.x), Math.round(oy + t.y));
+}
+
+// ---------------------------------------------------------------- hand-laid slabs
+// Rows of uneven height, slabs of uneven width, each corner nudged: no two seams line up,
+// and the dark ground shows through the uneven gaps like grout. Returns [{ pts, cx, cy, w, h, row }].
+export function slabs(b, r, { rowH = [70, 110], colW = [90, 200], jitter = 6, inset = 2.5, pad = 0 } = {}) {
+  const out = [];
+  let row = 0;
+  for (let y = b.y0 - rowH[1] - pad; y < b.y1 + rowH[1] + pad; row++) {
+    const h = r.range(rowH[0], rowH[1]);
+    for (let x = b.x0 - pad - r() * colW[1]; x < b.x1 + colW[1] + pad;) {
+      const w = r.range(colW[0], colW[1]), j = () => r.range(-jitter, jitter);
+      out.push({ pts: [[x + inset + j(), y + inset + j()], [x + w - inset + j(), y + inset + j()], [x + w - inset + j(), y + h - inset + j()], [x + inset + j(), y + h - inset + j()]], cx: x + w / 2, cy: y + h / 2, w, h, row });
+      x += w;
+    }
+    y += h;
+  }
+  return out;
+}
+// Paint one slab: base colour, soft light from the upper left, a lit top-left edge and a dark lower-right edge.
+export function paintSlab(g, pts, base, o = {}) {
+  const [a, b2, c, d] = pts, cx = (a[0] + c[0]) / 2, cy = (a[1] + c[1]) / 2, w = Math.abs(b2[0] - a[0]), h = Math.abs(d[1] - a[1]);
+  polyPath(g, pts); g.fillStyle = base; g.fill();
+  const lg = g.createLinearGradient(cx - w * 0.5, cy - h * 0.5, cx + w * 0.5, cy + h * 0.5);
+  lg.addColorStop(0, o.hi || 'rgba(255,240,220,0.14)'); lg.addColorStop(0.5, 'rgba(0,0,0,0)'); lg.addColorStop(1, o.lo || 'rgba(0,0,10,0.32)');
+  g.fillStyle = lg; g.fill();
+  g.lineWidth = o.edge || 1.6; g.lineCap = 'round';
+  g.strokeStyle = o.edgeHi || 'rgba(255,240,220,0.22)'; g.beginPath(); g.moveTo(d[0], d[1]); g.lineTo(a[0], a[1]); g.lineTo(b2[0], b2[1]); g.stroke();
+  g.strokeStyle = o.edgeLo || 'rgba(0,0,0,0.5)'; g.beginPath(); g.moveTo(b2[0], b2[1]); g.lineTo(c[0], c[1]); g.lineTo(d[0], d[1]); g.stroke();
 }

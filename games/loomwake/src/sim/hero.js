@@ -22,7 +22,7 @@
 import { BASE_STATS } from '../config.js';
 import { clamp, lerp } from '../core/math.js';
 import { HOOKS, fire, hitFoes, damageFoe, addStatus, tickStatuses, targetable } from './combat.js';
-import { moveEntity, insideChamber } from './world.js';
+import { moveEntity, insideChamber, safeSpot } from './world.js';
 import blade from './weapons/blade.js';
 
 const WEAPONS = {};
@@ -63,7 +63,7 @@ function clearTransient(h) {
 
 export function resetHero(G, { x, y, full = false } = {}) {
   const h = G.hero;
-  if (x != null) { h.x = x; h.y = y; h.safe = { x, y }; }
+  if (x != null) { const p = safeSpot(G.chamber, x, y, h.r); h.x = p.x; h.y = p.y; h.safe = { x: p.x, y: p.y }; h.vx = h.vy = h.kx = h.ky = 0; }
   clearTransient(h);
   const s = recomputeStats(G);
   h.dashCharges = s.dashCharges; h.dashCd = 0;
@@ -78,7 +78,7 @@ export function resetHero(G, { x, y, full = false } = {}) {
   G.bus.emit('heroReset', { x: h.x, y: h.y, full });
 }
 
-export function placeHero(G, x, y) { const h = G.hero; h.x = x; h.y = y; h.safe = { x, y }; h.vx = h.vy = h.kx = h.ky = 0; }
+export function placeHero(G, x, y) { const h = G.hero; const p = safeSpot(G.chamber, x, y, h.r); h.x = p.x; h.y = p.y; h.safe = { x: p.x, y: p.y }; h.vx = h.vy = h.kx = h.ky = 0; }
 
 export function respawnHero(G, x = G.hero.x, y = G.hero.y) {
   const h = G.hero;
@@ -86,7 +86,7 @@ export function respawnHero(G, x = G.hero.x, y = G.hero.y) {
   clearTransient(h);
   h.dead = false; h.hp = Math.max(h.hp, 1);
   h.state = 'respawn'; h.st = 0; h.inv = G.cfg.hero.respawnTime + 0.5;
-  G.bus.emit('respawn', { x, y });
+  G.bus.emit('respawn', { x: h.x, y: h.y });
 }
 
 const ACTIONS = ['attack', 'special', 'snare', 'dash', 'call'];

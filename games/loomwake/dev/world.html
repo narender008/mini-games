@@ -73,7 +73,7 @@ function bench(n = 30) {
     const t = 3 + i / 60;
     let t0 = performance.now(); ctx.setTransform(1, 0, 0, 1, 0, 0); P.back(ctx, cam, t); flush(); out.back += performance.now() - t0;
     t0 = performance.now(); toWorld(); ctx.drawImage(P.floor, P.origin.x, P.origin.y, P.w, P.h); ctx.globalCompositeOperation = 'lighter'; ctx.drawImage(P.glow, P.origin.x, P.origin.y, P.w, P.h); ctx.globalCompositeOperation = 'source-over'; flush(); out.floor += performance.now() - t0;
-    t0 = performance.now(); for (const p of P.props) ctx.drawImage(p.img, p.x - p.ox, p.y - p.oy, p.w, p.h); for (const d of ch.doors) drawDoor(ctx, d, ch, t); flush(); out.props += performance.now() - t0;
+    t0 = performance.now(); for (const p of P.props) p.draw ? p.draw(ctx, t) : ctx.drawImage(p.img, p.x - p.ox, p.y - p.oy, p.w, p.h); for (const d of ch.doors) drawDoor(ctx, d, ch, t); flush(); out.props += performance.now() - t0;
     t0 = performance.now(); P.ambient(ctx, { t, hero, chamber: ch }, t); flush(); out.ambient += performance.now() - t0;
     t0 = performance.now(); ctx.setTransform(1, 0, 0, 1, 0, 0); P.front(ctx, cam, t); flush(); out.front += performance.now() - t0;
   }
@@ -105,7 +105,7 @@ function draw(t) {
   ctx.drawImage(P.floor, P.origin.x, P.origin.y, P.w, P.h);
   if (P.glow) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = P.glowPulse(t); ctx.drawImage(P.glow, P.origin.x, P.origin.y, P.w, P.h); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
   // y-sorted: props, doors, hero dot
-  const list = P.props.map((p) => ({ y: p.sortY, f: () => ctx.drawImage(p.img, p.x - p.ox, p.y - p.oy, p.w, p.h) }));
+  const list = P.props.map((p) => ({ y: p.sortY, f: () => (p.draw ? p.draw(ctx, t) : ctx.drawImage(p.img, p.x - p.ox, p.y - p.oy, p.w, p.h)) }));
   for (const d of ch.doors) list.push({ y: d.y, f: () => drawDoor(ctx, d, ch, t) });
   list.push({ y: hero.y, f: () => {
     ctx.fillStyle = 'rgba(4,4,20,0.45)'; ctx.beginPath(); ctx.ellipse(hero.x, hero.y, 22, 8, 0, 0, Math.PI * 2); ctx.fill();

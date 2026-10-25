@@ -69,7 +69,7 @@ const every = (rate) => !frozen && R() < rate * frameDt;
 const GROUND = {
   sunspot(c, p, G, P) {
     const k = fade(p), t = P.t, r = p.r, nd = p.pulse > 0;
-    pool(c, p.x, p.y, r * 1.15, [[0, '#fff1c4', 0.34 * k], [0.45, '#ffc35a', 0.22 * k], [0.85, '#ff8a2a', 0.1 * k], [1, '#ff8a2a', 0]]);
+    pool(c, p.x, p.y, r * 1.15, [[0, '#fff1c4', 0.5 * k], [0.45, '#ffc35a', 0.36 * k], [0.85, '#ff8a2a', 0.16 * k], [1, '#ff8a2a', 0]]);
     // scorched rim and slow rays turning on the floor
     c.save(); c.translate(p.x, p.y); c.scale(1, SQ);
     c.globalCompositeOperation = 'lighter';
@@ -257,7 +257,8 @@ function groundStatus(c, e, P) {
 const AIR = {
   sunspot(c, p, G, P) {
     const k = fade(p);
-    P.glow(c, p.x, p.y - 10, p.r * 1.4, '#ffc35a', 0.32 * k);
+    P.glow(c, p.x, p.y - 10, p.r * 1.5, '#ffc35a', 0.45 * k);
+    P.glow(c, p.x, p.y, p.r * 0.6, '#fff1c4', 0.3 * k * (0.85 + 0.15 * Math.sin(P.t * 4 + p.seed)));
     if (every(10 * k)) { const a = R() * TAU, d = R() * p.r * 0.85; P.fx.part({ x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d * SQ, z: 2, vz: 40 + R() * 50, g: -20, life: 0.9 + R() * 0.6, size: 2 + R() * 2, color: R() < 0.5 ? '#fff1c4' : '#ffc35a', type: 'ember', drag: 1 }); }
   },
   riptide(c, p, G, P) { P.glow(c, p.x, p.y, p.r * 1.6, '#5ec8ff', 0.18 * fade(p)); if (every(6)) spray(P, p.x, p.y, p.r); },
@@ -367,6 +368,20 @@ const AIR = {
   cyclone(c, p, G, P) {
     const k = fade(p, 0.2, 0.4), col = cyCol(p), r = p.r, H = r * 2.6, t = P.t;
     c.save(); c.lineCap = 'round';
+    // the funnel's body: a soft column that widens as it climbs, swaying with the rings
+    const sw = (u) => Math.sin(t * 3 + u * 4 + p.seed) * r * 0.25 * u, wd = (u) => r * (0.4 + 0.9 * u * u);
+    const fg = c.createLinearGradient(0, p.y, 0, p.y - H);
+    fg.addColorStop(0, hexA(col, 0.22 * k)); fg.addColorStop(0.6, hexA(col, 0.1 * k)); fg.addColorStop(1, hexA(col, 0));
+    c.fillStyle = fg; c.beginPath();
+    for (let j = 0; j <= 8; j++) { const u = j / 8; c.lineTo(p.x + sw(u) - wd(u), p.y - u * H); }
+    for (let j = 8; j >= 0; j--) { const u = j / 8; c.lineTo(p.x + sw(u) + wd(u), p.y - u * H); }
+    c.closePath(); c.fill();
+    // wind streaks spiralling up it
+    for (let j = 0; j < 5; j++) {
+      const ph = (t * 1.3 + j / 5) % 1, a = t * 10 + j * 2;
+      c.strokeStyle = hexA('#ffffff', 0.35 * k * Math.sin(Math.PI * ph)); c.lineWidth = 1.5;
+      c.beginPath(); c.ellipse(p.x + sw(ph), p.y - ph * H, wd(ph) * 1.05, wd(ph) * 0.3, 0, a, a + 1.4); c.stroke();
+    }
     const N = 9;
     for (let i = 0; i < N; i++) {
       const u = i / (N - 1), y = p.y - u * H, rr = r * (0.28 + 0.9 * u * u + 0.12);
@@ -716,8 +731,8 @@ function attach(G, P) {
   G.bus.on('callFx', (e = {}) => {
     const pat = PATRONS[e.patron], c = pat?.color || '#ffd27a', c2 = pat?.color2 || '#fff1c4';
     const x = e.x ?? G.hero?.x ?? 0, y = e.y ?? G.hero?.y ?? 0;
-    fx.flash(x, y - 60, 900, c, 0.7, 1.6);
-    fx.ring(x, y, 30, 520, 0.9, c, 16); fx.ring(x, y, 20, 380, 0.7, c2, 6);
+    fx.flash(x, y - 60, 800, c, 0.6, 1.3);
+    fx.ring(x, y, 30, 520, 0.8, c, 10); fx.ring(x, y, 20, 380, 0.6, c2, 4);
     for (let i = 0; i < 30; i++) { const a = (i / 30) * TAU; fx.part({ x, y, z: 60, vx: Math.cos(a) * 600, vy: Math.sin(a) * 380, vz: 300, g: 400, life: 0.8, size: 3, color: i % 2 ? c : c2, type: 'spark', drag: 2.5 }); }
   });
   G.bus.on('status', (e = {}) => {
@@ -850,7 +865,7 @@ function paintSigil(pat, px) {
   c.fillStyle = g; c.beginPath(); c.arc(0, 0, Rd, 0, TAU); c.fill();
   // a woven warp-and-weft texture inside the disc
   c.save(); c.beginPath(); c.arc(0, 0, Rd, 0, TAU); c.clip();
-  c.globalAlpha = 0.09; c.strokeStyle = col2; c.lineWidth = Math.max(0.5, px / 140);
+  c.globalAlpha = 0.055; c.strokeStyle = col2; c.lineWidth = Math.max(0.5, px / 140);
   const step = Math.max(3, px / 22);
   for (let i = -Rd; i <= Rd; i += step) { c.beginPath(); c.moveTo(i, -Rd); c.lineTo(i, Rd); c.stroke(); c.beginPath(); c.moveTo(-Rd, i + step / 2); c.lineTo(Rd, i + step / 2); c.stroke(); }
   c.globalAlpha = 1;
@@ -864,7 +879,7 @@ function paintSigil(pat, px) {
   c.beginPath(); c.arc(0, 0, Rd * 0.88, 0, TAU); c.stroke(); c.restore();
   // emblem: mask -> coloured, bevelled, drop-shadowed
   const S = Math.round(Rd * 1.36), M = mkCanvas(px, px), m = M.getContext('2d');
-  m.translate(R0, R0); m.scale(S / 2 * 0.98, S / 2 * 0.98);
+  m.translate(R0, R0); m.scale(S * 0.72, S * 0.72);
   (EMBLEM[pat.sigil] || EMBLEM.sun)(m);
   m.setTransform(1, 0, 0, 1, 0, 0);
   const Cv = mkCanvas(px, px), cc = Cv.getContext('2d');

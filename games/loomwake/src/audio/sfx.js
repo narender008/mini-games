@@ -718,6 +718,84 @@ def('ui_upgrade', 1.2, (E, t, o, out) => { // a Tapestry upgrade woven
 }, { send: 0.35 });
 
 // ======================================================================
+// Event-specific extras (sibling events: weaponFx, foe*, boss*, power)
+// ======================================================================
+def('spear_throw', 0.6, (E, t, o, out) => { const v = V(o); noise(E, t, out, { f: 900, f1: 3200, q: 2, a: 0.02, d: 0.35, peak: 0.4 * v }); return tone(E, t, out, { f: 1400, f1: 900, glide: 0.4, a: 0.01, d: 0.4, peak: 0.04 * v, vib: [18, 30] }); }, { win: 0.1 });
+def('spear_stick', 0.4, (E, t, o, out) => { const v = V(o); tone(E, t, out, { type: 'triangle', f: 260, f1: 190, glide: 0.05, a: 0.001, d: 0.12, peak: 0.4 * v }); pluck(E, t, out, { f: 330, len: 0.5, bright: 0.7, peak: 0.2 * v, d: 0.3, bend: 0.98 }); return noise(E, t, out, { f: 900, q: 3, a: 0.001, d: 0.06, peak: 0.4 * v }); });
+def('chakram_return', 0.5, (E, t, o, out) => noise(E, t, out, { f: 900, f1: 1800, q: 3, a: 0.2, d: 0.2, peak: 0.22 * V(o), am: [30, 0.9] }), { win: 0.1 });
+def('chakram_ricochet', 0.3, (E, t, o, out) => { const v = V(o); partials(E, t, out, { f: rnd(1700, 2300), ratios: [1, 2.3, 3.9], d: 0.22, peak: 0.08 * v }); return noise(E, t, out, { ftype: 'highpass', f: 4000, a: 0.001, d: 0.02, peak: 0.3 * v }); }, { win: 0.05, cap: 3 });
+def('chakram_spin', 1.0, (E, t, o, out) => { const v = V(o); noise(E, t, out, { f: 1400, q: 2.5, a: 0.05, hold: 0.6, r: 0.2, peak: 0.3 * v, am: [34, 0.9] }); return tone(E, t, out, { type: 'triangle', f: 620, a: 0.05, hold: 0.6, r: 0.2, peak: 0.035 * v, vib: [34, 50] }); }, { win: 0.3 });
+def('bow_perfect', 0.8, (E, t, o, out) => { const v = V(o); fm(E, t, out, { f: 1760, ratio: 2, index: 1.2, a: 0.002, d: 0.6, peak: 0.07 * v }); fm(E, t, out, { f: 2637, ratio: 2, index: 1, a: 0.002, d: 0.5, peak: 0.05 * v }); return noise(E, t, out, { f: 5000, f1: 2000, q: 3, a: 0.002, d: 0.2, peak: 0.25 * v }); }, { send: 0.25 });
+def('charge_full', 0.4, (E, t, o, out) => K.celesta(E, t, out, 88, 0.5 * V(o), { d: 0.4 }), { win: 0.2, cap: 1 });
+def('arrow_wall', 0.3, (E, t, o, out) => { const v = V(o); tone(E, t, out, { type: 'triangle', f: 300, f1: 200, glide: 0.04, a: 0.001, d: 0.08, peak: 0.3 * v }); return noise(E, t, out, { f: 1200, q: 2, a: 0.001, d: 0.05, peak: 0.3 * v }); }, { win: 0.05, cap: 3 });
+def('hymn', 1.0, (E, t, o, out) => K.choir(E, t, out, [74, 81], 0.4, 0.8 * V(o), { vowel: 'a', a: 0.03, r: 0.6 }), { send: 0.4, win: 0.2 });
+def('uppercut', 0.4, (E, t, o, out) => { const v = V(o); noise(E, t, out, { f: 400, f1: 3000, q: 1, a: 0.01, d: 0.18, peak: 0.5 * v }); return tone(E, t + 0.03, out, { f: 120, f1: 220, glide: 0.1, a: 0.003, d: 0.12, peak: 0.3 * v }); }, { win: 0.05 });
+def('comet', 0.9, (E, t, o, out) => { const v = V(o); K.swell(E, t, out, 0.2, 0.3 * v, { f: 600, f1: 6000 }); tone(E, t + 0.2, out, { f: 110, f1: 40, glide: 0.3, a: 0.002, d: 0.4, peak: 0.7 * v }); return noise(E, t + 0.2, out, { color: 'brown', ftype: 'lowpass', f: 1600, f1: 200, a: 0.001, d: 0.4, peak: 0.6 * v }); }, { send: 0.2 });
+def('dodge', 0.3, (E, t, o, out) => { const v = V(o); noise(E, t, out, { f: 2400, f1: 5000, q: 2, a: 0.01, d: 0.12, peak: 0.18 * v }); return tone(E, t, out, { f: 1568, f1: 2093, glide: 0.08, a: 0.004, d: 0.15, peak: 0.04 * v }); }, { win: 0.15, cap: 1 });
+def('ward', 0.5, (E, t, o, out) => { const v = V(o); partials(E, t, out, { f: 392, ratios: [1, 1.5, 2.25], d: 0.4, peak: 0.1 * v }); return noise(E, t, out, { color: 'brown', ftype: 'lowpass', f: 700, a: 0.002, d: 0.15, peak: 0.4 * v }); }, { win: 0.1, cap: 2 });
+def('respawn', 2.4, (E, t, o, out) => { // the golden thread pulls Iri home to the Loomhall
+  const v = V(o);
+  K.swell(E, t, out, 0.9, 0.3 * v, { f: 300, f1: 7000 });
+  [62, 69, 74, 76].forEach((m, i) => K.harp(E, t + 0.85 + i * 0.09, out, m, 0.55 * v, { len: 2 }));
+  return K.pad(E, t + 0.85, out, [50, 57, 62, 64], 1.2, 0.7 * v, { bright: 1400, a: 0.1, r: 1.2 });
+}, { prio: 2, send: 0.5, cap: 1, win: 2 });
+def('fall', 1.2, (E, t, o, out) => { const v = V(o); noise(E, t, out, { f: 2400, f1: 300, q: 1.2, a: 0.02, d: 0.8, peak: 0.35 * v }); return tone(E, t, out, { f: 600, f1: 90, glide: 0.9, a: 0.02, d: 0.9, peak: 0.05 * v }); }, { win: 0.2, cap: 2, send: 0.3 });
+def('wall_slam', 0.5, (E, t, o, out) => { // knocked into a wall: a thud and a crack
+  const v = V(o);
+  tone(E, t, out, { f: 100, f1: 45, glide: 0.1, a: 0.002, d: 0.18, peak: 0.7 * v });
+  noise(E, t, out, { color: 'brown', ftype: 'lowpass', f: 1400, f1: 300, a: 0.001, d: 0.18, peak: 0.7 * v });
+  return noise(E, t, out, { f: 3000, q: 2, a: 0.001, d: 0.04, peak: 0.35 * v });
+}, { win: 0.06, cap: 3 });
+def('foe_swing', 0.4, (E, t, o, out) => { // a heavy foe weapon cuts the air (greatsword, censer, hammer)
+  const v = V(o), p = Pm(o);
+  noise(E, t, out, { f: 260 * p, f1: 1500 * p, q: 0.9, a: 0.04, d: 0.22, peak: 0.5 * v });
+  return noise(E, t, out, { color: 'brown', ftype: 'lowpass', f: 300, a: 0.03, d: 0.2, peak: 0.35 * v });
+}, { win: 0.06, cap: 3 });
+def('foe_dash', 0.4, (E, t, o, out) => { const v = V(o); noise(E, t, out, { f: 1800, f1: 300, q: 0.8, a: 0.01, d: 0.2, peak: 0.42 * v }); return tone(E, t, out, { f: 830, f1: 415, glide: 0.15, a: 0.01, d: 0.15, peak: 0.03 * v, vib: [30, 60] }); }, { win: 0.08, cap: 2 });
+def('inhale', 0.9, (E, t, o, out) => { const d = clamp(o.dur ?? 0.6, 0.3, 1.2), v = V(o); noise(E, t, out, { color: 'pink', f: 1600, f1: 300, q: 1, a: d * 0.9, d: 0.05, peak: 0.35 * v }); return tone(E, t, out, { type: 'sawtooth', f: 60, f1: 90, glide: d, a: d * 0.9, d: 0.05, peak: 0.08 * v, ftype: 'lowpass', ff: 300 }); }, { win: 0.2, cap: 2 });
+def('roar', 1.2, (E, t, o, out) => { // Loomhulk enrages
+  const v = V(o);
+  noise(E, t, out, { f: 300, f1: 500, q: 2, a: 0.1, hold: 0.5, r: 0.4, peak: 0.45 * v, am: [24, 0.9] });
+  tone(E, t, out, { type: 'sawtooth', f: 55, f1: 48, a: 0.1, hold: 0.5, r: 0.4, peak: 0.2 * v, ftype: 'lowpass', ff: 600 });
+  return partials(E, t, out, { f: 140, ratios: [1, 1.48, 2.1], d: 0.9, peak: 0.06 * v });
+}, { win: 0.5, cap: 1, send: 0.2 });
+def('snap', 0.5, (E, t, o, out) => { // a black thread snaps
+  const v = V(o);
+  noise(E, t, out, { ftype: 'highpass', f: 2500, a: 0.001, d: 0.05, peak: 0.6 * v });
+  pluck(E, t, out, { f: 880, len: 0.4, bright: 0.95, peak: 0.25 * v, d: 0.25, bend: 0.8 });
+  return tone(E, t, out, { f: 1200, f1: 300, glide: 0.25, a: 0.001, d: 0.25, peak: 0.05 * v });
+}, { prio: 2, win: 0.1, cap: 2, send: 0.15 });
+def('aurum_sweep', 0.9, (E, t, o, out) => { // the great hammer sweeps
+  const v = V(o);
+  noise(E, t, out, { f: 180, f1: 1400, q: 0.8, a: 0.15, d: 0.35, peak: 0.7 * v });
+  noise(E, t, out, { color: 'brown', ftype: 'lowpass', f: 260, a: 0.1, d: 0.4, peak: 0.6 * v });
+  return partials(E, t + 0.15, out, { f: 260, ratios: [1, 2.03, 2.8], d: 0.6, peak: 0.05 * v });
+}, { prio: 2, cap: 2, send: 0.2 });
+def('aurum_breath', 1.6, (E, t, o, out) => { // a gout of forge fire
+  const v = V(o);
+  noise(E, t, out, { color: 'brown', ftype: 'lowpass', f: 300, f1: 2200, a: 0.12, hold: 0.9, r: 0.4, peak: 0.9 * v, am: [11, 0.5] });
+  return noise(E, t, out, { ftype: 'highpass', f: 2200, a: 0.15, hold: 0.8, r: 0.4, peak: 0.2 * v, am: [31, 0.8] });
+}, { prio: 2, cap: 1, win: 0.3, send: 0.2 });
+def('sable_dash', 0.5, (E, t, o, out) => { // his dash: Iri's whoosh, detuned and dark
+  const v = V(o);
+  noise(E, t, out, { f: 1900, f1: 280, q: 0.8, a: 0.01, d: 0.2, peak: 0.5 * v });
+  tone(E, t, out, { type: 'sawtooth', f: 440, f1: 220, glide: 0.18, a: 0.01, d: 0.18, peak: 0.04 * v, ftype: 'lowpass', ff: 1400 });
+  return tone(E, t, out, { f: 466, f1: 233, glide: 0.18, a: 0.01, d: 0.18, peak: 0.03 * v });
+}, { prio: 2, win: 0.08, cap: 2 });
+def('braid', 4.0, (E, t, o, out) => { // the true ending's choice: two threads braided, gold and black, resolving
+  const v = V(o);
+  for (let i = 0; i < 8; i++) { pluck(E, t + i * 0.18, out, { f: mtof([62, 66, 69, 74][i % 4] + (i > 3 ? 12 : 0)), len: 1.6, bright: 0.7, peak: 0.25 * v, d: 1.2 }); pluck(E, t + i * 0.18 + 0.09, out, { f: mtof([55, 59, 62, 66][i % 4] + (i > 3 ? 12 : 0)), len: 1.6, bright: 0.4, peak: 0.2 * v, d: 1.2 }); }
+  K.choir(E, t + 1.4, out, [62, 66, 69, 74], 2.2, 0.9 * v, { vowel: 'o', vowel2: 'a', a: 0.8, r: 2 });
+  return K.bell(E, t + 1.5, out, 86, 0.6 * v, { d: 4 });
+}, { prio: 2, cap: 1, win: 3, send: 0.6, duck: 0.1 });
+def('run_start', 2.0, (E, t, o, out) => { // through the Dreamdoor
+  const v = V(o);
+  K.swell(E, t, out, 0.8, 0.4 * v, { f: 200, f1: 6000 });
+  tone(E, t + 0.8, out, { f: 70, f1: 35, glide: 0.4, a: 0.002, d: 0.6, peak: 0.6 * v });
+  return K.celesta(E, t + 0.8, out, 81, 0.6 * v, { d: 1.6 });
+}, { prio: 2, cap: 1, win: 2, send: 0.5 });
+
+// ======================================================================
 // play
 // ======================================================================
 export const SFX_ALIASES = {
@@ -725,6 +803,7 @@ export const SFX_ALIASES = {
   shatter: 'veyl_shatter', click: 'ui_click', hover: 'ui_hover', back: 'ui_back', confirm: 'ui_confirm', error: 'ui_error',
   open: 'ui_open', close: 'ui_close', select: 'ui_confirm', death: 'death_sting', clear: 'chamber_clear', boon: 'boon_take',
   break: 'armor_break', armorBreak: 'armor_break', recall: 'snare_recall', snare: 'snare_throw', snareHit: 'snare_hit',
+  deathDefiance: 'death_defy', wardHit: 'ward', swoosh: 'foe_swing',
 };
 
 export function playSfx(E, name, o = {}) {

@@ -106,6 +106,7 @@ export function createUI(G, api = {}) {
   };
   ui.screens = screens;
   const cards = createCards(ui);
+  ui.cardsBusy = () => { try { return !!cards.busy(); } catch { return false; } };
   const touch = createTouch(ui);
   ui.cards = cards;
   ui.toast = (...a) => cards.toast(...a);
@@ -133,7 +134,12 @@ export function createUI(G, api = {}) {
     on('pickup', (p) => cards.pickup(p));
     on('heroHurt', (p) => screens.hud.hurt?.(p));
     on('bark', (p) => screens.hud.bark?.(p));
-    on('line', (p) => { if (!G.dialogue) screens.hud.bark?.({ speaker: p.speaker, lines: [{ text: p.text }], kind: 'line' }); });
+    // a spoken line outside a conversation is shown as a bark; lines that
+    // open a conversation (G.dialogue is set in the same tick) are not
+    on('line', (p) => {
+      if (!p || !p.text || G.dialogue || G.scene === 'dialogue' || p.kind === 'dialogue' || p.kind === 'memory') return;
+      queueMicrotask(() => { if (!G.dialogue && G.scene !== 'dialogue' && G.scene !== 'title') screens.hud.bark?.({ speaker: p.speaker, lines: [{ text: p.text, mood: p.mood }], kind: 'line' }); });
+    });
     on('ui', (p) => {
       if (p.station && p.station !== 'archive' && p.station !== 'weaver' && p.station !== 'codex') ui.open('station', p.station);
       if (p.open) {

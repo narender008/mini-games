@@ -155,7 +155,7 @@ function ksMake(E, key, freq, dur, bright) {
   let pk = 0; for (let i = 0; i < Math.min(len, N * 6); i++) pk = Math.max(pk, Math.abs(d[i]));
   if (pk > 0) for (let i = 0; i < len; i++) d[i] /= pk;
   for (let i = 0; i < 400 && i < len; i++) d[len - 1 - i] *= i / 400;
-  b.ratio = N / (sr / freq); // playback-rate correction to the exact pitch
+  b.ratio = (N + s) / (sr / freq); // playback-rate correction to the exact pitch (the 2-tap average adds s samples of delay)
   B.cachePut(E, key, b);
   return b;
 }
