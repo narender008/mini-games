@@ -244,13 +244,27 @@ export function createBrain({ getG, act, C, log = null, cheat = false, give = nu
       if (!homeSide.some((i) => st(i.id))) {
         aimAt = [T.ox + T.w / 2, T.oy + T.h / 2];
         for (const i of homeSide) if (build('cablestation', i.id, `cable to ${id}`, true)) return true;
+        if (!homeSide.some((i) => bestSpot('cablestation', i.id))) return clearFor(homeSide[0].id);
         return false;
       }
       const near = homeSide.find((i) => st(i.id));
       aimAt = [near.ox + near.w / 2, near.oy + near.h / 2];
-      if (!st(id)) return build('cablestation', id, `cable to ${id}`, true);
+      if (!st(id)) return build('cablestation', id, `cable to ${id}`, true) || (!bestSpot('cablestation', id) && clearFor(id));
     } finally { aimAt = null; }
     return false;
+  }
+
+  // No room for a cable station: knock down the cheapest building nearest the far end.
+  const CHEAP = new Set(['cottage', 'lumber', 'quarry', 'sawmill', 'well', 'warehouse', 'tavern', 'windmill', 'farm']);
+  function clearFor(islId) {
+    const I = island(islId);
+    const list = G.buildings.filter((b) => b.island === islId && CHEAP.has(b.type) && b.state === 'built')
+      .sort((a, b) => Math.hypot(I.ox + a.u - aimAt[0], I.oy + a.v - aimAt[1]) - Math.hypot(I.ox + b.u - aimAt[0], I.oy + b.v - aimAt[1]));
+    const b = list[0];
+    if (!b) return false;
+    const r = act.demolish(b.id);
+    if (r.ok) { tally('demolish for cable'); say(`demolish ${b.type} #${b.id} on ${islId} to make room for a cable station`); spotCache.clear(); noSpot.clear(); }
+    return r.ok;
   }
 
   // ---------- trade ----------

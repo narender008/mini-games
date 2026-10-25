@@ -13,7 +13,7 @@
 .sfp[hidden] { display: none !important; }
 .sfp.in { opacity: 1; }
 .sfp *, .sfp *::before, .sfp *::after { box-sizing: border-box; }
-.sfp button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+:where(.sfp) button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .sfp button:disabled { cursor: default; }
 .sfp :focus-visible { outline: 2px solid #ffe6a0; outline-offset: 2px; }
 .sfp-veil { position: absolute; inset: 0; background: rgba(18, 14, 40, 0.52); -webkit-backdrop-filter: blur(5px) saturate(0.9); backdrop-filter: blur(5px) saturate(0.9); }
@@ -323,3 +323,5 @@
   .fl-order { grid-template-columns: auto minmax(0, 1fr) auto 26px; }
   .fl-order > .sf-icon { display: none; }
 }
+.fl-buildrow .fl-row { flex-wrap: wrap; row-gap: 0; }
+.fl-buildrow .fl-row b { font: 700 15px var(--serif); }

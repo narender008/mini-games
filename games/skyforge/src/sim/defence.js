@@ -420,7 +420,7 @@ export function init(G) {
   d.guns = d.guns || {};
   d.fleet = d.fleet || [];
 }
-export function hydrate(G) { init(G); summarize(G); }
+export function hydrate(G) { init(G); const k = G.defend.guns; summarize(G); G.defend.guns = k; }
 
 export function step(G, dt) {
   const d = G.defend;
@@ -428,5 +428,6 @@ export function step(G, dt) {
   stepGuns(G, dt);
   stepShield(G, dt);
   stepMilitia(G, dt);
-  if ((G.tmp.sumT = (G.tmp.sumT || 0) + dt) >= 0.2) { G.tmp.sumT = 0; summarize(G); }
+  // (the timer lives on G.defend so a loaded game summarizes on the same ticks)
+  if ((d.sumT = (d.sumT || 0) + dt) >= 0.2) { d.sumT = 0; summarize(G); }
 }
