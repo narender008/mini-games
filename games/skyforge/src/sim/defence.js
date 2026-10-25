@@ -207,6 +207,24 @@ function threatenedIsland(G, gens) {
   return best;
 }
 
+function fireVolley(G, target) {
+  const pirates = G.pirates.filter(alive);
+  const marked = pirates.find((p) => p.id === target);
+  let fired = 0;
+  for (const b of G.buildings) {
+    if (!GUNS.includes(b.type) || !gunReady(b)) continue;
+    const s = gunStats(G, b); s.range *= C().volley.rangeMul;
+    const m = muzzle(G, b);
+    const p = marked && Math.hypot(marked.x - m.x, marked.y - m.y) <= s.range ? marked : nearestPirate(G, m.x, m.y, m.z, s.range);
+    if (!p) continue;
+    shoot(G, b, s, p, C().volley.dmgMul);
+    G.defend.guns[b.id].cd = gunStats(G, b).reload;
+    fired++;
+  }
+  if (fired) G.bus.emit('defend', { action: 'volley', n: fired });
+  return fired;
+}
+
 export function defend(G, action, target) {
   if (!G) return { ok: false, error: 'no game' };
   const d = DEF(action);
@@ -233,7 +251,15 @@ export function defend(G, action, target) {
       G.defend.guns[b.id].cd = gunStats(G, b).reload;
       fired++;
     }
-    if (!fired) return { ok: false, error: 'no battery in range' };
+    if (!fired) {
+      // nothing in range yet: the batteries hold their fire and loose the
+      // volley together the moment a raider comes in range (for 30 s)
+      if (st.primed > 0) return { ok: false, error: 'volley already primed' };
+      pay(G, home, d.cost);
+      st.primed = 30; st.target = marked ? marked.id : null;
+      G.bus.emit('defend', { action, primed: true });
+      return { ok: true, primed: true };
+    }
     pay(G, home, d.cost);
     st.cd = d.cd;
     G.bus.emit('defend', { action, n: fired });
@@ -402,6 +428,7 @@ function summarize(G) {
     const why = lockReason(G, d.id);
     let ready = !why && st.cd <= 0;
     let need = null;
+    if (ready && d.id === 'volley' && G.defend.volley.primed > 0) { ready = false; need = 'primed'; }
     if (ready && d.id === 'lash' && G.defend.lash.charge < d.cost.charge) { ready = false; need = 'charge'; }
     if (ready && d.id !== 'shield' && !G.pirates.some(alive)) { ready = false; need = 'no raiders'; }
     if (d.id === 'shield' && G.defend.shield.on) { ready = false; need = 'raised'; }
@@ -425,6 +452,11 @@ export function hydrate(G) { init(G); const k = G.defend.guns; summarize(G); G.d
 export function step(G, dt) {
   const d = G.defend;
   for (const k of ['volley', 'lash', 'militia']) d[k].cd = Math.max(0, d[k].cd - dt);
+  if (d.volley.primed > 0) {
+    d.volley.primed = Math.max(0, d.volley.primed - dt);
+    if (!G.pirates.some(alive)) d.volley.primed = 0;
+    else if (fireVolley(G, d.volley.target)) { d.volley.primed = 0; d.volley.cd = DEF('volley').cd; }
+  }
   stepGuns(G, dt);
   stepShield(G, dt);
   stepMilitia(G, dt);
