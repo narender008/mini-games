@@ -26,6 +26,9 @@ body { font-family: var(--sans); color: var(--cream); -webkit-font-smoothing: an
 #ui * { box-sizing: border-box; }
 #ui .layer { position: absolute; inset: 0; pointer-events: none; }
 #ui .layer > *, #ui .hit { pointer-events: auto; }
+/* overlays that must let taps through to the world (the rule above would otherwise win on specificity) */
+#ui .layer > :is(.hud-top, #toasts, #chapter-banner, #tip, .pulse-ring, .bubble.place-hint) { pointer-events: none; }
+#ui .layer > .bubble.place-hint :is(button, a, .row) { pointer-events: auto; }
 #ui [hidden] { display: none !important; }
 body.cover #ui, body.cover #home { display: none !important; }
 body.reduced *, body.reduced *::before, body.reduced *::after { transition: none !important; animation: none !important; }
@@ -287,6 +290,9 @@ body:not([data-scene=colony]):not([data-scene=build]) #chapter-banner { opacity:
 #build .detail .needs { font: bold 0.8rem var(--sans); color: var(--warn); display: flex; align-items: center; gap: 0.35rem; }
 #build .detail .needs .ico { width: 1.1rem; height: 1.1rem; }
 #build .detail.hide { display: none; }
+/* folded to a strip (name, size, confirm/cancel) when the full card would hide glowing spots (build.js dockDetail) */
+#build .detail.mini p, #build .detail.mini .flow, #build .detail.mini .needs, #build .detail.mini .med { display: none; }
+#build .detail.mini { width: auto; align-items: center; }
 #build .pctl { display: flex; flex-direction: column; gap: 0.5rem; justify-content: center; margin: -0.2rem -0.2rem -0.2rem 0.2rem; }
 #build .pctl .medal { width: 2.9rem; height: 2.9rem; }
 #build .pctl svg { width: 48%; height: 48%; stroke: #fff; stroke-width: 3.2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
@@ -558,6 +564,7 @@ input[type=range]::-moz-range-thumb { width: 1.4rem; height: 1.4rem; border-radi
   #build .slots { width: 100%; }
   #place { bottom: calc(18rem + var(--safe-b)); }
   #raid-banner { top: calc(8.7rem + var(--safe-t)); }
+  #chapter-banner { top: 34%; }   /* clear of the goals card on tablets and phones */
   #defences { bottom: calc(14rem + var(--safe-b)); width: 15.5rem; padding: 0.7rem 0.9rem; }
   #abilities { bottom: calc(6.6rem + var(--safe-b)); gap: 0.9rem; }
   .abil .medal { width: 3.9rem; height: 3.9rem; }
@@ -618,3 +625,68 @@ input[type=range]::-moz-range-thumb { width: 1.4rem; height: 1.4rem; border-radi
 body.touch .spd, body.touch #btn-pause { width: 2.75rem; height: 2.75rem; }
 body.touch .round { width: 2.75rem; height: 2.75rem; }
 @media (pointer: coarse) { .spd, #btn-pause { width: 2.4rem; height: 2.4rem; } .round { width: 2.75rem; height: 2.75rem; } }
+
+/* goals fold chevron */
+#goals header .fold { width: 0.5rem; height: 0.5rem; flex: none; align-self: center; margin-left: 0.15rem; border: solid var(--muted); border-width: 0 0.13rem 0.13rem 0; transform: translateY(0.05rem) rotate(-135deg); transition: transform 0.2s; }
+#goals.collapsed header .fold { transform: translateY(-0.12rem) rotate(45deg); }
+
+/* ---------- short landscape (phones on their side, height <= 500px) ----------
+   One slim top row, the dock as a column on the right edge, a compact build tray along the bottom
+   and the build detail card docked bottom-left above it (build.js flips it right, or folds it, so
+   it never hides the cell being placed). The goals card starts folded and steps aside while building. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .hud-top { flex-direction: row; align-items: flex-start; gap: 0.4rem; left: calc(0.5rem + var(--safe-l)); right: calc(0.5rem + var(--safe-r)); top: calc(0.4rem + var(--safe-t)); }
+  #resbar { height: 2.7rem; flex: 1; max-width: none; }
+  #clock { height: 2.7rem; margin-left: 0; gap: 0.35rem; }
+  #clock .dial { width: 1.9rem; height: 1.9rem; }
+  #clock .when { min-width: 0; }
+  #clock .when b { font-size: 0.92rem; }
+  #clock .when span { font-size: 0.66rem; }
+  #goals { top: calc(3.6rem + var(--safe-t)); left: calc(0.5rem + var(--safe-l)); width: 15.5rem; padding: 0.5rem 0.75rem 0.5rem; }
+  #goals header .h2 { font-size: 0.98rem; }
+  #goals li { font-size: 0.76rem; padding: 0.1rem 0; }
+  #goals .next { font-size: 0.74rem; }
+  body[data-scene=build] #goals { display: none; }
+  #toasts { top: calc(3.6rem + var(--safe-t)); right: calc(5rem + var(--safe-r)); width: 16rem; gap: 0.3rem; }
+  #toasts .toast:nth-child(n+3) { display: none; }
+  #toasts .toast { padding-top: 0.4rem; padding-bottom: 0.4rem; font-size: 0.74rem; }
+  #goals header { min-width: 0; }
+  #goals header .h2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  #goals header small { white-space: nowrap; }
+  #chapter-banner { top: 16%; padding: 0.55rem 1.6rem 0.65rem; max-width: min(26rem, calc(100% - 12rem)); }
+  #chapter-banner .h1 { font-size: 1.5rem; margin-top: 0; }
+  #chapter-banner p { font-size: 0.74rem; margin: 0.2rem 0 0; }
+  /* the dock becomes a column on the right */
+  #dock { left: auto; right: calc(0.45rem + var(--safe-r)); top: auto; bottom: calc(0.4rem + var(--safe-b)); flex-direction: column; justify-content: flex-end; gap: 0.25rem; }
+  #dock .medal { width: 2.6rem; height: 2.6rem; }
+  .dockbtn { gap: 0.05rem; }
+  .dockbtn > span { font-size: 0.6rem; }
+  #contract { bottom: calc(0.5rem + var(--safe-b)); right: calc(5rem + var(--safe-r)); left: auto; width: 17rem; }
+  #inspector { top: calc(3.6rem + var(--safe-t)); bottom: calc(0.5rem + var(--safe-b)); right: calc(5rem + var(--safe-r)); left: auto; width: 20rem; max-height: none; }
+  /* build tray along the bottom, left of the dock column */
+  #build { left: calc(0.5rem + var(--safe-l)); right: calc(5rem + var(--safe-r)); bottom: calc(0.4rem + var(--safe-b)); transform: none; width: auto; max-width: none; align-items: stretch; }
+  #build.closed { transform: translateY(130%); }
+  #build .tabs { padding: 0 0.6rem; gap: 0.25rem; }
+  .tab { min-height: 1.75rem; padding: 0 0.6rem; font-size: 0.7rem; }
+  #build .tray { width: 100%; padding: 0.35rem 0.5rem 0.2rem; }
+  #build .slots { width: 100%; }
+  .slot { width: 3.7rem; gap: 0.1rem; }
+  .slot .medal { width: 2.55rem; height: 2.55rem; }
+  .slot > span { font-size: 0.62rem; }
+  #build .detail { position: absolute; left: 0; right: auto; bottom: calc(100% + 0.4rem); width: 21rem; max-width: calc(100% - 1rem); margin: 0; padding: 0.5rem 0.65rem 0.55rem; gap: 0.6rem; }
+  #build .detail.dock-r { left: auto; right: 0; }
+  #build .detail .med { width: 2.3rem; height: 2.3rem; }
+  #build .detail .h2 { font-size: 0.92rem; }
+  #build .detail p { font-size: 0.72rem; margin: 0.15rem 0 0.3rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  #build .detail .flow { font-size: 0.7rem; margin-bottom: 0.25rem; }
+  #build .pctl { flex-direction: row; gap: 0.4rem; }
+  #build .pctl .medal { width: 2.5rem; height: 2.5rem; }
+  #place { bottom: calc(8.4rem + var(--safe-b)); }
+  #place .medal { width: 2.9rem; height: 2.9rem; }
+  .bubble { width: 15.5rem; padding: 0.6rem 0.75rem 0.65rem 0.65rem; gap: 0.55rem; }
+  .bubble .med { width: 2rem; height: 2rem; }
+  .bubble b { font-size: 0.92rem; }
+  .bubble p { font-size: 0.74rem; line-height: 1.3; }
+  .bubble .row { margin-top: 0.3rem; }
+  #raid-banner, #raid-banner.low { top: calc(3.6rem + var(--safe-t)); min-height: 0; padding: 0.4rem 0.9rem; }
+}

@@ -62,18 +62,27 @@ export function createNotify(ctx) {
   let quietUntil = 0;
   app.ev.on('game', () => { quietUntil = performance.now() + 800; });
   app.ev.on('loaded', () => { quietUntil = performance.now() + 800; });
-  app.bus.on('chapter', ({ id, n } = {}) => {
-    if (performance.now() < quietUntil || !app.G) return;
-    if (!['colony', 'build', 'research', 'chart', 'fleet'].includes(app.scene)) return;
-    const ch = X.chap.find((c) => c.id === id || (n != null && c.n === n)) || X.chap[(app.G.goals?.chapter || 1) - 1];
-    if (ch) showBanner(`Chapter ${ch.n}`, ch.name, ch.desc, 3.2);
+  // The banner always names the chapter the colony is in when it shows (G.goals.chapter), never
+  // a fixed one: a chapter event waits 0.6 s so a burst (preset, debug jump) collapses into one
+  // banner for where the story landed, and a chapter is announced at most once per game.
+  let pendingT = -1, shownCh = 0;
+  const current = () => X.chap[Math.min(X.chap.length, Math.max(1, app.G?.goals?.chapter || 1)) - 1];
+  function announce() {
+    const ch = current();
+    if (!ch || ch.n === shownCh) return;
+    shownCh = ch.n; showBanner(`Chapter ${ch.n}`, ch.name, ch.desc, 3.2);
+  }
+  app.bus.on('chapter', () => {
+    if (performance.now() < quietUntil || !app.G) { shownCh = app.G?.goals?.chapter || shownCh; return; }
+    pendingT = 0.6;
   });
   app.ev.on('newgame', ({ G } = {}) => {
     const g = G || app.G;
-    if (!g || (g.goals?.chapter || 1) !== 1 || g.t > 2) return;   // presets start mid-story: no banner
-    const ch = X.chap[0];
-    if (ch) showBanner(`Chapter ${ch.n}`, ch.name, ch.desc, 3.2);
+    shownCh = g?.goals?.chapter || 1;
+    if (!g || shownCh !== 1 || g.t > 2) return;   // presets start mid-story: no banner
+    shownCh = 0; announce();
   });
+  app.ev.on('loaded', () => { pendingT = -1; shownCh = app.G?.goals?.chapter || 0; });
   // welcome back: what happened while away (SAVE's catch-up summary)
   app.ev.on('away', ({ away, summary } = {}) => {
     if (!summary || !app.G) return;
@@ -86,12 +95,19 @@ export function createNotify(ctx) {
     toast({ title: 'While you were away', text: bits.join(' · ') || 'The colony kept busy.', kind: 'good', icon: 'quill', life: 10 });
     void away;
   });
-  app.ev.on('game', () => { for (const t of [...live]) dismiss(t, true); banner.classList.remove('on'); bannerT = -1; });
+  app.ev.on('game', () => { for (const t of [...live]) dismiss(t, true); banner.classList.remove('on'); bannerT = -1; pendingT = -1; });
 
   function update(dt) {
     for (const t of [...live]) { t.t += dt; if (t.t > t.life) dismiss(t); }
+    if (pendingT > 0) {
+      pendingT -= dt;
+      if (pendingT <= 0) {
+        if (app.G && ['colony', 'build', 'research', 'chart', 'fleet'].includes(app.scene)) announce();
+        else { pendingT = 0.3; if (!app.G) pendingT = -1; }   // wait for play to resume
+      }
+    }
     if (bannerT > -1) { const was = bannerT; bannerT -= dt; if (was > 0 && bannerT <= 0) banner.classList.remove('on'); }
   }
-  return { update, toast, showBanner, bannerBusy: () => bannerT > -0.5 };
+  return { update, toast, showBanner, bannerBusy: () => bannerT > -0.5 || pendingT > 0 };
 }
 function sentence(s) { s = String(s || ''); return s ? s[0].toUpperCase() + s.slice(1) + (/[.!?]$/.test(s) ? '' : '.') : ''; }

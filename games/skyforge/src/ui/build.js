@@ -257,8 +257,46 @@ export function createBuild(ctx) {
     if (p.vent) return 'Any flat ground; over a heat vent it needs no coal.';
     return 'Any clear, flat ground.';
   }
-  let bubbleKey = '';
+  let bubbleKey = '', lastAnchor = null;
+  // While placing, the detail card must not hide the cell being placed or the glowing spots.
+  // On short landscape screens (phones on their side) it docks bottom-left above the tray and
+  // may flip right; at any size it folds to a slim strip when that hides fewer spots.
+  const SHORT = matchMedia('(max-height: 500px) and (orientation: landscape)');
+  let spotKey = '', spotCells = [];
+  // the cells the card must not hide: the hovered / hinted cell (weight 1000, never) and every
+  // glowing spot of the building being placed (weight 1 each, as few as possible)
+  function guardPoints(G) {
+    const pts = []; if (lastAnchor && isFinite(lastAnchor[0])) pts.push([lastAnchor[0], lastAnchor[1], 1000]);
+    const type = app.mode.build?.type;
+    if (type && app.act?.spots) {
+      const k = type + ':' + G.buildings.length + ':' + G.islands.filter((i) => i.owned).length;
+      if (k !== spotKey) { spotKey = k; try { spotCells = (app.act.spots(type) || []).slice(0, 400); } catch (e) { spotCells = []; } }
+      const [sz0, sz1] = X.bld[type]?.size || [1, 1];
+      const hint = (G.tmp?.goalSteps || []).find((st) => !st.done && st.hint?.type === type)?.hint;
+      for (const [u, v, id] of spotCells) {
+        const i = G.islands.find((x) => x.id === id); if (!i) continue;
+        const [x, y] = toScreen(app.cam, i.ox + u + sz0 / 2, i.oy + v + sz1 / 2, i.alt + 0.6);
+        pts.push([x, y, hint && hint.u === u && hint.v === v && (hint.island || 'hearthrock') === id ? 1000 : 1]);
+      }
+    }
+    return pts;
+  }
+  function dockDetail(G) {
+    const want = open && !detail.classList.contains('hide') && (app.mode.build || app.mode.link);
+    if (!want) { if (detail.classList.contains('dock-r') || detail.classList.contains('mini')) detail.classList.remove('dock-r', 'mini'); return; }
+    const pts = guardPoints(G);
+    const cost = (m) => { const r = detail.getBoundingClientRect(); let c = m ? 0.5 : 0; for (const [x, y, w] of pts) if (x > r.left - 16 && x < r.right + 16 && y > r.top - 16 && y < r.bottom + 16) c += w; return c; };
+    let best = null;
+    const opts = SHORT.matches ? [[false, false], [true, false], [false, true], [true, true]] : [[false, false], [false, true]];
+    for (const [r, m] of opts) {
+      detail.classList.toggle('dock-r', r); detail.classList.toggle('mini', m);
+      const c = cost(m); if (!best || c < best[0]) best = [c, r, m];
+      if (c === 0) return;
+    }
+    detail.classList.toggle('dock-r', best[1]); detail.classList.toggle('mini', best[2]);
+  }
   function updateBubble(G) {
+    lastAnchor = null;
     const m = app.mode.build, lk = app.mode.link;
     if (!G || (!m && !lk) || !open && !m && !lk) { setHidden(bubble, true); return; }
     let anchor = null, title = '', text = '', icon = 'hammer', err = false, row = null;
@@ -309,6 +347,7 @@ export function createBuild(ctx) {
       bMed.replaceChildren(ico(icon)); setText(bTitle, title); setText(bText, text); setClass(bubble, 'err', err);
     }
     setHidden(bubble, false);
+    lastAnchor = anchor;
     positionBubble(bubble, tailSvg, anchor);
   }
 
@@ -328,7 +367,7 @@ export function createBuild(ctx) {
       const id = app.mode.build?.type || app.mode.link?.kind;
       if (id !== chosen) { chosen = id; showDetail(id); refreshSlots(true); }
     } else if (chosen && !open) { chosen = null; }
-    if (G) updateBubble(G);
+    if (G) { dockDetail(G); updateBubble(G); }
     if (slow && open && G) { refreshSlots(false); refreshDetail(); }
   }
 
@@ -369,21 +408,26 @@ export function positionBubble(el, tail, anchor) {
     path.setAttribute('d', ''); return;
   }
   const [ax, ay] = anchor;
-  // prefer above-right of the point, like the concept; flip to stay on screen
-  let x = ax + 40, y = ay - hgt - 70;
-  if (x + w > W - 12) x = ax - w - 40;
-  if (x < 12) x = Math.max(12, Math.min(W - w - 12, ax - w / 2));
-  if (y < 70) y = ay + 70;
-  if (y + hgt > H - 12) y = H - hgt - 12;
-  x = Math.max(12, Math.min(W - w - 12, x)); y = Math.max(12, Math.min(H - hgt - 12, y));
-  // never cover the point itself: try the other sides until the card clears it by 36 px
+  // Pick the spot that (a) never covers the point itself (36 px clearance), (b) never covers a
+  // HUD control (top bar, dock, build tray and detail card, placement buttons, threat cards), and
+  // (c) covers as little of the goals card as it can, preferring above-right of the point as in
+  // the concept. Every candidate is clamped to the screen; the lowest score wins.
+  const M = 8, clampX = (v) => Math.max(M, Math.min(W - w - M, v)), clampY = (v) => Math.max(M, Math.min(H - hgt - M, v));
+  const hard = [], soft = [];
+  const grab = (sel, into, pad = 6) => { for (const n of document.querySelectorAll(sel)) { const r = n.getBoundingClientRect(); if (r.width > 1 && r.height > 1 && getComputedStyle(n).visibility !== 'hidden') into.push([r.left - pad, r.top - pad, r.right + pad, r.bottom + pad]); } };
+  grab('.hud-top > *, #dock button, #build:not(.closed) .tabs, #build:not(.closed) .tray, #build:not(.closed) .detail:not(.hide), #place:not([hidden]) > *, #raid-banner, #abilities, #defences, #inspector, #contract', hard);
+  grab('#goals, #toasts > *, #chapter-banner.on', soft, 2);
+  const over = (X0, Y0, list) => { let a = 0; for (const [l, t, r, b] of list) { const ox = Math.min(X0 + w, r) - Math.max(X0, l), oy = Math.min(Y0 + hgt, b) - Math.max(Y0, t); if (ox > 0 && oy > 0) a += ox * oy; } return a; };
   const covers = (X0, Y0) => ax > X0 - 36 && ax < X0 + w + 36 && ay > Y0 - 36 && ay < Y0 + hgt + 36;
-  if (covers(x, y)) {
-    const cand = [[ax + 50, ay - hgt / 2], [ax - w - 50, ay - hgt / 2], [ax - w / 2, ay + 60], [ax - w / 2, ay - hgt - 60]]
-      .map(([cx, cy]) => [Math.max(12, Math.min(W - w - 12, cx)), Math.max(12, Math.min(H - hgt - 12, cy))]);
-    const ok = cand.find(([cx, cy]) => !covers(cx, cy));
-    if (ok) [x, y] = ok;
-  }
+  const cand = [[ax + 40, ay - hgt - 70], [ax - w - 40, ay - hgt - 70], [ax + 50, ay - hgt / 2], [ax - w - 50, ay - hgt / 2],
+    [ax - w / 2, ay - hgt - 60], [ax - w / 2, ay + 60], [ax + 40, ay + 50], [ax - w - 40, ay + 50]];
+  for (let gy = 0; gy <= 6; gy++) for (let gx = 0; gx <= 6; gx++) cand.push([M + (W - w - 2 * M) * gx / 6, M + (H - hgt - 2 * M) * gy / 6]);
+  let x = 0, y = 0, best = Infinity;
+  cand.forEach(([cx, cy], k) => {
+    cx = clampX(cx); cy = clampY(cy);
+    const sc = (covers(cx, cy) ? 1e9 : 0) + over(cx, cy, hard) * 50 + over(cx, cy, soft) * 2 + Math.hypot(cx + w / 2 - ax, cy + hgt / 2 - ay) * 3 + (k < 8 ? k * 40 : 600);
+    if (sc < best) { best = sc; x = cx; y = cy; }
+  });
   if (ax < 0 || ay < 0 || ax > W || ay > H) { x = (W - w) / 2; y = Math.min(H * 0.16, H - hgt - 12); el.style.left = Math.round(x) + 'px'; el.style.top = Math.round(y) + 'px'; path.setAttribute('d', ''); return; }
   el.style.left = Math.round(x) + 'px'; el.style.top = Math.round(y) + 'px';
   // tail from the nearest edge of the card to the point (local coords)

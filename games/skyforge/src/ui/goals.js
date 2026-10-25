@@ -1,6 +1,6 @@
 // The goals card (#goals, concept 2's "First Landing"): the current chapter's
 // steps with tick marks, and in chapter 7 the Skyforge's progress. Tap the
-// header to fold it (phones start folded, showing just the next step).
+// header to fold it (phones, portrait or landscape, start folded, showing just the next step).
 import { h, setText, setClass, setHidden, setBar, bar } from './dom.js';
 
 export function createGoals(ctx) {
@@ -9,9 +9,10 @@ export function createGoals(ctx) {
   const skyBar = bar(), skyLbl = h('div', { style: { font: '0.78rem var(--sans)', color: 'var(--cool)', marginBottom: '0.3rem' } });
   const sky = h('div.skyprog', skyLbl, skyBar);
   const el = h('section#goals.glass', { 'aria-label': 'Goals' },
-    h('header', { role: 'button', onclick: () => { el.classList.toggle('collapsed'); folded = el.classList.contains('collapsed'); } }, title, small), list, next, sky);
+    h('header', { role: 'button', 'aria-label': 'Fold or unfold the goals', onclick: () => { el.classList.toggle('collapsed'); folded = el.classList.contains('collapsed'); } }, title, small, h('i.fold')), list, next, sky);
   L.hud.append(el);
-  let folded = matchMedia('(max-width: 520px)').matches;
+  // phones (portrait or on their side) start folded, showing just the next step
+  let folded = matchMedia('(max-width: 520px), (max-height: 500px) and (orientation: landscape)').matches;
   setClass(el, 'collapsed', folded);
   let key = '';
   const doneSeen = new Set();
