@@ -271,6 +271,8 @@ test('export then wipe then import restores the save, through the hook and throu
   await l('menu');
   await l('thaw');
   await G.clickOr(p, [G.SEL.settings], null);
+  // Settings may open on another tab: go to the save one
+  if (!(await G.waitVisible(p, [G.SEL.export], 800))) await p.evaluate(() => { const t = [...document.querySelectorAll('[role="tab"], [data-tab], button')].find((b) => /save/i.test(b.textContent) && b.offsetParent); if (t) t.click(); });
   const exp = await G.waitVisible(p, [G.SEL.export]);
   assert.ok(exp, 'no Export button in Settings');
   const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }), exp.click()]);

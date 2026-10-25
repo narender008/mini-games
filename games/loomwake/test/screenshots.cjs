@@ -16,7 +16,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // effects and animation are mid-flight, then shoots.
 const SHOTS = [
   ['01-title', '', async () => {}],
-  ['02-profiles', 'debug', async (p, lw) => { await G.clickOr(p, [G.SEL.new, G.SEL.continue]); await G.waitScene(lw, 'profiles', 4000); }],
+  ['02-profiles', 'debug', async (p, lw) => { if (await G.waitVisible(p, [G.SEL.profile(0)], 1500)) return; await G.clickOr(p, [G.SEL.new, G.SEL.continue]); await G.waitScene(lw, 'profiles', 4000); }],
   ['03-hub', 'debug', async (p, lw) => { await G.titleToHub(p, lw, 0); await sleep(800); }],
   ['04-hub-dialogue', 'debug', async (p, lw) => { await G.titleToHub(p, lw, 0); const c = await lw('content'); const who = (c.dialogue || []).map((l) => l.speaker).find((s) => /orrin/i.test(s)) || 'orrin'; await lw('talk', who); await G.waitScene(lw, 'dialogue', 4000); await sleep(900); }],
   ...G.REGIONS.map((g, i) => [`${String(5 + i).padStart(2, '0')}-combat-${g}`, `debug&seed=${40 + i}`, async (p, lw) => { await lw('region', g); await G.waitScene(lw, G.RUN_SCENES, 8000); await lw('god', true); await fight(lw, 2600); }]),
