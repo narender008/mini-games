@@ -230,7 +230,7 @@ function botRun(sliceSec) {
     if (key !== B.lastKey) {
       if (B.cur) { B.cur.secs = s.runTime - B.cur.t; L.chambers.push(B.cur); }
       B.cur = { region: s.region, chamber: s.chamber, kind: s.chamberKind, t: s.runTime, hp0: s.hero.hp, hurt: 0 };
-      B.lastKey = key; B.clearedAt = null; B.stuck = 0;
+      B.lastKey = key; B.clearedAt = null; B.stuck = 0; B.fountainUsed = false;
       if (!L.regions[s.region]) L.regions[s.region] = { start: s.runTime };
       if (B.lastRegion && B.lastRegion !== s.region && L.regions[B.lastRegion]) L.regions[B.lastRegion].end = s.runTime;
       B.lastRegion = s.region; B.lastChamber = s.chamber; B.lastKind = s.chamberKind;
@@ -250,6 +250,14 @@ function botRun(sliceSec) {
     }
 
     const p = s.hero;
+    // a fountain or memory chamber: use the station (heal) once, as a player would
+    if (!B.fountainUsed && /fountain|memory/.test(String(s.chamberKind)) && typeof lw.fountain === 'function') {
+      B.fountainUsed = true;
+      const r = lw.fountain();
+      if (r && r.ok !== false) L.fountains++;
+      s = lw.step(dt, { render: false });
+      continue;
+    }
     // --- cleared: leave by the best open door ---
     const foes = (s.enemies || []).filter((e) => e.hp > 0);
     if (s.cleared && !s.boss && foes.length === 0) {
