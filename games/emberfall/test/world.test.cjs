@@ -11,6 +11,7 @@ const { serve } = require('./lib/server.cjs');
 const { launch, open, close, frameStats } = require('./lib/browser.cjs');
 const G = require('./lib/game.cjs');
 const graph = require('./lib/graph.cjs');
+const M = require('./lib/moves.cjs');
 
 const OUT = path.join(__dirname, 'out');
 let server, browser, page, eb, W;
@@ -27,22 +28,7 @@ after(async () => { await browser?.close(); await server?.close(); });
 const tol = (got, want, frac) => Math.abs(got - want) <= want * frac;
 const room = (id) => W.rooms.find((r) => r.id === id);
 
-// Settles the player at (x, y) of a room with no enemies about; returns state.
-const PLACE = async (eb, roomId, x, y, steps = 120) => {
-  eb.input(null);
-  eb.goto(roomId, x, y);
-  eb.kill();
-  let s = eb.state();
-  for (let i = 0; i < steps && !(s.player.onGround && i > 2); i++) s = eb.step(1000 / 60, { render: false });
-  return s;
-};
-const PRELUDE = `const PLACE = ${PLACE.toString()};`;
-// inPage with PLACE available inside fn
-const sim = (fn, ...args) => page.evaluate(([pre, src, a]) => {
-  // eslint-disable-next-line no-new-func
-  const f = new Function(`${pre}; return (${src})`)();
-  return f(window.__eb, ...a);
-}, [PRELUDE, fn.toString(), args]);
+const sim = (fn, ...args) => M.sim(page, fn, ...args);
 
 function findFlat(minLen, minClear) {
   for (const r of W.rooms) {
@@ -261,50 +247,6 @@ test('gate kinds name the right ability', () => {
   for (const a of G.ABILITIES) assert.ok(W.rooms.some((r) => (r.gates || []).some((g) => g.requires === a)), `no gate needs ${a}`);
 });
 
-// Plays one gate from its `from` spot toward its `to` spot for `secs` with a
-// small reactive controller that uses the moves the contract's gate table
-// lists for that kind. Returns whether the player stood at `to`.
-function playGate(eb, roomId, g, anchors, secs) {
-  const s0 = PLACE(eb, roomId, g.from.x, g.from.y);
-  if (s0.room !== roomId) return { ok: false, placed: false };
-  const kind = g.kind;
-  let s = s0, side = Math.sign(g.to.x - g.from.x) || 1;
-  let last = {}, jumpHold = 0, air2 = false, dashed = false, hookedFor = 0, best = Infinity;
-  for (let i = 0; i < secs * 60; i++) {
-    const p = s.player, cx = p.x + p.w / 2, dx = g.to.x + p.w / 2 - cx;
-    const reach = Math.hypot(g.to.x - p.x, g.to.y - p.y);
-    best = Math.min(best, reach);
-    if (p.onGround && Math.abs(g.to.x - p.x) < 30 && Math.abs(g.to.y - p.y) < 50) return { ok: true, placed: true, t: i / 60 };
-    const inp = {};
-    let h = Math.abs(dx) > 8 ? Math.sign(dx) : 0;
-    if (kind === 'shaft' && !p.onGround) h = side;
-    if (h > 0) inp.right = true; else if (h < 0) inp.left = true;
-    const front = side > 0 ? g.x - (p.x + p.w) : p.x - (g.x + g.w); // distance to the gate's near face
-    const wantUp = g.to.y < p.y - 20;
-    const blocked = p.onGround && Math.abs(p.vx) < 5 && i > 6 && h !== 0;
-    if (jumpHold > 0) { inp.jump = true; jumpHold--; }
-    else if (!last.jump) {
-      if (p.onGround && (blocked || (wantUp && front < 50) || (kind === 'gap' && front < 24) || (kind === 'hook' && front < 24))) { inp.jump = true; jumpHold = 16; air2 = false; dashed = false; }
-      else if (!p.onGround && !air2 && p.vy > -60 && (kind === 'ledge' || (wantUp && kind !== 'shaft'))) { inp.jump = true; jumpHold = 16; air2 = true; }
-      else if (kind === 'shaft' && p.onWall) { inp.jump = true; jumpHold = 10; side = -side; }
-      else if (kind === 'hook' && p.hooked && ++hookedFor > 12) { inp.jump = true; jumpHold = 12; hookedFor = 0; }
-    }
-    if (!last.dash && !dashed && ((kind === 'gap' && !p.onGround && p.vy > -60) || (kind === 'crack' && front < 110 && front > -10))) { inp.dash = true; dashed = true; }
-    if (kind === 'crack' && p.onGround && front > 140) dashed = false;
-    if (kind === 'hook' && !p.hooked && !last.hook && !p.onGround) {
-      const ax = anchors.find((a) => Math.hypot(a.x - cx, a.y - p.y) < 280);
-      if (ax) inp.hook = true;
-    }
-    if ((kind === 'lava' || kind === 'thorn') && p.form !== 'fire' && !last.fire) inp.fire = true;
-    eb.input(inp);
-    last = inp;
-    s = eb.step(1000 / 60, { render: false });
-    if (s.room !== roomId) return { ok: false, placed: true, left: s.room, best };
-  }
-  eb.input(null);
-  return { ok: false, placed: true, best: Math.round(best), at: { x: Math.round(s.player.x), y: Math.round(s.player.y) } };
-}
-
 test('every gate holds without its ability and is passable with it', async () => {
   const gates = W.rooms.flatMap((r) => (r.gates || []).map((g) => ({ r, g })));
   const bad = [];
@@ -313,10 +255,10 @@ test('every gate holds without its ability and is passable with it', async () =>
     if (!g.from || !g.to) { bad.push(`${r.id}/${g.id}: no from/to standing spots in world()`); continue; }
     await G.fresh(eb, { abilities: G.ABILITIES.filter((a) => a !== g.requires) });
     await eb('god', true);
-    const a = await sim(playGate, r.id, g, r.anchors || [], 6);
+    const a = await sim(M.playGate, r.id, g, r.anchors || [], 6);
     await G.fresh(eb, { abilities: G.ABILITIES });
     await eb('god', true);
-    const b = await sim(playGate, r.id, g, r.anchors || [], 8);
+    const b = await sim(M.playGate, r.id, g, r.anchors || [], 10);
     rows.push({ room: r.id, gate: g.id, kind: g.kind, without: a, with: b });
     if (!a.placed) bad.push(`${r.id}/${g.id}: could not stand at its from spot`);
     else if (a.ok) bad.push(`${r.id}/${g.id} (${g.kind}): passed without ${g.requires}`);

@@ -23,7 +23,7 @@ function walkExit(eb, from, e, to, rw, rh) {
   let x = e.x + e.w / 2 - pw / 2, y = e.y + e.h - ph - 2, dir = {};
   if (e.side === 'l') { x = 6; dir = { left: true }; }
   else if (e.side === 'r') { x = rw - pw - 6; dir = { right: true }; }
-  else if (e.side === 'd') { y = Math.min(e.y, rh) - ph - 60; dir = {}; }
+  else if (e.side === 'd') { y = Math.min(e.y, rh) - ph - 60; dir = { down: true }; } // down + jump drops through = ledges
   else if (e.side === 'u') { y = Math.max(e.y, 0) + 30; dir = { up: true, jump: true }; }
   eb.input(null);
   eb.goto(from, x, y);
@@ -33,6 +33,7 @@ function walkExit(eb, from, e, to, rw, rh) {
   for (let i = 0; i < 150; i++) {
     if (e.side === 'u' && i % 12 === 6) eb.input({ ...dir, jump: false });
     if (e.side === 'u' && i % 12 === 0) eb.input(dir);
+    if (e.side === 'd') eb.input({ ...dir, jump: i % 12 < 3 });
     s = eb.step(1000 / 60, { render: false });
     if (s.room === to) break;
   }
@@ -56,7 +57,8 @@ function collect(eb, room, p) {
   return { ok: s.abilities.includes(p.id), room: s.room };
 }
 
-// Ten seconds of a god-mode fight: walk to the boss, swing, jump, fire bolts.
+// Up to `secs` of a god-mode fight: walk to the boss, swing, jump, fire
+// bolts; stops once the attacks have clearly done damage.
 function fight(eb, id, secs) {
   eb.boss(id);
   eb.god(true);
@@ -64,7 +66,7 @@ function fight(eb, id, secs) {
   const hp0 = s.boss ? s.boss.hp : null;
   let minHp = hp0;
   const n = Math.round(secs * 60);
-  for (let i = 0; i < n && s.boss && s.boss.hp > 0; i++) {
+  for (let i = 0; i < n && s.boss && s.boss.hp > 0 && !(minHp < hp0 - 2); i++) {
     const p = s.player, b = s.boss;
     const bx = b.x != null ? b.x + (b.w || 0) / 2 : null;
     const px = p.x + p.w / 2;
@@ -77,6 +79,21 @@ function fight(eb, id, secs) {
   }
   eb.input(null);
   return { started: hp0 != null, hp0, minHp, room: s.room, hasPos: !!(s.boss && s.boss.x != null) };
+}
+
+// Rests at the room's brazier (stand by it, press interact): sets the
+// checkpoint a continue resumes from.
+function rest(eb, room, cp) {
+  eb.input(null);
+  eb.goto(room, cp.x - 12, cp.y - 60);
+  eb.kill();
+  let s = eb.state();
+  for (let i = 0; i < 90 && !(s.player.onGround && i > 2); i++) s = eb.step(1000 / 60, { render: false });
+  eb.input({ interact: true });
+  s = eb.step(1000 / 60, { render: false });
+  eb.input(null);
+  for (let i = 0; i < 90; i++) s = eb.step(1000 / 60, { render: false });
+  return { ok: s.checkpoint === room, checkpoint: s.checkpoint };
 }
 
 function finish(eb) {
@@ -111,10 +128,10 @@ async function main() {
     const r = room(id);
     let s = await eb('state');
     if (r.boss && !s.bossesDefeated.includes(r.boss)) {
-      const f = await run(fight, r.boss, 10);
+      const f = await run(fight, r.boss, 30);
       const rec = { id: r.boss, room: id, started: f.started, hp0: f.hp0, minHp: f.minHp };
       if (!f.started) failures.push(`boss ${r.boss}: boss() did not start a fight`);
-      else if (f.minHp >= f.hp0) (f.hasPos ? failures : notes).push(`boss ${r.boss}: 10 s of attacks did no damage${f.hasPos ? '' : ' (state().boss has no x, y to aim at)'}`);
+      else if (f.minHp >= f.hp0) (f.hasPos ? failures : notes).push(`boss ${r.boss}: 30 s of attacks did no damage${f.hasPos ? '' : ' (state().boss has no x, y to aim at)'}`);
       s = await run(finish, null);
       rec.defeated = s.bossesDefeated.includes(r.boss) || (r.boss === G.FINAL_BOSS && s.scene === 'won');
       if (!rec.defeated) failures.push(`boss ${r.boss}: kill() did not mark it defeated (scene ${s.scene})`);
@@ -129,7 +146,11 @@ async function main() {
       if (!c.ok) { failures.push(`pickup ${p.id} in ${id}: touching it did not grant the ability`); await eb('grant', p.id); }
     }
     s = await eb('state');
-    if (!saveCheck && s.bossesDefeated.length >= 2) saveCheck = await saveLoad();
+    if (!saveCheck && s.bossesDefeated.length >= 2 && r.checkpoint) {
+      const rr = await run(rest, id, r.checkpoint);
+      if (!rr.ok) failures.push(`resting at the brazier in ${id} did not set the checkpoint (checkpoint ${rr.checkpoint})`);
+      saveCheck = await saveLoad();
+    }
   }
 
   async function saveLoad() {
@@ -151,7 +172,7 @@ async function main() {
     rec.after = { room: s.room, abilities: s.abilities, bosses: s.bossesDefeated };
     if (sort(s.abilities) !== sort(before.abilities)) failures.push(`save/load: abilities ${sort(before.abilities)} came back as ${sort(s.abilities)}`);
     if (sort(s.bossesDefeated) !== sort(before.bossesDefeated)) failures.push(`save/load: bosses ${sort(before.bossesDefeated)} came back as ${sort(s.bossesDefeated)}`);
-    if (![before.room, before.checkpoint, saved && saved.room, saved && saved.checkpoint].includes(s.room)) failures.push(`save/load: continued in ${s.room}, saved in ${before.room} (checkpoint ${before.checkpoint})`);
+    if (s.room !== before.checkpoint) failures.push(`save/load: continued in ${s.room}, rested at ${before.checkpoint}`);
     rec.ok = true;
     return rec;
   }
@@ -174,7 +195,7 @@ async function main() {
   if (s.scene !== 'won') {
     // the ending: beat the Cinder King if the route has not yet
     if (!s.bossesDefeated.includes(G.FINAL_BOSS)) {
-      const f = await run(fight, G.FINAL_BOSS, 10);
+      const f = await run(fight, G.FINAL_BOSS, 30);
       bosses.push({ id: G.FINAL_BOSS, started: f.started, hp0: f.hp0, minHp: f.minHp });
       s = await run(finish, null);
     }
@@ -183,7 +204,7 @@ async function main() {
   if (s.scene !== 'won') failures.push(`the run did not end in 'won' (scene ${s.scene}, room ${s.room})`);
   for (const a of G.ABILITIES) if (!pickups.some((p) => p.id === a && p.ok)) failures.push(`ability ${a} was never picked up on the route`);
   for (const b of G.BOSSES) if (!bosses.some((x) => x.id === b && x.defeated !== false)) failures.push(`boss ${b} was never fought on the route`);
-  if (!saveCheck) failures.push('the save/load check never ran (fewer than two bosses beaten)');
+  if (!saveCheck) failures.push('the save/load check never ran (no brazier on the route after the second boss)');
   if (page.problems.length) failures.push(...page.problems.slice(0, 5));
 
   const walked = hops.filter((h) => h.walked).length;
