@@ -207,7 +207,8 @@ document.addEventListener('visibilitychange', () => {
 // ---------------------------------------------------------------- boot
 
 resize(); resizePending = false;
-const startScreen = Q.get('pick') ? 'paint' : Q.get('screen') && app.screens[Q.get('screen')] ? Q.get('screen') : 'title';
+// ?pick= opens the easel with that friend, unless ?screen=alive asks for it to come alive
+const startScreen = Q.get('screen') === 'alive' ? 'alive' : Q.get('pick') ? 'paint' : Q.get('screen') && app.screens[Q.get('screen')] ? Q.get('screen') : 'title';
 if (startScreen === 'alive') {
   switchTo('paint', { kind: Q.get('pick') || 'dragon' });
   app.screens.paint.painting.colourIn();

@@ -1,0 +1,37 @@
+name: Magic Brush tests
+
+on:
+  pull_request:
+    paths:
+      - 'games/magic-brush/**'
+      - '.github/workflows/magic-brush-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'games/magic-brush/**'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: games/magic-brush/test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+        env:
+          # shared runners are slower than a laptop; 50 fps is asserted locally
+          MB_FPS_MIN: '40'
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: magic-brush-test-reports
+          path: games/magic-brush/test/out/
+          if-no-files-found: ignore
