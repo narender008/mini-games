@@ -1,0 +1,36 @@
+name: Rocket Blast tests
+
+on:
+  pull_request:
+    paths:
+      - 'games/rocket-blast/**'
+      - 'vendor/three/**'
+      - '.github/workflows/rocket-blast-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'games/rocket-blast/**'
+      - 'vendor/three/**'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: games/rocket-blast/test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rocket-blast-test-reports
+          path: games/rocket-blast/test/out/
+          if-no-files-found: ignore

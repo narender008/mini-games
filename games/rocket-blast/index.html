@@ -15,6 +15,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Rocket Blast" />
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="ace.css" />
     <script type="importmap">
       {
         "imports": {
@@ -53,6 +54,11 @@
           <button type="button" class="mode" data-mode="free" role="radio" aria-checked="false">
             <svg viewBox="0 0 64 64" aria-hidden="true"><use href="#i-mode-free" /></svg><span>Free Blast</span>
           </button>
+          <button type="button" class="mode ace-mode" data-mode="ace" role="radio" aria-checked="false" aria-describedby="ace-mode-sub">
+            <i class="ace-age" aria-hidden="true">12+</i>
+            <svg viewBox="0 0 64 64" aria-hidden="true"><use href="#i-mode-ace" /></svg><span>Ace Pilot</span>
+            <small class="ace-mode-sub" id="ace-mode-sub"><b>Skill mode · you can lose</b> 5 sectors · bosses · ranks</small>
+          </button>
         </div>
         <p class="bests" aria-live="polite">
           <span class="best" data-best="little" title="Most stars in one flight"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-star" /></svg><b>0</b></span>
@@ -60,6 +66,19 @@
         </p>
       </div>
       <div class="pickers" data-where="menu"></div>
+      <!-- shown instead of the pickers when Ace Pilot is the chosen mode -->
+      <div class="ace-blurb" aria-labelledby="ace-blurb-title">
+        <p class="ace-kicker">Ace Pilot · 12+</p>
+        <h2 id="ace-blurb-title">Skill mode: you can lose</h2>
+        <p class="ace-blurb-text">Fly a fighter through five sectors of machine fleets, each ending in a boss. Weave through bullet patterns, graze them for points, chain kills and choose an upgrade after every wave. Three hull hits and the sector is lost.</p>
+        <p class="ace-blurb-stats"><span><b id="ace-blurb-medals">0 / 5</b> medals</span><span><b id="ace-blurb-score">0</b> total score</span></p>
+        <dl class="ace-keys">
+          <dt><kbd>Mouse</kbd> <kbd>WASD</kbd></dt><dd>Fly</dd>
+          <dt><kbd>Hold</kbd> <kbd>Space</kbd> <kbd>F</kbd></dt><dd>Fire · F toggles auto-fire</dd>
+          <dt><kbd>Right-click</kbd> <kbd>X</kbd></dt><dd>EMP bomb</dd>
+          <dt><kbd>Esc</kbd></dt><dd>Pause</dd>
+        </dl>
+      </div>
     </section>
 
     <!-- in-game HUD -->
@@ -111,6 +130,180 @@
       </button>
     </aside>
 
+    <!-- Ace Pilot (12+): the HUD, sector map, upgrade pick, pause and result
+         screens. src/ace/ui.js fills and shows them; ace.css styles them. -->
+    <div id="ace-hud" hidden>
+      <div class="ah-vignette" aria-hidden="true"></div>
+      <div class="ah-tl">
+        <button type="button" class="ace-icon-btn" id="ace-pause" aria-label="Pause (Esc)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-ace-pause" /></svg>
+        </button>
+        <div class="ace-panel ah-vitals" id="ace-vitals" role="group" aria-label="Hull and shield">
+          <span class="ah-lbl ah-lbl-hull">Hull</span>
+          <span class="ah-hull" id="ace-hull"></span>
+          <span class="ah-lbl ah-lbl-shield">Shield</span>
+          <span class="ah-pct" id="ace-shield-pct">100%</span>
+          <span class="ah-shield"><i id="ace-shield-fill"></i></span>
+          <span class="ah-charges" id="ace-shield-charges"></span>
+          <span class="ah-lbl ah-lbl-both" aria-hidden="true">Hull · Shield</span>
+        </div>
+      </div>
+      <div class="ah-top">
+        <div class="ah-sector" id="ace-sector">
+          <small id="ace-sector-n">Sector 1</small>
+          <b id="ace-sector-name">Asteroid Belt</b>
+          <span class="ah-pips" id="ace-wave-pips" aria-hidden="true"></span>
+          <em id="ace-wave-label">Wave 1/8</em>
+        </div>
+        <div class="ah-boss" id="ace-boss" hidden>
+          <b id="ace-boss-name">Boss</b>
+          <div class="ah-bossbar" aria-hidden="true">
+            <i class="lag" id="ace-boss-lag"></i><i class="fill" id="ace-boss-fill"></i><span class="marks" id="ace-boss-marks"></span>
+          </div>
+          <div class="ah-bossinfo">
+            <span id="ace-boss-phase">Phase 1 / 3</span>
+            <span class="parts" id="ace-boss-parts"><span id="ace-boss-parts-label"></span><span class="icons" id="ace-boss-part-icons"></span></span>
+          </div>
+        </div>
+      </div>
+      <div class="ace-panel ah-scorebox" id="ace-scorebox">
+        <div class="ah-rank"><span class="ace-rank" id="ace-rank" data-rank="C">C</span><small>Rank</small></div>
+        <div class="ah-score">
+          <small>Score</small>
+          <b id="ace-score">0</b>
+          <span class="ah-chain" id="ace-chainbox"><small>Chain</small><b id="ace-chain">×1</b></span>
+          <span class="ah-chainbar" aria-hidden="true"><i id="ace-chain-fill"></i></span>
+        </div>
+      </div>
+      <div class="ah-chips ace-chips" id="ace-chips" aria-label="Upgrades"></div>
+      <button type="button" class="ah-emp" id="ace-emp" aria-label="EMP bomb (X)">
+        <span class="hex"><svg viewBox="0 0 48 48" aria-hidden="true"><use href="#i-ace-emp" /></svg></span>
+        <span class="lbl"><kbd>X</kbd>EMP <b id="ace-emp-n">×2</b></span>
+      </button>
+    </div>
+
+    <section id="ace-map" class="ace-screen" hidden aria-labelledby="ace-map-title">
+      <header class="am-head">
+        <button type="button" class="ace-btn ghost am-back" id="ace-back">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg><span>Menu</span>
+        </button>
+        <p class="ace-kicker red">Ace Pilot</p>
+        <h1 id="ace-map-title">Campaign</h1>
+        <p class="am-sum" id="ace-map-sum"></p>
+      </header>
+      <div class="am-tools">
+        <button type="button" class="ace-icon-btn fs ace-fs" aria-pressed="false" aria-label="Full screen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="enter" d="M4 9.5V4h5.5M14.5 4H20v5.5M20 14.5V20h-5.5M9.5 20H4v-5.5" /><path class="exit" d="M9.5 4v5.5H4M20 9.5h-5.5V4M14.5 20v-5.5H20M4 14.5h5.5V20" /></svg>
+        </button>
+        <button type="button" class="ace-icon-btn mute" aria-pressed="false" aria-label="Sound off">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg>
+        </button>
+      </div>
+      <div class="am-field" id="ace-map-field">
+        <svg class="am-route land" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+        <svg class="am-route port" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+        <div class="am-nodes" id="ace-map-nodes" role="radiogroup" aria-label="Sectors"></div>
+      </div>
+      <aside class="ace-panel am-panel" id="ace-map-panel" aria-live="polite">
+        <p class="ace-kicker orange" id="ace-map-n">Sector 1</p>
+        <h2 id="ace-map-name">Asteroid Belt</h2>
+        <div class="am-preview" id="ace-map-preview" aria-hidden="true">
+          <svg class="emblem" viewBox="0 0 64 64"><use id="ace-map-art" href="#i-sec-belt" /></svg>
+          <svg class="ship" viewBox="0 0 64 64"><use href="#i-ace-fighter" /></svg>
+        </div>
+        <p class="am-blurb" id="ace-map-blurb"></p>
+        <dl class="am-facts">
+          <dt>Waves</dt><dd>8 + Boss</dd>
+          <dt>Boss</dt><dd class="boss" id="ace-map-boss"></dd>
+          <dt>Best</dt><dd id="ace-map-best">—</dd>
+        </dl>
+        <h3>Threats</h3>
+        <ul class="am-threats" id="ace-map-threats"></ul>
+        <div class="am-pars" id="ace-map-pars" hidden>
+          <h3>Rank targets</h3>
+          <ul id="ace-map-par-list"></ul>
+        </div>
+        <p class="am-lock" id="ace-map-lock" hidden></p>
+        <button type="button" class="ace-btn launch" id="ace-launch">Launch</button>
+      </aside>
+      <div class="ace-panel am-fighter" aria-hidden="true">
+        <svg viewBox="0 0 64 64"><use href="#i-ace-fighter" /></svg>
+        <p><b>Ace Fighter Mk I</b><span>Hull 3 · Shield 1 · Twin cannons · EMP ×2</span></p>
+      </div>
+    </section>
+
+    <section id="ace-upgrade" class="ace-screen ace-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="ace-up-title">
+      <header class="au-head">
+        <p class="ace-kicker" id="ace-up-sector">Sector 1 · Asteroid Belt</p>
+        <h2 id="ace-up-title">Wave 1 cleared</h2>
+        <dl class="au-stats" id="ace-up-stats"></dl>
+      </header>
+      <p class="au-choose" id="ace-up-choose">Choose one upgrade</p>
+      <div class="au-cards" id="ace-cards" role="radiogroup" aria-labelledby="ace-up-choose"></div>
+      <div class="au-actions">
+        <button type="button" class="ace-btn ghost" id="ace-reroll">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-ace-reroll" /></svg><span>Reroll <b id="ace-reroll-n">×1</b></span><kbd>R</kbd>
+        </button>
+        <button type="button" class="ace-btn gold" id="ace-take" disabled>Take it</button>
+      </div>
+      <p class="au-hint" id="ace-up-hint">Press 1, 2 or 3 to choose · press again or Enter to take it</p>
+      <div class="au-equipped">
+        <p>Equipped</p>
+        <div class="ace-chips" id="ace-up-chips"></div>
+      </div>
+    </section>
+
+    <section id="ace-paused" class="ace-screen ace-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="ace-paused-title">
+      <div class="ace-panel ap-box">
+        <p class="ace-kicker" id="ace-paused-sector">Sector 1 · Asteroid Belt</p>
+        <h2 id="ace-paused-title">Paused</h2>
+        <p class="ap-line" id="ace-paused-line"></p>
+        <div class="ap-buttons">
+          <button type="button" class="ace-btn primary" id="ace-resume">Resume</button>
+          <button type="button" class="ace-btn" id="ace-restart">Restart sector</button>
+          <button type="button" class="ace-btn ghost" id="ace-quit">Quit to map</button>
+        </div>
+        <dl class="ace-keys">
+          <dt><kbd>Mouse</kbd> <kbd>WASD</kbd></dt><dd>Fly · drag on touch</dd>
+          <dt><kbd>Hold</kbd> <kbd>Space</kbd></dt><dd>Fire · <kbd>F</kbd> toggles auto-fire</dd>
+          <dt><kbd>Right-click</kbd> <kbd>X</kbd></dt><dd>EMP: clears bullets</dd>
+        </dl>
+        <div class="ap-tools">
+          <button type="button" class="ace-icon-btn mute" aria-pressed="false" aria-label="Sound off">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" class="fillc" /><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /><path class="off" d="M17 9l5 6m0-6-5 6" /></svg>
+          </button>
+          <button type="button" class="ace-icon-btn fs ace-fs" aria-pressed="false" aria-label="Full screen">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path class="enter" d="M4 9.5V4h5.5M14.5 4H20v5.5M20 14.5V20h-5.5M9.5 20H4v-5.5" /><path class="exit" d="M9.5 4v5.5H4M20 9.5h-5.5V4M14.5 20v-5.5H20M4 14.5h5.5V20" /></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section id="ace-result" class="ace-screen ace-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="ace-result-title">
+      <div class="ace-panel ar-box">
+        <p class="ace-kicker" id="ace-result-sector">Sector 1 · Asteroid Belt</p>
+        <h2 id="ace-result-title">Sector clear</h2>
+        <div class="ar-main">
+          <div class="ar-medal"><span class="ace-rank big" id="ace-result-rank" data-rank="A">A</span><small>Rank</small></div>
+          <div class="ar-score">
+            <small>Score</small>
+            <b id="ace-result-score">0</b>
+            <span class="ar-best" id="ace-result-best"></span>
+          </div>
+        </div>
+        <dl class="ar-stats" id="ace-result-stats"></dl>
+        <p class="ar-note" id="ace-result-note"></p>
+        <div class="ar-buttons">
+          <button type="button" class="ace-btn primary" id="ace-next">Next sector</button>
+          <button type="button" class="ace-btn" id="ace-retry">Retry</button>
+          <button type="button" class="ace-btn ghost" id="ace-tomap">Sector map</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="ace-banner" aria-live="assertive"></div>
+    <div id="ace-floats" aria-hidden="true"></div>
+
     <noscript><p class="noscript">Rocket Blast needs JavaScript to run.</p></noscript>
 
     <!-- icons -->
@@ -158,6 +351,65 @@
         <symbol id="i-mode-little" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#ffe8f3" /><g transform="translate(18 8) scale(0.44)"><use href="#i-rocket" width="64" height="96" /></g><path d="M46 14c-2-4-8-2-6 2l6 6 6-6c2-4-4-6-6-2z" fill="#ff5f9a" /></symbol>
         <symbol id="i-mode-big" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#e3f0ff" /><g transform="translate(12 8) scale(0.44)"><use href="#i-rocket" width="64" height="96" /></g><path d="M44 10l-6 12h6l-4 12 12-16h-7l5-8z" fill="url(#g-gold)" stroke="#d08000" /><text x="47" y="56" font-size="14" font-weight="900" fill="#2f63d8" text-anchor="middle" font-family="Arial Rounded MT Bold, Arial, sans-serif">×5</text></symbol>
         <symbol id="i-mode-free" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#fff3d6" /><g transform="translate(14 16) scale(0.62)"><use href="#i-hand" width="64" height="64" /></g><g fill="url(#g-gold)"><path d="M14 12l2 5 5 1-5 2-2 5-2-5-5-2 5-1z" /><path d="M48 8l1.5 3.5 3.5 1-3.5 1.5L48 17l-1.5-3-3.5-1.5 3.5-1z" /><path d="M52 30l1.2 3 3 1-3 1.2L52 38l-1.2-2.8-3-1.2 3-1z" /></g></symbol>
+
+        <!-- Ace Pilot (12+): fighter, mode card, interface, upgrades, threats, sectors -->
+        <linearGradient id="g-ace-hull" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#9aa7b8" /><stop offset="0.45" stop-color="#ffffff" /><stop offset="1" stop-color="#8794a6" /></linearGradient>
+        <radialGradient id="g-ace-engine" cx="0.5" cy="0.4" r="0.6"><stop offset="0" stop-color="#ffffff" /><stop offset="0.35" stop-color="#7ff4ff" stop-opacity="0.9" /><stop offset="1" stop-color="#1fb8ff" stop-opacity="0" /></radialGradient>
+        <linearGradient id="g-ace-trail" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#3fe0ff" stop-opacity="0" /><stop offset="1" stop-color="#9ff6ff" /></linearGradient>
+        <linearGradient id="g-ace-gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff2a8" /><stop offset="0.5" stop-color="#ffcc33" /><stop offset="1" stop-color="#e88a00" /></linearGradient>
+        <linearGradient id="g-ace-shield" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bdfaff" /><stop offset="1" stop-color="#2bb6d8" /></linearGradient>
+        <linearGradient id="g-ace-metal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d9e1ea" /><stop offset="1" stop-color="#6d7a8c" /></linearGradient>
+        <linearGradient id="g-ace-flame" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff3b0" /><stop offset="0.45" stop-color="#ffa52e" /><stop offset="1" stop-color="#ff3f5a" stop-opacity="0.2" /></linearGradient>
+        <radialGradient id="g-ace-belt" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#2b5f6c" /><stop offset="1" stop-color="#071820" /></radialGradient>
+        <linearGradient id="g-ace-storm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9fb8ff" /><stop offset="0.5" stop-color="#4b5fc8" /><stop offset="1" stop-color="#1a1e5c" /></linearGradient>
+        <radialGradient id="g-ace-foundry" cx="0.5" cy="0.5" r="0.6"><stop offset="0" stop-color="#3a2416" /><stop offset="1" stop-color="#0b0a0e" /></radialGradient>
+        <radialGradient id="g-ace-hive" cx="0.4" cy="0.35" r="0.75"><stop offset="0" stop-color="#4a2a6e" /><stop offset="1" stop-color="#140a22" /></radialGradient>
+        <radialGradient id="g-ace-dread" cx="0.5" cy="0.35" r="0.75"><stop offset="0" stop-color="#4a1420" /><stop offset="1" stop-color="#0c0710" /></radialGradient>
+        <radialGradient id="g-ace-rock" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#b9b2a6" /><stop offset="1" stop-color="#4a4640" /></radialGradient>
+        <radialGradient id="g-ace-core" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#fffbe0" /><stop offset="0.45" stop-color="#ffc23a" /><stop offset="1" stop-color="#ff6a00" stop-opacity="0" /></radialGradient>
+        <clipPath id="c-ace-disc"><circle cx="32" cy="32" r="30" /></clipPath>
+
+        <symbol id="i-ace-fighter" viewBox="0 0 64 64"><ellipse cx="32" cy="56" rx="8" ry="7" fill="url(#g-ace-engine)" /><path d="M28.4 50h2.6l-.6 11h-1.4zM33 50h2.6l-.6 11h-1.4z" fill="#8ff6ff" opacity="0.85" /><path d="M32 18 58 43.5V48l-20-1.6-6 3.6-6-3.6L6 48v-4.5z" fill="#c4cfdb" stroke="#4d5a6c" stroke-width="0.9" stroke-linejoin="round" /><path d="M51 37.3 58 43.5V48l-4.4-.4zM13 37.3 6 43.5V48l4.4-.4z" fill="#e3303e" /><path d="M32 15.5 42 25l-1.6 1.6L32 22l-8.4 4.6L22 25z" fill="#a9b5c4" stroke="#4d5a6c" stroke-width="0.8" stroke-linejoin="round" /><path d="M26.6 42 20 52.6l6.6-2zM37.4 42 44 52.6l-6.6-2z" fill="#8a97a9" stroke="#4d5a6c" stroke-width="0.8" stroke-linejoin="round" /><path d="M32 3c3 7 5 15 5 25v22l-3 4h-4l-3-4V28c0-10 2-18 5-25z" fill="url(#g-ace-hull)" stroke="#4d5a6c" stroke-width="0.9" /><path d="M31 29h2v20.5h-2z" fill="#e3303e" /><path d="M32 10.5c1.9 3 2.6 7 2.6 11.2L32 25l-2.6-3.3c0-4.2.7-8.2 2.6-11.2z" fill="#173452" stroke="#7fe8ff" stroke-width="0.7" /><path d="M31.2 13.5c-.6 2-.9 4.2-.9 6.6" stroke="#bff6ff" stroke-width="0.8" fill="none" stroke-linecap="round" /></symbol>
+        <symbol id="i-mode-ace" viewBox="0 0 64 64"><g fill="#cfe6ff"><circle cx="9" cy="12" r="0.9" /><circle cx="22" cy="6" r="0.6" /><circle cx="54" cy="9" r="1.1" /><circle cx="58" cy="30" r="0.7" /><circle cx="7" cy="34" r="0.6" /><circle cx="47" cy="56" r="0.9" /><circle cx="15" cy="58" r="0.6" /></g><path d="M8 58 27 37" stroke="url(#g-ace-trail)" stroke-width="7" stroke-linecap="round" /><path d="M10 57 27 38" stroke="#e8feff" stroke-width="1.6" stroke-linecap="round" opacity="0.8" /><g transform="rotate(42 32 32) translate(4 2) scale(0.86)"><use href="#i-ace-fighter" width="64" height="64" /></g></symbol>
+
+        <symbol id="i-ace-pause" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1.2" fill="currentColor" /><rect x="14" y="5" width="4" height="14" rx="1.2" fill="currentColor" /></symbol>
+        <symbol id="i-ace-emp" viewBox="0 0 48 48"><circle cx="24" cy="24" r="5" fill="#e8fdff" /><circle cx="24" cy="24" r="10" fill="none" stroke="#3fe0ff" stroke-width="3" /><circle cx="24" cy="24" r="17" fill="none" stroke="#3fe0ff" stroke-width="2.4" stroke-dasharray="20 6.7" opacity="0.8" /></symbol>
+        <symbol id="i-ace-lock" viewBox="0 0 24 24"><path d="M7.5 10.5V8a4.5 4.5 0 0 1 9 0v2.5" fill="none" stroke="currentColor" stroke-width="2.4" /><rect x="5" y="10" width="14" height="10.5" rx="2" fill="currentColor" /><circle cx="12" cy="15" r="1.6" fill="#0b1426" /></symbol>
+        <symbol id="i-ace-check" viewBox="0 0 24 24"><path d="M5 12.5 10 17 19 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-ace-reroll" viewBox="0 0 24 24"><path d="M19 8.5A7.5 7.5 0 0 0 5.2 9M5 15.5A7.5 7.5 0 0 0 18.8 15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" /><path d="M19.6 3.8v5.2h-5.2M4.4 20.2V15h5.2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-ace-skull-x" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.6" /><path d="M5.4 5.4l5.2 5.2m0-5.2-5.2 5.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></symbol>
+        <symbol id="i-ace-part" viewBox="0 0 16 16"><path d="M8 1.2 14 4.6v6.8L8 14.8 2 11.4V4.6z" fill="currentColor" /><circle cx="8" cy="8" r="2.2" fill="#2a1600" opacity="0.55" /></symbol>
+
+        <!-- upgrades -->
+        <symbol id="i-up-pierce" viewBox="0 0 48 48"><rect x="8" y="17" width="32" height="5" rx="1.5" fill="#56607a" /><rect x="8" y="29" width="32" height="5" rx="1.5" fill="#56607a" /><path d="M24 44V8" stroke="#b98cff" stroke-width="7" stroke-linecap="round" opacity="0.35" /><path d="M24 44V9" stroke="#e7d8ff" stroke-width="3" stroke-linecap="round" /><path d="M17 13l7-8 7 8" fill="none" stroke="#e7d8ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /><path d="M19 19.5h-3M32 19.5h-3M19 31.5h-3M32 31.5h-3" stroke="#c9a6ff" stroke-width="1.6" stroke-linecap="round" /></symbol>
+        <symbol id="i-up-drones" viewBox="0 0 48 48"><g transform="translate(12 6) scale(0.375)"><use href="#i-ace-fighter" width="64" height="64" /></g><path d="M7 30l4-9 4 9-4-2z" fill="#7fe8ff" /><path d="M33 30l4-9 4 9-4-2z" fill="#7fe8ff" /><circle cx="11" cy="32" r="2.4" fill="#3fe0ff" opacity="0.6" /><circle cx="37" cy="32" r="2.4" fill="#3fe0ff" opacity="0.6" /><path d="M11 18v-8M37 18v-8" stroke="#bff6ff" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="2.5 2.5" /></symbol>
+        <symbol id="i-up-missiles" viewBox="0 0 48 48"><path d="M10 44c0-14 6-24 18-30M18 44c0-10 5-18 14-24" fill="none" stroke="#e8f1ff" stroke-width="2" stroke-linecap="round" opacity="0.55" /><g transform="rotate(38 26 16)"><path d="M26 6c2 2 2.6 4.5 2.6 7v9h-5.2v-9c0-2.5.6-5 2.6-7z" fill="url(#g-ace-metal)" /><path d="M26 6c1.2 1.2 2 2.6 2.3 4h-4.6c.3-1.4 1.1-2.8 2.3-4z" fill="#e3303e" /><path d="M23.4 19l-2 4h2zM28.6 19l2 4h-2z" fill="#e3303e" /></g><g transform="rotate(52 30 24)"><path d="M30 15c1.7 1.7 2.2 3.8 2.2 6v7.6h-4.4V21c0-2.2.5-4.3 2.2-6z" fill="url(#g-ace-metal)" /><path d="M30 15c1 1 1.7 2.2 2 3.4h-4c.3-1.2 1-2.4 2-3.4z" fill="#e3303e" /></g><circle cx="38" cy="10" r="5.5" fill="none" stroke="#ff9a2e" stroke-width="2" /><path d="M38 2v4.5M38 13.5V18M30 10h4.5M41.5 10H46" stroke="#ff9a2e" stroke-width="2" stroke-linecap="round" /></symbol>
+        <symbol id="i-up-capacitor" viewBox="0 0 48 48"><path d="M24 4 40 10v11c0 11-7 19-16 23C15 40 8 32 8 21V10z" fill="url(#g-ace-shield)" opacity="0.25" /><path d="M24 6.5 38 11.8V21c0 9.6-6 16.6-14 20.4C16 37.6 10 30.6 10 21v-9.2z" fill="none" stroke="#9ff6ff" stroke-width="2.6" stroke-linejoin="round" /><rect x="16" y="17" width="16" height="3.6" rx="1" fill="#e8fdff" /><rect x="16" y="23" width="16" height="3.6" rx="1" fill="#bff6ff" /><rect x="17.5" y="29" width="13" height="3.6" rx="1" fill="#7fe8ff" /></symbol>
+        <symbol id="i-up-overdrive" viewBox="0 0 48 48"><circle cx="24" cy="24" r="18" fill="none" stroke="#ffcc33" stroke-width="2.6" stroke-dasharray="84 30" transform="rotate(-60 24 24)" /><path d="M27 7 14 27h9l-3 14 14-21h-9z" fill="url(#g-ace-gold)" stroke="#fff2a8" stroke-width="1" stroke-linejoin="round" /></symbol>
+        <symbol id="i-up-spread" viewBox="0 0 48 48"><g stroke-linecap="round"><path d="M24 40V10" stroke="#7fe8ff" stroke-width="3.4" /><path d="M24 40 12 13" stroke="#7fe8ff" stroke-width="3" opacity="0.85" /><path d="M24 40 36 13" stroke="#7fe8ff" stroke-width="3" opacity="0.85" /><path d="M24 40 4 22" stroke="#7fe8ff" stroke-width="2.4" opacity="0.45" /><path d="M24 40 44 22" stroke="#7fe8ff" stroke-width="2.4" opacity="0.45" /></g><circle cx="24" cy="40" r="4.5" fill="#e8fdff" /><circle cx="24" cy="10" r="2.6" fill="#e8fdff" /><circle cx="12" cy="13" r="2.4" fill="#e8fdff" /><circle cx="36" cy="13" r="2.4" fill="#e8fdff" /></symbol>
+        <symbol id="i-up-emp" viewBox="0 0 48 48"><use href="#i-ace-emp" width="48" height="48" /><circle cx="37" cy="37" r="8" fill="#0b1426" stroke="#3fe0ff" stroke-width="1.6" /><path d="M37 32.5v9M32.5 37h9" stroke="#e8fdff" stroke-width="2.4" stroke-linecap="round" /></symbol>
+        <symbol id="i-up-repair" viewBox="0 0 48 48"><path d="M6 32h22l4-8H10z" fill="#c4cfdb" opacity="0.35" /><g transform="rotate(-40 22 24)"><path d="M18 10a7 7 0 0 0 4 12v18a2.4 2.4 0 0 0 4.8 0V22a7 7 0 0 0 4-12v6h-6z" fill="url(#g-ace-metal)" stroke="#4d5a6c" stroke-width="0.8" stroke-linejoin="round" /></g><circle cx="36" cy="14" r="8" fill="#1d4a2c" stroke="#5fe08a" stroke-width="1.8" /><path d="M36 9.5v9M31.5 14h9" stroke="#b8ffd0" stroke-width="2.6" stroke-linecap="round" /></symbol>
+        <symbol id="i-up-magnet" viewBox="0 0 48 48"><path d="M12 8h8v14a4 4 0 0 0 8 0V8h8v14a12 12 0 0 1-24 0z" fill="#e3303e" stroke="#ff8a96" stroke-width="1" /><rect x="12" y="8" width="8" height="6" fill="url(#g-ace-metal)" /><rect x="28" y="8" width="8" height="6" fill="url(#g-ace-metal)" /><g fill="#ffcc33"><circle cx="24" cy="42" r="2.2" /><circle cx="14" cy="42" r="1.6" opacity="0.7" /><circle cx="34" cy="42" r="1.6" opacity="0.7" /></g><path d="M8 4l3 2M40 4l-3 2" stroke="#ffcc33" stroke-width="1.6" stroke-linecap="round" /></symbol>
+        <symbol id="i-up-afterburner" viewBox="0 0 48 48"><path d="M24 30c5 4 6 9 0 16-6-7-5-12 0-16z" fill="url(#g-ace-flame)" /><g fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22 24 11l12 11" stroke="#e8f1ff" stroke-width="3.6" /><path d="M14 31 24 22l10 9" stroke="#7fe8ff" stroke-width="3" opacity="0.75" /></g><path d="M6 14v12M42 14v12" stroke="#ffa52e" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 3" /></symbol>
+
+        <!-- enemy threats (they fly downward, towards you) -->
+        <symbol id="i-en-dart" viewBox="0 0 32 32"><path d="M16 29 3 6l13 6 13-6z" fill="#b7a9c8" stroke="#4a3a60" stroke-width="0.9" stroke-linejoin="round" /><path d="M16 12v14" stroke="#ff3fb4" stroke-width="1.4" /><circle cx="16" cy="15" r="2.6" fill="#ff7ad0" /></symbol>
+        <symbol id="i-en-gunship" viewBox="0 0 32 32"><rect x="4" y="6" width="6" height="18" rx="3" fill="#c9a98c" stroke="#5a4232" stroke-width="0.8" /><rect x="22" y="6" width="6" height="18" rx="3" fill="#c9a98c" stroke="#5a4232" stroke-width="0.8" /><path d="M9 9h14v12l-7 6-7-6z" fill="#d8dee6" stroke="#5a4232" stroke-width="0.8" stroke-linejoin="round" /><circle cx="16" cy="15" r="3.4" fill="url(#g-ace-core)" /><circle cx="16" cy="15" r="1.6" fill="#fffbe0" /><circle cx="7" cy="25" r="1.8" fill="#ffa52e" /><circle cx="25" cy="25" r="1.8" fill="#ffa52e" /></symbol>
+        <symbol id="i-en-diver" viewBox="0 0 32 32"><path d="M10 2 15 18M22 2 17 18" stroke="#ff4a5a" stroke-width="2" stroke-linecap="round" opacity="0.5" /><path d="M16 30 9 16l7 3 7-3z" fill="#f2e6e6" stroke="#7a2430" stroke-width="0.9" stroke-linejoin="round" /><path d="M16 19v8" stroke="#ff4a5a" stroke-width="1.6" /></symbol>
+        <symbol id="i-en-bulwark" viewBox="0 0 32 32"><path d="M5 5h22l-3 14H8z" fill="url(#g-ace-metal)" stroke="#3a4250" stroke-width="0.9" stroke-linejoin="round" /><path d="M10 7v8M22 7v8" stroke="#3a4250" stroke-width="1.2" /><circle cx="16" cy="11" r="3" fill="#ffd84a" /><path d="M4 21q12 10 24 0" fill="none" stroke="#5fd0ff" stroke-width="2.6" stroke-linecap="round" /><path d="M7 24q9 6 18 0" fill="none" stroke="#bff6ff" stroke-width="1" opacity="0.7" /></symbol>
+        <symbol id="i-en-minelayer" viewBox="0 0 32 32"><ellipse cx="16" cy="16" rx="13" ry="6.5" fill="#8a6cc0" stroke="#3a2a5a" stroke-width="0.9" /><ellipse cx="16" cy="14" rx="6" ry="4" fill="#cdb8ff" /><circle cx="16" cy="14" r="2" fill="#ff3fb4" /><circle cx="16" cy="27" r="2.4" fill="#ff4a5a" /></symbol>
+        <symbol id="i-en-mine" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="none" stroke="#ff4a5a" stroke-width="1" stroke-dasharray="3 3" opacity="0.6" /><g stroke="#c9a6b0" stroke-width="2" stroke-linecap="round"><path d="M16 5v4M16 23v4M5 16h4M23 16h4M8.2 8.2l2.8 2.8M21 21l2.8 2.8M8.2 23.8 11 21M21 11l2.8-2.8" /></g><circle cx="16" cy="16" r="6" fill="#6a4a56" stroke="#2a1820" stroke-width="0.8" /><circle cx="16" cy="16" r="2.4" fill="#ff4a5a" /></symbol>
+        <symbol id="i-en-splitter" viewBox="0 0 32 32"><path d="M16 4 27 12 16 16z" fill="#7fe07a" /><path d="M16 4 5 12 16 16z" fill="#4cb84a" /><path d="M5 12 16 16 16 29z" fill="#3a9a3e" /><path d="M27 12 16 16 16 29z" fill="#5fd05c" /><path d="M16 4 27 12 16 29 5 12z" fill="none" stroke="#d8ffd0" stroke-width="0.9" stroke-linejoin="round" /><circle cx="16" cy="15" r="2" fill="#eaffe0" /></symbol>
+        <symbol id="i-en-shard" viewBox="0 0 32 32"><path d="M16 27 8 9h16z" fill="#5fd05c" stroke="#d8ffd0" stroke-width="0.9" stroke-linejoin="round" /></symbol>
+        <symbol id="i-en-sniper" viewBox="0 0 32 32"><path d="M16 17v14" stroke="#ff4a5a" stroke-width="1.4" stroke-dasharray="2.4 2" /><path d="M16 2 23 10 16 18 9 10z" fill="#e8dede" stroke="#7a2430" stroke-width="0.9" stroke-linejoin="round" /><circle cx="16" cy="10" r="2.6" fill="#ff4a5a" /></symbol>
+        <symbol id="i-en-turret" viewBox="0 0 32 32"><path d="M16 3 27 9.5v13L16 29 5 22.5v-13z" fill="#a8a28e" stroke="#3a382c" stroke-width="0.9" stroke-linejoin="round" /><path d="M18 19l7 7" stroke="#5a5646" stroke-width="3" stroke-linecap="round" /><circle cx="16" cy="16" r="6" fill="#d8d2bc" stroke="#3a382c" stroke-width="0.8" /><circle cx="16" cy="16" r="3" fill="#ffd84a" /></symbol>
+
+        <!-- sector emblems (map nodes and briefing) -->
+        <symbol id="i-sec-belt" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="url(#g-ace-belt)" /><g clip-path="url(#c-ace-disc)"><path d="M18 30l8-6 9 2 5 8-3 9-10 3-8-6z" fill="url(#g-ace-rock)" stroke="#2a2824" stroke-width="0.8" /><path d="M24 32l4-1 2 3M30 40l3-2" stroke="#3a3630" stroke-width="1" fill="none" /><path d="M40 18l6-2 4 4-1 5-6 1-3-4z" fill="url(#g-ace-rock)" /><path d="M42 40l5-1 3 3-2 4-5 0-2-3z" fill="url(#g-ace-rock)" /><path d="M10 20l4-1 2 3-2 3-4-1z" fill="url(#g-ace-rock)" /><circle cx="14" cy="44" r="2" fill="#6a665e" /><circle cx="50" cy="30" r="1.6" fill="#6a665e" /><circle cx="30" cy="14" r="1.4" fill="#6a665e" /></g><circle cx="32" cy="32" r="29.2" fill="none" stroke="#5fe0e0" stroke-width="1.4" opacity="0.6" /></symbol>
+        <symbol id="i-sec-storm" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="url(#g-ace-storm)" /><g clip-path="url(#c-ace-disc)" fill="none" stroke-linecap="round"><path d="M0 18q16-4 32 0t32 0" stroke="#c9d6ff" stroke-width="3" opacity="0.55" /><path d="M0 28q16-5 32 0t32 0" stroke="#e8eeff" stroke-width="4" opacity="0.6" /><path d="M0 40q16-4 32 0t32 0" stroke="#aebfff" stroke-width="3.4" opacity="0.45" /><path d="M0 50q16-4 32 0t32 0" stroke="#7d90e8" stroke-width="3" opacity="0.5" /></g><path d="M34 12 26 31h6l-4 17 11-21h-6l4-15z" fill="#fff" stroke="#bfe0ff" stroke-width="0.8" stroke-linejoin="round" opacity="0.95" /><circle cx="32" cy="32" r="29.2" fill="none" stroke="#9fb8ff" stroke-width="1.2" opacity="0.6" /></symbol>
+        <symbol id="i-sec-foundry" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="url(#g-ace-foundry)" /><ellipse cx="32" cy="34" rx="24" ry="9" fill="none" stroke="#ff8a2e" stroke-width="3" opacity="0.85" transform="rotate(-14 32 34)" /><ellipse cx="32" cy="34" rx="24" ry="9" fill="none" stroke="#ffe0a8" stroke-width="1" transform="rotate(-14 32 34)" /><path d="M24 31a8 8 0 0 1 16 0v4H24z" fill="url(#g-ace-metal)" /><rect x="22" y="33" width="20" height="5" rx="1.5" fill="#5a6270" /><circle cx="32" cy="35" r="3" fill="url(#g-ace-core)" /><path d="M8.5 39.2q4 5 12 4.4" fill="none" stroke="#ff8a2e" stroke-width="3" stroke-linecap="round" /><circle cx="32" cy="32" r="29.2" fill="none" stroke="#ffa52e" stroke-width="1.2" opacity="0.55" /></symbol>
+        <symbol id="i-sec-hive" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="url(#g-ace-hive)" /><g clip-path="url(#c-ace-disc)" fill="none" stroke="#7a4aa8" stroke-width="1.4"><path d="M8 14l6-3.5 6 3.5v7l-6 3.5-6-3.5zM20 21l6-3.5 6 3.5v7l-6 3.5-6-3.5zM32 14l6-3.5 6 3.5v7l-6 3.5-6-3.5zM44 21l6-3.5 6 3.5v7l-6 3.5-6-3.5zM8 28l6-3.5 6 3.5v7l-6 3.5-6-3.5zM32 28l6-3.5 6 3.5v7l-6 3.5-6-3.5zM20 35l6-3.5 6 3.5v7l-6 3.5-6-3.5zM44 35l6-3.5 6 3.5v7l-6 3.5-6-3.5zM8 42l6-3.5 6 3.5v7l-6 3.5-6-3.5zM32 42l6-3.5 6 3.5v7l-6 3.5-6-3.5zM20 49l6-3.5 6 3.5v7l-6 3.5-6-3.5z" /></g><g fill="#7dff8a"><circle cx="26" cy="24.5" r="3" opacity="0.9" /><circle cx="38" cy="31.5" r="2.4" opacity="0.7" /><circle cx="14" cy="38.5" r="2" opacity="0.6" /><circle cx="50" cy="38.5" r="2.2" opacity="0.6" /><circle cx="26" cy="52.5" r="1.8" opacity="0.5" /></g><circle cx="32" cy="32" r="29.2" fill="none" stroke="#b07aff" stroke-width="1.2" opacity="0.55" /></symbol>
+        <symbol id="i-sec-dread" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="url(#g-ace-dread)" /><g clip-path="url(#c-ace-disc)"><path d="M32 54 14 30l4-14h28l4 14z" fill="#3a3e4a" stroke="#8a90a0" stroke-width="1" stroke-linejoin="round" /><path d="M22 18h20l-2 10H24z" fill="#5a606e" /><path d="M18 30h28M20 36h24M24 42h16" stroke="#ff4a5a" stroke-width="1.2" opacity="0.8" /><circle cx="32" cy="23" r="3.2" fill="#ff4a5a" /><circle cx="32" cy="23" r="1.4" fill="#ffd0d0" /><path d="M10 26h6M48 26h6M12 34h4M48 34h4" stroke="#8a90a0" stroke-width="2" /></g><circle cx="32" cy="32" r="29.2" fill="none" stroke="#ff4a5a" stroke-width="1.2" opacity="0.55" /></symbol>
       </defs>
     </svg>
 

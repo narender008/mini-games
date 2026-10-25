@@ -17,7 +17,7 @@ export const TOY_CAPACITY = 240;
 export const WEAPONS = ['laser', 'rocket', 'bubble', 'rainbow'];
 export const WORLDS = ['sunny', 'night', 'storm', 'clouds', 'grass', 'space'];
 export const STYLES = ['blocks', 'aliens', 'robots'];
-export const MODES = ['little', 'big', 'free'];
+export const MODES = ['little', 'big', 'free', 'ace'];
 
 // Candy-bright toy colours (sRGB). Every enemy style draws from these.
 export const TOY_COLORS = ['#ff3b3b', '#2f7dff', '#2fc85a', '#ffc21a', '#ff8a1f', '#a45bff', '#ff5fb3', '#16c7c7'];
