@@ -1,0 +1,13 @@
+{
+  "name": "Tidebreaker",
+  "short_name": "Tidebreaker",
+  "description": "A side-scrolling naval roguelite: broadsides, upgrade cards and the Drowned Leviathan.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#1d0f45",
+  "theme_color": "#1d0f45",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

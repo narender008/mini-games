@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>Tidebreaker · Mini Games</title>
+    <meta name="description" content="A side-scrolling naval roguelite: captain a galleon through five seas of sunsets, storms and fog, trade broadsides with pirate fleets, stack upgrade cards into combos and face the Drowned Leviathan." />
+    <meta name="theme-color" content="#1d0f45" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Tidebreaker" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body data-scene="loading">
+    <canvas id="scene" width="1280" height="720" aria-label="Tidebreaker: a galleon at sea"></canvas>
+    <div id="ui"></div>
+    <a id="home" href="../../index.html" aria-label="Back to Mini Games">‹ Games</a>
+    <p id="rotate">Turn your phone sideways to play</p>
+    <div id="loader"><p>TIDEBREAKER</p></div>
+    <noscript><p class="noscript">Tidebreaker needs JavaScript.</p></noscript>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
