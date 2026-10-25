@@ -86,10 +86,11 @@ function tick(sf, mem, c) {
     for (const a of ['volley', 'lash', 'militia']) { const r = sf.defend(a, dread ? dread.id : undefined); if (r && r.ok && mem.raidLog !== G.raid.id + a) { mem.raidLog = G.raid.id + a; log(`defend ${a}`); } }
     for (const b of all('shieldgen')) if (b.state === 'built') { const r = sf.defend('shield', b.island); if (r && r.ok) break; }
   }
-  // ---- repairs once the raid has passed: the camps that pay for the rest first ----
+  // ---- repairs once the raid has passed: ruins, and wrecks that would take more than a minute to mend
+  // for free (a stopped Skyforge); the camps that pay for the rest first ----
   if (!G.raid || G.raid.phase === 'retreat') {
     const CORE = ['quarry', 'lumber', 'farm', 'sawmill', 'townhall', 'cottage'];
-    const hurt = G.buildings.filter((b) => !b.repairing && b.state !== 'site' && (b.state === 'ruin' || b.hp < b.maxHp * 0.6) && !(b.fire > 0.02))
+    const hurt = G.buildings.filter((b) => !b.repairing && b.state !== 'site' && (b.state === 'ruin' || b.hp < b.maxHp * 0.3 - 36) && !(b.fire > 0.02))
       .sort((a, b) => ((CORE.indexOf(a.type) + 1) || 9) - ((CORE.indexOf(b.type) + 1) || 9));
     let short = null;
     for (const b of hurt) {
@@ -110,8 +111,11 @@ function tick(sf, mem, c) {
   if (pop < 60 && T > 600) { floor.stone = 12; floor.wood = 12; }
 
   // ---- research ----
-  const ORDER = ['bellows', 'skiffs', 'crystallore', 'cargoholds', 'turbines', 'harpoons', 'propellers', 'rods', 'levitation', 'drift',
-    'stormtaming', 'assembly', 'automatons', 'foundry', 'beacon', 'shields', 'militia', 'bastion'];
+  const ORDER = ['bellows', 'skiffs', 'cargoholds', 'crystallore', 'turbines', 'harpoons', 'propellers', 'rods', 'levitation', 'drift',
+    'stormtaming', 'assembly', 'automatons', 'foundry', 'beacon'];
+  // what the rest of the story still asks of k: research in ORDER and the Skyforge stages not yet paid
+  const left = (k) => c.research.filter((r) => !done(r.id) && ORDER.includes(r.id)).reduce((a, r) => a + (r.cost[k] || 0), 0)
+    + STAGES.slice(G.buildings.filter((b) => b.type === 'skyforge').reduce((a, b) => a + (b.level || 0) + (b.forge ? 1 : 0), 0)).reduce((a, st) => a + (st[k] || 0), 0);
   const nextTech = ORDER.find((id) => !done(id) && G.research.current !== id && !G.research.queue.includes(id) && R[id].needs.every((x) => done(x) || x === G.research.current));
   if (nextTech && G.research.queue.length === 0 && built('academy')) {
     const r0 = R[nextTech];
@@ -127,9 +131,9 @@ function tick(sf, mem, c) {
   const homeSide = [HOME, 'millbrook', 'pinecrest'];
   const WHERE = {
     farm: ['millbrook', HOME, 'pinecrest'], lumber: [HOME, 'pinecrest', 'millbrook', 'orespur'], quarry: [HOME, 'orespur', 'pinecrest', 'kilnshelf'],
-    mine: ['orespur'], coalpit: ['orespur', 'kilnshelf'], smelter: ['kilnshelf', 'orespur'], drill: ['kilnshelf'], refinery: ['kilnshelf', 'orespur', 'millbrook', 'pinecrest', HOME],
+    mine: ['orespur'], coalpit: ['orespur', 'kilnshelf'], smelter: ['kilnshelf', 'orespur'], drill: ['kilnshelf'], refinery: ['orespur', 'millbrook', 'pinecrest', HOME, 'kilnshelf'],
     workshop: ['orespur', 'millbrook', 'pinecrest', HOME], sawmill: [HOME, 'millbrook', 'pinecrest', 'orespur'], windmill: ['millbrook', HOME, 'pinecrest'], bakery: ['millbrook', HOME, 'pinecrest'],
-    cottage: homeSide, well: homeSide, tavern: homeSide, market: homeSide, academy: [HOME, 'pinecrest', 'millbrook', 'orespur'], warehouse: ['orespur', 'pinecrest', 'millbrook', HOME],
+    cottage: homeSide, well: homeSide, tavern: homeSide, market: [HOME, 'millbrook', 'pinecrest', 'orespur', 'kilnshelf'], academy: [HOME, 'pinecrest', 'millbrook', 'orespur'], warehouse: ['orespur', 'pinecrest', 'millbrook', HOME],
     observatory: ['pinecrest', HOME], mooring: [HOME, 'millbrook', 'pinecrest'], harpoon: [HOME, 'millbrook', 'orespur', 'kilnshelf'], rod: [HOME, 'millbrook', 'orespur', 'kilnshelf', 'pinecrest'],
   };
   const cell = (I0, u, v) => (u < 0 || v < 0 || u >= I0.w || v >= I0.h ? ' ' : I0.cells[v * I0.w + u]);
@@ -142,6 +146,7 @@ function tick(sf, mem, c) {
       if (P.on && k === P.on) sc += 10;
       if (k === 'h' && P.vent) sc += 12;
       if (k === 'f' && type !== 'farm') sc -= 8;
+      if (k === 'k' && type !== 'drill') sc -= 8;
     }
     // snug: hug the rim, rocks and other buildings so the ground stays in one piece
     for (let y = v - 1; y <= v + h; y++) for (let x = u - 1; x <= u + w; x++) {
@@ -239,7 +244,8 @@ function tick(sf, mem, c) {
   if (built('sawmill')) want('academy', 1, 'insight', HOME, { urgent: true });
   if (P >= 9) want('academy', P >= 130 ? 6 : P >= 100 ? 5 : P >= 70 ? 4 : P >= 45 ? 3 : P >= 22 ? 2 : 1, 'insight', HOME);
   if (P >= 18) want('tavern', Math.ceil(P / 40), 'cheer', HOME);
-  if (P >= 30) want('market', 1, 'coin', HOME);
+  // markets turn spare hands into coin, which the late research, claims and stages run on
+  if (P >= 30) want('market', P >= 120 && idle > 12 ? Math.min(10, 2 + Math.floor((P - 100) / 15)) : 1, 'coin', HOME);
   if (food < P * 2.5 + 40 && foodRate < P * 0.04 + 1) more('farm', 'grain', owned('millbrook') ? 'millbrook' : HOME);
   if (P >= 10 && (!n('windmill') || (stock('grain') > 120 && stock('flour') < 40 && rate('flour') < 2))) more('windmill', 'flour');
   if (P >= 10 && built('windmill') && (!n('bakery') || (stock('flour') > 40 && stock('bread') < P + 40 && rate('bread') < 2))) more('bakery', 'bread');
@@ -255,20 +261,24 @@ function tick(sf, mem, c) {
     if ((stock('ore') < 40 && rate('ore') < 2) || G.buildings.some((b) => b.type === 'smelter' && b.stall === 'input:ore')) more('mine', 'ore', 'orespur');
     if (stock('coal') < 20 && rate('coal') < 1 && G.buildings.some((b) => b.type === 'smelter' && !b.vent) && n('coalpit') < 3) more('coalpit', 'coal', 'orespur');
     if (stock('iron') < 80 + ch * 25 && rate('iron') < 2 + ch && (stock('ore') > 30 || rate('ore') > 3)) more('smelter', 'iron', owned('kilnshelf') ? 'kilnshelf' : null);
-    if (stock('parts') < 60 + ch * 20 && rate('parts') < 1 + ch * 0.6 && stock('iron') > 40 && stock('planks') > 40) more('workshop', 'parts');
+    if (stock('parts') < 60 + ch * 20 && (rate('parts') < 1 + ch * 0.6 || (ch >= 5 && n('workshop') < 2 + ch && stock('parts') < left('parts'))) && stock('iron') > 40 && stock('planks') > 40) more('workshop', 'parts');
+    if (ch >= 5 && stock('parts') >= 30) upgrade('workshop', 'parts');
   }
   if (done('crystallore')) more('drill', 'skystone', 'kilnshelf');
   if (done('levitation') && (!n('refinery') || (stock('skystone') > 40 && rate('skystone') > 2)) && n('refinery') < 5) more('refinery', 'aether');
   // storage when something we need is near the cap
   if (['planks', 'stone', 'iron', 'parts', 'skystone', 'aether'].some((k) => stock(k) > capOf(k) * 0.9)) want('warehouse', Math.min(1 + Math.floor(ch / 2), n('warehouse') + 1), 'storage');
   // refineries run only while the story still needs aether, and leave skystone for the rest
+  let skyShort = 0;
   {
-    const left = (k) => c.research.filter((r) => !done(r.id) && ORDER.includes(r.id)).reduce((a, r) => a + (r.cost[k] || 0), 0)
-      + STAGES.slice(G.buildings.filter((b) => b.type === 'skyforge').reduce((a, b) => a + (b.level || 0) + (b.forge ? 1 : 0), 0)).reduce((a, st) => a + (st[k] || 0), 0);
     const aNeed = left('aether') + (ch <= 6 ? 20 : 0), sNeed = left('skystone');
     const on = stock('aether') < aNeed && (stock('skystone') > Math.min(sNeed, 70) || stock('aether') < 25);
     const b = G.buildings.find((x) => x.type === 'refinery' && x.state === 'built' && (x.on !== false) !== on);
     if (b) sf.toggle(b.id, on);
+    // skystone still wanted, counting what the refineries must turn into aether
+    skyShort = sNeed + Math.max(0, aNeed - stock('aether')) * 2 - stock('skystone');
+    // resonance drills and aether stills: +50% for a little aether
+    if (ch >= 6 && stock('aether') >= 15) upgrade('drill', 'skystone') || upgrade('refinery', 'aether');
   }
   // converters and raw camps pause while their goods pile up, so their hands go elsewhere
   for (const [type, k] of [['lumber', 'wood'], ['quarry', 'stone'], ['sawmill', 'planks'], ['farm', 'grain'], ['windmill', 'flour'], ['bakery', 'bread'], ['mine', 'ore'], ['coalpit', 'coal'], ['smelter', 'iron'], ['workshop', 'parts']]) {
@@ -335,7 +345,7 @@ function tick(sf, mem, c) {
     return false;
   }
   if (done('skiffs') && docks.length && !ships('skiff').length) ship('skiff');
-  const nCargo = ch >= 5 ? 4 : 3;
+  const nCargo = ch >= 6 ? 5 : ch >= 5 ? 4 : 3;
   if (done('cargoholds') && docks.length && ships('cargo').length < nCargo) ship('cargo');
   // trade routes: sell what piles up, buy what the chains are short of
   if (done('cargoholds') && docks.length) {
@@ -344,10 +354,21 @@ function tick(sf, mem, c) {
       { to: 'porthalcyon', orders: [{ res: 'planks', mode: 'sell', n: 20 }, { res: 'ore', mode: 'buy', n: 40 }] },
       { to: 'brassreach', orders: [{ res: 'iron', mode: 'buy', n: 40 }, { res: 'coal', mode: 'buy', n: 10 }] },
       { to: 'brassreach', orders: [{ res: 'ore', mode: 'buy', n: 40 }] },
+      { to: 'brassreach', orders: [{ res: 'skystone', mode: 'buy', n: 40 }] },
     ];
+    // buying runs only while the chains are short; a full store pauses the route (it costs coin every trip)
+    const LOW = { parts: 60 + ch * 15, iron: 80 + ch * 20, ore: 60, coal: 30 };
+    for (const r of G.routes) {
+      const buys = r.orders.filter((o) => o.mode === 'buy');
+      if (!buys.length || ch < 4 || stepIds.has('c4_route')) continue;
+      let short = buys.some((o) => stock(o.res) < (LOW[o.res] || 50)), ample = buys.every((o) => stock(o.res) > (LOW[o.res] || 50) * 2);
+      // skystone is dear: bought only with coin to spare and the Skyforge still short of it
+      if (buys[0].res === 'skystone') { short = skyShort > 0 && G.colony.coin > 2500; ample = !short; }
+      if (r.on !== false && ample) { sf.editRoute(r.id, { on: false }); log(`pause route ${r.to}`); } else if (r.on === false && short) { sf.editRoute(r.id, { on: true }); log(`resume route ${r.to}`); }
+    }
     const free = G.ships.find((x) => (x.kind === 'cargo' || x.kind === 'galleon') && x.state === 'idle' && !x.task && !x.route);
     const plan = ROUTES[G.routes.length];
-    if (free && plan && G.colony.coin > 300) {
+    if (free && plan && G.colony.coin > (plan.orders[0].res === 'skystone' ? 2500 : 300) && (plan.orders[0].res !== 'skystone' || skyShort > 0)) {
       const r = sf.route({ from: docks[0].id, to: plan.to, ship: free.id, orders: plan.orders });
       if (r && r.ok) log(`route ${plan.to}`);
     }
