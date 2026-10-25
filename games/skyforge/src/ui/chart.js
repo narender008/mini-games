@@ -187,7 +187,7 @@ export function createChart(app) {
       }
     },
     resize() { fit(); },
-    update(dt) { t += dt; acc += dt; if (acc > 0.5) { acc = 0; buildCard(false); } frame(); },
+    update(dt) { t += dt; acc += dt; if (acc > 0.5) { acc = 0; buildCard(false); tickExp(); } frame(); },
     teardown() { ui.ro?.disconnect(); ui = {}; ptrs.clear(); },
   });
   const island = (id) => app.G?.islands.find((i) => i.id === id) || null;
@@ -524,28 +524,44 @@ export function createChart(app) {
       const nb = G.buildings.filter((b) => b.island === i.id).length;
       out.push(h('p', { class: 'ch-meta' }, `${nb} building${nb === 1 ? '' : 's'} · ${G.links.filter((l) => l.a === i.id || l.b === i.id).length} link${G.links.filter((l) => l.a === i.id || l.b === i.id).length === 1 ? '' : 's'}`));
       if (i.kind !== 'home') out.push(...driftPad(G, i));
-      out.push(h('div', { class: 'ch-btns' }, h('button', { id: 'btn-view-island', class: 'sfp-btn primary big', type: 'button', onclick: () => viewIsland(i) }, 'View Island')));
+      out.push(h('div', { class: 'ch-btns one' }, h('button', { id: 'btn-view-island', class: 'sfp-btn primary big', type: 'button', onclick: () => viewIsland(i) }, 'View Island')));
       return out;
     }
     const cost = info?.claimCost || i.claimCost || {};
-    if (Object.keys(cost).length && i.kind !== 'roost') out.push(h('h3', null, 'Claim cost'), h('div', { class: 'sfp-chips' }, Object.entries(cost).map(([res, n]) => chipEl(iconImg(res === 'settlers' ? 'settler' : res, 22, { style: 'plain' }), fmt(n), { cls: stock(G, res) >= n ? '' : 'short', title: resName(app, res) }))));
+    if (Object.keys(cost).length && i.kind !== 'roost') out.push(h('h3', null, 'Claim cost'), h('div', { class: 'sfp-chips' }, Object.entries(cost).map(([res, n]) => chipEl(iconImg(res === 'settlers' ? 'settler' : res, 22, { style: 'plain' }), fmt(n), { cls: (res === 'settlers' ? Math.floor(G.colony?.pop || 0) : stock(G, res)) >= n ? '' : 'short', title: resName(app, res) }))));
     const kind = i.kind === 'roost' ? 'attack' : i.scouted ? 'claim' : 'scout';
     const chk = safe(() => CH.canExpedition(G, i.id, kind), { ok: true });
     const tt = info?.travel ? dur(info.travel * 2) : '';
     if (info) out.push(h('p', { class: 'ch-meta' }, info.escort ? 'Escort ready · militia airship at a mooring' : info.danger === 'pirates' ? 'Escort recommended · a militia airship' : `Round trip about ${tt || '?'}`));
-    if (exp) {
-      const lbl = { out: 'en route', onsite: 'on site', back: 'flying home' }[exp.state] || exp.state;
-      out.push(h('div', { class: 'ch-exp' }, h('div', null, h('b', null, `${exp.kind === 'scout' ? 'Scouts' : exp.kind === 'attack' ? 'Militia' : 'Settlers'} ${lbl}`), h('span', null, clock(exp.eta))), h('div', { class: 'sfp-bar blue' }, h('i', { style: { width: Math.round(100 * clamp(1 - exp.eta / Math.max(exp.eta + 1, (G.t - exp.startedAt) + exp.eta), 0.02, 1)) + '%' } }))));
-    }
+    // Button states (UI polish r1): an expedition under way turns the main button into a cyan
+    // "en route" status with its clock, never a greyed-out button; the claim button only shows
+    // when a direct claim is possible (near islets), so a far island never says "Too far away"
+    // next to a working expedition button; near islets make Claim now the gold button. A blocked
+    // expedition says why, just above the buttons.
     const label = kind === 'attack' ? 'Storm the Roost' : kind === 'scout' ? 'Send Scouts' : 'Send Expedition';
-    const claimOk = i.scouted && info?.direct && i.kind !== 'roost';
-    const claimLabel = !i.scouted ? 'Scout first' : i.kind === 'roost' ? 'Militia only' : info?.direct ? 'Claim now' : 'Too far away';
-    out.push(h('div', { class: 'ch-btns' },
-      h('button', { id: 'btn-expedition', class: 'sfp-btn primary big', type: 'button', disabled: (!chk.ok || !!exp) || null, onclick: () => act('expedition', i.id, kind) }, label, tt && !exp ? h('span', { class: 'sub' }, tt) : null),
-      h('button', { id: 'btn-claim', class: 'sfp-btn', type: 'button', disabled: !claimOk || null, onclick: () => act('claim', i.id) }, claimLabel)));
-    const why = msg || (!chk.ok && !exp ? chk.error : '');
-    if (why) out.push(h('p', { class: 'ch-note' + (msg ? ' err' : '') }, why));
+    const direct = !!(i.scouted && info?.direct && i.kind !== 'roost');
+    let expBtn;
+    if (exp) {
+      const words = { scout: ['Scouts en route', 'Scouting', 'Scouts flying home'], attack: ['Militia en route', 'Battle under way', 'Militia flying home'] }[exp.kind] || ['Settlers en route', 'Settling in', 'Ship flying home'];
+      const st = words[{ out: 0, onsite: 1, back: 2 }[exp.state] ?? 0];
+      expBtn = h('button', { id: 'btn-expedition', class: 'sfp-btn big busy', type: 'button', disabled: true, title: `${st} · ${i.name}`, '--p': expFrac(G, exp) }, iconImg('compass', 24, { style: 'plain' }), h('span', { class: 'lbl' }, st), h('span', { class: 'sub' }, clock(exp.eta)));
+    } else {
+      expBtn = h('button', { id: 'btn-expedition', class: 'sfp-btn' + (direct ? '' : ' primary big'), type: 'button', disabled: !chk.ok || null, onclick: () => act('expedition', i.id, kind) }, label, tt ? h('span', { class: 'sub' }, tt) : null);
+    }
+    const claimBtn = h('button', { id: 'btn-claim', class: 'sfp-btn primary big', type: 'button', hidden: !direct || !!exp || null, onclick: () => act('claim', i.id) }, 'Claim now');
+    if (!exp && i.scouted && i.kind !== 'roost' && !direct) out.push(h('p', { class: 'ch-meta' }, 'Too far to claim from home: an expedition settles it.'));
+    const why = msg || (!chk.ok && !exp && !direct && !(info?.dangerText && /Tempest/.test(chk.error || '')) ? chk.error : '');
+    if (why) out.push(h('p', { class: 'ch-note why' + (msg ? ' err' : '') }, why));
+    out.push(h('div', { class: 'ch-btns' + (direct && !exp ? '' : ' one') }, expBtn, claimBtn));
     return out;
+  }
+  // share of the trip done, for the busy button's fill
+  function expFrac(G, e) { const done = Math.max(0, (G.t || 0) - (e.startedAt ?? G.t)); return clamp(done / Math.max(1, done + (e.eta || 0)), 0.03, 1).toFixed(3); }
+  // the busy button's clock and fill tick between card rebuilds
+  function tickExp() {
+    const G = app.G, b = ui.card?.querySelector('#btn-expedition.busy'); if (!G || !b) return;
+    const e = (G.expeditions || []).find((x) => x.target === sel && x.state !== 'done'); if (!e) return;
+    setText(b.querySelector('.sub'), clock(e.eta)); b.style.setProperty('--p', expFrac(G, e));
   }
   function driftPad(G, i) {
     const unlocked = safe(() => RS.isUnlocked(G, 'feature:drift'), false);
@@ -572,7 +588,7 @@ export function createChart(app) {
     return [h('h2', null, p.name), h('p', { class: 'ch-status' }, `Foreign port${rn ? ' · ' + rn : ''}${routes ? ` · ${routes} route${routes > 1 ? 's' : ''}` : ''}`), h('p', { class: 'ch-desc' }, p.desc || ''),
       h('div', { class: 'ch-cols' }, h('div', null, h('h3', null, 'They buy'), h('ul', { class: 'ch-prices' }, buys.map((r) => row(r, 'sell')))), h('div', null, h('h3', null, 'They sell'), h('ul', { class: 'ch-prices' }, sells.map((r) => row(r, 'buy'))))),
       h('div', { class: 'ch-rep' }, h('span', null, 'Reputation'), h('div', { class: 'sfp-bar' }, h('i', { style: { width: Math.round(ps?.rep || 0) + '%' } }))),
-      h('div', { class: 'ch-btns' }, h('button', { id: 'btn-open-fleet', class: 'sfp-btn primary big', type: 'button', onclick: () => { app.ev?.emit('ui:fleet-port', { port: p.id }); app.setScene('fleet'); } }, 'Trade Routes'))];
+      h('div', { class: 'ch-btns one' }, h('button', { id: 'btn-open-fleet', class: 'sfp-btn primary big', type: 'button', onclick: () => { app.ev?.emit('ui:fleet-port', { port: p.id }); app.setScene('fleet'); } }, 'Trade Routes'))];
   }
   function act(kind, ...args) {
     const fn = { expedition: app.act.expedition, claim: app.act.claim, drift: app.act.drift }[kind];

@@ -135,7 +135,7 @@ body:not([data-scene="title"]):not([data-scene="profiles"]):not([data-scene="loa
 .hud-top { position: absolute; left: calc(1rem + var(--safe-l)); right: calc(1rem + var(--safe-r)); top: calc(0.9rem + var(--safe-t)); display: flex; gap: 1rem; align-items: flex-start; pointer-events: none; }
 .hud-top > * { pointer-events: auto; }
 #resbar { display: flex; align-items: center; height: 3.15rem; padding: 0 0.6rem 0 0.4rem; max-width: calc(100% - 20rem); min-width: 0; }
-#resbar .scroller { display: flex; align-items: center; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; height: 100%; gap: 0.15rem; position: relative; z-index: 1; touch-action: pan-x; }
+#resbar .scroller { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; height: 100%; gap: 0.15rem; position: relative; z-index: 1; touch-action: pan-x; }
 #resbar .scroller::-webkit-scrollbar { display: none; }
 .res { display: flex; align-items: center; gap: 0.35rem; height: 2.75rem; padding: 0 0.55rem; border-radius: 1.4rem; cursor: default; white-space: nowrap; flex: none; }
 .res .ico { width: 1.55rem; height: 1.55rem; }
@@ -148,7 +148,7 @@ body:not([data-scene="title"]):not([data-scene="profiles"]):not([data-scene="loa
 .res .mood { width: 0.7rem; height: 0.7rem; border-radius: 50%; margin-left: 0.1rem; box-shadow: 0 0 0 2px rgba(0,0,0,0.3); }
 .res.new { animation: pop 0.6s; }
 @keyframes pop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.12); } 100% { transform: none; } }
-#resbar .net { font: bold 0.72rem var(--sans); color: var(--muted); padding: 0 0.4rem 0 0.2rem; white-space: nowrap; position: relative; z-index: 1; }
+#resbar .net { font: bold 0.72rem var(--sans); color: var(--muted); padding: 0 0.4rem 0 0.2rem; white-space: nowrap; position: relative; z-index: 1; flex: 0 1 auto; min-width: 0; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; }
 
 #clock { margin-left: auto; display: flex; align-items: center; gap: 0.6rem; height: 3.15rem; padding: 0 0.45rem 0 0.35rem; flex: none; }
 #clock .dial { width: 2.2rem; height: 2.2rem; border-radius: 50%; position: relative; z-index: 1; flex: none; }
@@ -599,7 +599,8 @@ input[type=range]::-moz-range-thumb { width: 1.4rem; height: 1.4rem; border-radi
   #raid-banner p { font-size: 0.78rem; }
   #raid-banner .ico.lead { width: 2.1rem; height: 2.1rem; } #raid-banner .ico.warnico { width: 1.6rem; height: 1.6rem; }
   body.threat #goals, body.threat .bubble.tut, body.threat .pulse-ring { display: none !important; }
-  #toasts, body.threat.raid #toasts { top: calc(12.4rem + var(--safe-t)); bottom: auto; flex-direction: column; }
+  #toasts { top: calc(14rem + var(--safe-t)); bottom: auto; flex-direction: column; }
+  body.threat.raid #toasts { top: calc(12.4rem + var(--safe-t)); }
   body.threat #toasts { top: calc(13.2rem + var(--safe-t)); }
   #toasts .toast:nth-child(n+3) { display: none; }
   #chapter-banner { padding: 1rem 1.4rem; }

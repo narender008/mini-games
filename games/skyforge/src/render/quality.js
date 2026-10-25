@@ -17,7 +17,7 @@ export function createQuality(app) {
   const forced = app.flags?.quality && TIERS[app.flags.quality] ? app.flags.quality : null;
   const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
   let tier = forced || pickSetting() || (coarse ? 'medium' : 'high');
-  let scale = 1, slow = 0, fast = 0, ema = 1 / 60, changed = false;
+  let scale = 1, slow = 0, fast = 0, ema = 1 / 60, changed = false, hold = 1.5;
   const mqReduce = typeof matchMedia !== 'undefined' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
   function pickSetting() { const s = app.settings?.quality; return s && TIERS[s] ? s : null; }
   const q = {
@@ -25,12 +25,15 @@ export function createQuality(app) {
     get Q() { return TIERS[tier]; },
     get scale() { return scale; },
     get auto() { return !forced && !pickSetting(); },
+    hold(sec = 1.5) { hold = Math.max(hold, sec); ema = 1 / 60; slow = fast = 0; },
     set(t) { if (TIERS[t]) { tier = t; scale = 1; changed = true; } },
     // returns true when the canvas size must change
     frame(dt) {
       const s = pickSetting();
       if (!forced && s && s !== tier) { tier = s; scale = 1; changed = true; }
-      if (!q.auto || dt <= 0 || dt > 0.25 || document.hidden) { const c = changed; changed = false; return c; }
+      // long stalls (loading, a tab switch) and the first moments after a hold say nothing about steady frames
+      if (hold > 0 && dt > 0 && dt < 1) hold -= dt;
+      if (!q.auto || hold > 0 || dt <= 0 || dt > 0.25 || document.hidden) { const c = changed; changed = false; return c; }
       ema += (dt - ema) * 0.08;
       if (ema > 1 / (R.governorLowFps || 48)) { slow += dt; fast = 0; } else if (ema < 1 / 57) { fast += dt; slow = 0; } else { slow = Math.max(0, slow - dt); fast = 0; }
       // far too slow (a software canvas, a weak GPU): drop straight to low

@@ -180,8 +180,13 @@ export function createHud(ctx) {
     const hp = col.happiness ?? 0.6;
     mood.style.background = hp > 0.66 ? 'var(--tick)' : hp > 0.4 ? '#f2c84a' : 'var(--bad-d)';
     const owned = G.islands.filter((x) => x.owned).length;
-    setText(netLabel, owned > 1 && cur.island ? netName(G) : '');
-    setHidden(netLabel, !(owned > 1 && cur.island));
+    // short label (the full list is in each resource's tip): "Hearthrock", "Hearthrock + Millbrook", "Hearthrock + 3"
+    const nn = owned > 1 && cur.island ? netName(G).split(' + ') : [];
+    setText(netLabel, nn.length > 2 ? `${nn[0]} + ${nn.length - 1}` : nn.join(' + '));
+    if (nn.length) netLabel.title = `Stores shared by ${nn.join(', ')}`;
+    // the label gives way when the resources need the room (they scroll otherwise)
+    const room = resbar.clientWidth - 16 - scroller.scrollWidth;
+    setHidden(netLabel, !(owned > 1 && cur.island) || room < Math.min(netLabel.scrollWidth || 80, 80));
 
     // clock
     drawDial(G.tod, G.weather?.kind || 'clear');

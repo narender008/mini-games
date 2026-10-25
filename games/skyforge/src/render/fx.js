@@ -83,17 +83,33 @@ export function createFX(app, quality) {
     if (p.target != null && typeof p.target !== 'string') strikes.set(p.target, t);
     shake(p.lash ? 2 : 4);
   });
+  // Resource labels: gains are pooled per island for a few seconds, then one
+  // label shows that island's biggest gain (two when zoomed in close). The
+  // number on screen is capped, lower when zoomed out.
+  const pend = new Map();   // island id -> { sum: {res: n}, u, v, w, t0 }
   B.on('res:gain', (p) => {
-    if (!p || !p.n || !app.G) return;
-    const I = app.G.islands.find((i) => i.id === p.island);
-    const [x, y] = I ? at(I.ox + (p.u ?? I.w / 2) + 0.5, I.oy + (p.v ?? I.h / 2) + 0.5, I.alt + 1.6) : [0, 0];
-    if (!I) return;
-    // merge with a fresh label for the same resource nearby
-    const near = labels.find((l) => l.res === p.res && l.max - l.life < 1 && Math.hypot(l.x - x, l.y - y) < 170);
-    if (near) { near.n += p.n; near.text = fmt(near.n, p.res); return; }
-    labels.push({ res: p.res, n: p.n, text: fmt(p.n, p.res), x, y, life: RC().labelLife || 1.8, max: RC().labelLife || 1.8 });
-    if (labels.length > 10) labels.shift();
+    if (!p || !p.n || !app.G || p.n < 0) return;
+    let e = pend.get(p.island);
+    if (!e) { e = { sum: {}, u: 0, v: 0, w: 0, t0: t }; pend.set(p.island, e); }
+    e.sum[p.res] = (e.sum[p.res] || 0) + p.n;
+    if (p.u != null) { e.u += p.u * p.n; e.v += p.v * p.n; e.w += p.n; }
   });
+  function flushLabels() {
+    const z = app.cam?.zoom ?? 0.6, cap = z < 0.5 ? 3 : z < 0.85 ? 5 : 7, per = z >= 0.9 ? 2 : 1, life = RC().labelLife || 1.8;
+    const agg = RC().labelPool || 3;
+    for (const [id, e] of pend) {
+      if (t - e.t0 < agg) continue;
+      pend.delete(id);
+      const I = app.G?.islands.find((i) => i.id === id); if (!I) continue;
+      const u = e.w ? e.u / e.w : I.w / 2, v = e.w ? e.v / e.w : I.h / 2;
+      const top = Object.entries(e.sum).sort((a, b) => b[1] - a[1]).slice(0, per);
+      top.forEach(([res, n], i) => {
+        const [x, y] = at(I.ox + u + 0.5 + i * 2.2, I.oy + v + 0.5, I.alt + 1.6 + i * 0.6);
+        labels.push({ res, n, text: fmt(n, res), x, y, life: life + 0.4, max: life + 0.4 });
+      });
+    }
+    while (labels.length > cap) labels.shift();
+  }
   const fmt = (n, res) => `${n > 0 ? '+' : ''}${Math.round(n)}${res === 'coin' ? '' : ' ' + res}`;
   for (const ev of ['build:placed', 'build:demolished']) B.on(ev, ({ b } = {}) => { const p = bpos(b); if (p) dust(p[0], p[1], 1.2); });
   B.on('build:done', ({ b } = {}) => {
@@ -132,6 +148,7 @@ export function createFX(app, quality) {
       for (let i = bolts.length - 1; i >= 0; i--) if ((bolts[i].life -= dt) <= 0) bolts.splice(i, 1);
       for (let i = skyBolts.length - 1; i >= 0; i--) if ((skyBolts[i].life -= dt) <= 0) skyBolts.splice(i, 1);
       for (let i = labels.length - 1; i >= 0; i--) if ((labels[i].life -= dt) <= 0) labels.splice(i, 1);
+      flushLabels();
       flash = Math.max(0, flash - dt * 2.2);
       shakeT += dt; shakeA *= Math.exp(-dt * 6); if (shakeA < 0.05) shakeA = 0;
       // ambient storm: far bolts behind the islands
@@ -154,6 +171,12 @@ export function createFX(app, quality) {
         const n = rate('f' + b.id, 14 * b.fire, frameDt);
         for (let i = 0; i < n; i++) add('ember', X + W * (0.2 + Math.random() * 0.6) + D * 0.27, Y - D * 0.18 - 20 - Math.random() * 30, { vx: (Math.random() - 0.3) * 40, vy: -60 - Math.random() * 80, life: 0.8 + Math.random() * 0.8, r: 1.4 + Math.random(), col: Math.random() < 0.5 ? '#ffcf6a' : '#ff8a3a', g: -20, drag: 0.6 });
       }
+    },
+    // dark smoke and embers behind a damaged or falling airship
+    trail(id, x, y, dmg, falling) {
+      if (!rate('t' + id, falling ? 14 : 2 + dmg * 8, frameDt)) return;
+      add('smoke', x + (Math.random() - 0.5) * 10, y, { vx: (Math.random() - 0.5) * 10, vy: -14 - Math.random() * 10, life: 1.6 + dmg, r: 6 + dmg * 6, col: falling || dmg > 0.6 ? '#3a3038' : '#6a6068', a: 0.55, grow: 2.4 });
+      if (falling || dmg > 0.5) add('ember', x + (Math.random() - 0.5) * 14, y, { vx: (Math.random() - 0.5) * 40, vy: -30 - Math.random() * 30, life: 0.6, r: 2, col: '#ffb050', a: 1, grow: 0.5, g: 60 });
     },
     steam(x, y) { if (rate('v' + x + ',' + y, 1.4, frameDt)) add('steam', x + (Math.random() - 0.5) * 8, y - 4, { vx: (Math.random() - 0.5) * 6, vy: -22 - Math.random() * 10, life: 1.8, r: 4, col: '#f4f0ec', a: 0.45, grow: 2.6 }); },
     // screen-space sky lightning (behind the world)
@@ -187,13 +210,14 @@ export function createFX(app, quality) {
         g.save(); g.lineCap = 'round';
         if (s.kind === 'harpoon' || s.kind === 'grapple') {
           const fromB = G.buildings.find((b) => b.id === s.from), I = fromB && G.islands.find((i) => i.id === fromB.island);
-          if (I) { const [ox, oy] = wpx(I.ox + fromB.u + 0.5, I.oy + fromB.v + 0.5, I.alt + 0.9); g.strokeStyle = rgba('#e8d8b0', 0.75); g.lineWidth = 1.4; g.beginPath(); g.moveTo(ox, oy); g.quadraticCurveTo((ox + px) / 2, Math.min(oy, py) - 20, px, py); g.stroke(); }
+          if (I) { const [ox, oy] = wpx(I.ox + fromB.u + 0.5, I.oy + fromB.v + 0.5, I.alt + 0.9); g.strokeStyle = rgba('#3a2a20', 0.5); g.lineWidth = 3.4; g.beginPath(); g.moveTo(ox, oy); g.quadraticCurveTo((ox + px) / 2, Math.min(oy, py) - 20, px, py); g.stroke(); g.strokeStyle = rgba('#f4e6c0', 0.95); g.lineWidth = 1.8; g.beginPath(); g.moveTo(ox, oy); g.quadraticCurveTo((ox + px) / 2, Math.min(oy, py) - 20, px, py); g.stroke(); }
           const ang = Math.atan2(py - qy, px - qx);
-          g.translate(px, py); g.rotate(ang);
+          g.strokeStyle = rgba('#fff6d8', 0.55); g.lineWidth = 3; g.beginPath(); g.moveTo(px, py); g.lineTo(px - (px - qx) * 3, py - (py - qy) * 3); g.stroke();
+          g.translate(px, py); g.rotate(ang); g.scale(1.6, 1.6);
           g.fillStyle = '#6b4a35'; g.fillRect(-16, -1.2, 16, 2.4);
           g.fillStyle = '#d8dde4'; g.beginPath(); g.moveTo(6, 0); g.lineTo(-3, -4); g.lineTo(-1, 0); g.lineTo(-3, 4); g.closePath(); g.fill();
         } else if (s.kind === 'cannon' || s.kind === 'bomb') {
-          g.strokeStyle = rgba('#ffb070', 0.5); g.lineWidth = 2.5; g.setLineDash([3, 8]); g.beginPath(); g.moveTo(px, py); g.lineTo(px - (px - qx) * 4, py - (py - qy) * 4); g.stroke(); g.setLineDash([]);
+          g.strokeStyle = rgba('#ffb070', 0.7); g.lineWidth = 3.5; g.setLineDash([4, 7]); g.beginPath(); g.moveTo(px, py); g.lineTo(px - (px - qx) * 4, py - (py - qy) * 4); g.stroke(); g.setLineDash([]);
           g.fillStyle = '#2a2228'; circ(g, px, py, s.kind === 'bomb' ? 5 : 3.5); g.fill();
           g.fillStyle = '#ffcf6a'; circ(g, px + 1, py - 1, 1.4); g.fill();
         } else if (s.kind === 'flak' || s.kind === 'militia') {

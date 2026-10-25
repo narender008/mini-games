@@ -87,9 +87,27 @@ export function createRenderer(canvas, app) {
   for (const ev of ['build:placed', 'build:demolished', 'build:upgraded', 'build:done', 'island:claimed', 'island:discovered', 'cells']) {
     app.bus.on(ev, (p) => { const id = islId(p); if (id) dirty.add(typeof id === 'object' ? id.id : id); else invalidate('all'); });
   }
+  // when a raid strikes, ease the camera once to frame the threatened island
+  // and the incoming fleet (setting 'raidCamera'; a cut under reduced motion)
+  app.bus.on('raid:start', ({ raid } = {}) => {
+    const G = app.G, cam = app.cam;
+    if (!G || !raid?.geo || app.settings?.raidCamera === false || TITLE_SCENES.has(app.scene)) return;
+    const I = G.islands.find((i) => i.id === raid.geo.island) || G.islands.find((i) => i.kind === 'home');
+    if (!I) return;
+    // the threatened island, nudged a quarter of the way toward the incoming fleet
+    const geo = islandGeometry(I), [ox, oy] = wpx(I.ox, I.oy, I.alt);
+    let cx = ox + (geo.minX + geo.maxX) / 2, cy = oy + (geo.minY + geo.maxY) / 2;
+    const ps = (G.pirates || []).map((p) => wpx(p.x, p.y, p.z));
+    if (ps.length) { const mx = ps.reduce((a, q) => a + q[0], 0) / ps.length, my = ps.reduce((a, q) => a + q[1], 0) / ps.length; cx += (mx - cx) * 0.25; cy += (my - cy) * 0.25; }
+    const span = (geo.maxX - geo.minX) * 2.1;
+    const zoom = clamp(Math.min(W / span, H / (span * 0.62)), Math.max(cam.minZoom || 0.35, 0.45), 1.0);
+    const ty = -(cy / T + I.alt) / DY, tx = cx / T - ty * DX;
+    if (quality.reduceMotion()) { cam.x = tx; cam.y = ty; cam.z = I.alt; cam.zoom = zoom; cam.tx = cam.ty = cam.tzoom = cam.tz = null; }
+    else { cam.tx = tx; cam.ty = ty; cam.tz = I.alt; cam.tzoom = zoom; cam.anchor = null; }
+  });
   app.bus.on('shot', (p) => { if (p && p.from != null) firedAt.set(p.from, clock); });
   let needFrame = false;
-  for (const ev of ['game', 'newgame', 'loaded']) app.ev.on(ev, () => { isl.clear(); props.clear(); plc.clear(); interp.clear(); needFrame = true; });
+  for (const ev of ['game', 'newgame', 'loaded']) app.ev.on(ev, () => { quality.hold(2); isl.clear(); props.clear(); plc.clear(); interp.clear(); needFrame = true; });
   app.ev.on('settings', () => { resize(); });
 
   // ---------------------------------------------------------------- camera
@@ -97,20 +115,31 @@ export function createRenderer(canvas, app) {
     const geo = islandGeometry(I), [ox, oy] = wpx(I.ox, I.oy, I.alt);
     return [ox + geo.minX, oy + geo.minY, ox + geo.maxX, oy + geo.maxY + geo.depth * 0.9];
   }
+  // Opening view. A fresh colony opens close on Hearthrock (concept 2, the
+  // buildings big; the player zooms out from there). A continued game or a
+  // preset frames the owned home cluster (home + nearby islets, not far
+  // outposts), centred, with room above for roofs and banners and the
+  // undersides running down into the cloud bank.
   function frameColony(G) {
-    const list = viewIslands(G).filter((i) => i.owned || i.kind === 'home' || i.kind === 'islet');
-    if (!list.length) return;
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const I of list) { const b = islandWorldBounds(I); x0 = Math.min(x0, b[0]); y0 = Math.min(y0, b[1]); x1 = Math.max(x1, b[2]); y1 = Math.max(y1, b[3]); }
-    const home = G.islands.find((i) => i.id === 'hearthrock') || list[0];
+    const home = G.islands.find((i) => i.kind === 'home') || G.islands.find((i) => i.id === 'hearthrock') || G.islands[0];
+    if (!home) return;
     const cam = app.cam;
-    const zoom = clamp(Math.min(W / ((x1 - x0) * 1.02), H / ((y1 - y0) * 1.0)), Math.max(cam.minZoom, 0.42), 1.1);
-    // centre on the cluster, nudged toward home
-    const hb = islandWorldBounds(home);
-    const cx = lerp((x0 + x1) / 2, (hb[0] + hb[2]) / 2, 0.35), cy = lerp((y0 + y1) / 2, (hb[1] + hb[3]) / 2, 0.35) - 20;
+    const fresh = !app.flags?.preset && (G.buildings || []).filter((b) => b.island === home.id).length <= 4 && !(G.islands || []).some((i) => i.owned && i !== home);
+    let list = fresh ? [home] : G.islands.filter((i) => i === home || (i.owned && i.kind === 'islet'));
+    if (!list.length) list = [home];
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const I of list) {
+      const geo = islandGeometry(I), [ox, oy] = wpx(I.ox, I.oy, I.alt);
+      x0 = Math.min(x0, ox + geo.minX); x1 = Math.max(x1, ox + geo.maxX);
+      y0 = Math.min(y0, oy + geo.minY - 120);                 // roofs, trees, the banner
+      y1 = Math.max(y1, oy + geo.maxY + geo.depth * (fresh ? 0.25 : 0.4));
+    }
+    const fitW = W / ((x1 - x0) * (fresh ? 1.0 : 1.04)), fitH = H / ((y1 - y0) * 1.04);
+    const zoom = clamp(Math.min(fitW, fitH), Math.max(cam.minZoom, 0.38), fresh ? 1.15 : 1.0);
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
     cam.z = home.alt; cam.zoom = zoom;
     const y = -(cy / T + cam.z) / DY, x = cx / T - y * DX;
-    cam.x = x; cam.y = y; cam.tx = cam.ty = cam.tzoom = null;
+    cam.x = x; cam.y = y; cam.tx = cam.ty = cam.tzoom = cam.tz = null;
   }
   // render-only ease and clamp (input owns these when it exists)
   function easeCamera(dt, G) {
@@ -144,7 +173,7 @@ export function createRenderer(canvas, app) {
     if (sp) return sp;
     const b = bucket(app.cam.zoom * dpr);
     if (s !== b && spBudget-- <= 0) return sprite(key, bounds, b, paint);
-    if (sprites.size > 1200) sprites.clear();
+    if (sprites.size > 2400) { let n = 600; for (const k2 of sprites.keys()) { sprites.delete(k2); if (--n <= 0) break; } }
     const [x0, y0, x1, y1] = bounds;
     const c = layer((x1 - x0) * s + 2, (y1 - y0) * s + 2), cg = c.getContext('2d');
     cg.setTransform(s, 0, 0, s, -x0 * s + 1, -y0 * s + 1);
@@ -258,11 +287,13 @@ export function createRenderer(canvas, app) {
       animCost.set(type, cost + (performance.now() - t0 - cost) * 0.2);
     } else {
       const nb = Math.round(o.night * 3) / 3;
-      const sp = sprite('F|' + sk + '|' + nb, [bb.x - 40, bb.y - 90, bb.x + bb.w + 40, bb.y + bb.h + 8], s, (cg) => {
+      const fk = 'F|' + sk + '|' + nb, lf = lastFrozen.get(b.id);
+      const sp = (!sprites.has(fk + '@' + s) && lf && lf.k !== fk && lightBudget-- <= 0) ? lf.sp : sprite(fk, [bb.x - 40, bb.y - 90, bb.x + bb.w + 40, bb.y + bb.h + 8], s, (cg) => {
         if (partsOK === false) { ART.drawBuilding(cg, type, 0, 0, { ...o, night: nb, t: 1.3 + (b.id % 5) * 0.7, part: 'all' }); return; }
         ART.drawBuilding(cg, type, 0, 0, { ...o, part: 'base' });
         ART.drawBuilding(cg, type, 0, 0, { ...o, night: nb, t: 1.3 + (b.id % 5) * 0.7, part: 'anim' });
       });
+      if (!lf || lf.sp !== sp) lastFrozen.set(b.id, { k: sprites.get(fk + '@' + s) === sp ? fk : lf?.k, sp });
       blit(gg, sp, X, Y);
     }
     if (alpha < 1) gg.globalAlpha = 1;
@@ -270,10 +301,17 @@ export function createRenderer(canvas, app) {
   }
   // a building's lights (window glow, lamps, furnace mouths): halos are static per
   // body and night level, so they come from a sprite blitted additively; fire stays live
+  const lastLight = new Map(), lastFrozen = new Map();
+  let lightBudget = 0;
   function drawBuildingLight(g2, b, X, Y, o) {
     if (o.fire > 0.02 || o.firing || o.charge > 0.05 || !o.__key) { ART.drawBuilding(g2, b.type, X, Y, { ...o, part: 'light' }); return; }
     const nb = Math.round(o.night * 6) / 6, inf = ART.buildingInfo(b.type, o), bb = inf.bbox, s = worldScale();
-    const sp = sprite('L|' + o.__key + '|' + nb, [bb.x - 70, bb.y - 70, bb.x + bb.w + 70, bb.y + bb.h + 70], s, (cg) => ART.drawBuilding(cg, b.type, 0, 0, { ...o, night: nb, part: 'light' }));
+    // a new night level is painted for a few buildings per frame; the rest keep their last halo meanwhile
+    const key = 'L|' + o.__key + '|' + nb, last = lastLight.get(b.id);
+    let sp = sprites.get(key + '@' + s);
+    if (!sp && last && last.key !== key && lightBudget-- <= 0) sp = last.sp;
+    if (!sp) sp = sprite(key, [bb.x - 70, bb.y - 70, bb.x + bb.w + 70, bb.y + bb.h + 70], s, (cg) => ART.drawBuilding(cg, b.type, 0, 0, { ...o, night: nb, part: 'light' }));
+    if (!last || last.sp !== sp) lastLight.set(b.id, { key: sprites.get(key + '@' + s) === sp ? key : last?.key, sp });
     const op = g2.globalCompositeOperation; g2.globalCompositeOperation = 'lighter'; blit(g2, sp, X, Y); g2.globalCompositeOperation = op;
   }
   // plain box until ART paints the type
@@ -342,6 +380,7 @@ export function createRenderer(canvas, app) {
   }
 
   // ---------------------------------------------------------------- ships
+  const pirateFx = [];
   function drawShip(gg, e, pirate, x, y, z, dir, G, s) {
     const [px, py] = wpx(x, y, z);
     const bob = Math.sin(clock * 1.3 + e.id) * 2.2;
@@ -353,7 +392,26 @@ export function createRenderer(canvas, app) {
       const kind = ART_SHIP_KINDS.has(e.kind) ? e.kind : (pirate ? 'raider' : e.kind === 'trader' || e.kind === 'hauler' ? 'cargo' : 'skiff');
       const hdg = Number.isFinite(e.hdg) ? e.hdg : (dir < 0 ? Math.PI : 0);
       const o = { hdg, bank: Number.isFinite(e.bank) ? clamp(e.bank, -1, 1) : 0, t: clock, night, damage: Number.isFinite(dmg) ? dmg : 0, seed: (e.id | 0) % 997, cargo: e.cargo };
-      if (Number.isFinite(px) && Number.isFinite(py)) ART.drawShip(gg, kind, px, py, o);
+      // pirates read big and menacing (concept 4): larger hulls, a crimson
+      // under-glow, a white flash when hit, smoke and embers when damaged
+      if (pirate) o.s = e.kind === 'dreadnought' ? 1.2 : 1.6;
+      if (!Number.isFinite(px) || !Number.isFinite(py)) return;
+      ART.drawShip(gg, kind, px, py, o);
+      if (pirate) {
+        const k = o.s * (kind === 'dreadnought' ? 1.4 : kind === 'frigate' ? 0.88 : 0.58), falling = e.state === 'down';
+        if (dmg > 0.25 || falling) fx.trail(e.id, px - Math.cos(hdg) * 60 * k, py - 10 * k, dmg, falling);
+        const hit = clamp(1 - (G.t - (e.hitT ?? -9)) / 0.18, 0, 1);
+        pirateFx.push(() => {
+          glow(g, px, py + 40 * k, 110 * k, '#ff3a30', 0.22 + 0.12 * Math.sin(clock * 3 + e.id) + (falling ? 0.3 : 0));
+          if (hit > 0) glow(g, px, py, 90 * k, '#ffffff', 0.7 * hit);
+        });
+        if (!falling && e.maxHp && dmg > 0.02) {
+          // a small health bar that keeps its screen size
+          const z = app.cam.zoom, bw = 54 / z, bh = 6 / z, bx = px - bw / 2, by = py - 70 * k - 14 / z;
+          gg.fillStyle = 'rgba(20,10,20,0.75)'; gg.fillRect(bx - 1 / z, by - 1 / z, bw + 2 / z, bh + 2 / z);
+          gg.fillStyle = dmg > 0.6 ? '#ff5a3a' : '#ffb03a'; gg.fillRect(bx, by, bw * (1 - dmg), bh);
+        }
+      }
       return;
     }
     const look = pirate ? { ...PIRATE_LOOK } : { env: ['#f8ecd2', '#c0946e'], band: ['#3e7ac8', '#c84a3a', '#4f8f45', '#e8b448'][e.id % 4], cargo: Object.keys(e.cargo || {}).length ? '#c08a4e' : null, flag: '#e8b448' };
@@ -588,17 +646,17 @@ export function createRenderer(canvas, app) {
     for (const I of list) {
       const geo = islandGeometry(I), [ox, oy] = wpx(I.ox, I.oy, I.alt);
       const rim = oy + geo.maxY, tip = oy + (geo.tipPt ? geo.tipPt[1] : geo.maxY + geo.depth);
-      const y = H / 2 + (rim + (tip - rim) * 0.66 - cwy) * cam.zoom;
+      const y = H / 2 + (rim + (tip - rim) * 0.84 - cwy) * cam.zoom;
       const sx = W / 2 + (ox + geo.cx - cwx) * cam.zoom;
       const w = (I.owned ? 3 : 1) * (sx > -W * 0.2 && sx < W * 1.2 ? 1 : 0.2);
       sum += y * w; wsum += w;
     }
-    return clamp(sum / wsum, H * 0.62, H + 40);
+    return clamp(sum / wsum, H * 0.7, H + 40);
   }
 
   function draw(realDt) {
     const dt = Math.min(0.1, Math.max(0, realDt || 0));
-    if (quality.frame(dt)) resize();
+    if (quality.frame(realDt || 0)) { resize(); quality.hold(1); }
     clock += dt;
     if (app.cam) { if (Math.abs(app.cam.zoom - lastZoom) > 1e-5) { zoomSettle = 0; lastZoom = app.cam.zoom; } else zoomSettle += dt; }
     const G = app.G;
@@ -624,6 +682,7 @@ export function createRenderer(canvas, app) {
     g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, canvas.width, canvas.height);
     g.setTransform(dpr, 0, 0, dpr, shx * dpr, shy * dpr); applyCamera(g, cam);
     const lights = [];
+    pirateFx.length = 0; lightBudget = 8;
     animFrameStart();
     drawWorld(g, G, lights);
     fx.drawWorld(g, clock);
@@ -636,6 +695,7 @@ export function createRenderer(canvas, app) {
     // lights and glow fx, additive, in world space
     g.setTransform(dpr, 0, 0, dpr, shx * dpr, shy * dpr); applyCamera(g, cam);
     if (env.night > 0.08 || Q().name === 'high') for (const f of lights) f();
+    for (const f of pirateFx) f();
     fx.drawGlow(g, G, clock);
     agents.drawBirds(g, env, clock);
     // the sky goes in behind everything drawn so far

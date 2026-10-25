@@ -376,6 +376,14 @@ export function positionBubble(el, tail, anchor) {
   if (y < 70) y = ay + 70;
   if (y + hgt > H - 12) y = H - hgt - 12;
   x = Math.max(12, Math.min(W - w - 12, x)); y = Math.max(12, Math.min(H - hgt - 12, y));
+  // never cover the point itself: try the other sides until the card clears it by 36 px
+  const covers = (X0, Y0) => ax > X0 - 36 && ax < X0 + w + 36 && ay > Y0 - 36 && ay < Y0 + hgt + 36;
+  if (covers(x, y)) {
+    const cand = [[ax + 50, ay - hgt / 2], [ax - w - 50, ay - hgt / 2], [ax - w / 2, ay + 60], [ax - w / 2, ay - hgt - 60]]
+      .map(([cx, cy]) => [Math.max(12, Math.min(W - w - 12, cx)), Math.max(12, Math.min(H - hgt - 12, cy))]);
+    const ok = cand.find(([cx, cy]) => !covers(cx, cy));
+    if (ok) [x, y] = ok;
+  }
   if (ax < 0 || ay < 0 || ax > W || ay > H) { x = (W - w) / 2; y = Math.min(H * 0.16, H - hgt - 12); el.style.left = Math.round(x) + 'px'; el.style.top = Math.round(y) + 'px'; path.setAttribute('d', ''); return; }
   el.style.left = Math.round(x) + 'px'; el.style.top = Math.round(y) + 'px';
   // tail from the nearest edge of the card to the point (local coords)

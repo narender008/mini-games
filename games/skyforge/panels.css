@@ -395,3 +395,23 @@ button.st-key.off { opacity: 0.45; text-decoration: line-through; }
 .ch-tag.crowd { z-index: 0; opacity: 0.6; transform-origin: 50% 0; }
 .ch-tag.sel { z-index: 3; }
 .sfp-btn.primary:disabled { filter: none; opacity: 1; background: linear-gradient(#efe3c6, #d4c09a); color: rgba(58, 34, 8, 0.5); border-color: rgba(106, 66, 18, 0.45); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5); }
+
+/* chart island card: button states (UI polish r1). An expedition under way is a cyan status
+   bar that fills as the trip goes, not a greyed-out button; a lone expedition button spans the card. */
+.ch-btns.one { grid-template-columns: 1fr !important; }
+.ch-btns [hidden] { display: none !important; }
+.sfp-btn.busy, .sfp-btn.busy:disabled {
+  position: relative; overflow: hidden; isolation: isolate; filter: none; opacity: 1; cursor: default;
+  color: #eafcff; border: 2px solid #7fd8ea; font-size: 18px; gap: 8px; padding: 8px 18px 8px 14px;
+  background: linear-gradient(#1f5f78, #123e52);
+  box-shadow: 0 4px 12px rgba(8, 6, 20, 0.4), inset 0 14px 12px -10px rgba(255, 255, 255, 0.22);
+}
+.sfp-btn.busy::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; width: calc(var(--p, 0) * 100%);
+  background: linear-gradient(#3fa8c4, #2a7f9c); transition: width 0.5s linear;
+}
+.sfp-btn.busy .lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sfp-btn.busy .sub, .ch-btns .sfp-btn.busy .sub { display: inline; margin-left: auto; font: 700 15px var(--sans); opacity: 1; font-variant-numeric: tabular-nums; }
+.sfp-btn.busy .sf-icon { filter: brightness(1.6) saturate(0.6); }
+.ch-note.why { margin: 10px 0 0; padding: 7px 10px; border-radius: 10px; text-align: left; background: rgba(184, 120, 58, 0.14); border: 1.5px solid rgba(168, 112, 42, 0.5); color: #7a4a1a; font-weight: 600; }
+.ch-note.why.err { background: rgba(184, 66, 58, 0.14); border-color: rgba(184, 66, 58, 0.55); color: #a8322a; }

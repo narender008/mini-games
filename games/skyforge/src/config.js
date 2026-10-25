@@ -207,7 +207,7 @@ export const CFG = {
     camEase: 7, worldMargin: 8,                  // camera ease rate (1/s) and clamp margin (tiles)
     cacheBuckets: [0.5, 0.71, 1, 1.41, 2, 2.83], // island/sprite cache scales (zoom x dpr, snapped)
     walkersPerPop: 0.12, maxWalkers: 70, nightWalkers: 0.35,
-    labelLife: 1.8, shakeMax: 14,
+    labelLife: 1.8, labelPool: 3, shakeMax: 14,
   },
   // INPUT section (src/input/): gestures, camera feel, picking
   input: {

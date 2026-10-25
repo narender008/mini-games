@@ -128,7 +128,7 @@ export function createSky(Q) {
       g.fillStyle = vgrad(g, H * 0.5, H, [[0, rgba(e.cl[2], 0)], [1, rgba(e.cl[2], 0.5)]]); g.fillRect(0, H * 0.5, W, H * 0.5);
     } },
     front: { h: 0.7, res: 1, paint(g, W, H, e) {
-      cloudBank(g, { x0: 0, x1: W, wrap: W, y: H * 0.3, rmin: 46, rmax: 104, lit: e.cl[0], dark: e.cl[1], seed: 23, amp: 54, lx: e.lx, ly: e.ly, rim: e.night > 0.5 ? null : '#ffffff' });
+      cloudBank(g, { x0: 0, x1: W, wrap: W, y: H * 0.3, rmin: 36, rmax: 82, lit: e.cl[0], dark: e.cl[1], seed: 23, amp: 42, lx: e.lx, ly: e.ly, rim: e.night > 0.5 ? null : '#ffffff' });
       g.fillStyle = vgrad(g, H * 0.55, H, [[0, rgba(e.cl[2], 0)], [1, rgba(e.cl[2], 0.6)]]); g.fillRect(0, H * 0.55, W, H * 0.45);
     } },
     stormtop: { h: 0.55, res: 0.5, paint(g, W, H, e) {
@@ -260,7 +260,7 @@ export function createSky(Q) {
       const cs = size.k;
       const cw = Math.max(1, Math.round(w * cs)), ch = Math.max(1, Math.round(h * cs));
       let c = comp;
-      const fading = Object.values(strips).some((st) => st.prev);
+      const fading = ['horizon', 'distant', 'high'].some((n) => strips[n]?.prev);
       if (!c || c.canvas.width !== cw || c.canvas.height !== ch) { c = comp = { canvas: layer(cw, ch), t: -9 }; }
       if (fading || c.key !== e.key || Math.abs(c.px - v.px) > 0.6 || Math.abs(c.py - v.py) > 0.6 || t - c.t > 0.25 || c.stars !== e.stars > 0.02) {
         const cg = c.canvas.getContext('2d');
