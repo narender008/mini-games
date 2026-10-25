@@ -6,6 +6,7 @@
 //   wave      he draws his fist back burning (0.7 s), a tall fire wave rolls across the floor
 //   meteors   a roar, his crown flares; glowing rings mark where meteors land (1.1 s)
 //   fireballs his heart swells (0.6 s), three fireballs straight at you
+//   stride    if you keep far away he wades toward you (through lava)
 //   stomp     if you hug his legs for long: a quick stamp (0.5 s) burns the floor around his feet
 // Armour: his body clanks except while he rests after an attack (his cracks blaze) or while his
 // blade is stuck after a slam; his heart (jump and swing up, or a bolt) is always open.
@@ -74,8 +75,9 @@ const def = {
     // hugging his legs invites a stomp
     b.hug = Math.abs(P.x - b.bx) < 170 && P.y > A.floor - 200 ? b.hug + dt : Math.max(0, b.hug - dt);
     switch (b.st) {
-      case 'intro': if (b.stT > 1.8) setSt(b, 'pick'); break;
+      case 'intro': if (b.stT > 1.2) setSt(b, 'pick'); break;
       case 'pick': {
+        if (Math.abs(P.x - b.bx) > 620) { b.face = P.x > b.bx ? 1 : -1; setSt(b, 'stride'); break; }
         b.n++;
         let a;
         if (b.hug > 1.8) a = 'stomp';
@@ -142,6 +144,14 @@ const def = {
         if (b.stT > 1.2) { b.stomped = false; setSt(b, 'rest'); }
         break;
       case 'rest': if (b.stT > (ph === 1 ? 1.6 : ph === 2 ? 1.3 : 1.2)) setSt(b, 'pick'); break;
+      case 'stride': {   // he wades toward a distant challenger (lava is nothing to him)
+        b.face = P.x > b.bx ? 1 : -1;
+        b.bx = Math.max(A.x0 + 200, Math.min(A.x1 - 200, b.bx + b.face * 260 * dt));
+        b.x = b.bx - 100;
+        if (Math.abs(P.x - b.bx) < 100 || b.stT > 6) setSt(b, 'pick');
+        if ((b.stT * 1.2) % 1 < dt * 1.2) emit('shake', { amp: 4, t: 0.15 });
+        break;
+      }
     }
   },
   onPhase(b, G, ph) { if (ph === 3) { b.surge = 0; G.banner = { title: 'The mountain wakes', sub: 'Burn bright: his embers feed your flame', t: 0, life: 3, kind: 'hint' }; } },
@@ -252,7 +262,7 @@ function arm(g, b, sx, sy, a, sword, hot, t, L = 0) {
 // the heart (a jump and an up-swing, or a bolt) is always open.
 const open = (b) => b.st === 'rest' || (b.st === 'slam' && b.slammed);
 const legs = (b) => ({ x: b.bx - 100, y: b.floor - 195, w: 200, h: 195, part: 'body' });
-const heart = (b) => ({ x: b.bx - 50, y: b.floor - 292, w: 100, h: 92, part: 'heart' });
+const heart = (b) => ({ x: b.bx - 55, y: b.floor - 300, w: 110, h: 120, part: 'heart' });   // a jump swing reaches its bottom
 
 // The body silhouette and its crack layer, drawn once (concept: scenes.core in prototype/render.js).
 function prerender() {

@@ -248,6 +248,7 @@ function tellWall(g, x, y, side, k, t) {
 // the lunge's path: a band at its height across the arena, brightening as it comes
 function lane(g, b, k) {
   const x0 = b.ax + b.side * 90, L = b.reach + 40, y = b.ly;
+  if (!Number.isFinite(x0) || !Number.isFinite(L) || !Number.isFinite(y)) return;
   additive(g, () => {
     const gr = g.createLinearGradient(x0, 0, x0 + b.side * L, 0);
     gr.addColorStop(0, rgba('#ff8a3a', 0.12 + 0.3 * k)); gr.addColorStop(1, rgba('#ff8a3a', 0));
