@@ -144,6 +144,9 @@ async function campaign(browser, url, i) {
       if (L.end === 'wall-timeout' || L.end === 'timeout') break;
       await lw('thaw');
       await toHub(page, lw);
+      // between runs, spend Lumen and Silk Keys at the Tapestry as a player would:
+      // health and death defiance first, then the cheapest row still open
+      res.spent = (res.spent || []).concat(await page.evaluate(spendTapestry));
       await lw('freeze');
     }
     res.story = (await lw('state')).story;
@@ -151,6 +154,23 @@ async function campaign(browser, url, i) {
   res.problems = page.problems.slice(0, 10);
   await close(page);
   return res;
+}
+
+// Runs in the page. Uses __lw.tapestry(id) if the hook has it, else the run
+// module's buyTapestry (the function the Tapestry station's buttons call).
+function spendTapestry() {
+  const lw = window.__lw;
+  const R = lw.modules && lw.modules.run;
+  const buy = typeof lw.tapestry === 'function' ? (id) => lw.tapestry(id) : R && R.buyTapestry ? (id) => R.buyTapestry(lw.game, id) : null;
+  if (!buy) return [];
+  const ids = ['vigor', 'defiance', 'mending', 'keen', 'swift', 'thimble', 'unpick', 'gleaning', 'brightweft', 'patience', 'purse', 'knotwork', 'fourth'];
+  const bought = [];
+  for (let pass = 0; pass < 20; pass++) {
+    let any = false;
+    for (const id of ids) { const r = buy(id); if (r && r.ok) { bought.push(id); any = true; break; } }
+    if (!any) break;
+  }
+  return bought;
 }
 
 async function pool(n, items, fn) {
