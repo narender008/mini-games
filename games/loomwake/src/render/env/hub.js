@@ -19,11 +19,13 @@ import { paintWalls } from './walls.js';
 
 const P = REGIONS.hub.palette;
 const GOLD = '#e2b85a', GOLD_HI = '#ffd27a', WOOD_D = '#2a160c', WOOD = '#5a3420', WOOD_L = '#8a5a34';
-const WALL_H = 440;
+const WALL_H = 400;
 const S = HUB_SPOTS;
-const DOOR = { x: 0, y: -760, hw: 168, h: 372 };      // the Dreamdoor arch on the alcove wall
-const VEIL = { x: 640, y: -650, hw: 215, h: 430 };     // the Weaver's veil across the right bay
-const TAP = { x0: -950, x1: -290, top: -560 - 410, bot: -560 - 96 }; // the great tapestry
+const DOOR = { x: 0, y: -420, hw: 150, h: 330 };      // the Dreamdoor arch on the alcove wall
+const VEIL = { x: 560, y: -390, hw: 190, h: 380 };     // the Weaver's veil across the right bay
+const TAP = { x0: -850, x1: -270, top: -300 - 372, bot: -300 - 88 };
+const BEAM = -292;                                     // the tapestry's weaving beam, on the floor at the wall's foot
+const THREAD = [[400, 290], [-62, -400]];                // the golden cord: entry -> hearth rug, rug -> Dreamdoor // the great tapestry
 
 // ---------------------------------------------------------------- small helpers
 function arch(g, x, y, hw, h) {
@@ -331,12 +333,12 @@ function paintTapestry(g, ge, tap) {
   for (let x = x0 + 6; x < x1 - 4; x += 9) {
     const sag = r.range(-4, 4);
     g.strokeStyle = r() < 0.15 ? 'rgba(255,210,122,0.6)' : 'rgba(220,200,170,0.4)';
-    g.beginPath(); g.moveTo(x, bot); g.quadraticCurveTo(x + sag, (bot - 578) / 2, x + (x - (x0 + x1) / 2) * 0.04, -578); g.stroke();
+    g.beginPath(); g.moveTo(x, bot); g.quadraticCurveTo(x + sag, (bot + BEAM) / 2, x + (x - (x0 + x1) / 2) * 0.04, BEAM - 4); g.stroke();
   }
   // the beam
-  g.fillStyle = '#2a160c'; g.beginPath(); g.ellipse(x0 + w / 2, -574, w / 2 + 16, 12, 0, 0, TAU); g.fill();
-  g.fillStyle = WOOD_L; g.fillRect(x0 - 10, -584, w + 20, 6);
-  for (const x of [x0 - 20, x1 + 20]) { g.fillStyle = '#3a2010'; g.fillRect(x - 10, -604, 20, 40); g.fillStyle = GOLD; g.fillRect(x - 10, -604, 20, 3); }
+  g.fillStyle = '#2a160c'; g.beginPath(); g.ellipse(x0 + w / 2, BEAM, w / 2 + 16, 12, 0, 0, TAU); g.fill();
+  g.fillStyle = WOOD_L; g.fillRect(x0 - 10, BEAM - 10, w + 20, 6);
+  for (const x of [x0 - 20, x1 + 20]) { g.fillStyle = '#3a2010'; g.fillRect(x - 10, BEAM - 30, 20, 40); g.fillStyle = GOLD; g.fillRect(x - 10, BEAM - 30, 20, 3); }
   // the shuttle waiting at the first unwoven panel, a gold thread trailing to it
   const next = panels.findIndex((p) => !p);
   if (next > 0) {
@@ -389,13 +391,13 @@ function paintDreamdoor(g, ge) {
   ge.globalAlpha = 1; ge.globalCompositeOperation = 'source-over';
   // the alcove cheeks: tall carved posts close the niche against the main wall
   for (const s of [-1, 1]) {
-    const px = s * 240;
+    const px = s * 226;
     const pg = g.createLinearGradient(px - 22, 0, px + 22, 0); pg.addColorStop(0, s < 0 ? '#8a5a30' : '#3a1e0e'); pg.addColorStop(1, s < 0 ? '#3a1e0e' : '#8a5a30');
-    g.fillStyle = pg; g.fillRect(px - 22, -1180, 44, 650);
-    for (const yy of [-560, -820, -1100]) { g.fillStyle = '#7a5a24'; g.fillRect(px - 26, yy - 8, 52, 14); g.fillStyle = GOLD; g.fillRect(px - 26, yy - 8, 52, 3); }
-    drawShadow(g, px, -528, 44, 12, 0.6);
-    lantern(g, px - s * 2, -720, 1.3);
-    ge.globalCompositeOperation = 'lighter'; ge.drawImage(glow('#ffcf7a'), px - 90, -800, 180, 160); ge.globalCompositeOperation = 'source-over';
+    g.fillStyle = pg; g.fillRect(px - 22, -930, 44, 660);
+    for (const yy of [-300, -560, -850]) { g.fillStyle = '#7a5a24'; g.fillRect(px - 26, yy - 8, 52, 14); g.fillStyle = GOLD; g.fillRect(px - 26, yy - 8, 52, 3); }
+    drawShadow(g, px, -270, 44, 12, 0.6);
+    lantern(g, px - s * 2, -460, 1.3);
+    ge.globalCompositeOperation = 'lighter'; ge.drawImage(glow('#ffcf7a'), px - 90, -540, 180, 160); ge.globalCompositeOperation = 'source-over';
   }
 }
 function paintWeaver(g, ge) {
@@ -466,7 +468,7 @@ function paintWeaver(g, ge) {
 // ---------------------------------------------------------------- walls
 function wallDetail(g, ge, s, H, r) {
   const tx = (s.x2 - s.x1) / s.len, ty = (s.y2 - s.y1) / s.len, mx = (s.x1 + s.x2) / 2, my = (s.y1 + s.y2) / 2;
-  const bay = mx > 380 && mx < 900 && my < -575;
+  const bay = mx > 320 && mx < 800 && my < -315;
   const minY = Math.min(s.y1, s.y2), x0 = Math.min(s.x1, s.x2) - 2, wdt = Math.abs(s.x2 - s.x1) + 4;
   if (bay) {
     // the Weaver's bay: deep violet stone, a sky of tiny woven stars
@@ -511,7 +513,7 @@ function sconce(g, ge, x, y) {
 // ---------------------------------------------------------------- floor
 function paintFloor(ch, q) {
   const shape = ch.shape, b = bbox(shape), r = rng(hashSeed('hub-floor', ch.tapestry?.progress || 0));
-  const pad = { l: 220, r: 220, t: 480, b: 300 };
+  const pad = { l: 220, r: 220, t: 470, b: 300 };
   const W = worldCanvas(b, pad, q), E = worldCanvas(b, pad, q * 0.5);
   const g = W.g, ge = E.g;
   const n = noise2(4242);
@@ -575,7 +577,7 @@ function paintFloor(ch, q) {
   polyPath(g, shape); fillGrain(g, 'stone', 0.25);
   // wax sheen: broad warm reflections down the middle, foot-worn paths between the stations
   g.globalCompositeOperation = 'lighter';
-  for (const [x, y, rx, a] of [[0, -200, 520, 0.08], [0, 300, 600, 0.07], [-560, 200, 380, 0.05], [600, -100, 380, 0.05]]) { g.globalAlpha = a; g.drawImage(glow('#ffd8a0', 1), x - rx, y - rx * 0.5, rx * 2, rx); }
+  for (const [x, y, rx, a] of [[0, -150, 460, 0.08], [0, 200, 520, 0.07], [-480, 150, 340, 0.05], [520, -60, 340, 0.05]]) { g.globalAlpha = a; g.drawImage(glow('#ffd8a0', 1), x - rx, y - rx * 0.5, rx * 2, rx); }
   g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
   mark('planks');
 
@@ -598,10 +600,10 @@ function paintFloor(ch, q) {
     for (let i = x + 4; i < x + w; i += 6) { g.moveTo(i, y0); g.lineTo(i + r.range(-2, 2), y0 - 10); g.moveTo(i, y1); g.lineTo(i + r.range(-2, 2), y1 + 10); }
     g.stroke();
   };
-  runner(-520, -110);
-  runner(410, 560);
+  runner(-262, -40);
+  runner(270, 400);
   // the hearth rug
-  g.save(); g.translate(S.hearth.x, S.hearth.y + 20); g.scale(1, 0.6);
+  g.save(); g.translate(S.hearth.x, S.hearth.y + 20); g.scale(0.85, 0.51);
   g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.arc(6, 12, 330, 0, TAU); g.fill();
   const rings = [[330, '#5a1420'], [312, GOLD], [304, '#6a1a24'], [250, '#23224a'], [238, GOLD], [232, '#7a2a2a'], [150, '#5a1420']];
   for (const [R, col] of rings) { g.fillStyle = col; g.beginPath(); g.arc(0, 0, R, 0, TAU); g.fill(); }
@@ -614,7 +616,7 @@ function paintFloor(ch, q) {
   g.strokeStyle = '#d8c4a0'; g.lineWidth = 1.5; g.beginPath(); for (let i = 0; i < 160; i++) { const a = (i / 160) * TAU; g.moveTo(Math.cos(a) * 330, Math.sin(a) * 330); g.lineTo(Math.cos(a) * 344, Math.sin(a) * 344); } g.stroke();
   g.restore();
   // small rugs before Orrin's shelves and the weapon rack
-  for (const [x, y, col] of [[-820, -60, '#2a4a3a'], [820, -80, '#4a2a4a']]) {
+  for (const [x, y, col] of [[-660, -40, '#2a4a3a'], [660, -10, '#4a2a4a']]) {
     g.save(); g.translate(x, y); g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(-116, -62, 240, 132);
     g.fillStyle = col; g.fillRect(-120, -66, 240, 132); g.strokeStyle = GOLD; g.lineWidth = 3; g.strokeRect(-108, -54, 216, 108);
     g.strokeStyle = 'rgba(226,184,90,0.4)'; g.lineWidth = 2; g.strokeRect(-90, -38, 180, 76);
@@ -627,42 +629,34 @@ function paintFloor(ch, q) {
   g.beginPath(); g.arc(0, 0, 190, 0, TAU); fillGrain(g, 'cloth', 0.4);
   g.restore();
   // Orrin's floor: a spill of books, a candle stub, loose pages
-  for (const [x, y, a] of [[-1000, 120, 0.2], [-990, 100, -0.3], [-980, 80, 0.1]]) { g.save(); g.translate(x, y); g.rotate(a); g.fillStyle = r.pick(['#6a1a24', '#2a3a6a', '#7a4a1a']); g.fillRect(-26, -9, 52, 18); g.fillStyle = '#e8dcc0'; g.fillRect(-24, -9, 48, 3); g.restore(); }
-  for (let i = 0; i < 6; i++) { g.save(); g.translate(-900 + r.range(-80, 80), 110 + r.range(-30, 40)); g.rotate(r.range(-1, 1)); g.fillStyle = 'rgba(240,228,200,0.85)'; g.fillRect(-14, -10, 28, 20); g.strokeStyle = 'rgba(80,60,40,0.4)'; g.lineWidth = 1; for (let k = -6; k < 8; k += 4) { g.beginPath(); g.moveTo(-10, k); g.lineTo(10, k); g.stroke(); } g.restore(); }
+  for (const [x, y, a] of [[-850, 210, 0.2], [-840, 190, -0.3], [-830, 170, 0.1]]) { g.save(); g.translate(x, y); g.rotate(a); g.fillStyle = r.pick(['#6a1a24', '#2a3a6a', '#7a4a1a']); g.fillRect(-26, -9, 52, 18); g.fillStyle = '#e8dcc0'; g.fillRect(-24, -9, 48, 3); g.restore(); }
+  for (let i = 0; i < 6; i++) { g.save(); g.translate(-780 + r.range(-60, 60), 200 + r.range(-30, 40)); g.rotate(r.range(-1, 1)); g.fillStyle = 'rgba(240,228,200,0.85)'; g.fillRect(-14, -10, 28, 20); g.strokeStyle = 'rgba(80,60,40,0.4)'; g.lineWidth = 1; for (let k = -6; k < 8; k += 4) { g.beginPath(); g.moveTo(-10, k); g.lineTo(10, k); g.stroke(); } g.restore(); }
   for (const o of ch.obstacles) drawShadow(g, o.x + 8, o.y + 6, o.r * 2.2, o.r * 0.9, 0.55);
   g.restore();
   mark('rugs');
 
-  // the golden thread path: entry -> around the hearth -> up the runner -> into the Dreamdoor
-  ge.globalCompositeOperation = 'lighter';
-  const thread = (side) => {
-    ge.beginPath();
-    ge.moveTo(side * 70, 600);
-    ge.bezierCurveTo(side * 70, 480, side * 360, 400, side * 360, 170);
-    ge.bezierCurveTo(side * 360, -40, side * 70, -60, side * 70, -150);
-    ge.lineTo(side * 70, -560); ge.bezierCurveTo(side * 70, -640, side * 40, -700, side * 30, -760);
-  };
-  for (const s of [-1, 1]) {
-    thread(s); ge.strokeStyle = 'rgba(255,190,90,0.25)'; ge.lineWidth = 16; ge.stroke();
-    thread(s); ge.strokeStyle = 'rgba(255,214,140,0.85)'; ge.lineWidth = 3; ge.stroke();
+  // the golden thread: a braided cord stitched down the middle of each runner, from the entry
+  // to the hearth rug and on from the rug to the Dreamdoor (straight, so it reads as a path)
+  for (const [y0, y1] of THREAD) {
+    const strand = (c, ph) => { c.beginPath(); for (let y = y0; y >= y1; y -= 4) { const x = Math.sin((y / 44) * TAU + ph) * 7; y === y0 ? c.moveTo(x, y) : c.lineTo(x, y); } };
+    ge.globalCompositeOperation = 'lighter';
+    ge.strokeStyle = 'rgba(255,190,90,0.22)'; ge.lineWidth = 18; ge.beginPath(); ge.moveTo(0, y0); ge.lineTo(0, y1); ge.stroke();
+    for (const ph of [0, Math.PI]) { strand(ge, ph); ge.strokeStyle = 'rgba(255,214,140,0.6)'; ge.lineWidth = 3; ge.stroke(); }
+    ge.globalCompositeOperation = 'source-over';
+    g.lineCap = 'round';
+    for (const [ph, col] of [[0, '#c08a3a'], [Math.PI, '#ffd27a']]) { strand(g, ph); g.strokeStyle = 'rgba(30,14,6,0.5)'; g.lineWidth = 5; g.stroke(); strand(g, ph); g.strokeStyle = col; g.lineWidth = 3; g.stroke(); }
+    g.fillStyle = '#fff0c0'; for (let y = y0; y >= y1; y -= 22) { g.beginPath(); g.arc(0, y - 11, 2.2, 0, TAU); g.fill(); }
   }
-  ge.globalCompositeOperation = 'source-over';
-  g.save(); polyPath(g, shape); g.clip();
-  for (const s of [-1, 1]) {
-    g.beginPath(); g.moveTo(s * 70, 600); g.bezierCurveTo(s * 70, 480, s * 360, 400, s * 360, 170); g.bezierCurveTo(s * 360, -40, s * 70, -60, s * 70, -150); g.lineTo(s * 70, -560);
-    g.strokeStyle = 'rgba(255,214,140,0.7)'; g.lineWidth = 2.5; g.stroke();
-  }
-  g.restore();
   innerShade(g, shape, '#140804', 60, 0.4);
   lip(g, shape, '#ffd8a0', '#000000', 3);
   // side railings (low, painted into the floor: nothing stands beyond them)
   for (const s of edgeSamples(shape, 56)) {
-    if (Math.abs(s.nx) < 0.8 || s.y > 560 || s.y < -520) continue;
+    if (Math.abs(s.nx) < 0.8 || s.y > 360 || s.y < -260) continue;
     g.fillStyle = '#2a160c'; g.fillRect(s.x - 5, s.y - 52, 10, 54);
     g.fillStyle = GOLD; g.beginPath(); g.arc(s.x, s.y - 54, 5, 0, TAU); g.fill();
   }
   for (const side of [-1, 1]) {
-    const rail = edgeSamples(shape, 20).filter((s) => Math.sign(s.nx) === side && Math.abs(s.nx) > 0.8 && s.y < 560 && s.y > -520);
+    const rail = edgeSamples(shape, 20).filter((s) => Math.sign(s.nx) === side && Math.abs(s.nx) > 0.8 && s.y < 360 && s.y > -260);
     if (rail.length < 2) continue;
     g.strokeStyle = WOOD_L; g.lineWidth = 7; g.beginPath(); rail.forEach((s, i) => (i ? g.lineTo(s.x, s.y - 50) : g.moveTo(s.x, s.y - 50))); g.stroke();
     g.strokeStyle = 'rgba(255,214,140,0.5)'; g.lineWidth = 2; g.beginPath(); rail.forEach((s, i) => (i ? g.lineTo(s.x, s.y - 53) : g.moveTo(s.x, s.y - 53))); g.stroke();
@@ -675,7 +669,7 @@ function paintFloor(ch, q) {
   paintTapestry(g, ge, ch.tapestry);
   paintDreamdoor(g, ge);
   paintWeaver(g, ge);
-  for (const [x, y] of [[-1010, -760], [-230 - 50, -1020 + 300], [960, -760]]) sconce(g, ge, x, y);
+  for (const [x, y] of [[-870, -520], [850, -520]]) sconce(g, ge, x, y);
   mark('walls');
   return { W, E };
 }
@@ -806,21 +800,84 @@ function strand() {
   g.fillStyle = lg; g.fillRect(0, 0, 28, 256); g.globalCompositeOperation = 'destination-in'; g.fillStyle = hg; g.fillRect(0, 0, 28, 256);
   return _strand;
 }
+// The hearth fire: three layers of curved flame tongues (deep red body, orange, a white-gold
+// core), each a pre-blurred teardrop sprite drawn skewed so its base stays on the logs while
+// the tip sways, with an additive glow under them and a few sparks popping off the coals.
+// About 20 drawImage calls a frame, nothing built per frame.
+const FLAME = new Map();
+function flameSprite(kind) {
+  let c = FLAME.get(kind);
+  if (c) return c;
+  const W = 64, H = 140;
+  c = mk(W, H);
+  const g = c.getContext('2d');
+  const stops = {
+    outer: [['#5a0c06', 0], ['#c8281a', 0.55], ['#ff5a1e', 0.85], ['#ff8a2a', 0.9]],
+    mid: [['#ff4a12', 0], ['#ff7a20', 0.6], ['#ffae3a', 0.9], ['#ffc860', 0.95]],
+    core: [['#ffb040', 0], ['#ffe08a', 0.7], ['#fff6d8', 0.95], ['#ffffff', 1]],
+  }[kind];
+  const gr = g.createLinearGradient(0, 6, 0, H - 6);
+  gr.addColorStop(0, hexA(stops[0][0], 0));
+  gr.addColorStop(0.18, hexA(stops[0][0], stops[0][1] ? 0.6 : 0.35));
+  gr.addColorStop(0.45, hexA(stops[1][0], stops[1][1]));
+  gr.addColorStop(0.8, hexA(stops[2][0], stops[2][1]));
+  gr.addColorStop(0.94, hexA(stops[3][0], stops[3][1]));
+  gr.addColorStop(1, hexA(stops[3][0], 0));
+  g.filter = 'blur(2.5px)';
+  g.fillStyle = gr;
+  // teardrop: round belly at the base, a long licking tip
+  g.beginPath();
+  g.moveTo(W / 2, 6);
+  g.bezierCurveTo(W / 2 + 6, H * 0.35, W - 6, H * 0.62, W - 8, H * 0.8);
+  g.bezierCurveTo(W - 10, H - 4, 10, H - 4, 8, H * 0.8);
+  g.bezierCurveTo(6, H * 0.62, W / 2 - 6, H * 0.35, W / 2, 6);
+  g.fill();
+  g.filter = 'none';
+  FLAME.set(kind, c);
+  return c;
+}
+// a cheap flicker: three incommensurate sines, roughly -1..1
+const flick = (t, s) => (Math.sin(t * 7.3 + s) * 0.5 + Math.sin(t * 13.1 + s * 2.7) * 0.3 + Math.sin(t * 3.1 + s * 5.1) * 0.2);
+const TONGUES = [
+  // [layer, x offset, base height, width, phase]
+  ['outer', -44, 70, 40, 0.3], ['outer', 40, 76, 40, 1.9], ['outer', -18, 104, 50, 4.1], ['outer', 16, 96, 48, 2.6],
+  ['mid', -30, 66, 32, 5.2], ['mid', 26, 70, 32, 0.9], ['mid', -6, 98, 40, 3.3], ['mid', 8, 84, 34, 6.1],
+  ['core', -12, 50, 22, 1.4], ['core', 12, 54, 22, 4.7], ['core', 0, 70, 26, 2.2],
+];
 function drawFire(ctx, t) {
   const { x, y } = S.hearth;
+  const base = y - 4;
+  const surge = 0.5 + 0.5 * Math.sin(t * 1.3) * Math.sin(t * 0.71 + 1);   // slow breathing of the whole fire
   ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = 0.6 + 0.1 * Math.sin(t * 9);
-  ctx.drawImage(glow('#ff8a2a'), x - 110, y - 150, 220, 200);
-  for (let i = 0; i < 7; i++) {
-    const ph = t * (3 + i * 0.4) + i * 2.1, sx = x + (i - 3) * 13, hh = 60 + 30 * Math.sin(ph) + (3 - Math.abs(i - 3)) * 18, sw = 14 + (3 - Math.abs(i - 3)) * 3;
-    ctx.globalAlpha = 0.55;
-    ctx.fillStyle = i % 2 ? '#ff7a2a' : '#ffb040';
-    ctx.beginPath(); ctx.moveTo(sx - sw, y - 6);
-    ctx.quadraticCurveTo(sx - sw * 0.6 + Math.sin(ph * 1.3) * 6, y - hh * 0.6, sx + Math.sin(ph) * 8, y - hh);
-    ctx.quadraticCurveTo(sx + sw * 0.6 + Math.sin(ph * 1.7) * 6, y - hh * 0.5, sx + sw, y - 6); ctx.closePath(); ctx.fill();
+  // warm pool on the stones and the air above the fire
+  ctx.globalAlpha = 0.42 + 0.08 * flick(t, 0) + 0.08 * surge;
+  ctx.drawImage(glow('#ff6a1e'), x - 130, y - 150, 260, 220);
+  ctx.globalAlpha = 0.5 + 0.12 * flick(t * 1.4, 2);
+  ctx.drawImage(glow('#ff9a3a'), x - 70, base - 26, 140, 56);       // the coal bed
+  // the flame body: red underneath with normal blending so it has weight, then additive layers
+  for (const [kind, ox, hh, ww, ph] of TONGUES) {
+    const f = flick(t, ph), lift = hh * (0.82 + 0.22 * f + 0.14 * surge), sway = Math.sin(t * 2.3 + ph) * 0.18 + f * 0.12;
+    const img = flameSprite(kind), w = ww * (1 - 0.12 * f);
+    ctx.globalCompositeOperation = kind === 'outer' ? 'source-over' : 'lighter';
+    ctx.globalAlpha = kind === 'outer' ? 0.78 : kind === 'mid' ? 0.8 : 0.85;
+    ctx.save();
+    ctx.translate(x + ox + Math.sin(t * 3.7 + ph) * 2, base);
+    ctx.transform(1, 0, -sway, 1, 0, 0);
+    ctx.drawImage(img, -w / 2, -lift * 1.06, w, lift * 1.12);
+    ctx.restore();
   }
-  ctx.globalAlpha = 0.5 + 0.1 * Math.sin(t * 11);
-  ctx.drawImage(glow('#ffe08a'), x - 34, y - 46, 68, 52);
+  ctx.globalCompositeOperation = 'lighter';
+  // the hot heart of the fire
+  ctx.globalAlpha = 0.55 + 0.15 * flick(t * 1.7, 4);
+  ctx.drawImage(glow('#ffe7a8'), x - 30, base - 44, 60, 52);
+  // sparks popping off the coals (short lives, curling up)
+  for (let i = 0; i < 6; i++) {
+    const life = 0.9 + (i % 3) * 0.25, k = (t + i * 0.37) / life, ph = k % 1, cyc = Math.floor(k);
+    const sx = x + Math.sin(cyc * 12.9898 + i * 7.1) * 40 + Math.sin(ph * 6 + i) * 10 * ph, sy = base - 20 - ph * (90 + (i % 2) * 40);
+    ctx.globalAlpha = (1 - ph) * (1 - ph);
+    ctx.fillStyle = ph < 0.4 ? '#fff2c8' : '#ffb050';
+    ctx.fillRect(sx - 1.2, sy - 1.2, 2.4, 2.4);
+  }
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
 }
 
@@ -828,10 +885,7 @@ function drawFire(ctx, t) {
 function makeAmbient(ch) {
   const pts = [];
   // sample the thread path for the sparks to run along
-  for (const s of [-1, 1]) {
-    const seg = [[s * 70, 600], [s * 200, 440], [s * 350, 260], [s * 340, 60], [s * 160, -70], [s * 70, -200], [s * 70, -560], [s * 30, -760]];
-    for (let i = 0; i < seg.length - 1; i++) for (let k = 0; k < 6; k++) pts.push([lerp(seg[i][0], seg[i + 1][0], k / 6), lerp(seg[i][1], seg[i + 1][1], k / 6)]);
-  }
+  for (const s of [-1, 1]) for (const [y0, y1] of THREAD) for (let y = y0; y >= y1; y -= 10) pts.push([Math.sin((y / 44) * TAU + (s < 0 ? 0 : Math.PI)) * 7, y]);
   const half = pts.length / 2;
   return (ctx, G, t) => {
     ctx.globalCompositeOperation = 'lighter';
@@ -877,10 +931,10 @@ function buildProps(ch, q) {
   if (stall) out.push(...featureProps({ features: [{ type: 'shop', x: stall.x, y: stall.y + 20 }] }, k, 'hub'));
   out.push(propOf(keepsakeSprite(k), S.keepsakes.x, S.keepsakes.y - 26, S.keepsakes.y - 26));
   // cushions round the hearth (Nell's seat among them)
-  for (const [x, y, s] of [[300, 262, 0], [-260, 250, 1], [-190, 30, 2], [210, 30, 1]]) out.push(propOf(cushionSprite(s, k), x, y, y - 6));
+  for (const [x, y, s] of [[230, 190, 0], [-215, 185, 1], [-175, -20, 2], [180, -20, 1]]) out.push(propOf(cushionSprite(s, k), x, y, y - 6));
   // animated pieces, drawn under actors
   const fire = { x: S.hearth.x, y: S.hearth.y, sortY: S.hearth.y - 9, w: 0, h: 0, ox: 0, oy: 0, img: null, draw: (ctx, t) => drawFire(ctx, t) };
-  const wall = { x: 0, y: -760, sortY: -1e5, w: 0, h: 0, ox: 0, oy: 0, img: null, draw: (ctx, t) => drawWallLife(ctx, t) };
+  const wall = { x: 0, y: -420, sortY: -1e5, w: 0, h: 0, ox: 0, oy: 0, img: null, draw: (ctx, t) => drawWallLife(ctx, t) };
   out.push(fire, wall);
   return out;
 }

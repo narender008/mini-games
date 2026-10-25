@@ -60,6 +60,36 @@ console.log(`dialogue: ${DIALOGUE.length} entries, ${LINE_COUNT} lines (` + Obje
 console.log(`memories: ${MEMORIES.length} threads, ${MEMORIES.reduce((n, m) => n + m.panels.length, 0)} panels, ${memLines} lines; endings: ${Object.keys(ENDINGS).length} sequences, ${endLines} lines; codex: ${codexPages} pages`);
 console.log(`total spoken/narrated lines: ${LINE_COUNT + memLines + endLines}`);
 
+// memory panels name their first speaker (run.js shows one line per panel)
+for (const mm of MEMORIES) for (const p of mm.panels) if (p.speaker !== p.lines[0].speaker) err('memory panel speaker', mm.id, p.speaker);
+if (MEMORIES.find((x) => x.id === 'shears').panels[1].speaker !== 'aurum') err('Aurum should speak in Making of the Shears');
+
+// ---------------------------------------------------------------- before the first run: every hub NPC has something real to say
+{
+  const Gf = { meta: {}, bus: { emit() {} }, t: 0 };
+  story.ensureStoryMeta(Gf); story.onEvent(Gf, 'hubEnter', { from: 'new' });
+  for (const npc of ['orrin', 'thimbleby', 'pell', 'weaver']) for (let i = 0; i < 6; i++) {
+    const r = story.hubTalk(Gf, npc);
+    if (!r) err('no pre-run talk for', npc, 'talk', i + 1);
+    else if (i === 0 && /_idle_any\./.test(r.id)) err('pre-run talk fell back to an idle line', npc, r.id);
+  }
+}
+// ---------------------------------------------------------------- one run that clears everything: Orrin's talk comes in story order
+{
+  const Gm = { meta: {}, bus: { emit() {} }, t: 0 };
+  const mm = story.ensureStoryMeta(Gm); const s2 = mm.stats;
+  story.onEvent(Gm, 'hubEnter', { from: 'new' }); s2.started = 1; story.onEvent(Gm, 'runStart', { weapon: 'blade' });
+  for (const b of ['veyl', 'morrow', 'aurum', 'sable']) { s2.bossMeets[b] = 1; story.onEvent(Gm, 'bossIntro', { id: b }); s2.bossWins[b] = 1; if (b === 'sable') s2.wins = 1; story.onEvent(Gm, 'bossDefeat', { id: b, first: true }); }
+  s2.runs = 1; s2.lastRun = { result: 'victory', region: 'unwoven' }; mm.ending = 'first';
+  story.onEvent(Gm, 'victory', { ending: 'first' }); story.onEvent(Gm, 'hubEnter', { from: 'victory' });
+  const order = []; for (let i = 0; i < 5; i++) { const r = story.hubTalk(Gm, 'orrin'); order.push(r ? r.id : null); }
+  const at = (id) => order.indexOf(id);
+  if (!(at('orrin_reveal_sable') === 0 && at('orrin_reveal_sleep') === 1)) err('Orrin reveals out of order after a full-clear run:', order.join(' '));
+  if (order.includes('orrin_first_clear')) err('Orrin gave the first-clear talk while avoiding Iri:', order.join(' '));
+  if (!order.slice(2).every((id) => /orrin_(avoid_|first_clear_avoid)/.test(id))) err('Orrin did not avoid Iri after Reveal 3:', order.join(' '));
+  if (!QUIET) console.log('full-clear run, Orrin:', order.join(' '));
+}
+
 // ---------------------------------------------------------------- simulation
 const R = rng(20261025);
 const G = { meta: {}, bus: { emit() {} }, t: 0, run: null };
@@ -76,17 +106,18 @@ const KILLERS = { glasswood: ['hollow', 'thornling', 'threadKnight'], choir: ['c
 
 function hubVisit(from) {
   log('hub', story.onEvent(G, 'hubEnter', { from }));
-  for (const npc of story.hubCast(G)) { const r = story.hubTalk(G, npc); if (r) log(`talk.${npc}`, [r]); }
+  for (const npc of story.hubCast(G)) for (let i = 0; i < 2; i++) { const r = story.hubTalk(G, npc); if (r) log(`talk.${npc}`, [r]); else err('empty hub talk', npc, 'runs', st.runs); }
 }
 
 log('boot', story.onEvent(G, 'boot'));
 hubVisit('new');
-let skill = 0.25;
+let skill = 0.25, sableIdle = 0, chambersSeen = 0;
 for (let run = 1; run <= RUNS; run++) {
   current = [];
   const weapon = WEAPONS[(run - 1) % WEAPONS.length];
   inc(st, 'started'); inc(st.weaponRuns, weapon);
   log('run', story.onEvent(G, 'runStart', { weapon }));
+  const runSable = [];
   let result = null, at = null, killer = null, boss = null;
   for (let ri = 0; ri < 4 && !result; ri++) {
     const [region, bossId] = REG[ri];
@@ -95,7 +126,10 @@ for (let run = 1; run <= RUNS; run++) {
     for (let c = 0; c < 4 && !result; c++) {
       log('chamber', story.onEvent(G, 'chamberEnter', { chamber: c, depth: ri * 12 + c }));
       m.codex.foes[KILLERS[region][c % KILLERS[region].length]] = true;
-      for (let w = 0; w < 3; w++) log('wave', story.onEvent(G, 'waveStart', { wave: w }));
+      let said = 0;
+      for (let w = 0; w < 3; w++) { const rs = story.onEvent(G, 'waveStart', { wave: w }); said += rs.length; for (const r of rs) { if (runSable.includes(r.id)) err('Sable repeated a line within a run', r.id, 'run', run); runSable.push(r.id); if (BY_ID.get(r.id).priority < 50) sableIdle++; } log('wave', rs); }
+      if (said > 1) err('Sable spoke twice in one chamber, run', run);
+      if (m.ending !== 'true') chambersSeen++;
       const patron = PATRONS[Math.floor(R() * 6)];
       const pl = story.patronLine(G, patron, `${patron}_x`); if (pl) { story.markSeen(G, pl.id); current.push(`offer:${pl.id}`); fired.push(pl.id); }
       inc(st.patronPicks, patron);
@@ -148,6 +182,12 @@ for (let run = 1; run <= RUNS; run++) {
 const S = story.storyContext(G);
 console.log(`\nafter ${RUNS} runs: deaths ${st.deaths}, wins ${st.wins}, reveals [${m.reveals}], memories ${m.memories.length}/12, confession ${!!m.flags.confession}, ending ${m.ending}, distinct entries seen ${Object.keys(m.seen).length}/${DIALOGUE.length}, nellStage ${S.nellStage}`);
 const summary = story.storySummary(G);
+const rate = sableIdle / Math.max(1, chambersSeen);
+console.log(`Sable idle taunts: ${sableIdle} in ${chambersSeen} chambers (${(rate * 100).toFixed(0)}%)`);
+if (rate > 0.45 || rate < 0.15) err('Sable taunt rate out of range (about one chamber in three):', rate.toFixed(2));
+const fi = (id) => fired.indexOf(id);
+if (fi('orrin_first_clear') >= 0 && (fi('orrin_reveal_sable') < 0 || fi('orrin_reveal_sable') > fi('orrin_first_clear'))) err('orrin_first_clear before orrin_reveal_sable');
+if (fi('orrin_voice_again') >= 0 && fi('orrin_voice_again') < fi('sable_death_third')) err('orrin_voice_again before sable_death_third');
 if (!summary.seen.includes('sable_death_first')) err('Sable never spoke on the first death');
 for (const r of ['sable', 'sleep', 'halves']) if (!m.reveals.includes(r)) console.warn('warn: reveal not reached in this simulation:', r);
 if (RUNS >= 30 && m.ending !== 'true') console.warn('warn: true ending not reached in', RUNS, 'runs');

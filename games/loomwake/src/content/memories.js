@@ -345,7 +345,7 @@ export function scene(fn, o = {}) {
 // ------------------------------------------------------------------ the twelve memories
 const N = (t) => `@narrator ${t}`;
 function mem(id, n, title, region, gate, panels) {
-  return { id, n, title, region, gate, panels: panels.map((p) => { const lines = p.lines.map((l) => parseLine(l, 'narrator')); return { paint: p.paint, lines, text: lines[0]?.text ?? '' }; }) };
+  return { id, n, title, region, gate, panels: panels.map((p) => { const lines = p.lines.map((l) => parseLine(l, 'narrator')); return { paint: p.paint, lines, text: lines[0]?.text ?? '', speaker: lines[0]?.speaker ?? 'narrator', mood: lines[0]?.mood ?? 'neutral' }; }) };
 }
 
 const dawnSky = ['#2a1840', '#a0507a', '#f0a868', '#ffe2a8'];

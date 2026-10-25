@@ -169,6 +169,30 @@ export function createBoons(ui) {
 }
 
 // highlight numbers and key words in boon text
+// status words carry a short definition (hover or focus shows it)
+const GLOSS = {
+  burn: 'Burning foes take damage every moment it lasts.',
+  blind: 'Blinded foes miss half their blows.',
+  soak: 'Drenched by the tide. Storm and tide blessings strike Soaked foes harder.',
+  slow: 'Slowed foes move and strike more slowly.',
+  jolt: 'Charged with the storm. Storm blessings leap from Jolted foes.',
+  mark: 'Your next blow on a Marked foe is a Critical hit.',
+  chain: 'Lightning that leaps from foe to foe.',
+  ward: 'A shell of stone that takes blows before your health does.',
+  critical: 'A Critical hit deals far more damage.',
+  crit: 'A Critical hit deals far more damage.',
+  quake: 'The ground heaves, striking every foe nearby.',
+  chill: 'Chilled foes are slowed.',
+  weak: 'Weakened foes deal less damage.',
+  cyclone: 'A whirling wind that carries and cuts foes.',
+  riptide: 'A dragging current that pulls foes in.',
+  stun: 'Stunned foes cannot act for a moment.',
+};
+const GKEY = (w) => { const k = w.toLowerCase(); return GLOSS[k] ? k : GLOSS[k.replace(/(ed|ing|s|es)$/, '')] ? k.replace(/(ed|ing|s|es)$/, '') : GLOSS[k.replace(/(ed|s)$/, '')] ? k.replace(/(ed|s)$/, '') : null; };
 function emph(text) {
-  return esc(text).replace(/(\+?\d+(?:\.\d+)?%?)/g, '<b>$1</b>').replace(/\b(Burn|Blind|Soak(?:ed)?|Slow(?:ed)?|Chain|Ward|Critical|Quake|Cloak|Cyclone|Riptide|Sunspot|Bound|Mark(?:ed)?|Chill|Weak)\b/g, '<em>$1</em>');
+  return esc(text).replace(/(\+?\d+(?:\.\d+)?%?)/g, '<b>$1</b>')
+    .replace(/\b(Burn(?:ing|s)?|Blind(?:ed|s)?|Soak(?:ed|s)?|Slow(?:ed|s)?|Jolt(?:ed|s)?|Chain|Ward|Critical|Crit|Quake|Cloak|Cyclone|Riptide|Sunspot|Bound|Mark(?:ed|s)?|Chill(?:ed)?|Weak(?:ened)?|Stun(?:ned|s)?)\b/g, (w) => {
+      const k = GKEY(w);
+      return k ? `<em class="kw" tabindex="-1" data-tip="${esc(GLOSS[k])}">${w}</em>` : `<em>${w}</em>`;
+    });
 }

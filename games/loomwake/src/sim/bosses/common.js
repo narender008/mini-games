@@ -325,7 +325,10 @@ export function pickLine(G, e, trigger, def) {
   return best[Math.floor(G.rng.ai() * best.length)];
 }
 // Set a mid-fight voice line on the boss (G.boss.bark) and announce it.
+const STORY_TOLD = { intro: 1, phase2: 1, phase3: 1, defeat: 1 };
 export function bark(G, e, trigger, def, opts = {}) {
+  // in a run the story system tells intros, phase changes and defeats as dialogue: no second copy overhead
+  if (STORY_TOLD[trigger] && G.run && G.run.ch) return null;
   if (!opts.force && e.bark && e.bark.t > 0.6 && (e.bark.pri || 0) >= (opts.pri || 0)) return null;
   const l = pickLine(G, e, trigger, def);
   if (!l) return null;

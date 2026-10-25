@@ -10,12 +10,13 @@ import bosses from './bosses.js';
 import wanderers from './wanderers.js';
 import narration from './narration.js';
 import reactions from './reactions.js';
+import idle from './idle.js';
 
 export { SPEAKERS, SPEAKER_IDS, HUB_NPCS, WANDERERS, PATRONS, BOSSES, REGIONS } from './speakers.js';
 export { REGION_CARDS, BOSS_CARDS } from './narration.js';
 export { CODEX } from './codex.js';
 
-export const GROUPS = { orrin, thimbleby, pell, nell, weaver, sable, patrons, bosses, wanderers, narration, reactions };
+export const GROUPS = { orrin, thimbleby, pell, nell, weaver, sable, patrons, bosses, wanderers, narration, reactions, idle };
 export const DIALOGUE = Object.values(GROUPS).flat();
 export const BY_ID = new Map(DIALOGUE.map((e) => [e.id, e]));
 export const BY_SPEAKER = new Map();

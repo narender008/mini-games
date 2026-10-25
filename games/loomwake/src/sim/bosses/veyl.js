@@ -40,10 +40,10 @@ export default {
       ['summon', aliveSummons(G, e) === 0 ? 2.5 : 0], ['burrow', d > 640 ? 3 : 0.6],
     ]);
   },
-  phaseStart(G, e) { e.tempo = 1.12; },
+  phaseStart(G, e) { e.tempo = 1.08; },
   phase(G, e) {
     // the garden closes: thorns grow in from the edge, and the knights rise
-    hazard(G, e, 'edge', { s: 1.02, target: 0.8, rate: 0.06, tick: 0.5, dmgv: 10, life: 1e9, theme: 'thorn' });
+    hazard(G, e, 'edge', { s: 1.02, target: 0.82, rate: 0.05, tick: 0.6, dmgv: 8, life: 1e9, theme: 'thorn' });
     G.bus.emit('bossSetPiece', { id: 'veyl', name: 'thornEdge' });
     const pts = [-1, 1].map((s) => clampToArena(G, e.x + s * 240, e.y + 80, 0.7));
     summon(G, e, 'glassKnight', pts, { delay: 0.3 });
@@ -119,7 +119,8 @@ export default {
             }
             G.bus.emit('bossImpact', { id: 'veyl', x: e.x, y: e.y, r: m.r, item: 'emerge' });
           }
-        } else { e.sunk = Math.max(0, 1 - a.t + a.W + a.A); e.untargetable = false; }
+        } else { e.sunk = s === 'done' ? 0 : Math.max(0, 1 - (a.t - a.W - a.A) / Math.max(0.2, a.R * 0.8)); e.untargetable = false; }
+        if (s === 'done') e.sunk = 0;
         return s === 'done';
       },
       abort(G, e) { e.sunk = 0; e.untargetable = false; },
@@ -189,35 +190,46 @@ export default {
 
 
 function lanesMove() {
+  // Lanes arrive one after another, sweeping across the fan (alternating side each cast), so only a couple
+  // of warnings overlap near her at any moment. Each lane is warned for at least the move's wind-up.
+  const GAP = 0.2, R0 = 120;
   return {
     start(G, e, a, m) {
       stage(G, e, a, m);
       a.tgs = [];
       a.base = aHero(G, e.x, e.y);
-      for (let i = 0; i < m.n; i++) {
-        const off = (i - (m.n - 1) / 2) * m.spread;
-        a.tgs.push(tele(G, e, { kind: 'line', x: e.x, y: e.y, x2: e.x, y2: e.y, w: m.w, max: a.W, off }));
-      }
+      a.dir = (e.laneDir = -(e.laneDir || 1));
       e.aim = a.base;
     },
     update(G, e, a, dt, m) {
       const s = stage(G, e, a, m);
       e.vx = e.vy = 0;
+      // lane i: warning appears at i*GAP/2 into the wind-up, erupts i*GAP after the strike
+      for (let i = a.tgs.length; i < m.n && a.t >= i * GAP * 0.5; i++) {
+        const k = a.dir > 0 ? i : m.n - 1 - i;
+        const off = (k - (m.n - 1) / 2) * m.spread;
+        a.tgs.push(tele(G, e, { kind: 'line', x: e.x, y: e.y, x2: e.x, y2: e.y, w: m.w, max: Math.max(0.6, a.W - a.t) + i * GAP, off, i }));
+      }
       if (s === 'wind') {
         if (a.t < a.W * 0.6) { a.base = aHero(G, e.x, e.y); e.aim = a.base; e.facing = a.base; }
+      }
+      if (s === 'wind' || s === 'act') {
         for (const tg of a.tgs) {
+          if (tg.fired) continue;
           const ang = a.base + tg.off;
-          tg.x = e.x + Math.cos(ang) * 60; tg.y = e.y + Math.sin(ang) * 60;
+          tg.x = e.x + Math.cos(ang) * R0; tg.y = e.y + Math.sin(ang) * R0;
           tg.x2 = e.x + Math.cos(ang) * m.len; tg.y2 = e.y + Math.sin(ang) * m.len;
         }
-      } else if (s === 'act' && once(a, 'go')) {
+      }
+      if (s === 'act' && once(a, 'go')) {
         for (const tg of a.tgs) {
           const ang = a.base + tg.off;
-          hazard(G, e, 'spikeLine', { x: e.x + Math.cos(ang) * 60, y: e.y + Math.sin(ang) * 60, ang, len: m.len, w: m.w, speed: m.speed, front: 0, hold: 0.5, life: 3, dmgv: m.dmg, theme: 'thorn', seed: (tg.off * 1000) | 0 });
+          tg.fired = true;
+          hazard(G, e, 'spikeLine', { x: e.x + Math.cos(ang) * R0, y: e.y + Math.sin(ang) * R0, ang, len: m.len - R0, w: m.w, speed: m.speed, front: 0, wait: tg.i * GAP, hold: 0.5, life: 3 + tg.i * GAP, dmgv: m.dmg, theme: 'thorn', seed: (tg.off * 1000) | 0 });
         }
         G.bus.emit('bossImpact', { id: 'veyl', x: e.x, y: e.y, r: 120, item: 'lanes' });
       }
-      return s === 'done';
+      return s === 'done' && a.t >= a.W + (m.n - 1) * GAP;
     },
   };
 }

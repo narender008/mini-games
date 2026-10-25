@@ -124,9 +124,13 @@ export function createUI(G, api = {}) {
   // bus listeners for cards, banners, toasts and the HUD's reactive bits
   if (G.bus?.on) {
     const on = (t, f) => G.bus.on(t, (p) => { try { f(p || {}); } catch (e) { console.error('[ui] bus ' + t, e); } });
-    on('bossIntro', (p) => cards.boss(p.id, p));
+    // a new room, region or boss: lines from the last one are dropped
+    const flush = () => screens.hud.flushBarks?.();
+    on('flushBarks', flush);
+    on('chamberEnter', flush);
+    on('bossIntro', (p) => { flush(); cards.boss(p.id, p); });
     on('bossFight', () => cards.bossFight());
-    on('regionEnter', (p) => cards.region(p.region || p.id, p));
+    on('regionEnter', (p) => { flush(); cards.region(p.region || p.id, p); });
     on('chamberClear', () => cards.banner('Chamber Cleared', 'clear'));
     on('bossDefeat', (p) => cards.bossDefeat(p.id));
     on('bossPhase', (p) => cards.banner(p.text || 'The fight turns', 'phase', p));
@@ -191,6 +195,15 @@ export function createUI(G, api = {}) {
     if (k === 'Enter' && t && t.tagName === 'INPUT' && (t.type === 'checkbox' || t.type === 'range')) { t.click?.(); e.preventDefault(); }
   }
   window.addEventListener('keydown', menuKey, true);
+  // a key press that closed one menu must not also press a button in the next one
+  // (e.g. Enter on a boon card falling through into the shop): keyboard clicks in a
+  // screen shown less than 350 ms ago are swallowed, and so are held-down repeats
+  window.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.repeat && topScreen()) { e.preventDefault(); e.stopPropagation(); } }, true);
+  window.addEventListener('click', (e) => {
+    if (e.detail !== 0) return; // real pointer clicks always count
+    const top = topScreen();
+    if (top && top.el.contains(e.target) && performance.now() - (top.shownAt || 0) < 350) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
   // keyboard users get visible focus rings; mouse users do not
   window.addEventListener('keydown', (e) => { if (e.key.startsWith('Arrow') || e.key === 'Tab') root.classList.add('kbd'); });
   window.addEventListener('pointerdown', () => root.classList.remove('kbd'), true);
@@ -238,7 +251,13 @@ export function createUI(G, api = {}) {
     if (s === 'victory' || s === 'ending') w.add('ending');
     if (STATIONS.includes(s) && s !== 'shop') { w.add('station'); screens.station.__arg = s; }
     const st = G.ui?.station || G.ui?.menu;
-    if (st === 'archive' || st === 'codex') { if (s !== 'codex' && G.ui.station === st) { G.ui.station = null; if (G.ui.menu === st) G.ui.menu = null; } }
+    if (st === 'archive' || st === 'codex') {
+      // Orrin's Archive opens the codex on its Memory Threads
+      if (s !== 'codex' && G.ui.station === st) {
+        G.ui.station = null; if (G.ui.menu === st) G.ui.menu = null;
+        if (s === 'hub') { screens.codex.__arg = st === 'archive' ? 'memories' : undefined; if (has('openCodex')) call(['openCodex']); else ui.open('codex', screens.codex.__arg); }
+      }
+    }
     else if (st === 'weaver' && G.ui.station === 'weaver') { G.ui.station = null; G.ui.menu = null; call(['talk'], 'weaver'); }
     else if (st && STATIONS.includes(st) && s === 'hub') { w.add('station'); if (!ui.isOpen('station')) screens.station.__arg = st; }
     // local overlays; drop ones whose scene has gone
@@ -261,7 +280,7 @@ export function createUI(G, api = {}) {
       const s = screens[k];
       const want = w.has(k);
       if (want && !s.on) {
-        s.on = true; s.el.hidden = false;
+        s.on = true; s.el.hidden = false; s.shownAt = performance.now();
         // next frame for CSS transitions
         requestAnimationFrame(() => { if (s.on) s.el.classList.add('on'); });
         try { s.show?.(g, s.__arg); } catch (e) { console.error('[ui] show ' + k, e); }

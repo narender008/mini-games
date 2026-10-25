@@ -391,7 +391,7 @@ export function updateFoeFx(G, dt) {
       } else if (f.state === 'hold') {
         f.hold += dt;
         // a dash breaks the thread
-        if (!h || h.dashing || h.state === 'dash' || h.dead) { f.state = 'snap'; emit(G, 'foeSnareBreak', { e: s }); }
+        if (!h || h.dashing || h.state === 'dash' || h.dead || s.los === false) { f.state = 'snap'; emit(G, 'foeSnareBreak', { e: s }); }
         else {
           const dx = s.x - h.x, dy = s.y - h.y, d = len(dx, dy);
           if (d > s.r + (h.r || 20) + 30) { const k = Math.min(f.pull * dt, d - 40) / d; h.x += dx * k; h.y += dy * k; h.tethered = 0.1; }

@@ -3,6 +3,7 @@
 import { run, goTo, heroDist, heroAng, turn, rnd, inside, setState, emit, tg, clearTgs } from './brain.js';
 import { ATTACK_FNS } from './attacks.js';
 import { list, pickFrom } from './pick.js';
+import { navOf, sight } from './nav.js';
 
 const M = {
   init(G, e) { e.cd = rnd(G).range(0.9, 2.0); e.blinkCd = 1.5; },
@@ -26,10 +27,10 @@ const M = {
   startBlink(G, e) {
     // pick a spot 220-320 px away from the hero, inside the room
     const h = G.hero; let best = null;
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 12; i++) {
       const a = rnd(G).range(0, Math.PI * 2), r = rnd(G).range(240, 330);
       const x = h.x + Math.cos(a) * r, y = h.y + Math.sin(a) * r;
-      if (inside(G, x, y, 40)) { best = [x, y]; break; }
+      if (inside(G, x, y, 40) && sight(navOf(G), x, y, h.x, h.y)) { best = [x, y]; break; }
     }
     if (!best) { e.blinkCd = 0.8; return; }
     e.blinkTo = best; e.blinkFrom = [e.x, e.y]; e.blinkCd = e.elite ? 2.2 : 3.2;

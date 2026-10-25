@@ -92,12 +92,13 @@ function safe(e, S) { try { return !!e.when(S); } catch (err) { return false; } 
 function roll(...k) { return hashSeed(...k) / 4294967296; }
 
 // best eligible entry from a list: top priority, least seen, then a stable hash
-function choose(G, list, S, type, salt = 0) {
+function choose(G, list, S, type, salt = 0, skip = null) {
   const m = G.meta;
   let best = null, bp = -Infinity, bs = Infinity, bh = Infinity;
   for (const e of list) {
     if (!onMatches(e, type)) continue;
     if (e.once && m.seen[e.id]) continue;
+    if (skip && skip.includes(e.id)) continue;
     if (m.ending === 'true' && type === 'talk' && !e.post && e.priority > 10) continue;
     if (!safe(e, S)) continue;
     if (e.chance < 1 && roll(e.id, m.stats.started, m.stats.deaths, salt) > e.chance) continue;
@@ -149,6 +150,16 @@ function say(G, out, speaker, ev) {
   if (e) emit(G, out, applyEntry(G, e, S));
   return e;
 }
+// Sable mid-run: never the same line twice in one run, and every line he says resets his chamber cadence
+function saySable(G, out, ev) {
+  const run = G.meta.storyRun; run.said ??= [];
+  const S = storyContext(G, ev);
+  const e = choose(G, listFor('sable'), S, ev.type, G.meta.flags._n | 0, run.active ? run.said : null);
+  if (!e) return null;
+  if (run.active) { run.said.push(e.id); run.lastSableCh = run.chambers | 0; }
+  emit(G, out, applyEntry(G, e, S));
+  return e;
+}
 
 // ---------------------------------------------------------------- events
 export function onEvent(G, type, data = {}) {
@@ -171,7 +182,7 @@ export function onEvent(G, type, data = {}) {
       break;
     }
     case 'runStart': {
-      m.storyRun = { active: true, patrons: {}, region: null, chambers: 0, barked: false, winsAtStart: st.wins, lastBarkT: -99, talked: {}, weapon: data.weapon ?? null };
+      m.storyRun = { active: true, patrons: {}, region: null, chambers: 0, barked: false, winsAtStart: st.wins, lastBarkT: -99, talked: {}, weapon: data.weapon ?? null, said: [], lastSableCh: -2, rolledCh: -1 };
       delete fl.endingChoice; delete fl.trueFight;
       say(G, out, 'narrator', ev);
       break;
@@ -179,18 +190,26 @@ export function onEvent(G, type, data = {}) {
     case 'regionEnter': {
       run.region = data.region ?? null;
       say(G, out, 'narrator', ev);
-      say(G, out, 'sable', ev);
+      saySable(G, out, ev);
       if (data.region) fl[`seen_${data.region}`] = true;
       break;
     }
     case 'chamberEnter': run.chambers = (run.chambers | 0) + 1; run.barked = false; break;
     case 'waveStart': {
-      if (run.barked) break;
+      // one decision per chamber (a chamber has several waves), at most one line, never a line twice in a run
+      if (run.barked || run.rolledCh === run.chambers) break;
+      run.said ??= []; if (run.lastSableCh == null) run.lastSableCh = -2;
       const S = storyContext(G, ev);
-      const e = choose(G, listFor('sable'), S, 'waveStart', fl._n);
+      const e = choose(G, listFor('sable'), S, 'waveStart', fl._n, run.said);
       if (!e) break;
-      // story beats always land; idle taunts only now and then (about one chamber in three)
-      if (e.priority >= 50 || roll('wave', st.started, run.chambers, fl._n) < 0.34) { run.barked = true; emit(G, out, applyEntry(G, e, S)); }
+      // story beats always land; idle taunts about one chamber in three (never two chambers running, always by the fourth)
+      if (e.priority < 50) {
+        run.rolledCh = run.chambers;
+        const gap = (run.chambers | 0) - run.lastSableCh;
+        if (!(gap >= 4 || (gap >= 2 && roll('wave', st.started, run.chambers) < 0.5))) break;
+      }
+      run.barked = true; run.said.push(e.id); run.lastSableCh = run.chambers | 0;
+      emit(G, out, applyEntry(G, e, S));
       break;
     }
     case 'boon': {
@@ -201,7 +220,7 @@ export function onEvent(G, type, data = {}) {
         const S = storyContext(G, bev);
         const e = choose(G, BY_EVENT.get('braid') ?? [], S, 'braid', fl._n);
         if (e) emit(G, out, applyEntry(G, e, S));
-        say(G, out, 'sable', ev);
+        saySable(G, out, ev);
       }
       break;
     }
@@ -224,7 +243,7 @@ export function onEvent(G, type, data = {}) {
       say(G, out, data.id, ev);
       const rv = REVEAL_BY_BOSS[data.id];
       if (rv && (data.first || n0(st.bossWins, data.id) >= 1)) addReveal(G, rv);
-      if (data.id !== 'sable') say(G, out, 'sable', ev); // Sable comments on a guardian's fall (only some kills)
+      if (data.id !== 'sable') saySable(G, out, ev); // Sable comments on a guardian's fall
       break;
     }
     case 'death': {
@@ -239,7 +258,7 @@ export function onEvent(G, type, data = {}) {
     case 'memory': {
       if (data.id && !m.memories.includes(data.id)) m.memories.push(data.id);
       say(G, out, 'narrator', ev);
-      say(G, out, 'sable', ev);
+      saySable(G, out, ev);
       break;
     }
     case 'shopBuy': say(G, out, 'pell', ev); break;
@@ -269,7 +288,6 @@ export function hubTalk(G, npc) {
   const e = choose(G, listFor(speaker), S, 'talk', m.flags._n | 0);
   if (!e) return null;
   const r = applyEntry(G, e, S);
-  G.bus?.emit?.('line', { speaker: r.speaker, lineId: r.id, text: r.lines[0]?.text ?? '' });
   return r;
 }
 

@@ -90,19 +90,29 @@ function tintHex(hex, f, d, gr) {
 const smooth = (t) => t * t * (3 - 2 * t);
 
 // ---------- begin / end ----------
-export function begin(ctx, e, G, P) {
-  if (e.hidden || e.state === 'pending' || e.gone) return null;
+// Per-frame animation state (walk phase, smoothed velocity). Idempotent per sim time, so the sprite cache
+// in index.js can advance it every frame even when the painter itself is not called.
+export function animTick(e, G) {
   const t = G ? G.t : 0;
   const A = e.anim || (e.anim = {});
+  if (A.tickT === t && A.dt !== undefined) return A;
   const dt = A.lastT === undefined ? 0 : clamp(t - A.lastT, 0, 0.05);
-  A.lastT = t;
-  const pal = palOf(e, G);
+  A.lastT = t; A.tickT = t; A.dt = dt;
   const sp = Math.hypot(e.vx || 0, e.vy || 0);
   // smoothed velocity for cloth and threads
   A.svx = lerp(A.svx || 0, e.vx || 0, 1 - Math.exp(-dt * 6));
   A.svy = lerp(A.svy || 0, e.vy || 0, 1 - Math.exp(-dt * 6));
   A.ph = (A.ph || 0) + sp * dt * (e.def && e.def.stride ? e.def.stride : 0.05);
   A.walk = lerp(A.walk || 0, clamp(sp / Math.max(60, e.speed || 100), 0, 1.3), 1 - Math.exp(-dt * 8));
+  return A;
+}
+
+export function begin(ctx, e, G, P) {
+  if (e.hidden || e.state === 'pending' || e.gone) return null;
+  const t = G ? G.t : 0;
+  const A = animTick(e, G);
+  const dt = A.dt;
+  const pal = palOf(e, G);
   const side = Math.cos(e.facing) >= 0 ? 1 : -1;
   const st = e.st || 0, dur = e.stDur || 1, k = clamp(st / dur, 0, 1);
   const s = e.state;

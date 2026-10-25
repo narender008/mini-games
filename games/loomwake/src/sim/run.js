@@ -474,6 +474,31 @@ function ensurePlan(G, region) {
   run.shopDoors[region] = [pickIn(sh[0], mid), pickIn(mid + 1, sh[1])].filter((x) => x >= 0);
   return plan;
 }
+// ------------------------------------------------------------------ pacing
+// Waves per chamber (balance pass 2026-10-25, see test-reports/balance-tuning.md).
+// A region aims at 6 to 12 minutes: the first chambers are short skirmishes, the
+// middle of the region has three-wave fights, and the stretch before the boss
+// four. Deeper regions add a wave sooner. Seeded from the chamber seed, so a
+// reloaded checkpoint builds the same waves.
+export const PACING = {
+  entry: 2,
+  combat: [[0, 2, 3], [3, 3, 3], [7, 3, 4]],   // [from chamber index, min, max]
+  elite: [3, 4],
+  miniboss: 2,                                  // the miniboss with its escort, then reinforcements
+  deeper: 2,                                    // from this region index on, combat chambers roll one band later
+};
+const REGION_MEND = 0.35; // share of max health restored on entering regions 2-4 (after the boss's own 25%)
+function waveCount(run, kind, seed) {
+  const r = makeRng(hashSeed(seed, 'waves'));
+  if (kind === 'entry') return PACING.entry;
+  if (kind === 'miniboss') return PACING.miniboss;
+  if (kind === 'elite') return r.int(PACING.elite[0], PACING.elite[1]);
+  if (kind !== 'combat') return 0;
+  const idx = run.chamber + (run.regionIndex >= PACING.deeper ? 3 : 0);
+  let band = PACING.combat[0];
+  for (const b of PACING.combat) if (idx >= b[0]) band = b;
+  return r.int(band[1], band[2]);
+}
 function hasTemplates(region, kind) {
   try { return Regions.templatesFor ? Regions.templatesFor(region, kind).length > 0 : true; } catch { return false; }
 }
@@ -493,6 +518,8 @@ function arrive(G, { fresh = false, resume = null } = {}) {
   let chamber = null;
   const kind = run.kind;
   const opts = { rewards: doorPlan, doors: doorPlan.length };
+  const nw = waveCount(run, kind, cseed);
+  if (nw) opts.waves = nw;
   if (Enemies.buildWave) {
     const ew = Enemies.waveBudget;
     opts.buildWave = (r, c) => Enemies.buildWave(r, { ...c, kind, budget: ew ? ew(run.region, c.depth, c.wave, kind) : c.budget });
@@ -503,6 +530,14 @@ function arrive(G, { fresh = false, resume = null } = {}) {
     try { chamber = Chamber.makeChamber(run.region, run.chamber, 'combat', cseed, opts); } catch { chamber = fallbackChamber(run, kind); }
   }
   if (!chamber) chamber = fallbackChamber(run, kind);
+  // the miniboss fight's second act: once only the miniboss stands, its call brings reinforcements
+  if (kind === 'miniboss' && chamber.waves && chamber.waves.length > 1 && Enemies.buildWave) {
+    const rr = makeRng(hashSeed(cseed, 'reinforce'));
+    const list = Enemies.buildWave(rr, { region: run.region, depth: run.chamber, wave: 1, kind: 'combat', elites: 0 });
+    const pts = (chamber.spawnPoints || []).slice();
+    rr.shuffle(pts);
+    chamber.waves = [chamber.waves[0], list.map((s, i) => { const p = pts[i % Math.max(1, pts.length)] || { x: 0, y: 0 }; return { kind: s.kind, elite: !!s.elite, x: p.x, y: p.y, delay: Math.round(i * 0.18 * 100) / 100 }; })];
+  }
   // Fraying pact: extra waves repeat the last one
   if (run.mods && run.mods.extraWave > 0 && ['combat', 'elite', 'entry'].includes(kind) && chamber.waves && chamber.waves.length) {
     for (let i = 0; i < run.mods.extraWave; i++) chamber.waves.push(chamber.waves[chamber.waves.length - 1].map((w) => ({ ...w })));
@@ -532,17 +567,26 @@ function arrive(G, { fresh = false, resume = null } = {}) {
     inc(G.meta.stats.regionsReached, run.region);
     const st = G.hero && G.hero.stats;
     if (st && st.regionHeal && run.depth > 0) safe(Combat.healHero, G, Math.round(G.hero.maxHp * st.regionHeal));
+    // crossing into a new region mends the thread (balance: a breather between a boss and the next region)
+    if (run.depth > 0 && G.hero) { const n = safe(Combat.healHero, G, Math.round(G.hero.maxHp * REGION_MEND)) || 0; if (n) emit(G, 'reward', { kind: 'heal', n, why: 'region' }); }
     run.flags.firstBoon = run.flags.firstBoon || {};
+    run.ch.waveT = Math.max(run.ch.waveT, 2.6); // the first wave waits for the region's title card to fade
+    emit(G, 'flushBarks', { why: 'region' });
     emit(G, 'regionEnter', { region: run.region, index: run.regionIndex });
     story(G, 'regionEnter', { region: run.region, index: run.regionIndex });
   }
+  emit(G, 'flushBarks', { why: 'chamber' });
   emit(G, 'chamberEnter', { chamber });
   story(G, 'chamberEnter', { chamber, depth: run.depth, kind, region: run.region, index: run.chamber });
   // non-combat chambers are cleared on arrival
   if (kind === 'shop') { run.ch.shop = rollShop(G); G.shop = run.ch.shop; markCleared(G, true); }
   else if (kind === 'fountain') { run.ch.fountain = { used: false, healed: 0, npc: null, memory: null }; prepareFountain(G); markCleared(G, true); }
   if (kind === 'fountain') placeWanderer(G);
-  else if (kind === 'memory') { run.ch.memory = { id: safe(Story.pickMemory, G) ?? pickMemoryFallback(G), done: false }; markCleared(G, true); }
+  else if (kind === 'memory') {
+    run.ch.memory = { id: safe(Story.pickMemory, G) ?? pickMemoryFallback(G), done: false }; markCleared(G, true);
+    // a memory chamber stands in for the region's fountain, so it mends a little too
+    if (!resume && G.hero) { const n = safe(Combat.healHero, G, Math.round(G.hero.maxHp * 0.3)) || 0; if (n) emit(G, 'reward', { kind: 'heal', n }); }
+  }
   else if (kind === 'boss') { run.ch.bossId = BOSS_OF[run.region]; }
   if (G.scene !== 'run') setScene(G, 'run');
   if (fresh) persist(G, run.cp, 'start');
@@ -655,6 +699,10 @@ function startBossFight(G) {
   const fn = Bosses.startBoss || Bosses.spawnBoss;
   const mods = run.mods || {};
   safe(fn, G, id, { x: at.x, y: at.y, chamber: G.chamber, trueEnding: !!run.trueEnding, hpMul: mods.foeHp || 1, dmgMul: mods.foeDmg || 1, armorMul: mods.bossArmor || 1, phaseFast: mods.bossPhaseFast || 0 });
+  // the beaten boss stays on the floor (bosses: state 'defeated', kneeling, untargetable) while its
+  // defeat lines are told; tick() clears holdForDialogue after them and the boss unravels
+  if (G.boss) G.boss.holdForDialogue = true;
+  emit(G, 'flushBarks', { why: 'boss' });
   inc(G.meta.stats.bossMeets, id);
   story(G, 'bossIntro', { id });
 }
@@ -1043,7 +1091,10 @@ export function useFountain(G) {
   f.healed = h ? h.hp - before : 0;
   const barks = story(G, 'fountain', { region: run.region });
   const conv = barks.find((b) => b && b.lines && b.lines.length) || null;
-  f.npc = conv ? conv.speaker || (conv.lines[0] && conv.lines[0].speaker) : null;
+  // the panel names the wanderer who is here, not the narrator of the fountain's lines
+  const wanderer = (G.npcs || []).find((n) => n.kind === 'wanderer');
+  const convSpeaker = conv ? conv.speaker || (conv.lines[0] && conv.lines[0].speaker) : null;
+  f.npc = wanderer ? wanderer.id : convSpeaker && convSpeaker !== 'narrator' ? convSpeaker : null;
   f.lines = conv ? conv : null;
   G.fountain = f;
   emit(G, 'fountain', { healed: f.healed, npc: f.npc, memory: f.memory });
@@ -1065,9 +1116,24 @@ function playMemoryThread(G, id) {
   emit(G, 'memory', { id });
   story(G, 'memory', { id });
   const m = memoryDef(id);
-  const panels = m && (m.panels || m.lines || m.text);
-  const lines = Array.isArray(panels) ? panels.map((p) => (typeof p === 'string' ? { speaker: 'narrator', text: p } : { speaker: p.speaker || 'narrator', text: p.text || p.caption || '', mood: p.mood, art: p.art })) : [];
+  const lines = memoryLines(m);
   if (lines.length) openDialogue(G, { id: `memory.${id}`, speaker: 'narrator', lines, kind: 'memory', memory: id }, G.scene === 'hub' ? 'hub' : 'run');
+}
+// Every line of every panel of a Memory Thread, in order, each with its own speaker and mood
+// (panel: { lines: [{ speaker, text, mood }], text, paint }); 'panel' says which painting to show.
+function memoryLines(m) {
+  const panels = m && (m.panels || m.lines || m.text);
+  if (!Array.isArray(panels)) return [];
+  const out = [];
+  panels.forEach((p, i) => {
+    if (typeof p === 'string') { out.push({ speaker: 'narrator', text: p, panel: i }); return; }
+    const ls = Array.isArray(p.lines) && p.lines.length ? p.lines : [{ speaker: p.speaker, text: p.text || p.caption || '', mood: p.mood }];
+    for (const l of ls) {
+      const L = typeof l === 'string' ? { text: l } : l;
+      if (L.text) out.push({ speaker: L.speaker || 'narrator', text: L.text, mood: L.mood, art: p.art, panel: i });
+    }
+  });
+  return out;
 }
 function memoryDef(id) {
   const list = MemoryData.MEMORIES || MemoryData.MEMORY_THREADS || MemoryData.default;
@@ -1087,9 +1153,9 @@ export function rememberHere(G) {
 // entry: { id, speaker, lines: [{ speaker, text, mood }], choices? }
 export function openDialogue(G, entry, back) {
   if (!entry || !entry.lines || !entry.lines.length) return null;
-  const queue = entry.lines.map((l) => (typeof l === 'string' ? { speaker: entry.speaker, text: l } : { speaker: l.speaker || entry.speaker, text: l.text, mood: l.mood, art: l.art }));
+  const queue = entry.lines.map((l) => (typeof l === 'string' ? { speaker: entry.speaker, text: l } : { speaker: l.speaker || entry.speaker, text: l.text, mood: l.mood, art: l.art, panel: l.panel }));
   const first = queue.shift();
-  G.dialogue = { speaker: first.speaker, lineId: entry.id, text: first.text, mood: first.mood || 'neutral', art: first.art, queue, entry: entry.id, kind: entry.kind || 'talk',
+  G.dialogue = { speaker: first.speaker, lineId: entry.id, text: first.text, mood: first.mood || 'neutral', art: first.art, panel: first.panel, queue, entry: entry.id, kind: entry.kind || 'talk',
     choices: queue.length ? null : entry.choices || null, pendingChoices: entry.choices || null, back: back || (G.scene === 'dialogue' ? (G.dialogue && G.dialogue.back) || 'hub' : G.scene), memory: entry.memory || null, index: 0, total: entry.lines.length };
   emit(G, 'line', { speaker: first.speaker, lineId: entry.id, text: first.text, mood: first.mood });
   setScene(G, 'dialogue');
@@ -1102,7 +1168,7 @@ export function advance(G) {
   if (!d) return { ok: false };
   if (d.queue.length) {
     const l = d.queue.shift();
-    Object.assign(d, { speaker: l.speaker, text: l.text, mood: l.mood || 'neutral', art: l.art, index: d.index + 1 });
+    Object.assign(d, { speaker: l.speaker, text: l.text, mood: l.mood || 'neutral', art: l.art, panel: l.panel, index: d.index + 1 });
     if (!d.queue.length && d.pendingChoices) d.choices = d.pendingChoices; // the answers come with the last line
     emit(G, 'line', { speaker: l.speaker, lineId: d.lineId, text: l.text, mood: l.mood });
     return { ok: true };
@@ -1145,11 +1211,23 @@ export function answer(G, i) {
   return { ok: true };
 }
 
+// Nothing new to say: story's idle line for that character (marked seen), else a quiet narrated beat.
+// Never a bare "...".
+function idleTalk(G, npcId) {
+  for (const ev of [{ type: 'idle', npc: npcId }, { type: 'talk', npc: npcId, idle: true }]) {
+    const e = safe(Story.pickLine, G, npcId, ev);
+    if (e && e.lines && e.lines.length) { const r = safe(Story.applyEntry, G, e); if (r && r.lines && r.lines.length && r.lines.some((l) => l.text && l.text.replace(/[.\s…]/g, ''))) return r; }
+  }
+  const name = safe(Story.speakerName, G, npcId) || npcId;
+  const beats = [`${name} glances up, smiles, and goes back to work. There will be more to say after your next descent.`, `${name} nods to you. "Go on. The Dreamdoor is waiting."`, `${name} is lost in thought. Perhaps after another run.`];
+  const k = ((G.meta && G.meta.stats && G.meta.stats.started) | 0) % beats.length;
+  return { id: `${npcId}.idle.fallback`, speaker: 'narrator', lines: [{ speaker: 'narrator', text: beats[k] }] };
+}
 export function talk(G, npcId) {
   let entry = null;
   if (Story.hubTalk) entry = safe(Story.hubTalk, G, npcId);
   if (!entry) { const b = story(G, 'talk', { npc: npcId }); entry = b.find((x) => x && x.lines && x.lines.length) || null; }
-  if (!entry) entry = { id: `${npcId}.idle`, speaker: npcId, lines: [{ speaker: npcId, text: '...' }] };
+  if (!entry) entry = idleTalk(G, npcId);
   if (G.meta) inc(G.meta.affinity, npcId, 0);
   return openDialogue(G, entry, G.run ? 'run' : 'hub') ? { ok: true, id: entry.id } : { ok: false };
 }
@@ -1228,7 +1306,9 @@ function bossBeaten(G, info) {
   const first = !(st.bossWins[id] > 0);
   inc(st.bossWins, id);
   if (!run.stats.bosses.includes(id)) run.stats.bosses.push(id);
+  emit(G, 'flushBarks', { why: 'bossDefeat' });
   story(G, 'bossDefeat', { id, first, ending: info.ending, choice: info.choice });
+  run.ch.releaseT = 1.0; // the least time the beaten boss kneels, even with nothing to say
   if (id === 'sable' || run.regionIndex >= REGION_IDS.length - 1) {
     // the choice was already made on his last stand: drop a second copy of it
     if (G.storyQueue && G.meta.flags && G.meta.flags.endingChoice) G.storyQueue = G.storyQueue.filter((e) => !(e.choices && e.choices.some(choiceOf)));
@@ -1440,7 +1520,8 @@ export function tick(G, dt) {
     return;
   }
   // a boss defeat (deferred from the bus) counts even if a conversation opened over it
-  if (ch.bossDefeat && !(G.hero && G.hero.dead)) { flushBossDefeat(G); if (run.over) return; }
+  if (ch.bossDefeat && !(G.hero && G.hero.dead)) { flushBossDefeat(G, false); if (run.over) return; }
+  releaseBoss(G, dt);
   if (G.scene !== 'run') return;
   if (ch.victoryInfo) {
     ch.victoryT -= dt;
@@ -1465,7 +1546,7 @@ export function tick(G, dt) {
       const n = liveFoes(G);
       if (ch.wave < waves - 1) {
         // next wave when the current one is nearly gone (or the first after a breath)
-        const threshold = ch.wave < 0 ? 0 : run.kind === 'miniboss' ? 0 : 1;
+        const threshold = ch.wave < 0 ? 0 : 1;
         if (n <= threshold) { ch.waveT -= live; if (ch.waveT <= 0) { startWave(G, ch.wave + 1); ch.waveT = 0.7; } }
         else ch.waveT = Math.max(ch.waveT, 0.5);
       } else if (n === 0) {
@@ -1567,6 +1648,7 @@ export function bossKill(G) {
   if (G.run.kind === 'boss' && G.run.ch.wave < 0) startBossFight(G);
   const b = G.boss;
   if (!b) return { ok: false, error: 'no boss' };
+  if (b.state === 'defeated' || b.dying) return { ok: false, error: 'already beaten' };
   if (Bosses.killBoss) safe(Bosses.killBoss, G);
   else if (Combat.damageFoe) { b.armor = 0; safe(Combat.damageFoe, G, b, b.hp + 9999, { kind: 'debug', pierce: true }); }
   return { ok: true };
@@ -1708,8 +1790,7 @@ export function gift(G, npcId) {
 export function playMemory(G, id) {
   if (!G.meta.memories.includes(id)) return { ok: false, error: 'not found yet' };
   const m = memoryDef(id);
-  const panels = m && (m.panels || m.lines || m.text);
-  const lines = Array.isArray(panels) ? panels.map((p) => (typeof p === 'string' ? { speaker: 'narrator', text: p } : { speaker: p.speaker || 'narrator', text: p.text || p.caption || '', art: p.art })) : [];
+  const lines = memoryLines(m);
   if (!lines.length) return { ok: false };
   openDialogue(G, { id: `memory.${id}`, speaker: 'narrator', lines, kind: 'memory', memory: id }, G.scene === 'codex' ? 'codex' : 'hub');
   return { ok: true };
@@ -1768,12 +1849,23 @@ export function applyUrl(G, params) {
   return Promise.resolve(G.scene);
 }
 function selectHub(G) { if (!G.meta) loadProfile(G, G.profile); toHub(G, G.saveInfo && G.saveInfo.empty ? 'new' : 'continue'); }
-function flushBossDefeat(G) {
+// let a beaten boss unravel once its defeat conversation is over (see startBossFight)
+function releaseBoss(G, dt) {
+  const b = G.boss, ch = G.run && G.run.ch;
+  if (!b || !b.holdForDialogue || !ch || ch.releaseT === undefined) return;
+  if (ch.releaseT > 0) { ch.releaseT -= dt; return; }
+  if (G.dialogue || (G.storyQueue && G.storyQueue.length)) return;
+  b.holdForDialogue = false;
+  delete ch.releaseT;
+  emit(G, 'bossRelease', { id: b.kind });
+}
+// leaving: record a pending defeat and complete a pending victory (tick() lets them play out instead)
+function flushBossDefeat(G, leaving = true) {
   const ch = G.run && G.run.ch;
   if (!ch || (!ch.bossDefeat && !ch.victoryInfo)) return;
   if (ch.bossDefeat) { const info = ch.bossDefeat; ch.bossDefeat = null; bossBeaten(G, info); }
   // leaving while Sable's last lines are pending still wins the run
-  if (ch.victoryInfo && G.run && !G.run.over) { const info = ch.victoryInfo; ch.victoryInfo = null; G.dialogue = null; G.storyQueue = null; victory(G, info); }
+  if (leaving && ch.victoryInfo && G.run && !G.run.over) { const info = ch.victoryInfo; ch.victoryInfo = null; G.dialogue = null; G.storyQueue = null; victory(G, info); }
 }
 export function hub(G) { flushBossDefeat(G); if (G.run && !G.run.over) { G.run.over = true; } toHub(G, 'quit'); return G.scene; }
 export function menu(G) { return toTitle(G); }

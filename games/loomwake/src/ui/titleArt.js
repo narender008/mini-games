@@ -32,8 +32,9 @@ export function createTitleArt(canvas) {
     const cx = narrow ? W * 0.62 : W * 0.64;
     const lw = Math.min(W * (narrow ? 0.62 : 0.42), H * 0.95);
     const top = H * 0.08;
-    const bot = H * 0.8;
-    return { cx, lw, top, bot, x0: cx - lw / 2, x1: cx + lw / 2, ledgeY: H * 0.83 };
+    // the ledge sits above the profile row, so Iri stands in plain view
+    const bot = H * 0.71;
+    return { cx, lw, top, bot, x0: cx - lw / 2, x1: cx + lw / 2, ledgeY: H * 0.74 };
   }
 
   function build() {
@@ -144,10 +145,6 @@ export function createTitleArt(canvas) {
     g.strokeStyle = 'rgba(255,236,200,0.35)'; g.lineWidth = 2.5;
     g.beginPath(); g.moveTo(-10, -30); g.bezierCurveTo(90, -40, 150, 40, 140, 140); g.bezierCurveTo(240, 190, 330, 300, 360, 560); g.stroke();
     g.beginPath(); g.moveTo(-10, -30); g.bezierCurveTo(-100, -25, -150, 40, -130, 150); g.bezierCurveTo(-220, 200, -300, 330, -330, 560); g.stroke();
-    // hands folded on the beam, holding a shuttle
-    g.fillStyle = 'rgba(255,236,220,0.22)';
-    g.beginPath(); g.ellipse(-30, 330, 70, 26, -0.1, 0, TAU); g.fill();
-    g.fillStyle = 'rgba(255,215,140,0.5)'; g.beginPath(); g.ellipse(-30, 326, 34, 7, -0.1, 0, TAU); g.fill();
     g.restore();
   }
 

@@ -42,6 +42,8 @@ export function createShop(ui) {
         if ((G.run?.currency | 0) < (it.cost | 0)) { b.animate?.([{ transform: 'translateX(-4px)' }, { transform: 'translateX(4px)' }, { transform: 'none' }], { duration: 220 }); ui.toast('Not enough Glint', 'warn'); return; }
         call(['buy'], i);
       });
+      // the pointer moves the one highlight (no second 'selected' item from a stale focus)
+      b.addEventListener('pointerenter', () => { if (!it.sold) b.focus({ preventScroll: true }); });
       grid.appendChild(b);
     });
     grid.querySelector('.item:not(.sold)')?.setAttribute('data-autofocus', '');

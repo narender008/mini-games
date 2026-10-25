@@ -3,7 +3,7 @@
 // armour and shield, death-defiance pips, call gauge, boss bar, barks (Sable's
 // taunts), damage vignette, off-screen foe compass and the interact prompt.
 import { h, icon, setText, setStyle, toggle, fmtNum, esc } from './dom.js';
-import { patron, boon, region, regionIndex, bossInfo, speaker, portrait, boonPatrons, isBraid } from './data.js';
+import { D, cap, patron, boon, region, regionIndex, bossInfo, speaker, portrait, boonPatrons, isBraid } from './data.js';
 
 const SLOTS = ['attack', 'special', 'snare', 'dash', 'call'];
 const KEYS = {
@@ -89,7 +89,11 @@ export function createHUD(ui) {
   let vigA = 0;
   const barkQ = [];
   let barkT = 0, barkOn = false, curBark = null;
-  const narrQ = [];
+  // barks age by game time (G.t), so a frozen or stepped game keeps them in step
+  const BARK_TTL = 6;
+  const clock = () => (typeof ui.G.t === 'number' ? ui.G.t : ui.time || 0);
+  const cardLines = new Set(); // flavour already shown on a title card is not narrated again
+  const norm = (t) => String(t || '').replace(/\s+/g, ' ').trim().toLowerCase();
   const bossUp = (G) => !!(G && G.boss && !G.boss.dead && !G.boss.gone);
   const arrows = [];
   let lastDepthKey = '';
@@ -132,19 +136,21 @@ export function createHUD(ui) {
       }
     }
     if (!slotEls.call.boon) slotEls.call.el.style.setProperty('--c', '#d8c3ff');
-    // boon chip list (passives and braids first-class)
+    // boon icons in a compact grid (names on hover); past MAX the rest fold into +N
     blist.innerHTML = '';
-    for (const b of list) {
+    const MAX = 12;
+    const shown = list.length > MAX ? list.slice(0, MAX - 1) : list;
+    for (const b of shown) {
       const bd = boon(b.id);
       const pats = boonPatrons(b.id);
       const p1 = patron(pats[0] || bd.patron), p2 = patron(pats[1] || pats[0] || bd.patron);
       const braid = isBraid(b.id);
-      blist.appendChild(h('div', { class: 'bchip' + (braid ? ' braid' : ''), '--c': p1.color, '--c2': p2.color, title: bd.name },
-        h('span', { class: 'ic', html: icon(bd.slot === 'passive' || braid ? p1.sigil : bd.slot) }),
-        h('span', { class: 'nm', text: bd.name }),
-        (b.level || 1) > 1 ? h('span', { class: 'lv', text: 'Lv ' + b.level }) : null));
+      const lv = (b.level || 1) > 1 ? b.level : 0;
+      blist.appendChild(h('div', { class: 'bchip' + (braid ? ' braid' : ''), '--c': p1.color, '--c2': p2.color, title: bd.name + (lv ? ` · Lv ${lv}` : '') + (bd.slot && bd.slot !== 'passive' ? ` · ${bd.slot}` : '') },
+        h('span', { class: 'ic', html: icon(bd.slot === 'passive' || braid || !bd.slot ? p1.sigil : bd.slot) }),
+        lv ? h('span', { class: 'lv', text: String(lv) }) : null));
     }
-    toggle(blist, 'compact', list.length > 7);
+    if (list.length > MAX) blist.appendChild(h('div', { class: 'bchip more', title: list.slice(MAX - 1).map((b) => boon(b.id).name).join(', ') }, h('span', { class: 'nm', text: '+' + (list.length - MAX + 1) })));
   }
 
   function depthRender(G) {
@@ -173,7 +179,7 @@ export function createHUD(ui) {
   function showBark() {
     // stale lines (queued behind a title card, or from a room left behind) are dropped
     let b = barkQ.shift();
-    while (b && performance.now() - (b.at || 0) > 7000) b = barkQ.shift();
+    while (b && clock() - (b.at || 0) > BARK_TTL) b = barkQ.shift();
     curBark = b || null;
     if (!b) { bark.classList.remove('on'); barkOn = false; return; }
     const sp = speaker(b.speaker, ui.G);
@@ -205,14 +211,24 @@ export function createHUD(ui) {
       if (p && (p.mode === 'dialogue' || p.kind === 'dialogue')) return; // it plays as a conversation
       const lines = p.lines || (p.text ? [{ speaker: p.speaker, text: p.text, mood: p.mood }] : []);
       for (const l of lines.slice(0, 3)) if (l && l.text) {
-        const item = { speaker: l.speaker || p.speaker, text: l.text, mood: l.mood, kind: p.kind, at: performance.now() };
-        // (engine seam fix) narration waits while a boss bar is up and plays after the fight
-        if (item.speaker === 'narrator' && bossUp(ui.G)) { narrQ.push(item); while (narrQ.length > 3) narrQ.shift(); continue; }
+        const item = { speaker: l.speaker || p.speaker, text: l.text, mood: l.mood, kind: p.kind, at: clock() };
+        if (cardLines.has(norm(item.text))) continue;
+        // narration is for quiet moments: never over a boss fight
+        if (item.speaker === 'narrator' && bossUp(ui.G)) continue;
         barkQ.push(item);
       }
       while (barkQ.length > 4) barkQ.shift();
       if (!barkOn && !ui.cardsBusy?.()) showBark();
     },
+    // the room changed (bus flushBarks / chamberEnter / regionEnter / bossIntro): old lines are dropped
+    flushBarks() {
+      // lines raised in this same tick belong to the new room (e.g. the run's opening narration): keep those
+      const t = clock();
+      for (let i = barkQ.length - 1; i >= 0; i--) if (barkQ[i].at !== t) barkQ.splice(i, 1);
+      if (curBark && curBark.at === t) return;
+      bark.classList.remove('on'); barkOn = false; curBark = null;
+    },
+    cardLine(text) { if (text) { cardLines.add(norm(text)); if (curBark && norm(curBark.text) === norm(text)) { bark.classList.remove('on'); barkOn = false; curBark = null; } for (let i = barkQ.length - 1; i >= 0; i--) if (norm(barkQ[i].text) === norm(text)) barkQ.splice(i, 1); } },
     update(G, dt) {
       const hub = G.scene === 'hub' || (!G.run && G.scene === 'dialogue');
       toggle(el, 'hubmode', hub);
@@ -229,7 +245,7 @@ export function createHUD(ui) {
         const r = region(G.run.region);
         setText(regNm, r.name);
         const kind = G.run.kind || G.chamber?.kind || 'combat';
-        const kindName = { boss: 'Guardian', miniboss: 'Elite', shop: 'Pell’s Stall', fountain: 'Fountain', memory: 'Memory Loom', entry: 'Threshold', elite: 'Elite' }[kind];
+        const kindName = { boss: 'Guardian', miniboss: 'Champion', shop: 'Pell’s Stall', fountain: 'Fountain', memory: 'Memory Loom', entry: 'Threshold', elite: 'Elite' }[kind];
         setText(regSub, `Region ${regionIndex(G.run.region) + 1} · Chamber ${(G.run.chamber || 0) + 1}${kindName ? ' · ' + kindName : ''}`);
         tl.style.setProperty('--rc', r.color);
         depthRender(G);
@@ -247,17 +263,10 @@ export function createHUD(ui) {
       const showFps = !!G.settings?.showFps;
       fps.hidden = !showFps;
       if (showFps && (fpsT -= dt) <= 0) { fpsT = 0.5; const ms = G.engine?.quality?.ema; fps.textContent = ms > 0 ? `${Math.round(1000 / ms)} fps · ${ms.toFixed(1)} ms` : '— fps'; }
-      if (bossUp(G)) {
-        if (barkOn && curBark && curBark.speaker === 'narrator') { narrQ.push({ ...curBark }); bark.classList.remove('on'); barkOn = false; curBark = null; }
-        for (let i = barkQ.length - 1; i >= 0; i--) if (barkQ[i].speaker === 'narrator') narrQ.unshift(barkQ.splice(i, 1)[0]);
-      } else if (narrQ.length && !G.dialogue) { const now = performance.now(); for (const b of narrQ.splice(0)) barkQ.push({ ...b, at: now }); }
-      if (barkOn && ui.cardsBusy?.()) {
-        // a title card took the stage: step aside, and say it again after unless it was idle narration
-        if (curBark && curBark.kind !== 'line' && !curBark.again) barkQ.unshift({ ...curBark, at: performance.now(), again: true });
-        bark.classList.remove('on'); barkOn = false; curBark = null;
-      }
+      if (bossUp(G) && curBark && curBark.speaker === 'narrator') api.flushBarks();
+      if (barkOn && ui.cardsBusy?.()) { bark.classList.remove('on'); barkOn = false; curBark = null; } // a title card takes the stage
       if (barkOn) { barkT -= dt; if (barkT <= 0 || G.dialogue) showBark(); }
-      else if (barkQ.length && !ui.cardsBusy?.()) showBark();
+      else if (barkQ.length && !ui.cardsBusy?.() && !G.dialogue) showBark();
       if (hub) return;
       boonsRender(G);
       // health, armour, shield
@@ -324,10 +333,18 @@ export function createHUD(ui) {
         if (s !== 'call') { setStyle(se.ring, '--cd', frac.toFixed(3)); toggle(se.el, 'cool', frac > 0); }
       }
       // boss
-      const b = G.boss && !G.boss.dead ? G.boss : null;
+      // the guardian, or a region's champion (miniboss) when no guardian is up
+      let b = G.boss && !G.boss.dead ? G.boss : null;
+      let mini = false;
+      if (!b && G.scene === 'run') { b = (G.foes || []).find((e) => e.miniboss && !e.dead && !e.gone && !e.spawning) || null; mini = !!b; }
       if (b) {
         const id = [b.bossId, b.boss, b.kind, b.type].find((x) => typeof x === 'string');
-        const info = bossInfo(id, G);
+        let info;
+        if (mini) {
+          const ed = D.enemies?.[id] || {};
+          info = { name: b.name || ed.name || cap(String(id || 'Champion').replace(/([a-z])([A-Z])/g, '$1 $2')), title: 'Champion of ' + region(G.run?.region).name.replace(/^The /, 'the '), color: '#ffb48a' };
+        } else info = bossInfo(id, G);
+        toggle(boss, 'mini', mini);
         setText(bnm, info.name);
         setText(bep, info.title);
         setStyle(boss, '--bc', info.color);

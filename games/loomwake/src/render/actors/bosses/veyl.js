@@ -220,7 +220,7 @@ export default function draw(ctx, e, G, P) {
   if (pz.m === 'claw') lean = side * (pz.wind * -0.05 + pz.act * 0.1);
   if (stag) lean = Math.sin(t * 3) * 0.03 + 0.06;
   if (phaseK) { lift -= Math.sin(phaseK * Math.PI) * 26; crownScale = lerp(ph > 1 ? 1 : 1, ph > 1 ? 1.12 : 1, ease(k01((phaseK - 0.2) / 0.5))); }
-  const kneel = ease(k01(dying / 0.45));
+  const kneel = ease(k01(dying / 0.28));
 
   // ---------- shadow (huge, soft, two layers) ----------
   const shK = 1 - sunk * 0.6;
@@ -356,9 +356,11 @@ export default function draw(ctx, e, G, P) {
   }
   drawFx(ctx, e);
   if (dying) {
-    unravelFx(e, G, { rate: dying < 0.9 ? 90 : 0, w: 220, h: 230, color: C.thread, color2: C.teal, mix: 0.35 }, dt);
+    unravelFx(e, G, { rate: (dying < 0.9 ? 90 : 0) * (e.held ? 0.1 : 1), w: 220, h: 230, color: C.thread, color2: C.teal, mix: 0.35 }, dt);
     // glass falls from the crown as she kneels
     if (dying > 0.15 && dying < 0.7) glow(ctx, 0, -120 + oy, 160, C.teal, (0.7 - dying) * 0.5);
+    // defeated: the crown is cracked through, glass glinting along the breaks
+    if (dying > 0.08 && dying < 0.75) crownCracks(ctx, hx - (sway + lean) * 250, -250 + hy + oy, crownScale, k01((dying - 0.08) / 0.15) * (1 - k01((dying - 0.55) / 0.2)), t);
   } else if (A.fx && A.fx.length) unravelFx(e, G, { rate: 0 }, dt);
 
   // lights for the darkness layer
@@ -530,4 +532,18 @@ export function drawProjectile(ctx, p, G) {
   ctx.restore();
   glow(ctx, p.x, p.y - (p.z || 40), 26, C.teal, 0.55);
   return true;
+}
+
+// Cracks through the crown when she is beaten (no gradients: plain strokes, seeded once)
+const CRACKS = (() => { const R = srng(311), out = []; for (let i = 0; i < 6; i++) { let x = (R() - 0.5) * 30, y = (R() - 0.5) * 20; const pts = [[x, y]]; const a0 = R() * TAU; for (let j = 0; j < 4; j++) { x += Math.cos(a0 + (R() - 0.5) * 1.4) * (14 + R() * 16); y += Math.sin(a0 + (R() - 0.5) * 1.4) * (10 + R() * 12); pts.push([x, y]); } out.push(pts); } return out; })();
+function crownCracks(ctx, x, y, s, a, t) {
+  if (a <= 0.01) return;
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const pts of CRACKS) {
+    ctx.beginPath(); pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+    ctx.globalAlpha = a; ctx.strokeStyle = '#0a0618'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.globalAlpha = a * (0.6 + 0.4 * Math.sin(t * 4 + pts[0][0])); ctx.strokeStyle = C.tealHi; ctx.lineWidth = 1; ctx.stroke();
+  }
+  ctx.restore();
+  for (let i = 0; i < CRACKS.length; i += 2) { const p = CRACKS[i][CRACKS[i].length - 1]; glow(ctx, x + p[0] * s, y + p[1] * s, 10, C.teal, a * 0.7); }
 }

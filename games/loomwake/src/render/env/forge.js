@@ -252,6 +252,28 @@ function paintFloor(ch, q) {
       sg.addColorStop(0, 'rgba(10,4,6,0.5)'); sg.addColorStop(0.55, 'rgba(40,20,40,0.3)'); sg.addColorStop(0.85, 'rgba(60,70,140,0.1)'); sg.addColorStop(1, 'rgba(60,70,140,0)');
       g.fillStyle = sg; g.beginPath(); g.ellipse(sx, sy, rr, rr * 0.62, 0, 0, TAU); g.fill();
     }
+    // slag cracks: a plate split by the heat, a jagged fork with melt glowing up through it
+    if (r() < 0.1 + hv * 0.4) {
+      const fork = (x, y, ang, len, depth, out) => {
+        const seg = [[x, y]];
+        for (let L = 0; L < len; L += r.range(9, 16)) { ang += r.range(-0.55, 0.55); x += Math.cos(ang) * 12; y += Math.sin(ang) * 12 * 0.7; seg.push([x, y]); if (depth < 2 && r() < 0.1) fork(x, y, ang + (r() < 0.5 ? -1 : 1) * r.range(0.6, 1.1), len * 0.45, depth + 1, out); }
+        out.push({ seg, w: depth === 0 ? 1 : depth === 1 ? 0.65 : 0.4 });
+      };
+      const out = [], sx = cx + r.range(-w * 0.3, w * 0.3), sy = cy + r.range(-h * 0.25, h * 0.25), a0 = r.range(0, TAU), len = r.range(0.35, 0.6) * Math.min(w, h * 1.6);
+      fork(sx, sy, a0, len, 0, out); fork(sx, sy, a0 + Math.PI + r.range(-0.4, 0.4), len * 0.7, 0, out);
+      g.save(); polyPath(g, pts); g.clip(); g.lineCap = 'round'; g.lineJoin = 'round';
+      const path = (c2, sg) => { c2.beginPath(); c2.moveTo(sg[0][0], sg[0][1]); for (let k = 1; k < sg.length; k++) c2.lineTo(sg[k][0], sg[k][1]); };
+      for (const { seg, w: k } of out) { path(g, seg); g.strokeStyle = 'rgba(6,2,4,0.8)'; g.lineWidth = 10 * k; g.stroke(); }      // charred lips
+      for (const { seg, w: k } of out) { path(g, seg); g.strokeStyle = 'rgba(120,40,30,0.55)'; g.lineWidth = 6 * k; g.stroke(); }   // cooled slag crust
+      for (const { seg, w: k } of out) { path(g, seg); g.strokeStyle = hexA(M[2], 0.95); g.lineWidth = 3.4 * k; g.stroke(); }    // red melt
+      for (const { seg, w: k } of out) { path(g, seg); g.strokeStyle = hexA(M[1], 0.95); g.lineWidth = 1.8 * k; g.stroke(); }    // orange core
+      if (hv > 0.4) for (const { seg, w: k } of out) if (k === 1) { path(g, seg); g.strokeStyle = hexA(M[0], 0.6); g.lineWidth = 0.9; g.stroke(); } // white-hot thread
+      g.restore();
+      ge.globalCompositeOperation = 'lighter'; ge.lineCap = 'round'; ge.lineJoin = 'round';
+      for (const { seg, w: k } of out) { path(ge, seg); ge.strokeStyle = hexA(M[2], 0.32); ge.lineWidth = 14 * k; ge.stroke(); }
+      ge.globalAlpha = 0.4; ge.drawImage(glow('#ff5a1a', 1), sx - 60, sy - 40, 120, 80); ge.globalAlpha = 1;
+      ge.globalCompositeOperation = 'source-over';
+    }
     // a hot seam: the gap under a plate near the melt glows
     if (hv > 0.35 || r() < 0.05) {
       ge.globalCompositeOperation = 'lighter'; ge.strokeStyle = hexA(M[1], 0.45 + hv * 0.45); ge.lineWidth = 3; ge.lineCap = 'round';

@@ -27,7 +27,7 @@ export default {
   id: 'sable',
   introTime: 3.0, dieTime: 3.0, phaseTime: 3.0,
   init(G, e) {
-    e.r = 26; e.masked = true; e.orbit = 1; e.mirrors = heroPatrons(G); e.lastHeroDash = false; e.ghosts = 0;
+    e.r = 30; e.masked = true; e.orbit = 1; e.mirrors = heroPatrons(G); e.lastHeroDash = false; e.ghosts = 0;
   },
   gap(G, e) { return (e.phase > 1 ? 0.28 : 0.45) + G.rng.ai() * 0.35; },
   tick(G, e, dt) {
@@ -158,7 +158,7 @@ export default {
         if (s === 'act' && !a.early && (e.lastDamagedT || -9) > a.hitAt + 0.01) {
           a.early = true; a.strikeAt = a.t + 0.36;
           a.tg.t = 0.36; a.tg.max = Math.max(0.36, a.tg.max);
-          e.riposteFlash = 1;
+          e.riposteFlash = G.t;   // when the counter was triggered (painters flash from it)
         }
         const strike = a.early ? a.t >= a.strikeAt : s === 'rec';
         if (strike && once(a, 'hit')) {

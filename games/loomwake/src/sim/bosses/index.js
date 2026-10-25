@@ -44,8 +44,26 @@ const MODS = { veyl, morrow, aurum, sable };
 export const isBoss = (e) => !!(e && e.boss);
 export const bossDef = (id) => BOSSES[id];
 
-const INTRO = { veyl: 3.4, morrow: 3.4, aurum: 3.6, sable: 3.0 };
-const DIE = { veyl: 3.0, morrow: 3.0, aurum: 3.2, sable: 3.0 };
+const INTRO = { veyl: 3.4, morrow: 3.4, aurum: 3.6, sable: 3.4 };
+// the unravel after the defeated hold (the painters show the kneel during 'defeated', then this)
+const DIE = { veyl: 2.2, morrow: 2.0, aurum: 1.9, sable: 2.2 };
+const DEFEAT_MIN = 1.6;   // the kneel always reads for at least this long
+// per-attack sound names for 'bossAttack' {id, attack, move}: audio plays `${id}_${attack}`
+const ATTACK_SFX = {
+  veyl: { lanes: 'thorns', lanes2: 'thorns', volley: 'volley', claw: 'claw', burrow: 'ring', ring: 'ring', verdict: 'thorns', summon: 'summon' },
+  morrow: { ring: 'ring', sweep: 'lantern', notes: 'ring', summon: 'summon', sink: 'flood', choir: 'choir', flood: 'flood', requiem: 'choir' },
+  aurum: { slam: 'hammer', chain: 'hammer', sweep: 'sweep', anvil: 'anvil', breath: 'breath', heat: 'heat', pour: 'hiss' },
+  sable: { lunge: 'lunge', combo: 'lunge', snare: 'snare', riposte: 'lunge', echoes: 'echo', dash: 'dash', mirror: 'thread', storm: 'thread' },
+};
+// camera: the renderer's camera eases toward G.ui.camFocus; bosses borrow it for the intro and the defeat
+function focusCam(G, e, on, h = 160) {
+  const ui = G.ui || (G.ui = {});
+  // the camera centres halfway between Iri (plus aim lead) and the focus: aim past the boss by the same
+  // distance so he lands in the middle of the screen
+  const H = G.hero;
+  if (on) ui.camFocus = H ? { x: 2 * e.x - H.x, y: 2 * (e.y - h) - (H.y - 30), by: 'boss' } : { x: e.x, y: e.y - h, by: 'boss' };
+  else if (ui.camFocus && ui.camFocus.by === 'boss') ui.camFocus = null;
+}
 const PHASE_T = 2.6;
 
 export function startBoss(G, id, opts = {}) {
@@ -79,6 +97,8 @@ export function startBoss(G, id, opts = {}) {
   e._unsub = [
     G.bus.on('heroDeath', () => { if (G.boss === e && !e.dying) { bark(G, e, 'victory', def, { force: true, pri: 9, dur: 4 }); toState(e, 'gloat'); abort(G, e); } }),
   ];
+  // Sable's entrance is a set piece: the camera goes to him while the threads gather
+  if (id === 'sable') focusCam(G, e, true, 40);
   const line = bark(G, e, 'intro', def, { force: true, pri: 8, dur: 4.4 });
   G.bus.emit('bossIntro', { id, name: def.name, title: def.title, line: line ? line.text : '', lineId: line ? line.id : null, e });
   G.bus.emit('spawn', { e });
@@ -134,18 +154,33 @@ function onLethal(G, e) {
   startDying(G, e);
 }
 
+// Lethal blow: the boss kneels ('defeated') and 'bossDefeat' goes out at once so the run can tell the
+// reveal speech over the kneeling figure. The hold lasts while G.boss.holdForDialogue is set (the run sets
+// it and clears it on dialogueEnd) or a conversation is open, and at least DEFEAT_MIN; then the unravel
+// ('dying', 'bossDying') plays and the entity is removed.
 function startDying(G, e, extra = {}) {
-  const def = BOSSES[e.kind];
   abort(G, e);
   clearHazards(G, e);
   clearShots(G, e);
-  e.hp = 0; e.dying = true; e.untargetable = true; e.vx = e.vy = 0;
-  toState(e, 'dying');
+  e.hp = 0; e.dying = true; e.untargetable = true; e.vx = e.vy = 0; e.stun = 0;
+  toState(e, 'defeated');
+  e.held = true;
   e.defeatExtra = extra;
   // summons unravel with their master
   for (const f of G.foes) if (!f.boss && !f.dead && f.owner === e.kind) { f.hp = 0; f.dead = true; f.state = 'dying'; f.st = 0; G.bus.emit('kill', { e: f, noReward: true }); }
-  const line = extra.choice === 'braid' ? null : bark(G, e, 'defeat', def, { force: true, pri: 9, dur: 4.5 });
-  G.bus.emit('bossDying', { id: e.kind, line: line ? line.text : '', e });
+  // in a run the story tells the defeat; the boss's own line is the fallback outside one
+  if (!(G.run && G.run.ch) && extra.choice !== 'braid') bark(G, e, 'defeat', BOSSES[e.kind], { force: true, pri: 9, dur: 4.5 });
+  focusCam(G, e, true, ({ veyl: 110, morrow: 140, aurum: 160, sable: 70 })[e.kind] || 140);
+  G.bus.emit('bossDefeated', { id: e.kind, x: e.x, y: e.y, e });
+  e.defeatSent = true;
+  G.bus.emit('kill', { e, boss: true });
+  G.bus.emit('bossDefeat', Object.assign({ id: e.kind, x: e.x, y: e.y }, extra));
+}
+function beginUnravel(G, e) {
+  e.held = false;
+  toState(e, 'dying');
+  focusCam(G, e, false);
+  G.bus.emit('bossDying', { id: e.kind, line: '', e });
   G.bus.emit('bossSetPiece', { id: e.kind, name: 'death' });
 }
 
@@ -155,9 +190,9 @@ function endBoss(G, e, silent) {
   e._unsub = [];
   clearHazards(G, e); clearTeles(G, e); clearShots(G, e);
   if (G.boss === e) G.boss = null;
+  focusCam(G, e, false);
   if (!silent) {
-    G.bus.emit('kill', { e, boss: true });
-    G.bus.emit('bossDefeat', Object.assign({ id: e.kind, x: e.x, y: e.y }, e.defeatExtra || {}));
+    if (!e.defeatSent) { e.defeatSent = true; G.bus.emit('kill', { e, boss: true }); G.bus.emit('bossDefeat', Object.assign({ id: e.kind, x: e.x, y: e.y }, e.defeatExtra || {})); }
   }
 }
 
@@ -184,7 +219,12 @@ export function updateBosses(G, dt) {
   switch (e.state) {
     case 'intro': {
       e.vx = e.vy = 0; face(G, e);
-      if (e.st >= (mod.introTime ?? INTRO[e.kind])) { e.untargetable = false; toState(e, 'idle'); e.gap = 0.6; G.bus.emit('bossFight', { id: e.kind }); }
+      if (e.st >= (mod.introTime ?? INTRO[e.kind])) { focusCam(G, e, false); e.untargetable = false; toState(e, 'idle'); e.gap = 0.6; G.bus.emit('bossFight', { id: e.kind }); }
+      return;
+    }
+    case 'defeated': {
+      e.vx = e.vy = 0;
+      if (e.st >= DEFEAT_MIN && !e.holdForDialogue && !G.dialogue) beginUnravel(G, e);
       return;
     }
     case 'dying': {
@@ -282,7 +322,11 @@ export function updateBosses(G, dt) {
     const done = m.update(G, e, e.act, dt, def.moves[e.act.name] || {}, def);
     // audio / fx cue on every stage change of a move
     const key = e.act && e.act.name + ':' + e.pose;
-    if (key && key !== e._cue) { e._cue = key; G.bus.emit('bossMove', { id: e.kind, move: e.act.name, pose: e.pose, x: e.x, y: e.y, aim: e.aim }); }
+    if (key && key !== e._cue) {
+      e._cue = key;
+      G.bus.emit('bossMove', { id: e.kind, move: e.act.name, pose: e.pose, x: e.x, y: e.y, aim: e.aim });
+      if (e.pose === 'act') G.bus.emit('bossAttack', { id: e.kind, attack: (ATTACK_SFX[e.kind] || {})[e.act.name] || e.act.name, move: e.act.name, x: e.x, y: e.y, aim: e.aim });
+    }
     if (done) { e.act = null; toState(e, 'idle'); e.gap = mod.gap ? mod.gap(G, e) : 0.7; }
     return;
   }
@@ -306,7 +350,7 @@ export function killBoss(G) {
   const def = BOSSES[e.kind];
   if (e.state === 'intro') { e.untargetable = false; toState(e, 'idle'); }
   if (e.state === 'choice') return resolveBossChoice(G, 'braid');
-  if (e.dying || e.state === 'braided') { endBoss(G, e); return true; }
+  if (e.dying || e.state === 'braided') { e.holdForDialogue = false; endBoss(G, e); return true; }
   if (e.phase < e.phases) {
     e.hp = Math.floor(def.phases[e.phase - 1] * e.maxHp) - 1;
     e.pendingPhase = e.phase + 1; e.stun = 0;

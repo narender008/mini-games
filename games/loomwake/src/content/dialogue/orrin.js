@@ -6,7 +6,7 @@ import { normalise, pool } from './_lib.js';
 const O = 'orrin';
 const last = (S) => S.last || {};
 const died = (S, boss) => last(S).result === 'death' && (boss ? last(S).boss === boss : true);
-const avoiding = (S) => S.rev('halves') && S.since('halvesRun') < 3 && !S.f('confession');
+const avoiding = (S) => S.rev('halves') && S.since('halvesRun') < 3 && !S.f('confession') && !S.seen('orrin_halves');
 
 export default normalise([
   // ---------------------------------------------------------------- onboarding (auto, on entering the hub)
@@ -57,7 +57,7 @@ export default normalise([
 
   // ---------------------------------------------------------------- early runs
   {
-    id: 'orrin_r1_glasswood', p: 60, when: (S) => S.runs >= 1 && !S.kills('veyl'),
+    id: 'orrin_r1_glasswood', p: 60, when: (S) => S.runs >= 1 && S.meets('veyl') >= 1 && !S.kills('veyl'),
     lines: [
       '#warm The Glasswood Shallows. It was a garden once, you know. The Weaver’s own.',
       'Its gardener still keeps it, after a fashion. Queen Veyl, she calls herself now. She did not always wear a crown.',
@@ -66,7 +66,7 @@ export default normalise([
     ],
   },
   {
-    id: 'orrin_voice_again', p: 58, when: (S) => S.deaths >= 2 && S.f('heardSable') && !S.rev('sable'),
+    id: 'orrin_voice_again', p: 58, when: (S) => S.seen('sable_death_third') && S.f('heardSable') && !S.rev('sable'),
     lines: [
       '@iri The voice again. It called me “little thread.” Like it knew me.',
       '#afraid Did it. Did it say anything else?',
@@ -99,7 +99,7 @@ export default normalise([
 
   // ---------------------------------------------------------------- reveal 1: Sable
   {
-    id: 'orrin_reveal_sable', p: 90, when: (S) => S.rev('sable'),
+    id: 'orrin_reveal_sable', p: 92, when: (S) => S.rev('sable'),
     lines: [
       '@iri Veyl told me who he is. The Unweaver. His name is Sable, and he’s the Weaver’s son.',
       '#afraid She told you that.',
@@ -138,7 +138,7 @@ export default normalise([
     ],
   },
   {
-    id: 'orrin_reveal_sleep', p: 90, when: (S) => S.rev('sleep'),
+    id: 'orrin_reveal_sleep', p: 91, when: (S) => S.rev('sleep') && S.seen('orrin_reveal_sable'),
     lines: [
       '@iri Morrow said she chose to sleep. That her dream is a prison, and Sable’s inside it. And every time I go down there, the walls get thinner.',
       '#sad ...',
@@ -166,11 +166,13 @@ export default normalise([
       '#warm When the forge heats up, the floor itself will betray you. Watch where the light is coolest. He leaves himself a path. He always did.',
     ],
   },
-  { id: 'orrin_avoid_1', p: 89, once: false, when: avoiding, lines: ['#afraid Not now, Iri. The ledgers. They will not... shelve themselves.'] },
-  { id: 'orrin_avoid_2', p: 89, once: false, when: avoiding, lines: ['#afraid Busy. Very busy. Archive business. Dust to be... catalogued.'] },
-  { id: 'orrin_avoid_3', p: 89, once: false, when: avoiding, lines: ['@iri Orrin, I know what Aurum told me.', '#sad Then you know more than I can bear to say. Please. Another time.'] },
+  { id: 'orrin_first_clear_avoid', p: 90, when: (S) => S.clears >= 1 && avoiding(S) && S.seen('orrin_reveal_sleep'),
+    lines: ['@iri He laughed, Orrin. When he fell. He said she’ll never wake while he’s cut out of her.', '#afraid I heard him. I heard every word.', '#sad I cannot... not today, Iri. Ask me again when I am braver. I am working on it.'] },
+  { id: 'orrin_avoid_1', p: 89, once: false, when: (S) => avoiding(S) && S.seen('orrin_reveal_sleep'), lines: ['#afraid Not now, Iri. The ledgers. They will not... shelve themselves.'] },
+  { id: 'orrin_avoid_2', p: 89, once: false, when: (S) => avoiding(S) && S.seen('orrin_reveal_sleep'), lines: ['#afraid Busy. Very busy. Archive business. Dust to be... catalogued.'] },
+  { id: 'orrin_avoid_3', p: 89, once: false, when: (S) => avoiding(S) && S.seen('orrin_reveal_sleep'), lines: ['@iri Orrin, I know what Aurum told me.', '#sad Then you know more than I can bear to say. Please. Another time.'] },
   {
-    id: 'orrin_halves', p: 88, when: (S) => S.rev('halves') && S.since('halvesRun') >= 3,
+    id: 'orrin_halves', p: 88, when: (S) => S.rev('halves') && S.since('halvesRun') >= 3 && S.seen('orrin_reveal_sleep'),
     lines: [
       '#sad I have been avoiding you. That was cowardly, and you deserved better.',
       '@iri Aurum said I was spun from the part of Sable she cut away. That we’re two halves of one thread.',
@@ -198,7 +200,7 @@ export default normalise([
     ],
   },
   {
-    id: 'orrin_first_clear', p: 94, when: (S) => S.clears >= 1,
+    id: 'orrin_first_clear', p: 87, when: (S) => S.clears >= 1 && !avoiding(S) && S.seen('orrin_reveal_sleep'),
     lines: [
       '@iri He laughed, Orrin. When he fell, he laughed. He said she’ll never wake while he’s cut out of her.',
       '#grave I heard him. Every word came up the thread with you.',
@@ -217,7 +219,7 @@ export default normalise([
 
   // ---------------------------------------------------------------- the confession
   {
-    id: 'orrin_ink_hands', p: 93, when: (S) => S.mem('cutting') && !S.f('confession'), sets: ['inkRun'],
+    id: 'orrin_ink_hands', p: 93, when: (S) => S.mem('cutting') && !S.f('confession') && !avoiding(S) && S.seen('orrin_reveal_sleep'), sets: ['inkRun'],
     lines: [
       '@iri In the memory of the cutting, the hands that held the shears had ink on them. And there was a shadow behind them. Wings.',
       '#afraid Many hands have ink on them.',

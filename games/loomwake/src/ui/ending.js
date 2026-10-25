@@ -17,10 +17,11 @@ export function createEnding(ui) {
   // panels
   const cv = h('canvas', { width: 1280, height: 640 });
   const art = h('div', { class: 'end-art' }, cv);
-  const seqTitle = h('div', { class: 'end-title', style: { position: 'absolute', left: 0, right: 0, top: '38%', textAlign: 'center', pointerEvents: 'none', transition: 'opacity 1s' } });
+  // the sequence title sits above the picture, never over the figures in it
+  const seqTitle = h('div', { class: 'end-title seq', style: { pointerEvents: 'none', transition: 'opacity 1s' } });
   const cap = h('div', { class: 'end-cap' });
   const prog = h('div', { class: 'end-prog' });
-  const panels = h('div', { class: 'end-stage panels' }, art, cap);
+  const panels = h('div', { class: 'end-stage panels' }, seqTitle, art, cap);
   // credits
   const roll = h('div', { class: 'roll' });
   const credits = h('div', { class: 'credits' }, roll);
@@ -28,7 +29,7 @@ export function createEnding(ui) {
   const bSkip = h('button', { class: 'btn sm ghost', type: 'button' }, 'Skip');
   const bHome = h('button', { class: 'btn primary', type: 'button', hidden: true }, h('span', { html: icon('door') }), 'Return to the Loomhall');
   const ctl = h('div', { class: 'end-ctl' }, bSkip, bNext, bHome);
-  const el = h('section', { class: 'scr scr-ending modal', hidden: true, 'aria-label': 'Ending' }, victory, panels, seqTitle, credits, prog, ctl);
+  const el = h('section', { class: 'scr scr-ending modal', hidden: true, 'aria-label': 'Ending' }, victory, panels, credits, prog, ctl);
 
   let mode = '';
   let steps = [], si = 0, t = 0, rollY = 0, rollH = 0;
@@ -100,12 +101,18 @@ export function createEnding(ui) {
     for (const c of cr) roll.appendChild(h('div', { class: 'cr-r' }, h('span', { text: c.role }), h('b', { text: c.name })));
     roll.appendChild(h('div', { class: 'cr-h', text: ui.G.ending?.kind === 'true' ? 'The Weaver is awake' : 'The dream goes on' }));
     roll.appendChild(h('div', { class: 'cr-r' }, h('b', { text: ui.G.ending?.kind === 'true' ? 'Fates can be rewoven now. Thank you for playing.' : 'There is more to remember. Sable is waiting.' })));
-    rollY = 0; rollH = 0;
-    bNext.hidden = true; bSkip.hidden = true; bHome.hidden = false;
-    claimReturn(bHome);
-    setTimeout(() => bHome.focus(), 200);
+    rollY = 0; rollH = 0; creditsAt = performance.now();
+    // the roll gets a few seconds before the way home appears
+    bNext.hidden = true; bSkip.hidden = true; bHome.hidden = true;
+    clearTimeout(homeT);
+    homeT = setTimeout(() => { if (mode !== 'credits') return; bHome.hidden = false; claimReturn(bHome); bHome.focus(); }, 3500);
   }
-  function finish() { call(['returnToHub', 'advance']); }
+  let creditsAt = 0, homeT = 0;
+  function finish() {
+    if (mode === 'credits' && performance.now() - creditsAt < 3500) { rollY += 220; return; } // hurry the roll instead
+    clearTimeout(homeT);
+    call(['returnToHub', 'advance']);
+  }
 
   bNext.addEventListener('click', next);
   bSkip.addEventListener('click', () => { if (mode === 'panels') startCredits(); else finish(); });
@@ -126,7 +133,7 @@ export function createEnding(ui) {
         vTitle.textContent = tru ? 'THE WEAVER WAKES' : 'SABLE FALLS';
         vSub.textContent = tru ? 'Two halves of one thread, braided at last.' : 'The Unweaver kneels at the edge of everything. Far above, something stirs.';
         vSum.innerHTML = '';
-        for (const [v, l] of [[fmtTime(r.time), 'Time'], [r.kills | 0, 'Unravelled'], [(r.boons || []).length, 'Boons'], [r.lumenEarned | 0, 'Lumen']]) vSum.appendChild(h('div', { class: 'stat' }, h('b', { text: String(v) }), h('span', { text: l })));
+        for (const [v, l] of [[fmtTime(r.time), 'Time'], [r.kills | 0, 'Foes undone'], [(r.boons || []).length, 'Boons'], [r.lumenEarned | 0, 'Lumen']]) vSum.appendChild(h('div', { class: 'stat' }, h('b', { text: String(v) }), h('span', { text: l })));
         claimReturn(vBtn);
       } else {
         steps = buildSteps(G); si = 0; t = 0;

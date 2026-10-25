@@ -65,7 +65,7 @@ export function createDeath(ui) {
     sable.dataset.who = sp.name.toUpperCase();
     sable.textContent = '“' + (recent?.text || FALLBACK_SABLE[(G.meta?.stats?.deaths | 0) % FALLBACK_SABLE.length]) + '”';
     sum.innerHTML = '';
-    for (const [v, l] of [[rg ? rg.name.replace(/^The /, '') : '—', 'Region'], [(r.depth | 0) + 1, 'Chambers'], [fmtTime(r.time), 'Time'], [r.kills | 0, 'Unravelled']]) sum.appendChild(h('div', { class: 'stat' }, h('b', { text: String(v) }), h('span', { text: l })));
+    for (const [v, l] of [[rg ? rg.name.replace(/^The /, '') : '—', 'Region'], [(r.depth | 0) + 1, 'Chambers'], [fmtTime(r.time), 'Time'], [r.kills | 0, 'Foes undone']]) sum.appendChild(h('div', { class: 'stat' }, h('b', { text: String(v) }), h('span', { text: l })));
     earned.innerHTML = '';
     for (const [n, ic, lbl] of [[r.lumenEarned, 'lumen', 'Lumen kept'], [r.keysEarned, 'keys', 'Silk Keys'], [r.shardsEarned, 'shards', 'Dream Shards']]) {
       if (!(n > 0)) continue;

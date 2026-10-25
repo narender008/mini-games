@@ -101,10 +101,10 @@ export default normalise([
   ], { p: 2, kind: 'taunt', chance: 0.5 }),
 
   // ---------------------------------------------------------------- boss kills
-  { id: 'sable_kill_veyl_1', on: 'bossDefeat', p: 40, kind: 'taunt', when: (S) => ev(S).id === 'veyl' && S.kills('veyl') === 2, lines: ['#wry Veyl loved that garden. You’re very good at taking things.'] },
-  { id: 'sable_kill_morrow_1', on: 'bossDefeat', p: 40, kind: 'taunt', when: (S) => ev(S).id === 'morrow' && S.kills('morrow') === 2, lines: ['#grave Silence at last in the Choir. You did my work for me. Again.'] },
-  { id: 'sable_kill_aurum_1', on: 'bossDefeat', p: 40, kind: 'taunt', when: (S) => ev(S).id === 'aurum' && S.kills('aurum') === 2, lines: ['#sad The old smith on his knees. He made the shears, you know. Did he say sorry? He always says sorry.'] },
-  ...pool('sable_kill', S_, 'bossDefeat', (S) => ev(S).id !== 'sable' && S.kills(ev(S).id) >= 3 && S.ending !== 'true', [
+  { id: 'sable_kill_veyl_1', on: 'bossDefeat', p: 40, kind: 'taunt', when: (S) => ev(S).id === 'veyl' && S.kills('veyl') === 1, lines: ['#wry Veyl loved that garden. You’re very good at taking things.'] },
+  { id: 'sable_kill_morrow_1', on: 'bossDefeat', p: 40, kind: 'taunt', when: (S) => ev(S).id === 'morrow' && S.kills('morrow') === 1, lines: ['#grave Silence at last in the Choir. You did my work for me. Again.'] },
+  { id: 'sable_kill_aurum_1', on: 'bossDefeat', p: 40, kind: 'taunt', when: (S) => ev(S).id === 'aurum' && S.kills('aurum') === 1, lines: ['#sad The old smith on his knees. He made the shears, you know. Did he say sorry? He always says sorry.'] },
+  ...pool('sable_kill', S_, 'bossDefeat', (S) => ev(S).id !== 'sable' && S.kills(ev(S).id) >= 2 && S.ending !== 'true', [
     '#wry Another guardian down. She did choose such loyal ones.',
     'They’ll stand up again. Everything here does. Only I stay cut.',
   ], { p: 2, kind: 'taunt', chance: 0.6 }),

@@ -236,7 +236,7 @@ export function createFx(G, Q) {
     else if (p.type === 'mote') drawGlow(ctx, p.x, p.y - p.z - 20, p.size * 4, p.color, Math.sin(a * Math.PI) * 0.8);
   };
   const SORTED = new Set(['shard', 'dust', 'thread', 'ash', 'leaf']);
-  fx.sorted = (push, ctx, P) => { for (const p of parts) if (SORTED.has(p.type)) push(p.y, () => drawPart(ctx, p, P)); };
+  fx.sorted = (push, ctx, P) => { for (const p of parts) if (SORTED.has(p.type)) push(p.y, () => drawPart(ctx, p, P), 'part:' + p.type); };
   fx.drawAdd = (ctx, P) => {
     let n = 0; for (const p of parts) if (p.add && p.type !== 'mote') n++;
     n += flashes.length * 4 + bolts.length * 6;

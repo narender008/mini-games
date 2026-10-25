@@ -24,7 +24,7 @@ import { speak, stopVoice as stopV, VOICE_IDS } from './voice.js';
 import { createAmbience } from './ambience.js';
 import { bakeStep } from './bank.js';
 
-const S = {
+const S = { bossLast: {},
   E: null, M: null, amb: null, bus: null, G: null, timer: null, failed: false,
   vol: { master: 0.85, music: 0.7, sfx: 0.9, voice: 0.85 }, muted: false,
   pending: null, auto: true, lastWant: '', want: null,
@@ -261,7 +261,8 @@ function tellByKind(k, tgKind) {
   return 'tell';
 }
 
-// boss moves (bossMove {id, move, pose: wind|act|rec}) -> the sound on 'act'
+// boss strikes: bossAttack {id, attack} plays `${id}_${attack}`; this table is the fallback by move name.
+// bossMove's 'act' pose only adds a whoosh for melee moves (BOSS_WHOOSH), so a strike never doubles.
 const BOSS_ACT = {
   veyl: { volley: 'veyl_volley', claw: 'veyl_claw', burrow: 'veyl_ring', ring: 'veyl_ring', verdict: 'veyl_thorns', summon: 'veyl_summon' },
   morrow: { ring: 'morrow_ring', sweep: 'morrow_lantern', notes: 'song_ring', summon: 'morrow_summon', sink: 'morrow_flood', choir: 'morrow_choir', flood: 'morrow_flood', requiem: 'morrow_choir' },
@@ -537,12 +538,15 @@ export function attachAudio(bus, G) {
     S.lastWant = '';
   });
   on('bossFight', (p) => { const b = bossKey(p.id) || S.boss.id; S.boss.id = b; S.boss.active = !!b; S.lastWant = ''; });
+  // one boss sound per name within 0.35 s (bossAttack and bossImpact can name the same hammer)
+  const bossSfx = (n, o) => { const t = now(); if (S.bossLast[n] && t - S.bossLast[n] < 0.35) return; S.bossLast[n] = t; sfx(n, o); };
+  const BOSS_WHOOSH = /claw|sweep|lunge|combo|riposte|slam|chain|dash|swing/i;
   on('bossMove', (p) => {
     const b = bossKey(p.id); if (!b) return;
-    if (p.pose === 'act') { const n = BOSS_ACT[b] && BOSS_ACT[b][p.move]; if (n) sfx(n, at(p)); }
+    if (p.pose === 'act') { if (BOSS_WHOOSH.test(p.move || '')) sfx('foe_swing', { ...at(p), pitch: b === 'aurum' ? 0.7 : b === 'sable' ? 1.15 : 0.9, vel: 0.5 }); }
     else if (p.pose === 'wind' && b === 'aurum') sfx('aurum_step', at(p));
   });
-  on('bossImpact', (p) => { const n = BOSS_IMPACT[p.item]; if (n) sfx(n, { ...at(p), vel: clamp(0.6 + (p.r || 100) / 400, 0.6, 1.1) }); });
+  on('bossImpact', (p) => { const n = BOSS_IMPACT[p.item]; if (n) bossSfx(n, { ...at(p), vel: clamp(0.6 + (p.r || 100) / 400, 0.6, 1.1) }); });
   on('bossSlash', (p) => sfx('sable_lunge', { ...at(p), vel: 0.7 }));
   on('bossSetPiece', (p) => {
     const b = bossKey(p.id);
@@ -578,7 +582,26 @@ export function attachAudio(bus, G) {
     S.lastWant = 'defeat'; S.holdUntil = now() + 4;
   });
   on('bossChoice', () => { if (S.M) S.M.stopAll(2); S.holdUntil = now() + 60; sfx('pickup_memory'); });
-  on('bossAttack', (p) => { const b = bossKey(p.id) || S.boss.id; const n = b && p.attack ? `${b}_${p.attack}` : null; if (n && SFX[n]) sfx(n, { ...at(p), delay: p.delay }); });
+  on('bossAttack', (p) => {
+    const b = bossKey(p.id) || S.boss.id; if (!b) return;
+    let n = p.attack ? `${b}_${p.attack}` : null;
+    if (!n || !SFX[n]) n = BOSS_ACT[b] && BOSS_ACT[b][p.move || p.attack];
+    if (n && SFX[n]) bossSfx(n, { ...at(p), delay: p.delay });
+  });
+  // the beaten boss sinks to one knee (bossDefeated), and later unravels once the talk is over (bossRelease -> bossDying)
+  on('bossDefeated', (p) => { sfx('slam', { ...at(p), pitch: 0.62, vel: 0.75 }); sfx('hit_armor', { ...at(p), pitch: 0.7, vel: 0.5, delay: 0.12 }); });
+  on('bossRelease', (p) => sfx('sable_thread', { ...at(p), vel: 0.35, pitch: 1.3 }));
+  // a telegraph goes off: its own hitSfx, or a thump for hazards nobody owns (foes and bosses sound their own impacts)
+  on('telegraphHit', (p) => {
+    const tg = p.tg || p; if (!tg || tg.hitSfx === false) return;
+    const pos = { x: tg.x, y: tg.y };
+    if (typeof tg.hitSfx === 'string') return sfx(tg.hitSfx, pos);
+    if (tg.owner != null || tg.boss) return;
+    if (tg.element === 'fire') return sfx('explode', { ...pos, element: 'fire', vel: 0.5 });
+    sfx('shockwave', { ...pos, vel: 0.55 });
+  });
+  // the HUD drops stale barks on room changes: their voices stop with them
+  on('flushBarks', () => stopVoice());
   on('sfx', (p) => { if (p.name) sfx(p.name, p); });
 
   // ---- rooms, flow, saves, story

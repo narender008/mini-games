@@ -14,7 +14,50 @@ import aurum, * as A from './aurum.js';
 import sable, * as S from './sable.js';
 import { drawShared, drawSharedProjectile, drawSharedOverlay } from './shared.js';
 
-export const PAINTERS = { veyl, morrow, aurum, sable };
+// Each painter's own death sequence runs `DUR` seconds of e.st in state 'dying'; its first `HOLD` fraction is
+// the collapse to the knees, the rest the unravel. The sim splits that: 'defeated' (held while the reveal
+// speech plays) shows the collapse and holds it; 'dying' (DIE seconds in the sim) plays the remainder.
+const DUR = { veyl: 3.0, morrow: 3.0, aurum: 3.2, sable: 3.0 };
+const HOLD = { veyl: 0.28, morrow: 0.36, aurum: 0.42, sable: 0.27 };
+const DIE = { veyl: 2.2, morrow: 2.0, aurum: 1.9, sable: 2.2 };   // keep in step with sim/bosses/index.js
+
+// A render clock per boss: while the sim is paused (a conversation over the intro or the defeat), the
+// painter still breathes and the intro still plays, on wall time added on top of G.t.
+const nowS = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+function clockFor(e, G) {
+  const A = e.anim || (e.anim = {});
+  const now = nowS();
+  const rdt = A._rw == null ? 0 : Math.min(0.05, Math.max(0, now - A._rw));
+  A._rw = now;
+  // G.t may keep running in some scenes while the boss is not stepped, so watch both clocks
+  const paused = A._gt === G.t, held = A._est === e.st;
+  A._gt = G.t;
+  if (A._st !== e.state) { A._st = e.state; A._stAdd = 0; }
+  else if (held) A._stAdd = (A._stAdd || 0) + rdt;
+  A._est = e.st;
+  if (paused) A._off = (A._off || 0) + rdt;
+  return A;
+}
+function wrap(id, paint) {
+  return function draw(ctx, e, G, P) {
+    if (!e || !G) return;
+    const A = clockFor(e, G);
+    const G2 = Object.create(G);
+    G2.t = G.t + (A._off || 0);
+    const st0 = e.st, state0 = e.state;
+    let st = (e.st || 0) + (A._stAdd || 0);
+    A.dispSt = st;
+    let state = e.state;
+    if (state === 'defeated') { state = 'dying'; st = Math.min(st, HOLD[id] * DUR[id]); }
+    else if (state === 'dying' && e.defeatSent) st = HOLD[id] * DUR[id] + st * (DUR[id] * (1 - HOLD[id])) / DIE[id];
+    // a beaten boss shows no hit flash (a flash frozen by the paused sim would wash it white)
+    const fl0 = e.flash;
+    if (state0 === 'defeated' || state0 === 'dying') e.flash = 0;
+    e.state = state; e.st = st;
+    try { paint(ctx, e, G2, P); } finally { e.state = state0; e.st = st0; e.flash = fl0; }
+  };
+}
+export const PAINTERS = { veyl: wrap('veyl', veyl), morrow: wrap('morrow', morrow), aurum: wrap('aurum', aurum), sable: wrap('sable', sable) };
 const MODS = { veyl: V, morrow: M, aurum: A, sable: S };
 
 export function drawZone(ctx, z, G, P) {

@@ -9,7 +9,8 @@
 //   createLight() -> L
 //     L.begin(cap)        start a frame (cap = max lights, the strongest win)
 //     L.push(x, y, r, color, i, g = 1)   g scales the coloured haze (0 = hole only; a light carried by a sprite keeps it low)
-//     L.render(ctx, cam, view, dark, res, extra?)   dark = { color, a }; view = { W, H, scale } (canvas px, px per world unit);
+//     L.render(ctx, cam, view, dark, res, extra?)   dark = { color, a }; view = { W, H, scale, vig? } (canvas px, px per world unit;
+//                         vig: a screen vignette canvas laid over the layer);
 //                         extra(lctx, viewRect) adds world-space glow into the layer (one composite pass in all)
 //     L.count
 import { hexA } from '../core/math.js';
@@ -94,6 +95,9 @@ export function createLight() {
     for (let k = 0; k < lim; k++) { const o = list[k]; if (!vis(o)) continue; if (o.g > 0) drawGlow(lctx, o.x, o.y, o.r * gr, o.color, Math.min(1, o.i) * gi * o.g); }
     if (extra) extra(lctx, { x0: vx0, y0: vy0, x1: vx1, y1: vy1 });
     lctx.globalCompositeOperation = 'source-over'; lctx.globalAlpha = 1;
+    // the screen vignette rides in the same layer (VIG over (layer over scene) = (VIG over layer) over scene):
+    // one full-screen blit fewer
+    if (view.vig) { lctx.setTransform(1, 0, 0, 1, 0, 0); lctx.drawImage(view.vig, 0, 0, W, H); }
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(layer, 0, 0, view.W, view.H); ctx.restore();
     ctx.globalCompositeOperation = 'source-over';
   };

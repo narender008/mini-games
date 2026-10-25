@@ -173,24 +173,29 @@ function tick() {
 }
 
 let last = performance.now(), acc = 0, errors = 0;
+// at most this many sim steps per frame: past it the game slows down instead of spiralling (a slow frame
+// would otherwise buy more sim work for the next one)
+const MAX_STEPS = 6;
 function frame(now) {
   const t0 = performance.now();
   const dtMs = now - last; last = now;
   const dt = Math.min(0.1, Math.max(0, dtMs / 1000));
+  let n = 0, t1 = t0, t2 = t0;
   try {
     if (!frozen) {
       acc += dt * (G.slow ?? 1);
-      let n = 0;
-      while (acc >= DT && n < 12) { tick(); acc -= DT; n++; }
-      if (n >= 12) acc = 0;
+      while (acc >= DT && n < MAX_STEPS) { tick(); acc -= DT; n++; }
+      if (n >= MAX_STEPS) acc = 0;
     }
+    t1 = performance.now();
     renderer.draw(G, frozen ? 0 : dt);
+    t2 = performance.now();
     if (ui && ui.update) ui.update(G);
   } catch (err) {
     if (errors++ < 5) console.error('[loomwake] frame error', err);
   }
-  const js = performance.now() - t0;
-  frameLog.push({ dt: Math.round(dtMs * 100) / 100, js: Math.round(js * 100) / 100 });
+  const t3 = performance.now(), js = t3 - t0, r2 = (v) => Math.round(v * 100) / 100;
+  frameLog.push({ dt: r2(dtMs), js: r2(js), sim: r2(t1 - t0), draw: r2(t2 - t1), ui: r2(t3 - t2), steps: n });
   if (frameLog.length > 600) frameLog.splice(0, frameLog.length - 600);
   if (!frozen && quality.frame(dtMs)) renderer.resize();
   requestAnimationFrame(frame);

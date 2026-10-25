@@ -203,11 +203,16 @@ export function propOf(img, x, y, sortY = y, extra = {}) {
 
 // ---------------------------------------------------------------- screen-space background helpers
 // back layers are cached per screen size bucket
+// (keeps the last 2 sizes: the frame governor steps the resolution between a few fixed scales, and a
+// rebuild costs 50-200 ms on software raster, so stepping back to a size it has seen is free)
 export function screenCache(build) {
-  let key = '', c = null;
+  const keep = new Map();
   return (w, h) => {
     const k = Math.round(w / 64) + 'x' + Math.round(h / 64);
-    if (k !== key) { key = k; c = build(Math.ceil(w * 1.35), Math.ceil(h * 1.35)); }
+    let c = keep.get(k);
+    if (c) { keep.delete(k); keep.set(k, c); return c; }
+    c = build(Math.ceil(w * 1.35), Math.ceil(h * 1.35));
+    keep.set(k, c); if (keep.size > 2) keep.delete(keep.keys().next().value);
     return c;
   };
 }

@@ -17,6 +17,11 @@ const TABS = [
 const ALIAS = { shop: 'pell', rack: 'weapons', mirror: 'tapestry' };
 const REVEAL = { reveal1: 'sable', reveal2: 'sleep', reveal3: 'halves' };
 const GIFT_NPCS = ['orrin', 'thimbleby', 'pell', 'nell'];
+// Nell arrives in the Loomhall after Veyl falls (same test as sim/hub.js makeHub)
+function nellHere(G) {
+  const m = G.meta || {}, f = m.flags || {}, st = m.stats || {}, wins = st.bossWins || {};
+  return (wins.veyl || 0) > 0 || !!f.nellArrived || !!f.reveal1 || (m.reveals || []).includes('sable') || !!(G.hub?.meta?.nellHere);
+}
 
 export function createStation(ui) {
   const { call } = ui;
@@ -204,7 +209,9 @@ export function createStation(ui) {
     const m = meta();
     const K = D.keepsakes || {};
     list.innerHTML = '';
-    list.appendChild(keeperLine('nell', 'People give each other things so they won’t be forgotten. I think that’s what keepsakes are for.'));
+    list.appendChild(nellHere(ui.G)
+      ? keeperLine('nell', 'People give each other things so they won’t be forgotten. I think that’s what keepsakes are for.')
+      : keeperLine('orrin', 'Gifts keep their givers close. Carry one into the dream, and it will remember who loved you.'));
     const grid = h('div', { class: 'tap-grid', '--cols': '3' });
     const none = h('button', { class: 'tap' + (!m.loadout?.keepsake ? ' on' : ''), type: 'button', 'data-keepsake': '' }, h('div', { class: 'ic', html: icon('close') }), h('div', { class: 'nm', text: 'Carry nothing' }));
     none.addEventListener('click', () => res(call(['equipKeepsake'], null), 'Keepsake set down'));
@@ -226,7 +233,8 @@ export function createStation(ui) {
       const det = () => {
         let txt = k.text || '';
         try { txt = D.mods?.boons?.boonText?.(id, ['common', 'rare', 'epic'][rank - 1] || 'common', 1) || txt; } catch { /* */ }
-        const how = k.unlock?.gift ? `A gift from ${speaker(k.unlock.gift, ui.G).name}: give them a Dream Shard${k.unlock.count > 1 ? ` (${k.unlock.count} times)` : ''}.` : 'Found somewhere in the story.';
+        const hidden = (k.unlock?.gift === 'nell' || k.giver === 'nell') && !nellHere(ui.G);
+        const how = hidden ? 'Someone you have not met yet will give you this.' : k.unlock?.gift ? `A gift from ${speaker(k.unlock.gift, ui.G).name}: give them a Dream Shard${k.unlock.count > 1 ? ` (${k.unlock.count} times)` : ''}.` : 'Found somewhere in the story.';
         showDetail({ icon: 'keepsakes', color: giver.color, name: owned ? k.name : 'Unknown keepsake', ep: owned ? `From ${giver.name} · Rank ${rank}` : how, text: owned ? txt : '', extra: owned && k.flavour ? h('p', { style: { fontStyle: 'italic', color: 'var(--muted)' }, text: k.flavour }) : null });
       };
       b.addEventListener('focus', det); b.addEventListener('pointerenter', det);
@@ -245,7 +253,7 @@ export function createStation(ui) {
     list.appendChild(keeperLine('pell', 'A Dream Shard is a small thing to give. That’s why it matters. Go on, pick someone.'));
     const grid = h('div', { class: 'tap-grid', '--cols': '2' });
     for (const id of GIFT_NPCS) {
-      if (id === 'nell' && !(ui.G.npcs || []).some((n) => n.id === 'nell') && !(m.reveals || []).includes('sable')) continue;
+      if (id === 'nell' && !nellHere(ui.G)) continue;
       const sp = speaker(id, ui.G);
       const n = m.gifts?.[id] | 0;
       const aff = m.affinity?.[id] | 0;
@@ -254,7 +262,7 @@ export function createStation(ui) {
       const b = h('button', { class: 'tap', type: 'button', 'data-gift': id, '--c': sp.color }, cv, h('div', { class: 'nm', text: sp.name }),
         h('div', { class: 'ranks' }, Array.from({ length: 5 }, (_, i) => h('i', { class: i < Math.min(5, aff) ? 'on' : '' }))));
       const det = () => showDetail({ icon: 'heal', color: sp.color, name: sp.name, ep: sp.title, text: n ? `You have given ${n} gift${n === 1 ? '' : 's'}.` : 'You have not given them anything yet.',
-        action: (() => { const a = h('button', { class: 'btn primary', type: 'button', disabled: (m.currency?.shards | 0) < 1 ? true : null }, h('span', { html: icon('shards') }), 'Give a Dream Shard'); a.addEventListener('click', () => doGift(id)); return a; })() });
+        action: (() => { const a = h('button', { class: 'btn primary', type: 'button', disabled: (m.currency?.shards | 0) < 1 ? true : null }, h('span', { html: icon('shards') }), 'Give a Shard'); a.addEventListener('click', () => doGift(id)); return a; })() });
       b.addEventListener('focus', det); b.addEventListener('pointerenter', det);
       b.addEventListener('click', () => doGift(id));
       grid.appendChild(b);

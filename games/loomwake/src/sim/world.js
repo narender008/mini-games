@@ -46,17 +46,19 @@ function geo(ch) {
 }
 
 export function nearestWall(ch, x, y) {
+  // (hot: every mover, every step; squared distances, no allocation in the loop)
   const S = ch.shape;
-  let best = { x, y, d: 1e9, nx: 0, ny: 0 };
+  let bx0 = x, by0 = y, bd = Infinity;
   for (let i = 0, j = S.length - 1; i < S.length; j = i++) {
-    const ax = S[j][0], ay = S[j][1], bx = S[i][0], by = S[i][1];
-    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1;
-    const t = clamp(((x - ax) * dx + (y - ay) * dy) / l2, 0, 1);
-    const px = ax + dx * t, py = ay + dy * t, d = Math.hypot(x - px, y - py);
-    if (d < best.d) best = { x: px, y: py, d, nx: 0, ny: 0 };
+    const ax = S[j][0], ay = S[j][1], dx = S[i][0] - ax, dy = S[i][1] - ay, l2 = dx * dx + dy * dy || 1;
+    let t = ((x - ax) * dx + (y - ay) * dy) / l2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const px = ax + dx * t, py = ay + dy * t, ex = x - px, ey = y - py, d2 = ex * ex + ey * ey;
+    if (d2 < bd) { bd = d2; bx0 = px; by0 = py; }
   }
+  const d = bd === Infinity ? 1e9 : Math.sqrt(bd);
+  const best = { x: bx0, y: by0, d, nx: 0, ny: 0, inside: false };
   const inside = pointInPoly(x, y, S);
-  if (best.d > 1e-6) { const k = (inside ? 1 : -1) / best.d; best.nx = (x - best.x) * k; best.ny = (y - best.y) * k; }
+  if (d > 1e-6 && d < 1e9) { const k = (inside ? 1 : -1) / d; best.nx = (x - bx0) * k; best.ny = (y - by0) * k; }
   best.inside = inside;
   return best;
 }
@@ -205,7 +207,7 @@ function heroFall(G, h, c) {
   let p = null;
   if (!again && h.safe && spotIsSafe(ch, h.safe.x, h.safe.y, h.r)) p = { x: h.safe.x, y: h.safe.y };
   if (!p) { const e = ch?.entry || { x: 0, y: 0 }; p = safeSpot(ch, e.x, e.y, h.r + 20); }
-  h.x = p.x; h.y = p.y; h.safe = { x: p.x, y: p.y };
+  h.x = p.x; h.y = p.y; h.safe = { x: p.x, y: p.y }; h.placed = (h.placed || 0) + 1;
   hurtHero(G, c.fallDmg, { x: h.x, y: h.y, kind: 'fall', kb: 0, ignoreInv: true });
   h.inv = Math.max(h.inv, 0.8);
 }

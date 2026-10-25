@@ -8,7 +8,8 @@ const ROMAN = ['I', 'II', 'III', 'IV', 'V'];
 
 export function createCards(ui) {
   const bn = h('div', { class: 'bn' }), be = h('div', { class: 'be' }), bl = h('div', { class: 'bl' });
-  const bossEl = h('div', { class: 'bosscard', 'aria-live': 'assertive' }, h('div', { class: 'band' }), h('div', { class: 'inner' }, bn, be, bl));
+  // the band sits inside .inner so it always frames the name, epithet and quote
+  const bossEl = h('div', { class: 'bosscard', 'aria-live': 'assertive' }, h('div', { class: 'inner' }, h('div', { class: 'band' }), bn, be, bl));
   const ri = h('div', { class: 'ri' }), rn = h('div', { class: 'rn' }), rs = h('div', { class: 'rs' }), rl = h('div', { class: 'rl' });
   const regEl = h('div', { class: 'regcard', 'aria-live': 'polite' }, ri, rn, h('div', { html: ORNAMENT }), rs, rl);
   const btext = h('div', { class: 'bt' });
@@ -21,56 +22,92 @@ export function createCards(ui) {
   const now = () => performance.now();
   const replay = (e) => { e.classList.remove('on'); void e.offsetWidth; e.classList.add('on'); };
   const hidden = () => ui.cover || ['title', 'loading', 'profiles'].includes(ui.G.scene);
+  // one big card at a time: region cards, boss cards and banners queue behind each other
+  const queue = [];
+  let busyUntil = 0;
+  function stage(kind, ms, fn) {
+    if (now() < busyUntil) {
+      if (kind === 'clear') return; // a 'cleared' banner is not worth waiting for
+      for (let i = queue.length - 1; i >= 0; i--) if (queue[i].kind === kind) queue.splice(i, 1);
+      queue.push({ kind, ms, fn, at: now() });
+      return;
+    }
+    run({ kind, ms, fn });
+  }
+  function run(c) {
+    regEl.classList.remove('on'); banEl.classList.remove('on');
+    if (c.kind !== 'boss') bossEl.classList.remove('on');
+    c.fn();
+    busyUntil = now() + c.ms;
+    quietUntil = busyUntil;
+  }
+  function bossQuote(id, p) {
+    if (p.line) return p.line;
+    const L = D.bosses?.[id]?.lines?.intro || [];
+    const plain = L.filter((x) => !x.when);
+    return (plain[plain.length - 1] || L[L.length - 1])?.text || '';
+  }
 
-  return {
+  const api = {
     el,
     // a title card is on screen: barks wait for it
-    busy() { return now() < quietUntil - 800 && (bossEl.classList.contains('on') || regEl.classList.contains('on')); },
+    busy() { return now() < quietUntil - 300; },
     boss(id, p = {}) {
       if (hidden()) return;
-      const info = bossInfo(id, ui.G);
-      bossEl.style.setProperty('--bc', info.color);
-      bn.textContent = info.name;
-      be.textContent = info.title;
-      bl.textContent = p.line || '';
-      regEl.classList.remove('on'); banEl.classList.remove('on'); bossEl.classList.remove('out');
-      replay(bossEl);
-      quietUntil = now() + 4400;
+      // a boss intro takes the stage at once; queued region cards are stale now
+      for (let i = queue.length - 1; i >= 0; i--) if (queue[i].kind === 'region') queue.splice(i, 1);
+      run({ kind: 'boss', ms: 4400, fn: () => {
+        const info = bossInfo(id, ui.G);
+        bossEl.style.setProperty('--bc', info.color);
+        bn.textContent = info.name;
+        be.textContent = info.title;
+        const q = bossQuote(id, p);
+        bl.textContent = q ? '“' + q.replace(/^[“"]|[”"]$/g, '') + '”' : '';
+        bl.hidden = !q;
+        ui.screens?.hud?.cardLine?.(q);
+        bossEl.classList.remove('out');
+        replay(bossEl);
+      } });
     },
     // the fight starts (end of the intro freeze): the title card fades out at once (engine seam fix)
     bossFight() {
       if (!bossEl.classList.contains('on')) return;
       bossEl.classList.remove('on'); void bossEl.offsetWidth; bossEl.classList.add('out');
+      busyUntil = Math.min(busyUntil, now() + 400);
       quietUntil = Math.min(quietUntil, now() + 400);
     },
     region(id, p = {}) {
       if (hidden() || !id || id === 'hub') return;
-      const r = region(id);
-      const card = titleCard(ui.G, id) || {};
-      regEl.style.setProperty('--rc', card.color || r.color);
-      ri.textContent = 'Region ' + (ROMAN[regionIndex(id)] || '');
-      rn.textContent = card.title || r.name;
-      rs.textContent = card.subtitle || r.subtitle || '';
-      const line = card.line || (Array.isArray(card.lines) ? (card.lines[0]?.text || card.lines[0]) : '') || '';
-      rl.textContent = typeof line === 'string' ? line : '';
-      replay(regEl);
-      quietUntil = now() + 4200;
+      stage('region', 4300, () => {
+        const r = region(id);
+        const card = titleCard(ui.G, id) || {};
+        regEl.style.setProperty('--rc', card.color || r.color);
+        ri.textContent = 'Region ' + (ROMAN[regionIndex(id)] || '');
+        rn.textContent = card.title || r.name;
+        rs.textContent = card.subtitle || r.subtitle || '';
+        const line = card.line || (Array.isArray(card.lines) ? (card.lines[0]?.text || card.lines[0]) : '') || '';
+        rl.textContent = typeof line === 'string' ? line : '';
+        ui.screens?.hud?.cardLine?.(rl.textContent);
+        replay(regEl);
+      });
     },
     banner(text, kind = 'info') {
       if (hidden()) return;
-      if (now() < quietUntil && kind === 'clear') return;
-      banEl.className = 'banner ' + kind;
-      btext.textContent = text;
-      replay(banEl);
+      stage(kind === 'clear' ? 'clear' : 'banner', kind === 'phase' ? 1800 : 2000, () => {
+        banEl.className = 'banner ' + kind;
+        btext.textContent = text;
+        replay(banEl);
+      });
     },
     bossDefeat(id) {
       if (hidden()) return;
-      const info = bossInfo(id, ui.G);
       bossEl.classList.remove('on');
-      banEl.className = 'banner victory';
-      btext.textContent = info.name.replace(/^the /i, '') + ' falls';
-      replay(banEl);
-      quietUntil = now() + 2500;
+      stage('defeat', 2600, () => {
+        const info = bossInfo(id, ui.G);
+        banEl.className = 'banner victory';
+        btext.textContent = info.name.replace(/^the /i, '') + ' falls';
+        replay(banEl);
+      });
     },
     toast(text, kind, opts = {}) {
       if (hidden() && kind !== 'warn' && kind !== 'save') { if (!['title', 'profiles'].includes(ui.G.scene)) return; }
@@ -97,6 +134,12 @@ export function createCards(ui) {
       const m = map[k];
       if (m) this.toast(m[0], 'pickup', { icon: m[1], color: m[2], sub: p.n > 1 ? '×' + p.n : '' });
     },
-    update() {},
+    update() {
+      if (!queue.length || now() < busyUntil || document.querySelector('.lw-ui.in-menu')) return;
+      const c = queue.shift();
+      if (now() - c.at > 12000 || hidden()) return; // stale
+      run(c);
+    },
   };
+  return api;
 }

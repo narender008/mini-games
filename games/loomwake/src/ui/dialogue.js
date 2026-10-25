@@ -93,11 +93,12 @@ export function createDialogue(ui) {
     el.classList.toggle('memory', !!isMem);
     memFrame.hidden = !isMem; memProg.hidden = !isMem;
     if (isMem) {
-      memId = d.memory; memIndex = d.index | 0;
+      memId = d.memory; memIndex = (d.panel ?? d.index) | 0; // run.js tags each line with its panel
       const m = D.memories.find((x) => x.id === memId);
       memTitle.textContent = m ? `${m.n ? 'Memory Thread ' + m.n + ' · ' : ''}${m.title || ''}` : 'A Memory Thread';
       memProg.innerHTML = '';
-      for (let i = 0; i < (d.total || 1); i++) memProg.appendChild(h('i', { class: i <= memIndex ? 'on' : '' }));
+      const nPanels = d.panel != null && m && Array.isArray(m.panels) ? m.panels.length : (d.total || 1);
+      for (let i = 0; i < nPanels; i++) memProg.appendChild(h('i', { class: i <= memIndex ? 'on' : '' }));
       paintMem(0);
     }
   }

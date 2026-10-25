@@ -40,7 +40,8 @@ export function resetHeroAnim(h) {
 
 export function updateHeroAnim(h, G, dt) {
   const a = h.anim;
-  if (!a.scarf || Math.hypot(h.x - a.lx, h.y - a.ly) > 300) resetHeroAnim(h);
+  // teleports (placeHero, resetHero, respawn, falls) restart the chains where she now stands
+  if (!a.scarf || a.placed !== (h.placed || 0) || Math.hypot(h.x - a.lx, h.y - a.ly) > 300) { resetHeroAnim(h); a.placed = h.placed || 0; }
   a.acc = Math.min(a.acc + dt, 0.1);
   const frozen = G.hitstop > 0;
   while (a.acc >= STEP) { a.acc -= STEP; step(h, G, STEP, frozen); }
@@ -566,19 +567,22 @@ let xrayC = null;
 export function drawHeroXray(ctx, h, G, P, k = 1) {
   if (!bodyC || k <= 0.01 || !h.anim || h.state === 'dead') return;
   if (!xrayC || xrayC.width !== bodyC.width || xrayC.height !== bodyC.height) xrayC = mk(bodyC.width, bodyC.height);
-  const g = xrayC.getContext('2d');
-  g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, xrayC.width, xrayC.height);
-  g.drawImage(bodyC, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = '#ffd8a0'; g.fillRect(0, 0, xrayC.width, xrayC.height);
+  // a thin bright outline (the silhouette grown by ~1.5 px, minus itself) over a faint ghost of Iri herself:
+  // reads as "Iri is here, behind", never as a flat cut-out
+  const g = xrayC.getContext('2d'), d = Math.max(1, Math.round(1.6 * sprScale));
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, xrayC.width, xrayC.height);
+  for (const [ox, oy] of XRAY_RING) g.drawImage(bodyC, ox * d, oy * d);
+  g.globalCompositeOperation = 'destination-out'; g.drawImage(bodyC, 0, 0);
+  g.globalCompositeOperation = 'source-in'; g.fillStyle = '#ffe6b0'; g.fillRect(0, 0, xrayC.width, xrayC.height);
   g.globalCompositeOperation = 'source-over';
   const x = h.x, y = h.y - (h.z || 0);
   ctx.save();
-  // bright rim (the silhouette shifted around) then a soft warm fill: reads as "Iri is here", not a hole
-  for (const [ox, oy] of OUTLINE) blit(ctx, xrayC, x + ox * 2, y + oy * 2, 0.75 * k);
-  ctx.globalCompositeOperation = 'source-over';
-  const g2 = xrayC.getContext('2d'); g2.globalCompositeOperation = 'source-in'; g2.fillStyle = '#7a3a2a'; g2.fillRect(0, 0, xrayC.width, xrayC.height); g2.globalCompositeOperation = 'source-over';
-  blit(ctx, xrayC, x, y, 0.55 * k);
+  blit(ctx, bodyC, x, y, 0.28 * k);
+  ctx.globalCompositeOperation = 'lighter';
+  blit(ctx, xrayC, x, y, 0.9 * k);
   ctx.restore();
 }
+const XRAY_RING = [[-1, 0], [1, 0], [0, -1], [0, 1], [-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]];
 
 export function heroLights(h, G, push) {
   if (!h || (h.state === 'dead' && h.st > 1.2)) return;

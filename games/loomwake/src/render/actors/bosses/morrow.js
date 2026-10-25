@@ -128,7 +128,7 @@ export default function draw(ctx, e, G, P) {
   let sunk = e.sunk || 0;
   if (e.state === 'intro') sunk = 1 - ease(k01(e.st / 2.2));
   const dying = e.state === 'dying' ? k01(e.st / 3.0) : 0;
-  if (dying) sunk = Math.max(sunk, ease(k01((dying - 0.35) / 0.65)) * 0.8);
+  if (dying) sunk = Math.max(sunk, ease(k01(dying / 0.34)) * 0.4 + ease(k01((dying - 0.4) / 0.6)) * 0.4);
   const phaseK = e.state === 'phase' ? k01(e.st / 2.8) : 0;
   const stag = e.state === 'stagger';
 
@@ -289,7 +289,7 @@ export default function draw(ctx, e, G, P) {
     if (hold.lantern) {
       const [lx, ly] = hold.lantern;
       const lA = (pz.m === 'sweep' ? 0.9 + pz.wind * 0.6 : 0.75) * (dying ? 1 - k01((dying - 0.75) / 0.25) : 1);
-      const flick = 0.9 + Math.sin(t * 13) * 0.05 + Math.sin(t * 7.3) * 0.05;
+      const flick = (0.9 + Math.sin(t * 13) * 0.05 + Math.sin(t * 7.3) * 0.05) * (dying ? 0.45 + 0.55 * Math.max(0.15, Math.sin(t * 9.1) * Math.sin(t * 3.7 + 1) * 0.5 + 0.5) : 1); // gutters when beaten
       glow(ctx, lx + sx(ly), ly + oy, 70 * flick, C.lantern, 0.55 * lA);
       glow(ctx, lx + sx(ly), ly + oy, 22, C.lanternHot, 0.9 * lA);
       lightS(lx + sx(ly), ly + oy, 300 * flick, C.lantern, 0.85 * lA);
@@ -299,7 +299,7 @@ export default function draw(ctx, e, G, P) {
     if (phaseK) glow(ctx, 0, -180 + oy, 160, C.water, Math.sin(phaseK * Math.PI) * 0.5);
   }
   drawFx(ctx, e);
-  if (dying) unravelFx(e, G, { rate: dying < 0.85 ? 80 : 0, w: 140, h: 220, color: '#06070f', color2: C.water, mix: 0.3, vx: 0 }, dt);
+  if (dying) unravelFx(e, G, { rate: (dying < 0.85 ? 80 : 0) * (e.held ? 0.1 : 1), w: 140, h: 220, color: '#06070f', color2: C.water, mix: 0.3, vx: 0 }, dt);
   else if (A.fx && A.fx.length) unravelFx(e, G, { rate: 0 }, dt);
   if (live > 0.05) lightS(0, -180 + oy, 200, '#7fb0ff', 0.35 * live + singing * 0.3);
   ctx.restore();

@@ -160,7 +160,13 @@ export function createSettings(ui) {
     setTimeout(() => body.querySelector(`[data-bind="${act}"][data-slot="${slot}"]`)?.focus(), 20);
   }
 
-  const say = (ok, text) => { for (const n of [saveNote, saveText && saveText.note]) if (n) { n.className = 'note ' + (ok ? 'ok' : 'err'); n.textContent = text; } };
+  // one message in one place: the Save Data note when that tab is open, else the footer note
+  const say = (ok, text) => {
+    const inTab = saveText && saveText.note && saveText.note.isConnected;
+    for (const n of [saveNote, saveText && saveText.note]) if (n) { n.className = 'note'; n.textContent = ''; }
+    const n = inTab ? saveText.note : saveNote;
+    if (n) { n.className = 'note ' + (ok ? 'ok' : 'err'); n.textContent = text; }
+  };
   function exportText() { return call(['exportSave']); }
   bExport.addEventListener('click', () => {
     const s = exportText();
@@ -176,9 +182,22 @@ export function createSettings(ui) {
     say(true, 'Exported. Keep the file somewhere safe.');
   });
   function doImport(str) {
-    const r = call(['importSave'], str);
-    if (r && r.ok) { say(true, 'Imported. Your thread is restored.'); ui.toast('Save imported', 'ok'); }
-    else say(false, 'Could not import: ' + (r?.error || 'that does not look like a Loomwake save.'));
+    // a quick look first, so garbage is turned away before anyone is asked to overwrite anything
+    let looks = false;
+    try { const o = JSON.parse(str); looks = !!o && typeof o === 'object'; } catch { looks = false; }
+    if (!looks) { say(false, 'Could not import: that does not look like a Loomwake save.'); return; }
+    const prof = ui.G.profile ?? 0;
+    ui.confirm({
+      title: 'Replace this profile?',
+      text: `Importing overwrites Profile ${['I', 'II', 'III'][prof] || prof + 1} with the saved thread. Its current progress will be lost unless you exported it.`,
+      ok: 'Replace', cancel: 'Keep mine', danger: true,
+      onOk: () => {
+        const r = call(['importSave'], str);
+        if (r && r.ok) say(true, 'Imported. Your thread is restored.');
+        else say(false, 'Could not import: ' + (r?.error || 'that does not look like a Loomwake save.'));
+      },
+      onCancel: () => say(true, 'Import cancelled. Nothing was changed.'),
+    });
   }
   fileIn.addEventListener('change', () => {
     const f = fileIn.files && fileIn.files[0];

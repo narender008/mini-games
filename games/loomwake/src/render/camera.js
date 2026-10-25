@@ -11,6 +11,7 @@ import { BOSSES } from '../content/bosses.js';
 
 // painted extent above the feet (measured from the boss painters: crowns, staffs, helms), used for framing;
 // content/bosses.js may give frameHeight to override
+const HUB_ZOOM = 0.85, HUB_LOOK = 150;   // hub camera (world helper's measurement): zoom, and the target sits this far above Iri
 const FRAME_H = { veyl: 345, morrow: 400, aurum: 500, sable: 240 };
 function bossHeight(B) { const d = BOSSES[B.kind] || BOSSES[B.id]; return d?.frameHeight || FRAME_H[B.kind] || (B.height || d?.height || (B.r || 40) * 3.5) * 1.12 + 16; }
 
@@ -44,13 +45,37 @@ export function createCamera(G) {
     const y = zy < 0.6 ? y0 + (cam.viewH / 2 - TOP) / k : (y0 + y1) / 2 - ((TOP - BOT) / 2) / k;
     return { zoom, x: (x0 + x1) / 2, y };
   }
+  // Conversations: Iri and every speaker of the conversation who stands in the scene (hub NPCs) fit in the
+  // band above the dialogue box (about 260 css px tall), so nobody is hidden behind it.
+  const TT = 90, TB = 290, TS = 110;
+  const low = (s) => String(s || '').toLowerCase();
+  function frameTalk(G, h, zMax) {
+    const d = G.dialogue;
+    if (!d) return null;
+    const who = new Set([low(d.speaker)]);
+    if (d.queue) for (const l of d.queue) who.add(low(l.speaker));
+    let x0 = h.x - 50, x1 = h.x + 50, y0 = h.y - 130, y1 = h.y + 24;
+    for (const n of G.npcs || []) {
+      if (n.present === false || !(who.has(low(n.id)) || who.has(low(n.name)))) continue;
+      if (Math.hypot(n.x - h.x, n.y - h.y) > 900) continue;   // a far speaker is a voice, not a framing target
+      x0 = Math.min(x0, n.x - 60); x1 = Math.max(x1, n.x + 60); y0 = Math.min(y0, n.y - 170); y1 = Math.max(y1, n.y + 24);
+    }
+    const availW = Math.max(200, cam.viewW - TS * 2), availH = Math.max(160, cam.viewH - TT - TB);
+    const zoom = clamp(Math.min(zMax, availW / ((x1 - x0) * cam.base), availH / ((y1 - y0) * cam.base)), 0.6, zMax);
+    const k = cam.base * zoom;
+    return { zoom, x: (x0 + x1) / 2, y: (y0 + y1) / 2 - (TT + availH / 2 - cam.viewH / 2) / k };
+  }
   cam.update = (G, dt) => {
     const c = G.cfg.camera, h = G.hero;
     cam.t += dt;
     const B = G.boss && !G.boss.gone ? G.boss : null;
     let fit = null;
     if (B && h && !G.ui?.camZoom && !G.ui?.camFocus) fit = frameBoss(G, B, h);
-    const sceneZoom = G.ui?.camZoom ?? (G.scene === 'hub' ? 1.1 : fit ? fit.zoom : c.zoom);
+    // the hub: wider (0.85) with the view looking ahead of Iri (she walks up toward the Dreamdoor)
+    const hubish = G.scene === 'hub' || (G.scene === 'dialogue' && G.dialogue?.back === 'hub');
+    const baseZoom = hubish ? HUB_ZOOM : c.zoom;
+    if (!fit && h && G.scene === 'dialogue' && !G.ui?.camZoom && !G.ui?.camFocus) fit = frameTalk(G, h, baseZoom);
+    const sceneZoom = G.ui?.camZoom ?? (fit ? fit.zoom : baseZoom);
     cam.zoomTarget = sceneZoom;
     cam.zoom = lerp(cam.zoom, cam.zoomTarget + cam.punchZ, 1 - Math.exp(-dt * 6));
     cam.punchZ = Math.max(0, cam.punchZ - dt * 0.4);
@@ -58,7 +83,7 @@ export function createCamera(G) {
       let lead = c.lead;
       const ad = G.input?.aimDir;
       const lx = ad ? ad.x * lead : 0, ly = ad ? ad.y * lead * 0.6 : 0;
-      let tx = h.x + lx, ty = h.y - 30 + ly;
+      let tx = h.x + lx, ty = h.y - (hubish ? HUB_LOOK : 30) + ly;
       if (G.ui?.camFocus) { tx = lerp(tx, G.ui.camFocus.x, 0.5); ty = lerp(ty, G.ui.camFocus.y, 0.5); }
       else if (fit) { tx = lerp(tx, fit.x, 0.85); ty = lerp(ty, fit.y, 0.85); }
       const k = 1 - Math.exp(-dt * c.follow);

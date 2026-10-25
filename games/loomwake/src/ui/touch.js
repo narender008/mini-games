@@ -8,6 +8,8 @@ import { patron, boon, boonPatrons } from './data.js';
 
 const BTNS = [['attack', 'big'], ['special', ''], ['dash', ''], ['snare', ''], ['call', ''], ['interact', '']];
 
+const LABELS = { attack: 'Attack', special: 'Special', snare: 'Snare', dash: 'Dash', call: 'Call', interact: 'Use' };
+
 export function createTouch(ui) {
   const G = ui.G;
   const knob = h('div', { class: 'tknob' });
@@ -16,7 +18,7 @@ export function createTouch(ui) {
   const btns = {};
   const wrap = h('div', { class: 'tbtns' });
   for (const [k, cls] of BTNS) {
-    const b = h('div', { class: 'tbtn ' + cls, 'data-touch': k, role: 'button', 'aria-label': k, html: icon(k) + '<span class="cdr"></span>' });
+    const b = h('div', { class: 'tbtn ' + cls, 'data-touch': k, role: 'button', 'aria-label': k, html: '<span class="cdr"></span>' + icon(k) + `<span class="tl">${LABELS[k] || k}</span>` });
     btns[k] = b;
     wrap.appendChild(b);
   }

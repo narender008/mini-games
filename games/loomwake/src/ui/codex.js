@@ -4,6 +4,29 @@
 import { h, icon, corners, esc } from './dom.js';
 import { D, codexFor, speaker, portrait, patron, bossInfo, memoryPanel } from './data.js';
 
+// foe portraits come from the game's own painters (render/actors/enemies), loaded on first use
+let foeMod = null, foeLoad = null;
+function paintFoe(cv, id) {
+  const go = () => {
+    const g = cv.getContext('2d');
+    const k = D.enemies?.[id] || {};
+    const hgt = k.height || 80, r = k.r || 22;
+    const e = { id: 0, kind: id, art: k.art || id, team: 'foe', x: 0, y: 0, z: 0, vx: 0, vy: 0, r, height: hgt, hp: 1, maxHp: 1, armor: k.armor || 0, maxArmor: k.armor || 0,
+      facing: Math.PI / 2 + 0.35, aim: Math.PI / 2, state: 'idle', st: 0.5, pose: 'idle', pt: 0, flash: 0, stun: 0, elite: false, region: (k.regions || [])[0], status: {}, statuses: {} };
+    const G = { t: 1.2, frame: 72, chamber: { region: e.region }, hero: { x: 0, y: 400 }, foes: [e] };
+    const sc = Math.min(2.4, 150 / (hgt + 30), 170 / (r * 3.2));
+    g.clearRect(0, 0, 192, 192);
+    const bg = g.createRadialGradient(96, 120, 6, 96, 110, 100); bg.addColorStop(0, 'rgba(255,90,120,0.16)'); bg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = bg; g.fillRect(0, 0, 192, 192);
+    g.save(); g.translate(96, 160); g.scale(sc, sc);
+    try { foeMod.drawFoe(g, e, G, { noFoeCache: true, scale: 1, tier: 'high' }); } catch (err) { /* a painter that needs a live room: leave the glow */ }
+    g.restore();
+  };
+  if (foeMod) return go();
+  foeLoad = foeLoad || import('../render/actors/enemies/index.js').then((m) => { foeMod = m; }).catch(() => { foeMod = null; });
+  foeLoad.then(() => { if (foeMod) go(); });
+}
+
 const CATS = [['characters', 'Characters'], ['patrons', 'Patrons'], ['bosses', 'Guardians'], ['enemies', 'The Unravelled'], ['regions', 'Regions'], ['memories', 'Memory Threads']];
 
 export function createCodex(ui) {
@@ -69,6 +92,7 @@ export function createCodex(ui) {
     const pc = pid ? portrait(pid === 'sable' ? 'sable' : pid, 'neutral', 192) : null;
     const hd = h('div', { class: 'hd' });
     if (pc) { const cv = h('canvas', { width: 192, height: 192 }); cv.getContext('2d').drawImage(pc, 0, 0, 192, 192); hd.appendChild(cv); }
+    else if (cat === 'enemies') { const cv = h('canvas', { width: 192, height: 192, class: 'foe' }); hd.appendChild(cv); paintFoe(cv, o.id); }
     else hd.appendChild(h('span', { class: 'ic', style: { width: '64px', height: '64px', color: color(cat, o.id) }, html: icon(cat === 'regions' ? 'door' : cat === 'enemies' ? 'elite' : 'book') }));
     hd.appendChild(h('div', {}, h('h3', { text: o.name }), o.title ? h('div', { class: 'ep', text: o.title }) : null));
     page.appendChild(hd);
@@ -113,6 +137,7 @@ export function createCodex(ui) {
       body.style.overflow = 'hidden';
       render();
     },
+    hide() { this.__arg = undefined; },
     dataReady() { if (this.on) { data = codexFor(ui.G) || {}; render(); } },
     back() { close(); },
     tab(dir) { const i = CATS.findIndex((c) => c[0] === cat); cat = CATS[(i + dir + CATS.length) % CATS.length][0]; sel = null; body.style.overflow = 'hidden'; render(); setTimeout(() => tabs.querySelector('.tab.on')?.focus(), 10); },

@@ -38,7 +38,7 @@ export function createRenderer(G, canvas, opts = {}) {
   const M = { env: null, enemies: null, bosses: null, npcs: null, weapons: null, powers: null };
   const R = { cam, fx, quality: Q, light, M };
   let W = 0, H = 0, cssW = 0, cssH = 0, DPR = 1, BASE = 1, SCALE = 1, VIG = null;
-  let t = 0, envTier = null, envQ = null, envFor = null, env = null, hurtT = 0, chroma = 0, postA = null, postB = null;
+  let t = 0, envTier = null, envQ = null, envFor = null, env = null, hurtT = 0, chroma = 0;
 
   const shadow = (c, x, y, rx, ry, a = 0.42) => { if (a <= 0) return; c.fillStyle = `rgba(4,4,20,${a})`; c.beginPath(); c.ellipse(x, y, rx, ry ?? rx * 0.36, 0, 0, TAU); c.fill(); };
   const P = R.P = {
@@ -56,7 +56,6 @@ export function createRenderer(G, canvas, opts = {}) {
     VIG = mk(W, H);
     const v = VIG.getContext('2d'), g = v.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
     g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(2,2,12,0.7)'); v.fillStyle = g; v.fillRect(0, 0, W, H);
-    postA = postB = null;
   };
   addEventListener('resize', R.resize);
   R.resize();
@@ -220,7 +219,7 @@ export function createRenderer(G, canvas, opts = {}) {
   // ---------------------------------------------------------------- frame
   const list = [];
   let listN = 0;
-  const push = (y, f) => { let o = list[listN]; if (!o) o = list[listN] = { y: 0, f: null }; o.y = y; o.f = f; listN++; };
+  const push = (y, f, cat = 'other') => { let o = list[listN]; if (!o) o = list[listN] = { y: 0, f: null, cat }; o.y = y; o.f = f; o.cat = cat; listN++; };
 
   let xrayK = 0;
   const darkO = { color: '#04051a', a: 0.8 };
@@ -278,12 +277,12 @@ export function createRenderer(G, canvas, opts = {}) {
       ctx.globalAlpha = a;
       if (p.draw) p.draw(ctx, t); else ctx.drawImage(p.img, p.x - p.ox, p.y - p.oy, p.w, p.h);
       ctx.globalAlpha = 1;
-    });
+    }, 'prop');
     const ch = G.chamber;
-    if (ch && ch.doors) { const dd = pick(M.env, 'drawDoor'); for (const d of ch.doors) push(d.y, () => (dd ? dd(ctx, d, ch, t, P) : drawFallbackDoor(ctx, d, ch, t, P))); }
-    for (const p of G.pickups) push(p.y, () => drawFallbackPickup(ctx, p, G, P));
+    if (ch && ch.doors) { const dd = pick(M.env, 'drawDoor'); for (const d of ch.doors) push(d.y, () => (dd ? dd(ctx, d, ch, t, P) : drawFallbackDoor(ctx, d, ch, t, P)), 'door'); }
+    for (const p of G.pickups) push(p.y, () => drawFallbackPickup(ctx, p, G, P), 'pickup');
     const npc = pick(M.npcs, 'drawNpc', 'drawNPC', 'draw', 'default');
-    if (npc && G.npcs) for (const n of G.npcs) push(n.y, () => { ctx.save(); ctx.translate(n.x, n.y); npc(ctx, n, G, P); ctx.restore(); });
+    if (npc && G.npcs) for (const n of G.npcs) push(n.y, () => { ctx.save(); ctx.translate(n.x, n.y); npc(ctx, n, G, P); ctx.restore(); }, 'npc');
     const drawFoe = pick(M.enemies, 'drawFoe');
     const BP = M.bosses?.PAINTERS;
     for (const e of G.foes) {
@@ -294,15 +293,19 @@ export function createRenderer(G, canvas, opts = {}) {
         else if (!e.fallback && drawFoe) drawFoe(ctx, e, G, P);
         else drawFallbackFoe(ctx, e, G, P);
         ctx.restore();
-      });
+      }, e.boss ? 'boss' : 'foe');
     }
-    if (h && !h.hidden && G.scene !== 'title' && G.scene !== 'profiles') push(h.y, () => drawHero(ctx, h, G, P));
+    if (h && !h.hidden && G.scene !== 'title' && G.scene !== 'profiles') push(h.y, () => drawHero(ctx, h, G, P), 'hero');
     const ws = pick(M.weapons, 'weaponSorted'); if (ws && h) ws(h, G, P, push);
     fx.sorted(push, ctx, P);
     const L = list.slice(0, listN).sort((a, b) => a.y - b.y);
     // every sorted painter starts from a clean state: a leaked alpha/composite from one painter must never
     // make the next actor (a boss) pale or see-through
-    for (const it of L) { ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; if (ctx.filter !== 'none') ctx.filter = 'none'; it.f(); }
+    const PI = R.profItems;
+    for (const it of L) {
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; if (ctx.filter !== 'none') ctx.filter = 'none';
+      if (PI) { const t0 = performance.now(); it.f(); ctx.getImageData(0, 0, 1, 1); PI[it.cat] = (PI[it.cat] || 0) + performance.now() - t0; } else it.f();
+    }
     for (const p of G.projectiles) if (isFoeOwn(p)) { try { M.enemies.drawFoeProjectile(ctx, p, G, P); } catch (err) { console.error('[loomwake] drawFoeProjectile', err); } }
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
     mark('sorted');
@@ -336,7 +339,7 @@ export function createRenderer(G, canvas, opts = {}) {
     const dk = E?.dark, br = G.settings?.brightness ?? 1;
     darkO.color = dk?.color || '#04051a'; darkO.a = clamp((dk?.a ?? 0.8) * AMBIENT_LIFT * clamp(2 - br, 0.3, 1.6), 0, 0.95);
     const pk = E && E.pulseImg ? clamp(E.glowPulse(t), 0, 1) - E.pulseMin : 0;
-    light.render(ctx, cam, { W, H, scale: SCALE }, darkO, Q.lightRes, pk > 0.01 ? (lc, vr) => {
+    light.render(ctx, cam, { W, H, scale: SCALE, vig: VIG }, darkO, Q.lightRes, pk > 0.01 ? (lc, vr) => {
       // the floor glow's pulse above its baked minimum, drawn at the light layer's resolution (visible part only)
       const x0 = Math.max(E.origin.x, vr.x0), y0 = Math.max(E.origin.y, vr.y0), x1 = Math.min(E.origin.x + E.w, vr.x1), y1 = Math.min(E.origin.y + E.h, vr.y1);
       if (x1 <= x0 || y1 <= y0) return;
@@ -365,8 +368,9 @@ export function createRenderer(G, canvas, opts = {}) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (E && E.front) E.front(ctx, camInfo, t, dt);
     mark('front');
-    if (E && E.tint) { ctx.globalCompositeOperation = 'soft-light'; ctx.globalAlpha = 0.35; ctx.fillStyle = E.tint; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
-    ctx.drawImage(VIG, 0, 0);
+    // (a full-screen soft-light pass: the high tier only)
+    if (E && E.tint && Q.tier === 'high') { ctx.globalCompositeOperation = 'soft-light'; ctx.globalAlpha = 0.35; ctx.fillStyle = E.tint; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
+    // (the vignette is drawn inside the light layer's composite)
     const flashes = G.settings?.flashes !== false;
     if (hurtT > 0 && flashes) { ctx.fillStyle = `rgba(255,40,80,${hurtT * 0.5})`; ctx.fillRect(0, 0, W, H); }
     if (h && h.hp > 0 && h.hp / h.maxHp < 0.3 && !h.dead) { const a = (0.3 - h.hp / h.maxHp) * (0.6 + 0.4 * Math.sin(t * 5)); ctx.globalAlpha = a; ctx.fillStyle = '#ff2050'; ctx.globalCompositeOperation = 'multiply'; ctx.drawImage(VIG, 0, 0); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
@@ -374,16 +378,24 @@ export function createRenderer(G, canvas, opts = {}) {
     mark('post');
   };
 
+  // chromatic flash: red and cyan fringes at the screen edges, baked once per size at quarter resolution
+  // (it used to copy the whole frame twice, a mid-frame read-back of the main canvas: ~2 ms per flash frame)
+  let CHR = null;
   function chromatic(k) {
-    if (!postA || postA.width !== W) { postA = mk(W, H); postB = mk(W, H); }
-    const a = postA.getContext('2d'), b = postB.getContext('2d');
-    a.globalCompositeOperation = 'source-over'; a.drawImage(canvas, 0, 0);
-    b.globalCompositeOperation = 'source-over'; b.drawImage(canvas, 0, 0);
-    a.globalCompositeOperation = 'multiply'; a.fillStyle = '#ff3030'; a.fillRect(0, 0, W, H);
-    b.globalCompositeOperation = 'multiply'; b.fillStyle = '#30d0ff'; b.fillRect(0, 0, W, H);
-    const off = Math.max(1, Math.round(4 * k * DPR));
-    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.3 * k;
-    ctx.drawImage(postA, -off, 0); ctx.drawImage(postB, off, 0);
+    if (!CHR || CHR.__w !== W || CHR.__h !== H) {
+      const w = Math.max(8, Math.round(W / 4)), h = Math.max(8, Math.round(H / 4));
+      CHR = mk(w, h); CHR.__w = W; CHR.__h = H;
+      const g = CHR.getContext('2d');
+      let gr = g.createLinearGradient(0, 0, w, 0);
+      gr.addColorStop(0, 'rgba(255,48,48,0.9)'); gr.addColorStop(0.16, 'rgba(255,48,48,0)'); gr.addColorStop(0.84, 'rgba(48,208,255,0)'); gr.addColorStop(1, 'rgba(48,208,255,0.9)');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+      g.globalCompositeOperation = 'destination-in';
+      gr = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.2, w / 2, h / 2, Math.max(w, h) * 0.62);
+      gr.addColorStop(0, 'rgba(0,0,0,0.25)'); gr.addColorStop(1, 'rgba(0,0,0,1)');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    }
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, 0.45 * k);
+    ctx.drawImage(CHR, 0, 0, W, H);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   }
   return R;

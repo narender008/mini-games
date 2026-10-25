@@ -19,8 +19,8 @@ const C = {
   porcelain: '#f1ebf4', porcelain2: '#b9aeca', blade: '#d9d6ee', bladeHi: '#ffffff', steel: '#5d5878',
   face: '#cfc4dc', faceSh: '#6e6088', lining: '#3b1d6e', gold: '#ffd27a', goldHi: '#fff1c4',
 };
-const S = 0.96;                        // local design units -> world px
-const W = 440, H = 330, AX = 220, AY = 250;
+const S = 1.15;                        // local design units -> world px (about 1.6x Iri)
+const W = 520, H = 400, AX = 260, AY = 300;
 
 // ---------- cached parts ----------
 const LAY = {
@@ -169,7 +169,10 @@ export default function draw(ctx, e, G, P) {
 
   const dying = e.state === 'dying' ? k01(e.st / 3.0) : 0;
   const phaseK = e.state === 'phase' ? k01(e.st / 2.8) : 0;
-  const intro = e.state === 'intro' ? k01(e.st / 3.0) : 1;
+  // the entrance (3.4 s): a giant silhouette looms over the arena and sinks toward his mark (drawOverlay),
+  // black threads rush in from every side and knot into him, he lands, and the slit flares
+  const intro = e.state === 'intro' ? k01(e.st / 3.4) : 1;
+  const landK = e.state === 'intro' ? Math.max(0, 1 - Math.abs(intro - 0.78) / 0.08) : 0;
   // the mask stays on until the transformation breaks it (about 1 s in)
   const masked = e.state === 'phase' ? e.st < 1.0 : e.masked !== false && (e.phase || 1) === 1;
   const crack = e.state === 'phase' ? k01(e.st / 1.0) : 0;
@@ -209,9 +212,12 @@ export default function draw(ctx, e, G, P) {
   const big = hot ? 1.25 : 1;
   shadow(ctx, 56 * big, 16 * big, 0.65 * (1 - dying * 0.5));
   shadow(ctx, 30, 10, 0.55);
-  if (hot && !dying) {
-    // the floor under him forgets its colour: a slow pool of unwoven dark
-    glow(ctx, 0, 0, 90, '#2a0a4a', 0.5);
+  // a pool of unwoven dark around him: the floor forgets its colour; keeps him readable over bright effects
+  {
+    const ia = (1 - dying) * (e.state === 'intro' ? ease(k01((intro - 0.35) / 0.4)) : 1);
+    const pul = 1 + Math.sin(t * 1.3) * 0.05;
+    put(ctx, auraSprite(), 0, -40 * S, 0, (hot ? 1.25 : 1.05) * pul, (hot ? 1.25 : 1.05) * pul, 0.9 * ia);
+    if (hot) glow(ctx, 0, 0, 110, '#2a0a4a', 0.5 * ia);
   }
 
   // ---------- afterimages (phase 2 dashes, lunges) ----------
@@ -323,8 +329,7 @@ export default function draw(ctx, e, G, P) {
       strand(g, [[x, y], [x + Math.sin(t * 3 + i) * 3 - sway * 0.3, y + L * 0.5], [x + Math.sin(t * 2.4 + i * 2) * 5 - sway * 0.6, y + L]], 0.9, i % 2 ? C.thread : C.coatHi, 0.85);
     }
     // the torso: a narrow cuirass of black thread, cross-stitched
-    const tg = g.createLinearGradient(-14, 0, 14, 0); tg.addColorStop(0, C.coat); tg.addColorStop(0.6, C.coat2); tg.addColorStop(1, C.coatHi);
-    g.fillStyle = tg;
+    g.fillStyle = C.coat2;
     g.beginPath(); g.moveTo(-15, -88 + hy); g.quadraticCurveTo(0, -93 + hy, 15, -88 + hy); g.lineTo(11, -50 + hy); g.lineTo(-11, -50 + hy); g.closePath(); g.fill();
     g.strokeStyle = C.ink; g.lineWidth = 1.4; g.stroke();
     g.strokeStyle = hot ? hexA(C.magenta, 0.8) : hexA(C.thread, 0.75); g.lineWidth = 0.9;
@@ -391,8 +396,7 @@ export default function draw(ctx, e, G, P) {
     g.strokeStyle = C.ink; g.lineWidth = 1.3; g.stroke();
     // the face, shadowed by the hood
     g.fillStyle = C.lining; g.beginPath(); g.ellipse(5, -2, 10, 11.5, 0, 0, TAU); g.fill();
-    const fg = g.createLinearGradient(0, -12, 0, 10); fg.addColorStop(0, C.faceSh); fg.addColorStop(0.45, C.face); fg.addColorStop(1, '#a596ba');
-    g.fillStyle = fg; g.beginPath(); g.ellipse(7, 0, 7.5, 9, 0.05, 0, TAU); g.fill();
+    g.fillStyle = C.face; g.beginPath(); g.ellipse(7, 0, 7.5, 9, 0.05, 0, TAU); g.fill();
     // hood shadow over the brow
     g.fillStyle = hexA(C.ink, 0.65); g.beginPath(); g.ellipse(6, -8, 10, 4.5, 0.05, 0, TAU); g.fill();
     // magenta eyes, and dark thread tear-tracks
@@ -421,8 +425,10 @@ export default function draw(ctx, e, G, P) {
     g.save(); g.globalCompositeOperation = 'lighter';
     const r1 = 132, r0 = 92;
     const a0 = Q.smear.a0, a1 = Q.smear.a1;
-    const gr = g.createRadialGradient(hxN, hyN, r0, hxN, hyN, r1); gr.addColorStop(0, 'rgba(255,61,94,0)'); gr.addColorStop(0.75, hexA(hot ? C.magenta : C.red, 0.18)); gr.addColorStop(0.97, hexA(C.redHi, 0.6)); gr.addColorStop(1, 'rgba(255,208,216,0)');
-    g.fillStyle = gr; g.beginPath(); g.arc(hxN, hyN, r1, Math.min(a0, a1), Math.max(a0, a1)); g.arc(hxN, hyN, r0, Math.max(a0, a1), Math.min(a0, a1), true); g.closePath(); g.fill();
+    // a crescent of flat bands (no per-frame gradient): faint body, bright leading rim
+    const lo = Math.min(a0, a1), hi = Math.max(a0, a1);
+    g.fillStyle = hexA(hot ? C.magenta : C.red, 0.16); g.beginPath(); g.arc(hxN, hyN, r1, lo, hi); g.arc(hxN, hyN, r0, hi, lo, true); g.closePath(); g.fill();
+    g.strokeStyle = hexA(C.redHi, 0.6); g.lineWidth = 3; g.beginPath(); g.arc(hxN, hyN, r1 - 2, lo, hi); g.stroke();
     g.restore();
   }
   // the needle (dropped on the floor in the choice)
@@ -440,6 +446,15 @@ export default function draw(ctx, e, G, P) {
   g.restore(); // lean
   g.restore(); // scale
 
+  // ---------- the looming silhouette (intro): a black copy of the clean body for drawOverlay ----------
+  if (e.state === 'intro' && intro < 0.75) {
+    if (!LOOM.c || LOOM.c.width !== B.c.width || LOOM.c.height !== B.c.height) LOOM.c = mk(B.c.width, B.c.height, false);
+    const lg = LOOM.c.getContext('2d');
+    lg.setTransform(1, 0, 0, 1, 0, 0); lg.globalCompositeOperation = 'source-over'; lg.globalAlpha = 1;
+    lg.clearRect(0, 0, LOOM.c.width, LOOM.c.height); lg.drawImage(B.c, 0, 0);
+    lg.globalCompositeOperation = 'source-in'; lg.fillStyle = '#030106'; lg.fillRect(0, 0, LOOM.c.width, LOOM.c.height);
+    LOOM.ax = B.ax; LOOM.ay = B.ay; LOOM.w = B.w; LOOM.h = B.h; LOOM.side = side; LOOM.at = e.id;
+  }
   // ---------- ghosts (copied from the clean buffer, tinted violet) ----------
   if (trail.length > 1) {
     const gc = ghostCanvas(B);
@@ -461,19 +476,18 @@ export default function draw(ctx, e, G, P) {
   // ---------- composite ----------
   const stag = e.state === 'stagger';
   const flash = Math.max(Math.pow(clamp((e.flash || 0) / 0.1, 0, 1), 1.5) * 0.55, stag ? 0.08 + Math.max(0, Math.sin(t * 12)) * 0.1 : 0);
-  const rip = damp(e, 'rip', e.riposteFlash ? 1 : 0, 10, dt);
-  if (e.riposteFlash) e.riposteFlash = Math.max(0, e.riposteFlash - dt * 3);
+  const rip = e.riposteFlash ? clamp(1 - (G.t - e.riposteFlash) / 0.45, 0, 1) : 0;
   present(ctx, e, G, B, {
     flash, white: hot ? '#ffd6f4' : '#ffffff',
     tint: dying ? ['#05030a', dying * 0.4] : phaseK ? [C.thread, Math.sin(phaseK * Math.PI) * 0.35] : e.state === 'braided' ? [C.gold, ease(k01(e.st / 2)) * 0.3] : null,
-    unravel: e.state === 'intro' ? 1 - ease(k01((e.st - 0.2) / 1.8)) : dying > 0.3 ? (dying - 0.3) / 0.7 : 0,
-    rim: hot ? '#ff8fe8' : '#c9b8ff', rimA: hot ? 0.7 : 0.55, line: 1.4,
+    unravel: e.state === 'intro' ? 1 - ease(k01((intro - 0.45) / 0.33)) : dying > 0.3 ? (dying - 0.3) / 0.7 : 0,
+    rim: hot ? '#ff8fe8' : '#ff9aa8', rimA: hot ? 0.85 : 0.75, line: 2.4, ink: '#000000',
   });
 
   // ---------- glows and lights ----------
   const toW = (lx, ly) => [(lx - lean * ly) * S * side, (ly - hover) * S];   // local -> painter coords
   const [hdx, hdy] = toW(hx0 + 6, hy0 - 2);
-  const live = (1 - dying) * (e.state === 'intro' ? ease(k01((e.st - 1.2) / 1.2)) : 1);
+  const live = (1 - dying) * (e.state === 'intro' ? ease(k01((intro - 0.6) / 0.18)) + landK * 0.8 : 1);
   if (masked) {
     // the slit burns red; brighter in the riposte guard and as it cracks
     const [sx, sy] = toW(hx0 + 7, hy0 - 3);
@@ -482,13 +496,13 @@ export default function draw(ctx, e, G, P) {
     const sp = toW(hx0 + 3, hy0 - 3);
     ctx.translate(sp[0], sp[1]); ctx.rotate(head * side); ctx.scale(0.62 * S * side, 0.62 * S);
     put(ctx, LAY.slit(), 0, 0); ctx.restore();
-    glow(ctx, sx, sy, 22 + rip * 40, C.red, 0.55 * ia);
-    light(e, sx, sy, 140 + rip * 100, C.red, 0.5 * ia);
+    glow(ctx, sx, sy, 34 + rip * 40, C.red, 0.65 * ia);
+    light(e, sx, sy, 300 + rip * 140, C.red, 0.85 * ia);
   } else {
     const ia = live * (0.85 + 0.15 * Math.sin(t * 5));
     for (const ex of [12, 5]) { const p = toW(hx0 + ex, hy0 - 2); glow(ctx, p[0], p[1], 6, C.magenta, ia); }
     glow(ctx, hdx, hdy, 26, C.magenta, 0.16 * ia);
-    light(e, hdx, hdy, 160, C.magenta, 0.55 * ia);
+    light(e, hdx, hdy, 280, C.magenta, 0.8 * ia);
   }
   // the needle's point and edge
   {
@@ -516,13 +530,46 @@ export default function draw(ctx, e, G, P) {
   if (e.state === 'braided') braidFx(ctx, t, e.st);
 
   drawFx(ctx, e);
-  if (dying) unravelFx(e, G, { rate: dying < 0.92 ? 160 : 0, w: 70, h: 110, color: C.ink, color2: hot ? C.magenta : C.red, mix: 0.45, vx: 0 }, dt);
-  else if (e.state === 'intro') unravelFx(e, G, { rate: e.st < 1.8 ? 90 : 0, w: 80, h: 110, color: C.ink, color2: C.thread, mix: 0.4 }, dt);
+  if (dying) unravelFx(e, G, { rate: (dying < 0.92 ? 160 : 0) * (e.held ? 0.08 : 1), w: 70, h: 110, color: C.ink, color2: hot ? C.magenta : C.red, mix: 0.45, vx: 0 }, dt);
+  else if (e.state === 'intro') unravelFx(e, G, { rate: intro > 0.5 && intro < 0.8 ? 60 : 0, w: 90, h: 140, color: C.ink, color2: C.red, mix: 0.3 }, dt);
+  if (e.state === 'intro') gatherFx(ctx, intro, t, landK);
   else if (A.fx && A.fx.length) unravelFx(e, G, { rate: 0 }, dt);
   e.light = e.lights[0] || null;
 }
 
 let ghostC = null;
+const LOOM = { c: null };
+let auraC = null;
+// a soft disc of dark, painted once (gradients only here, cached)
+function auraSprite() {
+  if (auraC) return auraC;
+  auraC = spr('sable.aura', 260, 140, 130, 70, 1, (g) => {
+    g.scale(1, 0.5);
+    const gr = g.createRadialGradient(0, 0, 0, 0, 0, 128);
+    gr.addColorStop(0, 'rgba(4,1,10,0.85)'); gr.addColorStop(0.55, 'rgba(10,3,22,0.55)'); gr.addColorStop(1, 'rgba(10,3,22,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(0, 0, 128, 0, TAU); g.fill();
+  });
+  return auraC;
+}
+// threads rushing in from the arena and knotting into him (plain strokes; deterministic from the seed)
+const GATHER = (() => { const R = srng(57), o = []; for (let i = 0; i < 34; i++) o.push({ a: R() * TAU, r: 260 + R() * 260, d: R() * 0.12, w: 1 + R() * 2.2, bend: (R() - 0.5) * 1.6, red: R() < 0.25 }); return o; })();
+function gatherFx(ctx, k, t, landK) {
+  ctx.lineCap = 'round';
+  const cy = -70 * S;
+  for (const q of GATHER) {
+    const u = ease(k01((k - 0.12 - q.d) / 0.5));
+    if (u <= 0 || u >= 1) continue;
+    const r = q.r * (1 - u), r2 = Math.max(0, r - 90 - q.r * 0.2);
+    const x1 = Math.cos(q.a) * r, y1 = cy + Math.sin(q.a) * r * 0.6;
+    const x2 = Math.cos(q.a + q.bend * 0.3) * r2, y2 = cy + Math.sin(q.a + q.bend * 0.3) * r2 * 0.6;
+    const mx = (x1 + x2) / 2 + Math.cos(q.a + 1.57) * 30 * q.bend, my = (y1 + y2) / 2 + Math.sin(q.a + 1.57) * 18 * q.bend;
+    ctx.globalAlpha = Math.sin(u * Math.PI) * 0.95;
+    ctx.strokeStyle = q.red ? C.red : C.ink; ctx.lineWidth = q.w * 1.6;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo(mx, my, x2, y2); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  if (landK > 0) { glow(ctx, 0, cy, 200 * landK + 40, C.red, 0.55 * landK); glow(ctx, 0, 0, 160, '#3a0a5a', 0.6 * landK); }
+}
 function ghostCanvas(B) {
   if (!ghostC || ghostC.width !== B.c.width || ghostC.height !== B.c.height) ghostC = mk(B.c.width, B.c.height, false);
   return ghostC;
@@ -648,6 +695,7 @@ export function drawProjectile(ctx, p, G) {
 
 // Phase 2: the whole arena desaturates toward the edges and threads drift up from the floor.
 export function drawOverlay(ctx, G, P, b) {
+  if (b && b.state === 'intro') { drawLoom(ctx, b); return; }
   if (!b || b.masked !== false || b.state === 'braided') return;
   const A = (G.chamber && G.chamber._bossArena) || { cx: 0, cy: 0, rx: 900, ry: 560 };
   const t = G.t;
@@ -662,4 +710,24 @@ export function drawOverlay(ctx, G, P, b) {
     ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + Math.sin(t * 2 + i) * 8, y - 8, x + Math.sin(t * 1.5 + i) * 4, y - 18); ctx.stroke();
   }
   ctx.globalAlpha = 1;
+}
+
+// The intro's looming silhouette: his own shape in black, three times his size, high over the arena,
+// sinking onto his mark as the threads gather; two red points where the slit will be.
+function drawLoom(ctx, b) {
+  if (!LOOM.c || LOOM.at !== b.id) return;
+  const st = (b.anim && b.anim.dispSt) ?? b.st;
+  const k = k01(st / 3.4);
+  const a = k01(k / 0.1) * (1 - k01((k - 0.5) / 0.22));
+  if (a <= 0.01) return;
+  const d = ease(k01((k - 0.12) / 0.55));
+  const sc = lerp(2.7, 1, d), x = b.x, y = b.y - lerp(200, 0, d);
+  ctx.save();
+  ctx.globalAlpha = a * 0.82;
+  ctx.drawImage(LOOM.c, x - LOOM.ax * sc, y - LOOM.ay * sc, LOOM.w * sc, LOOM.h * sc);
+  ctx.globalAlpha = 1;
+  const ex = x + 9 * S * LOOM.side * sc, ey = y - 106 * S * sc;
+  glow(ctx, ex, ey, 26 * sc, C.red, a * 0.9);
+  ctx.fillStyle = hexA(C.redHi, a); ctx.fillRect(ex - 1.2 * sc, ey - 9 * sc, 2.4 * sc, 18 * sc);
+  ctx.restore();
 }

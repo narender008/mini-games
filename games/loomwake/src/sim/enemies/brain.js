@@ -17,6 +17,7 @@
 import * as C from '../combat.js';
 import { ATTACKS } from '../../content/enemies.js';
 import { clamp, damp, len, segDist, wrapAng, pointInPoly } from '../../core/math.js';
+import { navOf, flowPoint, walkable, pitPush, seesHero } from './nav.js';
 
 export const DYING = 1.25;      // seconds the unravel plays
 export const SPAWN = 0.6;       // the vortex
@@ -66,7 +67,9 @@ export function spread(G, e, radius = 70) {
   let sx = 0, sy = 0;
   for (const o of G.foes) {
     if (o === e || o.dead || o.state === 'pending') continue;
-    const dx = e.x - o.x, dy = e.y - o.y, d = len(dx, dy), m = radius + (o.r - 18);
+    const dx = e.x - o.x, dy = e.y - o.y, m = radius + (o.r - 18);
+    if (dx > m || dx < -m || dy > m || dy < -m) continue;
+    const d = len(dx, dy);
     if (d > 0.01 && d < m) { const k = (m - d) / m; sx += (dx / d) * k; sy += (dy / d) * k; }
   }
   return [sx, sy];
@@ -80,23 +83,48 @@ export function ringPoint(G, e, dist, dt, drift = 0.5) {
   a += e.flank * drift * dt * 2;
   // pull toward the slot angle relative to other attackers of the hero
   let crowd = 0;
+  const m2 = dist * 1.6 * (dist * 1.6);
   for (const o of G.foes) {
     if (o === e || o.dead || o.boss || o.state === 'pending') continue;
-    const oa = Math.atan2(o.y - h.y, o.x - h.x), d = wrapAng(a - oa);
-    if (Math.abs(d) < 0.7 && len(o.x - h.x, o.y - h.y) < dist * 1.6) crowd += Math.sign(d || e.flank) * (0.7 - Math.abs(d));
+    // (perf: the distance test first, squared, before the angle)
+    const ox = o.x - h.x, oy = o.y - h.y;
+    if (ox * ox + oy * oy >= m2) continue;
+    const d = wrapAng(a - Math.atan2(oy, ox));
+    if (Math.abs(d) < 0.7) crowd += Math.sign(d || e.flank) * (0.7 - Math.abs(d));
   }
   a += crowd * 0.9;
   return [h.x + Math.cos(a) * dist, h.y + Math.sin(a) * dist];
 }
 
-// Go toward (tx, ty) at speed, with spread, stopping gently.
+// Go toward (tx, ty) at speed, with spread, stopping gently. When Iri is out of
+// sight, or a wall or pit lies on the straight walk (and the foe is not backing
+// away from her), it follows the chamber's flow field toward her instead (nav.js).
 export function goTo(G, e, tx, ty, speed, dt, accel = 7) {
+  let pathing = false;
+  const h = G.hero, g = h && navOf(G);
+  if (g) {
+    const away = len(tx - h.x, ty - h.y) > len(e.x - h.x, e.y - h.y) + 20;
+    if (e.los === false || (!away && !walkable(g, e.x, e.y, tx, ty, !!e.flying))) {
+      const p = flowPoint(G, e);
+      // out of sight they hurry round the wall (a slow caster should not take a minute to arrive)
+      if (p) { tx = p[0]; ty = p[1]; pathing = true; if (e.los === false) speed *= 1.3; }
+    }
+  }
+  e.pathing = pathing;
   const dx = tx - e.x, dy = ty - e.y, d = len(dx, dy);
   const [sx, sy] = spread(G, e);
+  const [px, py] = pitPush(G, e);
   let vx = 0, vy = 0;
-  if (d > 6) { const k = Math.min(1, d / 60); vx = (dx / d) * speed * k; vy = (dy / d) * speed * k; }
-  vx += sx * speed * 0.9; vy += sy * speed * 0.9;
+  if (d > 6) { const k = pathing ? 1 : Math.min(1, d / 60); vx = (dx / d) * speed * k; vy = (dy / d) * speed * k; }
+  vx += sx * speed * (pathing ? 0.5 : 0.9) + px * speed; vy += sy * speed * (pathing ? 0.5 : 0.9) + py * speed;
   steer(e, vx, vy, dt, accel);
+}
+
+// Sight to Iri, refreshed about ten times a second (staggered by id).
+export function updateSight(G, e) {
+  const t = G.t || 0;
+  if (e.losT == null || t < e.losT || t - e.losT >= 0.1) { e.los = seesHero(G, e); e.losT = t - (e.id % 5) * 0.02; }
+  return e.los;
 }
 
 // ---------- hero hit tests ----------
@@ -234,6 +262,7 @@ export function run(G, e, dt, M, X) {
   // enrage (Loomhulk and kin)
   if (e.def.enrage && !e.enraged && e.hp <= e.maxHp * 0.5) { e.enraged = true; e.speed *= 1.25; emit(G, 'foeEnrage', { e }); }
 
+  updateSight(G, e);
   const fn = e.atk ? X[e.atk] : null;
   switch (e.state) {
     case 'stagger':
@@ -273,7 +302,8 @@ export function run(G, e, dt, M, X) {
       if (e.state !== 'move') setState(e, 'move');
       e.cd -= dt;
       M.move(G, e, dt);
-      if (e.cd <= 0 && heroAlive(G)) {
+      // no attack without sight of Iri: through a wall nothing lands, and a cast would be a cheat
+      if (e.cd <= 0 && heroAlive(G) && e.los !== false) {
         const id = M.choose(G, e);
         if (id) {
           if (token(G, e)) begin(G, e, id, X);

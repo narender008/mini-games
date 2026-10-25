@@ -152,9 +152,11 @@ await test('boss defeat opens the way to the next region; Sable gives victory th
   const r = Run.door(G, 0);
   assert.equal(r.ok, true, r.error); assert.equal(G.run.region, 'choir'); assert.equal(G.run.chamber, 0);
   Run.boss(G, 'sable'); settle(G);
+  const lines = []; G.bus.on('line', (p) => lines.push(p.lineId));
   step(G, 120 * 2, false);
   for (let k = 0; k < 5 && G.scene === 'run'; k++) { Run.bossKill(G); step(G, 120 * 4, false); }
   assert.equal(G.scene, 'victory');
+  assert.ok(lines.some((id) => /^sableboss_defeat/.test(id)), `Sable's defeat lines were told before victory (${lines.join(', ')})`);
   assert.equal(G.meta.stats.wins, 1); assert.equal(G.meta.ending, 'first');
   Run.returnToHub(G); assert.equal(G.scene, 'ending');
   Run.returnToHub(G); assert.equal(settle(G), 'hub');
@@ -227,6 +229,39 @@ await test('Sable true-ending choice opens as a dialogue and the braid answer se
   assert.equal(G.meta.ending, 'true');
   assert.equal(G.meta.flags.endingChoice, 'braid');
   assert.notEqual(G.scene, 'dialogue');
+});
+
+await test('hub talk never shows a bare "..."; the fountain panel names its wanderer; the first wave waits for the region card', () => {
+  const G = makeSim(5);
+  Run.newGame(G, 0, { wipe: true }); settle(G);
+  for (const npc of ['orrin', 'thimbleby', 'pell', 'weaver', 'orrin', 'thimbleby']) {
+    Run.talk(G, npc);
+    const texts = [G.dialogue && G.dialogue.text, ...((G.dialogue && G.dialogue.queue) || []).map((l) => l.text)];
+    assert.ok(texts.every((t) => t && t.replace(/[.\s…]/g, '')), `${npc} said ${JSON.stringify(texts)}`);
+    settle(G);
+  }
+  const flushes = []; G.bus.on('flushBarks', (p) => flushes.push(p.why));
+  Run.startRun(G, { seed: 77 }); settle(G);
+  assert.ok(flushes.includes('region') && flushes.includes('chamber'));
+  assert.ok(G.run.ch.waveT >= 2.5, 'the first wave of a region is held for the title card');
+  G.run.plan[G.run.region][G.run.chamber] = 'fountain';
+  Run.enterChamber(G); settle(G);
+  Run.useFountain(G);
+  assert.equal(G.run.ch.fountain.npc, 'hob');
+});
+
+await test('a Memory Thread plays every line of every panel, each with its speaker', async () => {
+  const { MEMORIES } = await import('../src/content/memories.js');
+  const G = makeSim(5);
+  Run.newGame(G, 0, { wipe: true }); settle(G);
+  const m = MEMORIES.find((x) => x.panels.some((p) => p.lines.length > 1));
+  G.meta.memories.push(m.id);
+  Run.playMemory(G, m.id);
+  const want = m.panels.flatMap((p) => p.lines.map((l) => l.text));
+  const got = [G.dialogue.text];
+  for (let k = 0; k < 80 && G.dialogue && G.dialogue.queue.length; k++) { Run.advance(G); got.push(G.dialogue.text); }
+  assert.deepEqual(got, want);
+  assert.equal(G.dialogue.panel, m.panels.length - 1);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

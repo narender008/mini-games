@@ -45,7 +45,9 @@ function cells(id) {
   const def = BOSSES[id], n = def.phases.length + 1;
   const out = [];
   out.push({ label: 'intro 0.6s', state: 'intro', st: 0.6, phase: 1 });
+  out.push({ label: 'intro 1.4s', state: 'intro', st: 1.4, phase: 1 });
   out.push({ label: 'intro 2.2s', state: 'intro', st: 2.2, phase: 1 });
+  out.push({ label: 'intro 2.7s', state: 'intro', st: 2.7, phase: 1 });
   for (let p = 1; p <= n; p++) {
     out.push({ label: `phase ${p} idle`, state: 'idle', phase: p });
     for (const m of MOVES[id][p] || []) {
@@ -56,6 +58,7 @@ function cells(id) {
   }
   out.push({ label: 'stagger', state: 'stagger', st: 0.5, phase: 1 });
   out.push({ label: 'hit flash', state: 'idle', flash: 0.1, phase: 1 });
+  out.push({ label: 'defeated (held)', state: 'defeated', st: 2.0, phase: n, held: true });
   out.push({ label: 'dying 0.7s', state: 'dying', st: 0.7, phase: n });
   out.push({ label: 'dying 1.6s', state: 'dying', st: 1.6, phase: n });
   out.push({ label: 'dying 2.4s', state: 'dying', st: 2.4, phase: n });
@@ -67,7 +70,7 @@ function makeE(id, c, i) {
   const def = BOSSES[id];
   return {
     id: 100 + i, kind: id, boss: true, x: 0, y: 0, z: 0, vx: 0, vy: 0, r: def.r, hp: 1, maxHp: 1, armor: 1, maxArmor: 1,
-    facing: Math.PI / 2 + (c.act ? -0.5 : 0), aim: Math.PI / 2 - 0.4, state: c.state, st: c.st || 0, phase: c.phase, phases: def.phases.length + 1,
+    facing: Math.PI / 2 + (c.act ? -0.5 : 0), aim: Math.PI / 2 - 0.4, state: c.state, held: !!c.held, st: c.st || 0, phase: c.phase, phases: def.phases.length + 1,
     act: c.act ? { name: c.act, t: 0, once: {} } : null, pose: c.pose || 'idle', pt: c.pt || 0, flash: c.flash || 0,
     sunk: c.act === 'burrow' || c.act === 'sink' ? (c.pose === 'wind' ? 0.6 : 1) : 0, heat: c.phase > 1 ? (c.phase === 2 ? 0.75 : 1) : 0,
     masked: !(id === 'sable' && c.phase > 1), mirror: c.act === 'mirror' ? 'storm' : null, comboI: c.pose === 'act' ? 1 : 0, ghost: c.pose === 'act' && (c.act === 'lunge' || c.act === 'dash') ? 1 : 0,

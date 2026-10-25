@@ -63,7 +63,7 @@ function clearTransient(h) {
 
 export function resetHero(G, { x, y, full = false } = {}) {
   const h = G.hero;
-  if (x != null) { const p = safeSpot(G.chamber, x, y, h.r); h.x = p.x; h.y = p.y; h.safe = { x: p.x, y: p.y }; h.vx = h.vy = h.kx = h.ky = 0; }
+  if (x != null) { const p = safeSpot(G.chamber, x, y, h.r); h.x = p.x; h.y = p.y; h.safe = { x: p.x, y: p.y }; h.vx = h.vy = h.kx = h.ky = 0; h.placed = (h.placed || 0) + 1; }
   clearTransient(h);
   const s = recomputeStats(G);
   h.dashCharges = s.dashCharges; h.dashCd = 0;
@@ -78,7 +78,8 @@ export function resetHero(G, { x, y, full = false } = {}) {
   G.bus.emit('heroReset', { x: h.x, y: h.y, full });
 }
 
-export function placeHero(G, x, y) { const h = G.hero; const p = safeSpot(G.chamber, x, y, h.r); h.x = p.x; h.y = p.y; h.safe = { x: p.x, y: p.y }; h.vx = h.vy = h.kx = h.ky = 0; h.tvx = h.tvy = 0; h.snare = null; if (h.dashing) { h.dashing = false; } if (h.state !== 'dead' && h.state !== 'respawn' && h.state !== 'move') endAction(h); }
+// h.placed counts teleports (the renderer resets the scarf and cloak chains on a change: no smear)
+export function placeHero(G, x, y) { const h = G.hero; const p = safeSpot(G.chamber, x, y, h.r); h.x = p.x; h.y = p.y; h.placed = (h.placed || 0) + 1; h.safe = { x: p.x, y: p.y }; h.vx = h.vy = h.kx = h.ky = 0; h.tvx = h.tvy = 0; h.snare = null; if (h.dashing) { h.dashing = false; } if (h.state !== 'dead' && h.state !== 'respawn' && h.state !== 'move') endAction(h); }
 
 export function respawnHero(G, x = G.hero.x, y = G.hero.y) {
   const h = G.hero;

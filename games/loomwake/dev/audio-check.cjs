@@ -101,13 +101,15 @@ const LEVELS_JS = require('path').join(__dirname, '../src/audio/levels.js');
         bus.emit('bossFight', { id: b }); await wait(250); snap(`boss_${b} phase 1`);
         const acts = { veyl: 'volley', morrow: 'ring', aurum: 'sweep', sable: 'lunge' };
         bus.emit('bossMove', { id: b, pose: 'act', move: acts[b], x: 0, y: 0 });
+        bus.emit('bossAttack', { id: b, attack: { veyl: 'volley', morrow: 'ring', aurum: 'hammer', sable: 'lunge' }[b], move: acts[b], x: 0, y: 0 });
+        bus.emit('telegraphHit', { tg: { kind: 'circle', x: 0, y: 0, owner: null } }); bus.emit('telegraphHit', { tg: { kind: 'circle', x: 0, y: 0, hitSfx: 'thorn_burst' } });
         bus.emit('bossImpact', { id: b, item: { veyl: 'glass', morrow: 'note', aurum: 'anvil', sable: 'riposte' }[b], x: 0, y: 0, r: 160 });
         bus.emit('bossSetPiece', { id: b, name: { veyl: 'verdict', morrow: 'requiem', aurum: 'stoke', sable: 'braid' }[b] });
         bus.emit('telegraph', { tg: { kind: 'line', x: 0, y: 0, max: 0.7, owner: boss } });
         bus.emit('telegraph', { tg: { kind: 'circle', x: 0, y: 0, max: 0.7, owner: boss } });
         bus.emit('telegraph', { tg: { kind: 'ring', x: 0, y: 0, max: 0.7, owner: boss } });
         boss.phase = 2; bus.emit('bossPhase', { id: b, phase: 2 }); await wait(200); snap(`boss_${b} phase 2`);
-        boss.dead = true; bus.emit('bossDefeat', { id: b }); await wait(200); snap(`${b} defeated (held silence)`);
+        bus.emit('bossDefeated', { id: b, x: 0, y: 0 }); boss.dead = true; bus.emit('bossDefeat', { id: b }); bus.emit('flushBarks', { why: 'bossDefeat' }); bus.emit('bossRelease', { id: b }); await wait(200); snap(`${b} defeated (held silence)`);
       }
       G.scene = 'dead'; bus.emit('heroDeath', {}); bus.emit('scene', { from: 'run', to: 'dead' }); await wait(200); snap('dead');
       G.run = null; G.scene = 'hub'; bus.emit('scene', { from: 'dead', to: 'hub' }); await wait(200); snap('back to hub');

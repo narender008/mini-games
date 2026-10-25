@@ -41,7 +41,7 @@ export function createPause(ui) {
     where.textContent = `${r.name} · Chamber ${(run.chamber | 0) + 1}`;
     const st = run.stats || {};
     stats.innerHTML = '';
-    for (const [v, l] of [[fmtTime(st.time), 'Time'], [st.kills | 0, 'Unravelled'], [(run.depth | 0) + 1, 'Depth'], [run.currency | 0, 'Glint']]) stats.appendChild(h('div', { class: 'stat' }, h('b', { text: String(v) }), h('span', { text: l })));
+    for (const [v, l] of [[fmtTime(st.time), 'Time'], [st.kills | 0, 'Foes undone'], [(run.depth | 0) + 1, 'Depth'], [run.currency | 0, 'Glint']]) stats.appendChild(h('div', { class: 'stat' }, h('b', { text: String(v) }), h('span', { text: l })));
     rows.innerHTML = '';
     const w = weapon(run.weapon || G.hero?.weapon || 'blade');
     const aspect = run.aspect && D.boons[run.aspect];

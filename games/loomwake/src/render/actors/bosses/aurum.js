@@ -284,7 +284,8 @@ export default function draw(ctx, e, G, P) {
   // ---------- hammer pose (grip point + angle; head at the far end) ----------
   const hm = hammerPose(e, pz, aim, side, t, phaseK, stag, dying, hipY);
   // ---------- legs ----------
-  const footL = [-44 + (step > 0 ? step * 10 : 0), 0], footR = [44 - (step < 0 ? step * 10 : 0), 0];
+  const kn1 = dying ? ease(k01(dying / 0.4)) : 0; // one knee down: the far leg folds back
+  const footL = [-44 + (step > 0 ? step * 10 : 0) - kn1 * 46, 0], footR = [44 - (step < 0 ? step * 10 : 0) + kn1 * 10, 0];
   const hipL = [-34, hipY], hipR = [34, hipY];
   const kneeL = ik(hipL[0], hipL[1], footL[0], footL[1] - 14, 60, 62, 1), kneeR = ik(hipR[0], hipR[1], footR[0], footR[1] - 14, 60, 62, -1);
   const leg = (h, kn, f) => {
@@ -362,7 +363,7 @@ export default function draw(ctx, e, G, P) {
   });
 
   // ---------- molten seams (additive, brighter as the forge heats) ----------
-  const hot = (0.55 + heat * 0.45 + phaseK * 0.5) * (1 - dying) * (0.85 + 0.15 * Math.sin(t * 5)) * (e.state === 'intro' ? ease(k01((e.st - 1.2) / 1.2)) : 1);
+  const hot = (0.55 + heat * 0.45 + phaseK * 0.5) * (e.held ? 0.85 : 1 - dying) * (0.85 + 0.15 * Math.sin(t * 5)) * (e.state === 'intro' ? ease(k01((e.st - 1.2) / 1.2)) : 1);
   const oy = crouch + bob;
   if (hot > 0.02) {
     ctx.save();
@@ -389,9 +390,10 @@ export default function draw(ctx, e, G, P) {
     light(e, 0, -206 + oy, 240 + heat * 200, C.ember, 0.4 * hot + heat * 0.3);
   }
   // chimney embers and smoke (render-only particles on the entity)
-  embers(ctx, e, dt, t, heat, oy, dying);
+  embers(ctx, e, dt, t, e.held ? 1 : heat, oy, e.held ? 0 : dying);
+  if (e.held) vents(ctx, e, dt, t, oy);
   drawFx(ctx, e);
-  if (dying) unravelFx(e, G, { rate: dying < 0.9 ? 90 : 0, w: 240, h: 300, color: '#140a04', color2: C.ember, mix: 0.4 }, dt);
+  if (dying) unravelFx(e, G, { rate: (dying < 0.9 ? 90 : 0) * (e.held ? 0.1 : 1), w: 240, h: 300, color: '#140a04', color2: C.ember, mix: 0.4 }, dt);
   else if (A.fx && A.fx.length) unravelFx(e, G, { rate: 0 }, dt);
   e.light = e.lights[0] || null;
 }
@@ -587,4 +589,24 @@ export function drawOverlay(ctx, G, P, b) {
     ctx.fillStyle = hexA(C.ember, (1 - ph) * 0.7);
     ctx.fillRect(x + Math.sin(G.t + i) * 10, y0 - ph * 160, 2.5, 2.5);
   }
+}
+
+// Beaten: heat vents from the seams in bursts of steam and sparks (plain fills, no gradients)
+const VENTS = [[-62, -214], [66, -206], [0, -160], [-92, -232], [92, -232], [40, -388], [-40, -388]];
+function vents(ctx, e, dt, t, oy) {
+  const A = e.anim, P = (A.vent = A.vent || []);
+  A.ventT = (A.ventT || 0) - dt;
+  if (A.ventT <= 0) {
+    A.ventT = 0.35 + Math.random() * 0.4;
+    const v = VENTS[(Math.random() * VENTS.length) | 0];
+    for (let i = 0; i < 6; i++) P.push({ x: v[0], y: v[1] + 70 + oy, vx: (Math.random() - 0.5) * 60 + Math.sign(v[0] || 1) * 30, vy: -80 - Math.random() * 90, life: 0.9 + Math.random() * 0.6, max: 1.5, r: 8 + Math.random() * 8 });
+    glow(ctx, v[0], v[1] + 70 + oy, 60, C.molten, 0.6);
+  }
+  for (let i = P.length - 1; i >= 0; i--) {
+    const p = P[i]; p.life -= dt; if (p.life <= 0) { P.splice(i, 1); continue; }
+    p.x += p.vx * dt; p.y += p.vy * dt; p.r += 26 * dt;
+    const k = p.life / p.max;
+    ctx.fillStyle = hexA('#e8d8c8', 0.22 * k); ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
+  }
+  if (P.length > 80) P.splice(0, P.length - 80);
 }

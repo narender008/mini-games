@@ -899,3 +899,72 @@
   .lw-ui .scr-fountain .row-foot { margin-top: 6px; }
 }
 .lw-ui .hud .fps { position: absolute; right: max(16px, var(--safe-r)); bottom: max(6px, var(--safe-b)); font: 700 11px var(--sans); letter-spacing: 0.08em; color: var(--muted); font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px #000; pointer-events: none; }
+/* boss card: the band lives inside .inner and grows with the quote */
+.lw-ui .bosscard .inner { isolation: isolate; padding: 30px 4vw 28px; max-width: 100vw; }
+.lw-ui .bosscard .inner .band { top: 0; bottom: 0; height: auto; left: -60vw; right: -60vw; transform: none; z-index: -1; }
+.lw-ui .bosscard .bl { max-width: min(760px, 86vw); margin-left: auto; margin-right: auto; line-height: 1.45; }
+@media (max-height: 500px) {
+  .lw-ui .bosscard .inner { padding: 16px 4vw 14px; }
+  .lw-ui .bosscard .inner .band { height: auto; }
+  .lw-ui .bosscard .bl { display: block; font-size: 13.5px; margin-top: 6px; }
+  .lw-ui .regcard { top: 22%; }
+  .lw-ui .regcard .rn { font-size: clamp(24px, 4.6vw, 40px); letter-spacing: 0.16em; }
+  .lw-ui .regcard .ri { font-size: 10px; margin-bottom: 4px; }
+  .lw-ui .regcard .rs { font-size: 14px; margin-top: 2px; }
+  .lw-ui .regcard .rl { font-size: 12.5px; max-width: 70vw; margin-top: 4px; }
+  .lw-ui .regcard .orn { width: min(260px, 50%); }
+  .lw-ui .banner .bt { font-size: clamp(22px, 4vw, 34px); }
+}
+/* the region card stays clear of the HUD corners */
+.lw-ui .regcard { top: max(24%, 170px); padding: 0 24px; }
+@media (max-height: 500px) { .lw-ui .regcard { top: 26%; padding: 0 12vw; } }
+/* boon list: a compact icon grid under the currencies */
+.lw-ui .blist { display: flex; flex-direction: row-reverse; flex-wrap: wrap; gap: 5px; width: calc(6 * 32px + 5 * 5px); align-content: flex-start; margin-top: 2px; }
+.lw-ui .blist .bchip { position: relative; width: 32px; height: 32px; padding: 0; justify-content: center; gap: 0; border-radius: 50%; }
+.lw-ui .blist .bchip .ic { width: 26px; height: 26px; background: transparent; }
+.lw-ui .blist .bchip .ic svg { width: 17px; height: 17px; }
+.lw-ui .blist .bchip .nm { display: none; }
+.lw-ui .blist .bchip .lv { position: absolute; right: -3px; bottom: -3px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px; background: #120e2a; border: 1px solid var(--gold); font: 800 9px/12px var(--sans); text-align: center; color: var(--gold-hi); }
+.lw-ui .blist .bchip.braid { background: conic-gradient(from 200deg, color-mix(in srgb, var(--c) 40%, #0b0a1d), color-mix(in srgb, var(--c2) 40%, #0b0a1d), color-mix(in srgb, var(--c) 40%, #0b0a1d)); }
+.lw-ui .blist .bchip.more { border-color: var(--line); }
+.lw-ui .blist .bchip.more .nm { display: block; font: 800 11px var(--sans); color: var(--gold-hi); }
+.lw-ui .hud-tr { align-items: flex-end; }
+/* toasts sit below the boon grid, clear of it */
+.lw-ui .toasts { top: calc(190px + var(--safe-t)); }
+@media (max-height: 500px) { .lw-ui .toasts { top: calc(64px + var(--safe-t)); } .lw-ui .toast { padding: 5px 12px 5px 5px; font-size: 12px; } }
+.lw-ui[data-scene=run] .saved, .lw-ui[data-scene=boons] .saved { top: calc(148px + var(--safe-t)); }
+.lw-ui .hud-boss.mini { width: min(480px, 44vw); } .lw-ui .hud-boss.mini .bnm { font-size: clamp(16px, 1.7vw, 22px); }
+/* touch buttons: solid backing discs with icon and label, readable on any floor */
+.lw-ui .tbtn { --c: #f2c46b; background: radial-gradient(circle at 50% 30%, #2a2350 0%, #141030 62%, #0a0820 100%); border: 2.5px solid var(--c); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.7), 0 0 0 3px rgba(0, 0, 0, 0.35), inset 0 0 18px color-mix(in srgb, var(--c) 30%, transparent); align-content: center; justify-items: center; gap: 1px; grid-auto-rows: min-content; }
+.lw-ui .tbtn svg { position: relative; width: 26px; height: 26px; color: var(--c); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--c) 60%, transparent)); }
+.lw-ui .tbtn.big svg { width: 40px; height: 40px; }
+.lw-ui .tbtn .tl { position: relative; font: 800 8.5px var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: #fff4dc; text-shadow: 0 1px 2px #000; }
+.lw-ui .tbtn.big .tl { font-size: 10px; }
+.lw-ui .tbtn.down { background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--c) 55%, #2a2350), #141030 70%); }
+.lw-ui .tbtn .cdr { z-index: 0; }
+.lw-ui .tbtn.dim { opacity: 0.6; }
+.lw-ui .tstick { opacity: 0.8; background: radial-gradient(circle, rgba(20, 16, 44, 0.55), rgba(10, 10, 30, 0.55)); border-color: rgba(242, 196, 107, 0.55); }
+/* phones: the loadout shrinks to two discs on the left so the Dreamdoor never covers it */
+@media (max-height: 500px), (max-width: 760px) {
+  .lw-ui .lo-chip { padding: 4px; gap: 0; }
+  .lw-ui .lo-chip > span:not(.ic) { display: none; }
+  .lw-ui .hub-loadout { gap: 6px; }
+  .lw-ui #btn-dreamdoor:not(.anchored) { padding: 8px 18px 8px 10px; }
+}
+.lw-ui.touch .hub-loadout { bottom: auto; top: calc(66px + var(--safe-t)); }
+.lw-ui .end-title.seq { font-size: clamp(22px, 3.4vw, 42px); margin-bottom: 16px; min-height: 1.2em; }
+@media (max-height: 500px) { .lw-ui .end-title.seq { font-size: 18px; margin-bottom: 6px; } .lw-ui .panels .end-art { width: min(520px, 62vw); } }
+.lw-ui .cx-page canvas.foe { width: 128px; height: 128px; border-radius: 14px; background: radial-gradient(circle at 50% 70%, #1e1636, #0b0a1d 75%); }
+/* boon cards: a quicker deal, and keyword definitions on hover */
+.lw-ui .card:not(.pick):not(.gone) { animation-duration: 0.35s; animation-delay: calc(var(--i, 0) * 0.05s + 0.03s); }
+.lw-ui .card .ctext em.kw { position: relative; text-decoration: underline dotted color-mix(in srgb, currentColor 55%, transparent); text-underline-offset: 3px; cursor: help; }
+.lw-ui .card .ctext em.kw::after { content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translate(-50%, 4px); width: max-content; max-width: 220px; padding: 7px 10px; border-radius: 8px; background: rgba(6, 5, 18, 0.97); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6); font: 600 12px/1.4 var(--sans); font-style: normal; color: var(--ink); text-align: left; white-space: normal; opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s; z-index: 5; }
+.lw-ui .card .ctext em.kw:hover::after, .lw-ui .card:focus-visible .ctext em.kw:first-of-type::after { opacity: 1; transform: translate(-50%, 0); }
+/* one highlight in the shop: focus is the selection; hover only moves it */
+.lw-ui .scr-shop .item:hover:not(:focus) { border-color: rgba(242, 196, 107, 0.22); box-shadow: none; transform: none; }
+@media (max-height: 500px) {
+  .lw-ui .blist { display: none; }
+  .lw-ui .hud-boss, .lw-ui .hud-boss.mini { width: min(560px, 44vw); }
+  .lw-ui .toasts { gap: 4px; }
+  .lw-ui .toast small { display: none; }
+}
