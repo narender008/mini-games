@@ -102,6 +102,7 @@ function stormCase(seed, o, power, secs) {
   let strikes = 0, rods = 0, hits = 0, fires = 0;
   G.bus.on('lightning', (e) => { strikes++; if (e.rod) rods++; else if (e.target) hits++; });
   G.bus.on('fire:start', () => fires++);
+  if (o.warned !== false) Object.assign(G.threat, { stormWarned: true, harmStorms: 1 });   // storm season under way
   weather.startStorm(G, power);
   G.weather.until = G.t + secs;
   run(G, secs + 90);
@@ -229,7 +230,7 @@ console.table(rows);
 
 const SK = ['strikes', 'rods', 'hits', 'fires', 'ruined', 'charge'];
 const srows = [];
-for (const [name, o] of [['storm 0.8 no rods', {}], ['storm 0.8 with rods', DEF], ['storm 0.8 breezy', { difficulty: 'breezy' }]]) {
+for (const [name, o] of [['storm 0.8 before rods research', { warned: false }], ['storm 0.8 no rods', {}], ['storm 0.8 with rods', DEF], ['storm 0.8 breezy', { difficulty: 'breezy' }]]) {
   const rs = seeds.map((s) => stormCase(s, o, 0.8, 120));
   const r = { case: name }; for (const k of SK) r[k] = avg(rs, k); srows.push(r);
 }

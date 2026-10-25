@@ -13,6 +13,7 @@
 import { LINK_BY_ID, LINKS } from '../content/buildings.js';
 import { newId } from '../state.js';
 import * as eco from './economy.js';
+import * as islandsMod from './islands.js';
 
 const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const cellAt = (I, u, v) => (u < 0 || v < 0 || u >= I.w || v >= I.h ? ' ' : I.cells[v * I.w + u]);
@@ -85,7 +86,15 @@ function check(G, kind, a, b) {
   let anchors = { au: n.au, av: n.av, bu: n.bu, bv: n.bv }, st = null, gap = n.gap;
   if (L.needStation) {
     const p = stationPair(G, A, B);
-    if (!p) return { ok: false, error: 'Needs a built Cable Station on both islands' };
+    if (!p) {
+      const lack = [A, B].filter((I) => !stations(G, I.id).length);
+      const roomless = lack.filter((I) => !islandsMod.spots(G, 'cablestation', I.id).length && !G.buildings.some((x) => x.type === 'cablestation' && x.island === I.id));
+      if (roomless.length) {
+        const I = roomless[0], other = I === A ? B : A;
+        return { ok: false, error: `No room for a Cable Station on ${I.name}'s rim facing ${other.name}: demolish a building there to make space` };
+      }
+      return { ok: false, error: `Needs a built Cable Station on ${lack.map((I) => I.name).join(' and ') || 'both islands'} (on the rim facing the other island)` };
+    }
     anchors = { au: p.s.u, av: p.s.v, bu: p.t.u, bv: p.t.v };
     st = [p.s.id, p.t.id];
     gap = Math.max(n.gap, p.d - 2);

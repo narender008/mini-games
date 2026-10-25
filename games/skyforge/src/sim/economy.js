@@ -37,6 +37,7 @@ const FOOD_TYPES = new Set(['farm', 'windmill', 'bakery']);
 const DEFENCE_TYPES = new Set(['harpoon', 'bastion', 'shieldgen', 'rod']);
 const RESERVE = new Set(['wood', 'planks', 'stone', 'iron', 'parts', 'skystone']);
 const NAMES = Object.fromEntries(RESOURCES.map((r) => [r.id, r.name.toLowerCase()]));
+const PRICE = Object.fromEntries(RESOURCES.map((r) => [r.id, r.price || 1]));
 
 // ---- research hooks (PROGRESSION's module, with fallbacks) ---------------------
 export function has(G, id) {
@@ -83,11 +84,11 @@ export function envMul(G, env) {
   else if (w.kind === 'fog') k *= m.fog;
   return k;
 }
-export function maxWorkers(G, b) {
+export function maxWorkers(G, b, staffBonus) {
   const d = def(b.type); if (!d) return 0;
   let n = d.workers || 0;
-  for (const L of d.levels || []) if (L.level <= b.level && L.workers) n += L.workers;
-  if (n > 0 && d.tab === 'industry') n = Math.max(1, Math.ceil(n * (1 - Math.min(0.5, bonus(G, 'staff')))));
+  if (d.levels) for (const L of d.levels) if (L.level <= b.level && L.workers) n += L.workers;
+  if (n > 0 && d.tab === 'industry') n = Math.max(1, Math.ceil(n * (1 - Math.min(0.5, staffBonus ?? bonus(G, 'staff')))));
   return n;
 }
 function levelVal(d, b, key, base) {
@@ -111,9 +112,9 @@ export function notify(G, text, kind = 'info', icon = null, at = null) {
   G.bus.emit('notify', n);
 }
 // warn at most once per CFG.economy.notifyEvery for the same key
-export function warnOnce(G, key, text, kind = 'warn', icon = null, at = null) {
+export function warnOnce(G, key, text, kind = 'warn', icon = null, at = null, every = E().notifyEvery) {
   const T = (G.tmp.warned = G.tmp.warned || {});
-  if (T[key] != null && G.t - T[key] < E().notifyEvery) return;
+  if (T[key] != null && G.t - T[key] < every) return;
   T[key] = G.t;
   notify(G, text, kind, icon, at);
 }
@@ -146,6 +147,37 @@ export function hasMooring(G, root) {
   return G.buildings.some((b) => b.type === 'mooring' && b.state === 'built' && G.tmp.netOf?.[b.island] === root);
 }
 export function canPayFor(G, islandId, cost, opts) { return payPlan(G, islandId, cost, opts).ok; }
+
+// Does any built, working building of the colony make `res` (optionally not counting `except`)?
+export function makes(G, res, except = null) {
+  const netOf = G.tmp.netOf || {};
+  return G.buildings.some((b) => b !== except && b.state === 'built' && b.on !== false && !isDamaged(b) && netOf[b.island] && def(b.type)?.produces?.[res]);
+}
+// Wandering traders: goods the stores lack that NOBODY in the colony makes right
+// now (e.g. the only quarry is a ruin) may be paid in coin at
+// CFG.economy.traders x base price, so a lost producer can never deadlock the
+// colony. -> { cost (what to pay, coin included), bought: {res: n} | null, coin }
+export function withTraders(G, islandId, cost, opts) {
+  const plan = payPlan(G, islandId, cost, opts);
+  if (plan.ok) return { cost, bought: null, coin: 0 };
+  const p = poolOf(G, islandId) || G.pools[homeRoot(G)];
+  const out = { ...cost }, bought = {};
+  let coin = 0;
+  for (const r of plan.missing) {
+    if (COLONY_RES.has(r) || makes(G, r)) continue;
+    const have = Math.max(0, Math.floor(p ? p.res[r] || 0 : 0));
+    const short = (cost[r] || 0) - have;
+    if (short <= 0) continue;
+    out[r] = have; bought[r] = short;
+    coin += Math.ceil(short * PRICE[r] * E().traders);
+  }
+  if (!coin) return { cost, bought: null, coin: 0 };
+  out.coin = (out.coin || 0) + coin;
+  return { cost: out, bought, coin };
+}
+export function boughtText(bought, coin) {
+  return Object.entries(bought).map(([r, n]) => `${n} ${NAMES[r] || r}`).join(', ') + ` from passing traders for ${coin} coin`;
+}
 export function payFor(G, islandId, cost, opts) {
   const plan = payPlan(G, islandId, cost, opts);
   if (!plan.ok) return { ok: false, error: missingText(G, islandId, cost, plan.missing) };
@@ -156,13 +188,22 @@ export function payFor(G, islandId, cost, opts) {
   }
   return { ok: true, from: plan.from };
 }
-export function missingText(G, islandId, cost, missing) {
+// What is still missing for `cost`, in whole units, measured the way the HUD
+// shows stock (whole numbers, rounded down): { res: n }. One source of truth for
+// the build ghost tip, the toast and the inspector.
+export function shortfall(G, islandId, cost, missing = null) {
   const p = poolOf(G, islandId) || G.pools[homeRoot(G)];
-  const parts = missing.map((r) => {
-    const have = COLONY_RES.has(r) ? (G.colony[r] || 0) : (p ? p.res[r] || 0 : 0);
-    return `${Math.ceil(cost[r] - have)} more ${NAMES[r] || r}`;
-  });
-  return 'Need ' + parts.join(', ');
+  const out = {};
+  for (const [r, n] of Object.entries(cost || {})) {
+    if (!n || (missing && !missing.includes(r))) continue;
+    const have = Math.floor(COLONY_RES.has(r) ? (G.colony[r] || 0) : (p ? p.res[r] || 0 : 0));
+    if (have < n - 1e-9 || (missing && missing.includes(r))) out[r] = Math.max(1, Math.ceil(n - have));
+  }
+  return out;
+}
+export function missingText(G, islandId, cost, missing) {
+  const s = shortfall(G, islandId, cost, missing);
+  return 'Need ' + Object.entries(s).map(([r, n]) => `${n} more ${NAMES[r] || r}`).join(', ');
 }
 // add goods to a pool (clamped to cap unless `over`), returns what went in
 export function addTo(G, root, r, n, over = false) {
@@ -282,17 +323,17 @@ export function recomputeCaps(G) {
 
 // ---- ledger and rates -------------------------------------------------------------
 function ledger(G, root, r, n, isMade) {
-  const L = (G.tmp.ledger = G.tmp.ledger || { made: {}, used: {}, t: 0 });
+  const L = (G.econ.led = G.econ.led || { made: {}, used: {}, t: 0 });
   const side = isMade ? L.made : L.used;
   const m = (side[root] = side[root] || {});
   m[r] = (m[r] || 0) + Math.abs(n);
 }
 function flushRates(G, dt) {
-  const L = G.tmp.ledger; if (!L) return;
+  const L = G.econ.led; if (!L) return;
   L.t += dt;
   if (L.t < 2) return;
   const k = 60 / L.t, a = 0.35;
-  const rates = (G.tmp.rates = G.tmp.rates || {}), made = (G.tmp.made = G.tmp.made || {}), used = (G.tmp.used = G.tmp.used || {});
+  const E2 = G.econ, rates = (G.tmp.rates = E2.rates = E2.rates || {}), made = (G.tmp.made = E2.made = E2.made || {}), used = (G.tmp.used = E2.used = E2.used || {});
   const home = homeRoot(G);
   const roots = new Set([...Object.keys(G.pools), 'colony']);
   for (const root of roots) {
@@ -308,7 +349,7 @@ function flushRates(G, dt) {
   }
   for (const r of ['coin', 'insight']) { rates[home] = rates[home] || {}; rates[home][r] = rates.colony[r]; }
   for (const root of Object.keys(rates)) if (root !== 'colony' && !G.pools[root]) { delete rates[root]; delete made[root]; delete used[root]; }
-  G.tmp.ledger = { made: {}, used: {}, t: 0 };
+  G.econ.led = { made: {}, used: {}, t: 0 };
 }
 
 // ---- workers ---------------------------------------------------------------------
@@ -329,7 +370,7 @@ function allocate(G) {
       continue;
     }
     if (b.state !== 'built' || b.on === false || isDamaged(b)) continue;
-    const mw = maxWorkers(G, b);
+    const R = recipe(d), mw = levelInfo(G, d, R, b)[0];
     if (b.type === 'skyforge' && !b.forge) continue;
     if (mw <= 0) continue;
     const want = Math.min(mw, b.want ?? mw);
@@ -340,9 +381,10 @@ function allocate(G) {
     else if (b.type === 'academy' || b.type === 'observatory') prio = 48;
     else if (b.type === 'tavern' || b.type === 'market') prio = 46;
     else if (b.type === 'skyforge') prio = 60;
-    if (b.type !== 'skyforge' && d.produces && Object.keys(d.produces).some((r) => short.has(r))) prio = Math.max(prio, 65);
-    if (b.stall && b.stall.startsWith('input:')) prio -= 8; // starved: less urgent than its suppliers
-    if (b.stall === 'storage') prio = 5;                      // stores full: hands are better used elsewhere
+    if (b.type !== 'skyforge' && short.size && R.prod.some((x) => short.has(x[0]))) prio = Math.max(prio, 65);
+    // b.held remembers why it last stood idle, so taking its hands away does not flip it back and forth
+    if (b.held && b.held.startsWith('input:')) prio -= 8; // starved: less urgent than its suppliers
+    if (b.held === 'storage') prio = 5;                     // stores full: hands are better used elsewhere
     jobs.push({ o: b, want, prio, id: b.id });
   }
   for (const l of G.links) {
@@ -410,77 +452,146 @@ function eat(G, dt) {
 }
 
 // ---- production -------------------------------------------------------------------
+// Per-type recipes as flat arrays, built once (no Object.entries in the hot loop).
+const RECIPES = new WeakMap();
+function recipe(d) {
+  let R = RECIPES.get(d);
+  if (!R) {
+    const prod = Object.entries(d.produces || {}), cons = Object.entries(d.consumes || {});
+    R = {
+      prod, cons,
+      producer: prod.length > 0 || cons.length > 0,
+      pooled: prod.length > 0 && !prod.some(([r]) => COLONY_RES.has(r)),
+      pm: new Float64Array(prod.length), run: -1,   // output multipliers (research), refreshed once per step
+      lv: [], staff: NaN,                            // per level: [max workers, output multiplier]
+    };
+    RECIPES.set(d, R);
+  }
+  return R;
+}
+// Values that stay put within one economy step, looked up once per step.
+const K = { staff: 0, prod: 1, prodR: new Map(), env: new Map(), fires: -1, run: 0 };
+// Max workers and output multiplier for a building's type and level, cached on its recipe.
+function levelInfo(G, d, R, b) {
+  if (R.staff !== K.staff) { R.lv.length = 0; R.staff = K.staff; }
+  const lvl = b.level | 0;
+  let L = R.lv[lvl];
+  if (!L) L = R.lv[lvl] = [maxWorkers(G, b, K.staff), d.levels ? levelVal(d, b, 'mul', 1) : 1];
+  return L;
+}
+function stepConsts(G) {
+  K.run++;
+  K.staff = bonus(G, 'staff');
+  K.prod = 1 + bonus(G, 'production') + boost(G, 'production');
+  K.prodR.clear(); K.env.clear(); K.fires = -1;
+}
+function prodBonus(G, r) {
+  let v = K.prodR.get(r);
+  if (v === undefined) { v = 1 + bonus(G, 'prod:' + r); K.prodR.set(r, v); }
+  return v;
+}
+function envK(G, env) {
+  let v = K.env.get(env);
+  if (v === undefined) { v = envMul(G, env); K.env.set(env, v); }
+  return v;
+}
+function stillHeld(G, b, d, pool, H) {
+  if (b.held === 'storage') { for (const [r] of recipe(d).prod) if ((pool.res[r] || 0) >= (pool.cap[r] || 0) - 0.5) return true; return false; }
+  const r = b.held.slice(6);
+  const keep = RESERVE.has(r) ? Math.min(H.reserveMax, (pool.cap[r] || 0) * H.reserve) : 0;
+  return (pool.res[r] || 0) - keep < 1;
+}
 function produce(G, dt) {
   const netOf = G.tmp.netOf;
   const H = E();
   const happyK = H.happyEff[0] + (H.happyEff[1] - H.happyEff[0]) * (G.colony.happiness ?? 0.5);
-  const prodAll = 1 + bonus(G, 'production') + boost(G, 'production');
-  const short = new Set();
+  const windy = !!G.weather && (G.weather.kind === 'breeze' || G.weather.kind === 'storm');
+  let short = null;
   const gains = (G.tmp.gain = G.tmp.gain || {});
   for (const b of G.buildings) {
-    const d = def(b.type);
+    if (b.state !== 'built') { b.eff = 0; continue; }
+    const d = BY_ID[b.type];
     const root = netOf[b.island];
-    if (!d || !root || b.state !== 'built') { if (b.state !== 'built') { b.eff = 0; } continue; }
-    const prodKeys = Object.keys(d.produces || {});
-    const isProducer = prodKeys.length > 0 || Object.keys(d.consumes || {}).length > 0;
+    if (!d || !root) continue;
+    const R = recipe(d);
+    if (R.run !== K.run) { R.run = K.run; for (let i = 0; i < R.prod.length; i++) R.pm[i] = prodBonus(G, R.prod[i][0]) * K.prod; }
+    const LI = levelInfo(G, d, R, b);
     let stall = null;
-    const mw = maxWorkers(G, b);
+    const mw = LI[0];
     if (b.on === false) stall = 'off';
     else if (isDamaged(b)) stall = 'damaged';
-    else if (mw > 0 && b.type !== 'skyforge' && (b.workers || 0) <= 0) stall = 'workers';
+    else if (mw > 0 && b.type !== 'skyforge' && (b.workers || 0) <= 0) {
+      stall = 'workers';
+      // no hands because it was starved or full: say so while that still holds
+      if (b.held && G.pools[root]) {
+        if (stillHeld(G, b, d, G.pools[root], H)) { stall = b.held; if (stall.startsWith('input:')) (short = short || []).includes(stall.slice(6)) || short.push(stall.slice(6)); }
+        else b.held = null;
+      }
+    }
+    if (stall === 'off' || stall === 'damaged') b.held = null;
     if (b.type === 'skyforge') { b.eff = b.forge ? Math.max(0.25, (b.workers || 0) / Math.max(1, mw)) : 0; setStall(G, b, b.forge && !b.workers ? 'workers' : null); continue; }
-    if (!isProducer || stall) {
+    if (!R.producer || stall) {
       b.eff = stall ? 0 : (mw > 0 ? (b.workers || 0) / mw : 1);
       setStall(G, b, stall);
       continue;
     }
-    const pool = G.pools[root];
+    const pool = G.pools[root], res = pool.res, cap = pool.cap;
     const staff = mw > 0 ? (b.workers || 0) / mw : 1;
-    let mul = levelMul(b) * envMul(G, d.env) * happyK * Math.max(0.6, b.maxHp ? 0.6 + 0.4 * b.hp / b.maxHp : 1);
-    if (b.type === 'lumber') { const [full, lo, hi] = H.lumberForest; mul *= Math.min(hi, Math.max(lo, (b.forest || 0) / full)); }
-    if (d.wind && G.weather && (G.weather.kind === 'breeze' || G.weather.kind === 'storm')) mul *= 1.15;
+    const lm = LI[1];
+    let mul = lm * envK(G, d.env || 'none') * happyK * Math.max(0.6, b.maxHp ? 0.6 + 0.4 * b.hp / b.maxHp : 1);
+    if (b.type === 'lumber') { const F = H.lumberForest; mul *= Math.min(F[2], Math.max(F[1], (b.forest || 0) / F[0])); }
+    if (d.wind && windy) mul *= 1.15;
     const vent = b.vent && d.vent;
+    const noCoal = vent && d.vent.noCoal;
     if (vent) mul *= d.vent.mul;
     const k = staff * mul * dt / 60;
     // inputs: refill buffers from the pool, then see how much we can run
     let ratio = 1, lacking = null;
-    const buf = (b.buf = b.buf || {});
-    for (const [r, rate] of Object.entries(d.consumes || {})) {
-      if (vent && d.vent.noCoal && r === 'coal') continue;
-      const target = rate * levelMul(b) * H.buffer;
+    const cons = R.cons;
+    const buf = cons.length ? (b.buf = b.buf || {}) : null;
+    for (let i = 0; i < cons.length; i++) {
+      const r = cons[i][0], rate = cons[i][1];
+      if (noCoal && r === 'coal') continue;
+      const target = rate * lm * H.buffer;
       const have = buf[r] || 0;
       if (have < target) {
         // chains leave a reserve of building materials for construction
-        const keep = RESERVE.has(r) ? Math.min(H.reserveMax, (pool.cap[r] || 0) * H.reserve) : 0;
-        const take = Math.min(target - have, Math.max(0, (pool.res[r] || 0) - keep));
-        if (take > 0) { pool.res[r] -= take; buf[r] = have + take; ledger(G, root, r, -take, false); }
+        const keep = RESERVE.has(r) ? Math.min(H.reserveMax, (cap[r] || 0) * H.reserve) : 0;
+        const take = Math.min(target - have, Math.max(0, (res[r] || 0) - keep));
+        if (take > 0) { res[r] -= take; buf[r] = have + take; ledger(G, root, r, -take, false); }
       }
       const need = rate * k;
       if (need > 0) { const q = (buf[r] || 0) / need; if (q < ratio) { ratio = q; lacking = r; } }
     }
     ratio = Math.max(0, Math.min(1, ratio));
     // outputs: room in storage
-    let room = 1, anyPooled = false;
-    for (const r of prodKeys) {
-      if (COLONY_RES.has(r)) { room = 1; anyPooled = false; break; }
-      anyPooled = true;
-      const out = d.produces[r] * k * (1 + bonus(G, 'prod:' + r)) * prodAll;
-      const space = (pool.cap[r] ?? Infinity) - (pool.res[r] || 0);
-      room = Math.min(room, out > 0 ? Math.max(0, space / out) : 1);
-    }
-    if (anyPooled && room <= 0.001) { b.eff = 0; setStall(G, b, 'storage'); continue; }
-    const run = Math.min(ratio, anyPooled ? Math.min(1, room) : 1);
-    if (run < 0.5 && lacking) { stall = 'input:' + lacking; short.add(lacking); }
-    if (run > 0) {
-      for (const [r, rate] of Object.entries(d.consumes || {})) {
-        if (vent && d.vent.noCoal && r === 'coal') continue;
-        buf[r] = Math.max(0, (buf[r] || 0) - rate * k * run);
+    const prod = R.prod;
+    let room = 1;
+    if (R.pooled) {
+      for (let i = 0; i < prod.length; i++) {
+        const r = prod[i][0];
+        const out = prod[i][1] * k * R.pm[i];
+        const space = (cap[r] ?? Infinity) - (res[r] || 0);
+        room = Math.min(room, out > 0 ? Math.max(0, space / out) : 1);
       }
-      for (const r of prodKeys) {
-        let out = d.produces[r] * k * run * (1 + bonus(G, 'prod:' + r)) * prodAll;
+      if (room <= 0.001) { b.eff = 0; b.held = 'storage'; setStall(G, b, 'storage'); continue; }
+    }
+    const run = Math.min(ratio, R.pooled ? Math.min(1, room) : 1);
+    if (run < 0.5 && lacking) { stall = b.held = 'input:' + lacking; (short = short || []).includes(lacking) || short.push(lacking); }
+    else b.held = null;
+    if (run > 0) {
+      for (let i = 0; i < cons.length; i++) {
+        const r = cons[i][0];
+        if (noCoal && r === 'coal') continue;
+        buf[r] = Math.max(0, (buf[r] || 0) - cons[i][1] * k * run);
+      }
+      for (let i = 0; i < prod.length; i++) {
+        const r = prod[i][0];
+        let out = prod[i][1] * k * run * R.pm[i];
         if (r === 'coin' && d.coinPerSettler) out += d.coinPerSettler * (G.colony.pop || 0) * (G.colony.happiness ?? 0.5) * staff * dt / 60;
         const got = addTo(G, root, r, out);
-        const g = (gains[b.id] = gains[b.id] || { n: 0, t: G.t, res: r });
+        let g = gains[b.id];
+        if (!g) g = gains[b.id] = { n: 0, t: G.t, res: r };
         g.n += got; g.res = r;
         if (G.t - g.t >= H.gainEvery && g.n >= 1) {
           G.bus.emit('res:gain', { res: r, n: Math.floor(g.n), island: b.island, u: b.u + (d.size[0] - 1) / 2, v: b.v + (d.size[1] - 1) / 2 });
@@ -491,25 +602,63 @@ function produce(G, dt) {
     b.eff = Math.max(0, Math.min(1, staff * run * Math.min(1, mul)));
     setStall(G, b, stall);
   }
-  G.econ.short = [...short];
+  G.econ.short = short || [];
 }
 
-const STALL_TEXT = {
-  workers: (d) => `${d.name} has no workers: house more settlers`,
-  storage: (d) => `${d.name} stopped: storage is full (build a warehouse)`,
-};
+// Tell the player once when a ruin was the colony's only source of something.
+function checkRuins(G) {
+  const told = (G.tmp.ruinTold = G.tmp.ruinTold || {});
+  for (const b of G.buildings) {
+    if (b.state !== 'ruin' || b.repairing) { if (told[b.id]) delete told[b.id]; continue; }
+    if (told[b.id]) continue;
+    told[b.id] = true;
+    const d = def(b.type); if (!d) continue;
+    const lost = Object.keys(d.produces || {}).filter((r) => !COLONY_RES.has(r) && !makes(G, r, b));
+    if (lost.length) notify(G, `The ${d.name} was your only source of ${lost.map((r) => NAMES[r] || r).join(' and ')}: repair it now (traders sell what the stores lack for coin, or settlers patch it up for free)`, 'bad', b.type, { island: b.island, u: b.u, v: b.v });
+  }
+}
+
+const MAKER = { wood: 'Lumber Camp', stone: 'Quarry', planks: 'Sawmill', grain: 'Farm', flour: 'Windmill', bread: 'Bakery', ore: 'Mine', coal: 'Coal Pit', iron: 'Smelter', parts: 'Workshop', skystone: 'Crystal Drill', aether: 'Aether Refinery' };
 function setStall(G, b, why) {
   if (b.stall === why) return;
   b.stall = why;
-  if (!why || why === 'off') return;
+  if (!why || why === 'off' || G.t < 20) return;
   G.bus.emit('stall', { b, why });
   const d = def(b.type);
   const at = { island: b.island, u: b.u, v: b.v };
   if (why.startsWith('input:')) {
     const r = why.slice(6);
-    warnOnce(G, 'stall:' + b.type + ':' + r, `${d.name} needs ${NAMES[r] || r}`, 'warn', r, at);
-  } else if (STALL_TEXT[why] && G.t > 20) {
-    warnOnce(G, 'stall:' + why + ':' + (why === 'storage' ? '' : b.type), STALL_TEXT[why](d), 'warn', b.type, at);
+    const fix = MAKER[r] ? (makes(G, r) ? `: build another ${MAKER[r]}` : `: build a ${MAKER[r]}`) : '';
+    warnOnce(G, 'stall:' + b.type + ':' + r, `${d.name} needs ${NAMES[r] || r}${fix}`, 'warn', r, at, 180);
+  } else if (why === 'workers') {
+    if (K.fires < 0) K.fires = G.buildings.some(isBurning) ? 1 : 0;
+    const fires = K.fires > 0;
+    if (fires) warnOnce(G, 'stall:workers:fire', `${d.name} has no workers: the settlers are fighting fires`, 'info', 'fire', at, 60);
+    else warnOnce(G, 'stall:workers:' + b.type, `${d.name} has no workers: build homes for more settlers, or turn something off`, 'warn', b.type, at, 180);
+  } else if (why === 'storage') {
+    // name the full good and the network; repeat only when the cap has changed (a new warehouse filled up too) and not within 10 minutes
+    const root = G.tmp.netOf?.[b.island], p = G.pools[root];
+    const full = Object.keys(d.produces || {}).find((r) => p && !COLONY_RES.has(r) && (p.res[r] || 0) >= (p.cap[r] || 0) - 0.5) || Object.keys(d.produces || {})[0];
+    const cap = p ? Math.round(p.cap[full] || 0) : 0;
+    const T = (G.tmp.fullTold = G.tmp.fullTold || {}), k = root + ':' + full;
+    if (T[k] && T[k].cap === cap) return;
+    if (T[k] && G.t - T[k].t < 600) return;
+    T[k] = { cap, t: G.t };
+    const where = root && root !== homeRoot(G) ? ` on ${islandOf(G, root)?.name || root}` : '';
+    notify(G, `${NAMES[full] ? NAMES[full][0].toUpperCase() + NAMES[full].slice(1) : full} stores${where} are full (${cap}): the ${d.name} has stopped. Build a warehouse or put the ${NAMES[full] || full} to use`, 'warn', 'warehouse', at);
+  }
+}
+
+// Early bottlenecks the stalls do not show: building materials that barely trickle in.
+function checkScarce(G) {
+  if (G.t < 90) return;
+  const root = homeRoot(G), p = G.pools[root], rt = G.tmp.rates?.[root] || {};
+  if (!p) return;
+  for (const [r, maker] of [['wood', 'lumber'], ['stone', 'quarry']]) {
+    const n = G.buildings.filter((b) => b.type === maker && G.tmp.netOf?.[b.island] === root).length;
+    if ((p.res[r] || 0) < 15 && (rt[r] ?? 0) < 4 && n >= 1 && n <= 2 && !G.buildings.some((b) => b.type === maker && b.state === 'site')) {
+      warnOnce(G, 'scarce:' + r, `${NAMES[r][0].toUpperCase() + NAMES[r].slice(1)} is scarce: everything is waiting on it. Build another ${MAKER[r]}`, 'warn', r, null, 300);
+    }
   }
 }
 
@@ -536,10 +685,9 @@ function colonyStats(G) {
   return { cap, cottages, townhouses, thHousing, wells, taverns, markets, damaged, upkeep, immig, moorings };
 }
 
-function people(G, dt, S) {
+// What makes the settlers happy or not, and the level that adds up to.
+function happyFactors(G, S) {
   const H = E().happy, C = G.colony, pop = C.pop || 0;
-  C.popCap = S.cap;
-  C.housing = { cottage: S.cottages, townhouse: S.townhouses, townhall: 1 };
   const F = G.econ.food || { fed: 1, bread: 0, grain: 1 };
   const per = Math.max(1, pop);
   const f = [];
@@ -561,8 +709,19 @@ function people(G, dt, S) {
   if (res) add('bonus', 'Blessings', res);
   let target = f.reduce((s, x) => s + x.v, 0);
   target = Math.max(H.min, Math.min(1, target));
-  C.happiness = (C.happiness ?? 0.6) + (target - (C.happiness ?? 0.6)) * (1 - Math.exp(-dt / H.tau));
   G.tmp.happy = f; G.tmp.happyTarget = target;
+  return target;
+}
+
+// full: the once-a-second pass that also re-reads the happiness factors (saved in G.econ.happyT).
+function people(G, dt, S, full) {
+  const H = E().happy, C = G.colony, pop = C.pop || 0;
+  C.popCap = S.cap;
+  if (full || !C.housing) C.housing = { cottage: S.cottages, townhouse: S.townhouses, townhall: 1 };
+  const F = G.econ.food || { fed: 1, bread: 0, grain: 1 };
+  if (full || G.econ.happyT == null) G.econ.happyT = happyFactors(G, S);
+  const target = G.econ.happyT;
+  C.happiness = (C.happiness ?? 0.6) + (target - (C.happiness ?? 0.6)) * (1 - Math.exp(-dt / H.tau));
 
   // arrivals and departures
   const Gr = E().growth;
@@ -592,7 +751,7 @@ function people(G, dt, S) {
     }
   } else G.econ.leave = 0;
   if (starving && pop > 0) warnOnce(G, 'hunger', 'Food has run out: build farms, a windmill and a bakery', 'bad', 'bread');
-  else if (foodMinutes(G) < 3 && pop > 0 && G.t > 30) warnOnce(G, 'foodlow', 'Food is running low', 'warn', 'grain');
+  else if (full && foodMinutes(G) < 3 && pop > 0 && G.t > 30) warnOnce(G, 'foodlow', 'Food is running low', 'warn', 'grain');
 
   // taxes and upkeep (coin)
   const T = E().tax;
@@ -626,34 +785,58 @@ export function hydrate(G) {
   G.tmp.netOf = null;
   refresh(G);
   G.econ = { ...freshEcon(), ...(G.econ || {}) };
-  G.tmp.ledger = { made: {}, used: {}, t: 0 };
-  G.tmp.rates = G.tmp.rates || {};
-  G.tmp.stats = colonyStats(G);
+  // the rate ledger and its smoothed rates are saved too (the chronicle and the scarcity hints read them)
+  G.econ.led = G.econ.led || { made: {}, used: {}, t: 0 };
+  G.tmp.rates = G.econ.rates = G.econ.rates || {};
+  G.tmp.made = G.econ.made = G.econ.made || {};
+  G.tmp.used = G.econ.used = G.econ.used || {};
+  if (!G.econ.S) G.econ.S = colonyStats(G);
+  G.tmp.stats = G.econ.S;
   G.colony.popCap = G.tmp.stats.cap;
+  const T = G.econ.happyT; happyFactors(G, G.tmp.stats); if (T != null) G.tmp.happyTarget = T; // factor list for the UI
+  stepConsts(G);
   if (G.econ.allocT <= 0) allocate(G);
 }
 // Sim state of this module that must survive a save (so a loaded game runs on
-// exactly like one that never stopped): next staffing tick, food eaten lately,
-// goods in short supply, leaver countdown, unpaid upkeep.
-function freshEcon() { return { allocT: 0, short: [], food: { fed: 1, bread: 0, grain: 1, need: 0 }, leave: 0, debt: false }; }
+// exactly like one that never stopped): step accumulators (acc, buildAcc), next staffing
+// tick, housing/services and happiness target from the last staffing pass (S, happyT),
+// food eaten lately, goods in short supply, leaver countdown, unpaid upkeep, and the
+// rate ledger with its smoothed rates (led, rates, made, used).
+function freshEcon() { return { acc: 0, buildAcc: 0, S: null, happyT: null, allocT: 0, short: [], food: { fed: 1, bread: 0, grain: 1, need: 0 }, leave: 0, debt: false }; }
 // re-staff on the next step (after building, demolishing, toggling...)
 export function restaff(G) { if (G.econ) G.econ.allocT = 0; }
 
+// The economy runs on a slower fixed cadence (E().every, 6 ticks) with the summed dt:
+// rates are per minute, so the result matches a per-tick step closely, at a sixth of the cost.
+// The accumulator lives in G.econ, so a loaded game steps on the same ticks.
 export function step(G, dt) {
+  if (!G.econ) G.econ = freshEcon();
+  const e = G.econ;
+  e.acc = (e.acc || 0) + dt;
+  if (e.acc < (E().every || 0) - 1e-9) return;
+  const h = e.acc; e.acc = 0;
+  run(G, h);
+}
+function run(G, dt) {
   if (G.tmp.topo !== topoKey(G)) refresh(G);
   // drop expired boosts
   if (G.colony.boosts && G.colony.boosts.length) G.colony.boosts = G.colony.boosts.filter((b) => b.until == null || b.until > G.t);
-  if (!G.econ) G.econ = freshEcon();
+  stepConsts(G);
   G.econ.allocT -= dt;
-  if (G.econ.allocT <= 0) {
+  const full = G.econ.allocT <= 0;
+  if (full) {
+    // once a second: staffing, storage caps, housing and services (saved in G.econ.S), warnings
     G.econ.allocT = Math.max(0, G.econ.allocT) + E().allocEvery;
     recomputeCaps(G);
     allocate(G);
+    G.econ.S = colonyStats(G);
+    checkRuins(G);
+    checkScarce(G);
   }
   produce(G, dt);
   eat(G, dt);
-  const S = colonyStats(G);
+  const S = G.econ.S || (G.econ.S = colonyStats(G));
   G.tmp.stats = S; G.tmp.food = G.econ.food;
-  people(G, dt, S);
+  people(G, dt, S, full);
   flushRates(G, dt);
 }

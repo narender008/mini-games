@@ -85,6 +85,50 @@ function countNear(I, u0, v0, w, d, ch, r) {
   return n;
 }
 
+// ---- link landings -------------------------------------------------------------------
+// The (up to 6) rim cells of an island nearest each neighbour within cable range
+// (and the cells beside them) are kept for moorings, cable stations and shipyards, so a cable
+// or bridge landing can always be built. G.tmp.reserve[islandId] = { key, cells:
+// Int16Array (0 free, else 1 + index of the faced island in G.islands) }.
+const LINK_RANGE = 20, FACE_SLACK = 1.5, FACE_MAX = 6;
+function rimOf(I) {
+  const out = [];
+  for (let v = 0; v < I.h; v++) for (let u = 0; u < I.w; u++) {
+    if (cellAt(I, u, v) === ' ') continue;
+    if (N4.some(([du, dv]) => cellAt(I, u + du, v + dv) === ' ')) out.push([u, v]);
+  }
+  return out;
+}
+export function reserveOf(G, I) {
+  const R = (G.tmp.reserve = G.tmp.reserve || {});
+  const key = G.islands.map((x) => x.ox + ',' + x.oy).join(';');
+  if (R[I.id] && R[I.id].key === key) return R[I.id];
+  const cells = new Int16Array(I.w * I.h);
+  const rim = rimOf(I);
+  G.islands.forEach((J, j) => {
+    if (J === I) return;
+    if (Math.abs(J.ox - I.ox) > I.w + J.w + LINK_RANGE || Math.abs(J.oy - I.oy) > I.h + J.h + LINK_RANGE) return;
+    const rj = rimOf(J);
+    const dist = rim.map(([u, v]) => {
+      const x = I.ox + u + 0.5, y = I.oy + v + 0.5; let best = 1e9;
+      for (const [a, b] of rj) { const d = Math.hypot(J.ox + a + 0.5 - x, J.oy + b + 0.5 - y); if (d < best) best = d; }
+      return best;
+    });
+    const dmin = Math.min(...dist);
+    if (dmin - 1 > LINK_RANGE) return;
+    const near = rim.map((c, k) => k).filter((k) => dist[k] <= dmin + FACE_SLACK).sort((a, b) => dist[a] - dist[b]).slice(0, FACE_MAX);
+    near.forEach((k) => {
+      const [u, v] = rim[k];
+      for (const [du, dv] of [[0, 0], ...N4]) {
+        const x = u + du, y = v + dv;
+        if (cellAt(I, x, y) !== ' ' && !cells[y * I.w + x]) cells[y * I.w + x] = j + 1;
+      }
+    });
+  });
+  return (R[I.id] = { key, cells });
+}
+const LANDING = new Set(['mooring', 'cablestation', 'shipyard']);
+
 const LABEL = { s: 'a stone outcrop', o: 'an ore seam', c: 'a coal seam', k: 'crystals', h: 'a heat vent', f: 'fertile soil', x: 'the ancient ruin', t: 'forest' };
 
 // Placement only (no cost): { ok, error }
@@ -103,19 +147,26 @@ function placeCheck(G, type, islandId, u, v) {
   u = u | 0; v = v | 0;
   const [w, dd] = d.size, P = d.place || {};
   const occ = G.tmp.occ?.[islandId];
-  let onCount = 0, edge = false;
+  let onCount = 0, edge = false, facing = 0;
+  const landing = LANDING.has(type);
+  const res = reserveOf(G, I).cells;
   for (let y = v; y < v + dd; y++) for (let x = u; x < u + w; x++) {
     const c = cellAt(I, x, y);
     if (c === ' ') return { ok: false, error: 'Off the island' };
-    if (BLOCKED.has(c)) return { ok: false, error: c === 't' ? 'Forest is in the way' : c === 'w' ? 'Water is in the way' : 'Rocks are in the way' };
+    // moorings and cable stations clear a few trees on the rim
+    if (BLOCKED.has(c) && !(landing && c === 't')) return { ok: false, error: c === 't' ? 'Forest is in the way' : c === 'w' ? 'Water is in the way' : 'Rocks are in the way' };
     if (occ && occ[y * I.w + x]) return { ok: false, error: 'Something is already there' };
+    const rj = res[y * I.w + x];
+    if (rj && !landing) return { ok: false, error: `This rim is kept clear for bridges and cable stations to ${G.islands[rj - 1]?.name || 'the next island'}` };
+    if (rj) facing = rj;
     if (DEPOSITS.has(c) && c !== P.on && !(c === 'h' && P.vent)) return { ok: false, error: `Keep ${LABEL[c]} for the building that uses it` };
     if (P.on && c === P.on) onCount++;
     if (P.edge && !edge && opensToSky(G, I, x, y)) edge = true;
   }
   if (P.on && onCount < (P.min || 1)) return { ok: false, error: `Must sit on ${LABEL[P.on]}` };
   if (P.near && countNear(I, u, v, w, dd, P.near.cell, P.near.r) < P.near.min) return { ok: false, error: `Needs ${LABEL[P.near.cell]} nearby` };
-  if (P.edge && !edge) return { ok: false, error: 'Must stand on the island rim, facing open sky' };
+  if (P.edge && !edge && !(type === 'cablestation' && facing)) return { ok: false, error: 'Must stand on the island rim, facing open sky' };
+  if (type === 'cablestation' && !facing) return { ok: false, error: 'Cable stations stand on the rim facing a neighbouring island' };
   return { ok: true };
 }
 
@@ -123,9 +174,10 @@ export function canBuild(G, type, islandId, u, v) {
   const p = placeCheck(G, type, islandId, u, v);
   if (!p.ok) return { ...p, placeOk: false };
   const d = BY_ID[type];
-  const plan = eco.payPlan(G, islandId, d.cost, { convoy: !!d.supply });
-  if (!plan.ok) return { ok: false, placeOk: true, error: eco.missingText(G, islandId, d.cost, plan.missing) };
-  return { ok: true, placeOk: true };
+  const t = eco.withTraders(G, islandId, d.cost, { convoy: !!d.supply });
+  const plan = eco.payPlan(G, islandId, t.cost, { convoy: !!d.supply });
+  if (!plan.ok) return { ok: false, placeOk: true, error: eco.missingText(G, islandId, t.cost, plan.missing), short: eco.shortfall(G, islandId, t.cost, plan.missing) };
+  return { ok: true, placeOk: true, ...(t.bought ? { bought: t.bought, cost: t.cost, note: eco.boughtText(t.bought, t.coin) } : {}) };
 }
 
 // Legal spots (placement rules only, ignoring cost) on one island, or on every
@@ -161,8 +213,10 @@ export function build(G, type, islandId, u, v) {
   const c = canBuild(G, type, islandId, u, v);
   if (!c.ok) return c;
   const d = BY_ID[type];
-  const paid = eco.payFor(G, islandId, d.cost, { convoy: !!d.supply });
+  const t = eco.withTraders(G, islandId, d.cost, { convoy: !!d.supply });
+  const paid = eco.payFor(G, islandId, t.cost, { convoy: !!d.supply });
   if (!paid.ok) return paid;
+  if (t.bought) eco.notify(G, `Bought ${eco.boughtText(t.bought, t.coin)} for the ${d.name}`, 'info', 'coin');
   const b = makeBuilding(G, type, islandId, u | 0, v | 0, false);
   G.buildings.push(b);
   occMark(G, b, b.id);
@@ -222,12 +276,31 @@ export function repair(G, id) {
   if (b.repairing) return { ok: false, error: 'Already being repaired' };
   if (b.state === 'site') return { ok: false, error: 'Still under construction' };
   if (b.state !== 'ruin' && b.hp >= b.maxHp) return { ok: false, error: 'Not damaged' };
+  const d = BY_ID[b.type];
   const cost = repairCost(G, b);
-  const paid = eco.payFor(G, b.island, cost);
-  if (!paid.ok) return paid;
-  b.repairing = true;
-  eco.restaff(G);
-  return { ok: true, id };
+  const t = eco.withTraders(G, b.island, cost);
+  const paid = eco.payFor(G, b.island, t.cost);
+  if (paid.ok) {
+    if (t.bought) eco.notify(G, `Bought ${eco.boughtText(t.bought, t.coin)} to repair the ${d.name}`, 'info', 'coin');
+    b.repairing = true; b.patch = false;
+    eco.restaff(G);
+    return { ok: true, id };
+  }
+  // Never a deadlock: a ruined maker of something nobody else makes (and the
+  // colony cannot buy it) is patched up for free by the settlers, slowly.
+  const plan = eco.payPlan(G, b.island, cost);
+  const unmade = plan.missing.filter((r) => r !== 'coin' && r !== 'insight' && !eco.makes(G, r));
+  if (unmade.length && Object.keys(d.produces || {}).some((r) => !eco.makes(G, r, b))) {
+    b.repairing = true; b.patch = true;
+    eco.restaff(G);
+    eco.notify(G, `Settlers patch up the ${d.name} with what they can find (free, but slower)`, 'info', b.type, { island: b.island, u: b.u, v: b.v });
+    return { ok: true, id, free: true };
+  }
+  if (unmade.length) {
+    const fix = unmade.map((r) => G.buildings.find((x) => (x.state === 'ruin' || eco.isDamaged(x)) && BY_ID[x.type]?.produces?.[r])).find(Boolean);
+    return { ok: false, error: `${paid.error}. Nobody makes ${unmade.join(' or ')} now: ${fix ? `repair the ${BY_ID[fix.type].name} first` : 'build a maker first'} (or demolish something for a refund)` };
+  }
+  return paid;
 }
 
 export function toggle(G, id, on) {
@@ -278,10 +351,16 @@ export function hydrate(G) {
 }
 
 // construction, upgrades and repairs (builders were assigned by economy)
+// Runs on the economy's cadence (E().every) with the summed dt; the accumulator is saved in G.econ.
 export function step(G, dt) {
-  const envK = eco.envMul(G, 'build') * (1 + eco.bonus(G, 'buildSpeed'));
+  const e = G.econ; if (!e) return;
+  e.buildAcc = (e.buildAcc || 0) + dt;
+  if (e.buildAcc < (E().every || 0) - 1e-9) return;
+  dt = e.buildAcc; e.buildAcc = 0;
+  let envK = -1;
   for (const b of G.buildings) {
     if (!needsBuilders(b)) continue;
+    if (envK < 0) envK = eco.envMul(G, 'build') * (1 + eco.bonus(G, 'buildSpeed'));
     const d = BY_ID[b.type]; if (!d) continue;
     const crew = Math.min(1, (b.workers || 0) / Math.max(1, d.builders || 1));
     if (b.state === 'site') {
@@ -312,9 +391,9 @@ export function step(G, dt) {
     }
     if (b.repairing) {
       if (crew <= 0) continue;
-      b.hp = Math.min(b.maxHp, b.hp + E().repair.heal * crew * dt);
+      b.hp = Math.min(b.maxHp, b.hp + E().repair.heal * (b.patch ? E().patchHeal : 1) * crew * dt);
       if (b.hp >= b.maxHp) {
-        b.repairing = false;
+        b.repairing = false; b.patch = false;
         if (b.state === 'ruin') { b.state = 'built'; G.bus.emit('build:done', { b }); }
         b.fire = 0;
         eco.restaff(G);

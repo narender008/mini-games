@@ -18,6 +18,7 @@ export const CFG = {
       coin: 120, insight: 0,
     },
     allocEvery: 1,             // s between worker re-assignments
+    every: 0.2,                // s between economy/construction steps (6 sim ticks, run with the summed dt)
     food: { perSettler: 0.25, breadShare: 0.75, lowMinutes: 6 },  // food units/min each; eat up to this share as bread; "low" below this much stock
     // happiness 0..1: base plus factors, eased toward the target with tau seconds
     happy: {
@@ -155,7 +156,7 @@ export const CFG = {
       lostCrewPop: 0,
     },
     trade: {
-      quickSell: 0.5,        // fraction of the best port price at the town hall
+      quickSell: 0.6,        // fraction of the best port price at the town hall
       buyMarkup: 1.0,        // multiplier on the port's sells price when you buy
       saturation: 0.004,     // price multiplier lost per unit sold to a port
       recover: 0.12,         // fraction of the gap back to base per game minute
@@ -169,7 +170,7 @@ export const CFG = {
       contractDays: [3, 6],  // days to deliver
       contractMax: 2,        // offers + active per port
       contractRep: 12, contractFailRep: -8,
-      contractPremium: 1.35, // reward vs plain sale value
+      contractPremium: 1.5,  // reward vs plain sale value
     },
     chart: {
       scoutTime: 20,         // seconds on site to scout
@@ -192,6 +193,7 @@ export const CFG = {
       finalRetry: 1,         // days before the Dreadnought returns if it escapes
       forgeMinRate: 0.25,    // stage work rate with no staff
       hintEvery: 1,          // seconds between goal checks
+      quietAfterLoad: 90,    // no event card for this long after a load or a preset (s)
       minDwell: 45,          // a chapter lasts at least this long (s), so its banner and steps are seen
     },
   },
