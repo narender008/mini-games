@@ -71,6 +71,8 @@ class App {
     this.mode = pickValid(QUERY.get('mode') || load('mode', 'little'), MODES);
     this.time = 0;
     this.frozen = false;
+    this.idleDt = 0; // world time held back by the quiet-screen cadence (see frame)
+    this.lastDraw = 0;
     this.hidden = false;
     this.last = performance.now();
     this.raycaster = new THREE.Raycaster();
@@ -1201,6 +1203,8 @@ class App {
     this.pacer.reset();
     this.governor.sample(0, true);
     this.lastInput = performance.now();
+    this.lastDraw = 0;
+    this.idleDt = 0;
   }
 
   // Quiet screens draw at half the cadence: the start screen and the easel when no one has touched the
@@ -1223,20 +1227,21 @@ class App {
     if (this.hidden) return;
     let dt = this.pacer.tick(now);
     if (!dt) return;
-    // frames drawn per second, as seen (for stats())
-    this.fpsAvg = this.fpsAvg ? this.fpsAvg + (1000 / Math.max(1, this.pacer.real) - this.fpsAvg) * 0.1 : 60;
-    const idle = !QUERY.has('fps') && this.idle;
-    if (idle && !this.idleSkip) {
-      // (every other frame is skipped; the next one advances the world by both)
-      this.idleSkip = true;
-      this.idleDt = dt;
+    const since = this.lastDraw ? now - this.lastDraw : this.pacer.step;
+    // (a quiet screen draws about 30 times a second: a frame due sooner is skipped and the next one
+    // advances the world by both; a device slower than that is never slowed further)
+    if (!QUERY.has('fps') && since < 30 && this.idle) {
+      this.idleDt += dt;
       return;
     }
-    if (this.idleSkip) dt += this.idleDt;
-    this.idleSkip = false;
+    const stretched = this.idleDt > 0;
+    dt += this.idleDt;
     this.idleDt = 0;
-    // (half-cadence frames say nothing about how the device copes)
-    this.governor.sample(Math.min(0.25, this.pacer.real / 1000), !!this.magicRun || idle);
+    this.lastDraw = now;
+    // frames drawn per second, as seen (for stats())
+    this.fpsAvg = this.fpsAvg ? this.fpsAvg + (1000 / Math.max(1, since) - this.fpsAvg) * 0.2 : 1000 / Math.max(1, since);
+    // (a frame we held back on purpose says nothing about how the device copes)
+    this.governor.sample(Math.min(0.25, since / 1000), !!this.magicRun || stretched);
     if (this.frozen) return;
     this.update(dt);
     // a new render scale glides in (lite: see LitePost.setScale)
