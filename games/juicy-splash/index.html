@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>Juicy Splash · Mini Games</title>
+    <meta name="description" content="A fruit-slicing game for toddlers: swipe or tap big slow fruit to splash them open, fill the juice jar and make a rainbow smoothie. No losing, no bombs, no reading." />
+    <meta name="theme-color" content="#3fb0ff" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Juicy Splash" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas id="scene" aria-label="Fruit float up over a sunny picnic. Swipe or tap them to splash them open."></canvas>
+    <div id="ui">
+      <a class="chip" id="home" href="../../index.html" aria-label="Back to all games">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5V20h-5.5v-5h-5v5H4z" /></svg>
+      </a>
+      <button type="button" class="chip" id="sound" aria-label="Sound on" aria-pressed="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path class="spk" d="M4 9h4l5-4v14l-5-4H4z" />
+          <path class="on" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" />
+          <path class="off" d="M16 9l5 6M21 9l-5 6" />
+        </svg>
+      </button>
+    </div>
+    <noscript><p class="noscript">Juicy Splash needs JavaScript.</p></noscript>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
