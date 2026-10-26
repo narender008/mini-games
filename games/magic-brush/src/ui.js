@@ -1,130 +1,304 @@
-// Buttons. Each one is painted on the canvas (a cached sprite blitted with a
-// squash when pressed) and mirrored by a transparent DOM <button> with a
-// stable id and an aria-label, which does the hit testing, focus and
-// keyboard access. A tap only counts when its press started after the
-// screen appeared and the screen's quiet time (400 ms) has passed, and each
-// button can be made one-shot so a double tap cannot fire twice.
-import { layer, glow, clamp } from './lib.js';
-import { bigButton } from './art.js';
+// The DOM layer: the start screen, the painting toolbar (paint pots,
+// brushes, sizes for big kids, undo and GO), the friend picker, the "what
+// did you paint?" guess, the friends shelf, and the corner buttons (home,
+// friends, full screen, sound). Everything is pictures, not words: little
+// ones cannot read yet. The UI only reports what was tapped; main.js
+// decides what happens.
+import { COLORS, LITTLE_COLORS, BIG_COLORS } from './paint/tools.js';
+import { SUBJECTS, BY_ID } from './creatures/catalog.js';
+import { canFullscreen, isFullscreen } from './fullscreen.js';
 
-const SPRITES = new Map();
-export function buttonSprite(key, size, dpr, draw) {
-  const k = key + '|' + size.toFixed(1) + '|' + dpr;
-  let s = SPRITES.get(k);
-  if (!s) {
-    const c = layer(size * dpr, size * dpr), g = c.getContext('2d');
-    g.scale(dpr, dpr); draw(g, size / 2, size / 2);
-    s = { c, size };
-    SPRITES.set(k, s);
-    if (SPRITES.size > 160) SPRITES.delete(SPRITES.keys().next().value);
-  }
-  return s;
+const $ = (id) => document.getElementById(id);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+
+// a brush handle a little darker than its paint (white paint gets a wooden one)
+function shade(n) {
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  if (r + g + b > 690) return '#c98f55';
+  const k = 0.72;
+  return `rgb(${Math.round(r * k)},${Math.round(g * k)},${Math.round(b * k)})`;
 }
 
-export class Button {
-  constructor(app, o) {
-    this.app = app;
-    Object.assign(this, { x: 0, y: 0, r: 40, w: 0, h: 0, hidden: false, pressed: false, pop: 0, wiggle: 0, once: false, fired: false, scale: 1, z: 0 }, o);
-    const el = document.createElement(o.href ? 'a' : 'button');
-    if (o.href) el.href = o.href; else el.type = 'button';
-    el.id = o.id; el.className = 'hit' + (o.rect ? ' rect' : '');
-    el.setAttribute('aria-label', o.label);
-    if (o.pressedState != null) el.setAttribute('aria-pressed', String(!!o.pressedState));
-    this.el = el;
-    this.downAt = -1;
-    el.addEventListener('pointerdown', (e) => {
-      this.downAt = app.clock();
-      app.unlockAudio();
-      if (!app.inputReady()) return;
-      this.pressed = true;
-      e.stopPropagation();
-    });
-    // a press fires on release, not on the browser's click: a click can be held
-    // back or swallowed after a quick paint stroke (double-tap detection)
-    const up = () => {
-      if (!this.pressed) return;
-      this.pressed = false; this.pop = 1;
-      if (o.href) return;
-      this.upAt = app.clock();
-      if (this.downAt >= app.screenAt) this.tap();
-    };
-    el.addEventListener('pointerup', up);
-    el.addEventListener('pointerleave', () => { this.pressed = false; });
-    el.addEventListener('pointercancel', () => { this.pressed = false; });
-    el.addEventListener('click', (e) => {
-      const keyboard = e.detail === 0;
-      if (o.href) {
-        // the back-to-games link: only a deliberate tap on the title screen
-        if (!app.inputReady() || (!keyboard && this.downAt < app.screenAt)) { e.preventDefault(); return; }
-        return;
-      }
-      e.preventDefault();
-      if (!keyboard && app.clock() - (this.upAt || -9) < 1) return; // already handled on release
-      if (!keyboard && this.downAt < app.screenAt) return;
-      this.tap();
-    });
-    app.ui.appendChild(el);
-  }
-  tap() {
-    const app = this.app;
-    if (!app.inputReady() || this.hidden) return false;
-    if (this.once && this.fired) return false;
-    if (this.cooldown && app.clock() - (this.lastTap || -9) < this.cooldown) return false;
-    // the spot a finger just left: a button there on the next screen stays
-    // inert a little longer (see app.landing), so a mashed tap cannot carry over
-    if (app.landingGuard && app.landingGuard(this)) return false;
-    this.lastTap = app.clock();
-    app.lastTapSpot = { x: this.x, y: this.y, r: this.rect ? Math.max(this.w, this.h) / 2 : this.r, t: app.clock(), W: app.W, H: app.H };
-    if (this.once) this.fired = true;
-    this.pop = 1;
-    app.unlockAudio();
-    this.onTap && this.onTap(this);
-    return true;
-  }
-  place(x, y, r, w, h) {
-    this.x = x; this.y = y; if (r != null) this.r = r; if (w != null) { this.w = w; this.h = h; }
-    const s = this.el.style;
-    if (this.rect) { s.left = `${x - this.w / 2}px`; s.top = `${y - this.h / 2}px`; s.width = `${this.w}px`; s.height = `${this.h}px`; }
-    else { const hr = this.r * (this.hitScale || 1.08); s.left = `${x - hr}px`; s.top = `${y - hr}px`; s.width = `${hr * 2}px`; s.height = `${hr * 2}px`; }
-    s.display = this.hidden ? 'none' : '';
-  }
-  setHidden(h) { this.hidden = h; this.el.style.display = h ? 'none' : ''; }
-  setLabel(l) { this.el.setAttribute('aria-label', l); }
-  remove() { this.el.remove(); }
-  update(dt) {
-    this.pop = Math.max(0, this.pop - dt * 3.2);
-    this.wiggle = Math.max(0, this.wiggle - dt * 1.4);
-    const target = this.pressed ? 0.88 : 1;
-    this.scale += (target - this.scale) * Math.min(1, dt * 22);
-  }
-  // squash on press, a springy pop on release, a wiggle when asked
-  transform(g, t) {
-    const pop = this.pop > 0 ? Math.sin((1 - this.pop) * Math.PI * 2.2) * this.pop * 0.12 : 0;
-    const wig = this.wiggle > 0 ? Math.sin(t * 28) * this.wiggle * 0.22 : 0;
-    g.translate(this.x, this.y);
-    if (wig) g.rotate(wig);
-    const sx = this.scale * (1 + pop), sy = this.scale * (1 - pop * 0.6);
-    g.scale(sx, sy);
-  }
-  draw(g, t) {
-    if (this.hidden) return;
-    g.save();
-    this.transform(g, t);
-    if (this.drawFn) this.drawFn(g, this, t);
-    else {
-      const size = this.r * 2.6, dpr = this.app.dpr;
-      if (this.glow) glowPulse(g, this.r, t, this.glow);
-      const s = buttonSprite(`${this.icon}|${this.col}|${this.seed || 3}|${this.paint || ''}|${this.iconScale || 0}`, size, dpr, (sg, cx, cy) => bigButton(sg, cx, cy, this.r, this.col, this.icon, { seed: this.seed, iconScale: this.iconScale, paint: this.paint }));
-      g.drawImage(s.c, -size / 2, -size / 2, size, size);
-      if (this.active) { g.strokeStyle = '#fffaf0'; g.lineWidth = Math.max(3, this.r * 0.1); g.setLineDash([2, this.r * 0.22]); g.lineCap = 'round'; g.beginPath(); g.arc(0, 0, this.r * 1.18, t * 0.8, t * 0.8 + Math.PI * 2); g.stroke(); g.setLineDash([]); }
+// a fat paint brush loaded with a colour: a big wet tip (the colour to tap),
+// a shiny ferrule and a short handle
+function fatBrush(c, handle) {
+  return `<svg viewBox="0 0 48 64" aria-hidden="true">
+    <path d="M24 1c9 6 15 15 15 24 0 7-4 11-8 12H17c-4-1-8-5-8-12 0-9 6-18 15-24z" fill="${c}" stroke="rgba(0,0,0,.18)" stroke-width="1"/>
+    <path d="M16 28c-1-6 1-12 5-17M23 31c0-7 1-14 3-20M30 29c1-5 0-10-2-14" fill="none" stroke="rgba(0,0,0,.14)" stroke-width="1.3" stroke-linecap="round"/>
+    <path d="M17 10c-3 4-4 8-4 12" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="3" stroke-linecap="round"/>
+    <path d="M33 34c1 3 1 5-1 6-2 0-2-2-1-4z" fill="${c}"/>
+    <rect x="15" y="36" width="18" height="9" rx="2" fill="url(#g-ferrule)"/>
+    <path d="M16.5 45h15l-2.4 16.5a3 3 0 0 1-3 2.5h-4.2a3 3 0 0 1-3-2.5z" fill="${handle}"/>
+    <path d="M20 47l1 13" stroke="rgba(255,255,255,.35)" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>`;
+}
+
+// a friend's picture: its preview (rendered from the game) or its colours
+function picture(id) {
+  const info = BY_ID[id];
+  const img = new Image();
+  img.alt = '';
+  img.decoding = 'async';
+  img.draggable = false;
+  img.src = `previews/${id}.jpg`;
+  img.onerror = () => {
+    const dot = document.createElement('span');
+    dot.className = 'pick-dot';
+    const p = info?.palette || [0xcccccc];
+    dot.style.background = `conic-gradient(${p.map(hex).join(', ')}, ${hex(p[0])})`;
+    img.replaceWith(dot);
+  };
+  return img;
+}
+
+export class UI {
+  // on: { start, mode, color, kind, size, undo, go, pick, openPicker, world,
+  //       paintNew, shelf, shelfFriend, shelfPainting, newCanvas, keep, guess,
+  //       guessMore, closeGuess, menu, mute, fullscreen, any }
+  constructor(on) {
+    this.on = on;
+    this.mode = 'little';
+    this.color = 'red';
+    this.kind = 'brush';
+    this.size = 'medium';
+    this.state = 'loading';
+    for (const type of ['pointerdown', 'pointerup']) document.addEventListener(type, () => on.any?.(), { capture: true });
+
+    // start screen
+    for (const b of $$('.mode')) b.addEventListener('click', () => on.mode(b.dataset.mode));
+    $('start').addEventListener('click', () => on.start());
+    // corners (there are copies of these in each screen)
+    for (const b of $$('.mute')) b.addEventListener('click', () => on.mute());
+    for (const b of $$('.fs')) {
+      b.hidden = !canFullscreen;
+      b.addEventListener('click', () => on.fullscreen());
     }
-    g.restore();
+    for (const b of $$('.shelf-btn')) b.addEventListener('click', () => on.shelf());
+    for (const b of $$('.to-menu')) b.addEventListener('click', () => on.menu());
+    $('pick-btn').addEventListener('click', () => on.openPicker());
+    $('new-btn').addEventListener('click', () => on.newCanvas());
+    $('keep-btn').addEventListener('click', () => on.keep());
+    $('world-btn').addEventListener('click', () => on.world());
+    $('paint-btn').addEventListener('click', () => on.paintNew());
+    // toolbar
+    $('undo-btn').addEventListener('click', () => on.undo());
+    $('go-btn').addEventListener('click', () => on.go());
+    for (const b of $$('.kind')) b.addEventListener('click', () => on.kind(this.kind === b.dataset.kind ? 'brush' : b.dataset.kind));
+    for (const b of $$('.size')) b.addEventListener('click', () => on.size(b.dataset.size));
+    // overlays close on their X or a tap outside
+    for (const o of $$('.overlay')) {
+      o.addEventListener('click', (e) => {
+        if (e.target === o) this.closeOverlay(o.id);
+      });
+      $$('.close', o).forEach((b) => b.addEventListener('click', () => this.closeOverlay(o.id)));
+    }
+    $$('.guess-more')[0].addEventListener('click', () => this.showGuessAll());
+    // the toolbar's width, for the corner buttons beside it on landscape phones
+    new ResizeObserver(() => document.body.style.setProperty('--toolbar-w', `${$('toolbar').offsetWidth}px`)).observe($('toolbar'));
+    this.buildPicker();
+    this.setMode('little');
   }
-}
 
-let GLOW = null;
-export function glowPulse(g, r, t, amt = 1) {
-  if (!GLOW) { GLOW = layer(128, 128); glow(GLOW.getContext('2d'), 64, 64, 64, '#fff1a0', 0.8, 'source-over'); }
-  const k = (1.9 + 0.25 * Math.sin(t * 4)) * r;
-  g.save(); g.globalAlpha = clamp(amt, 0, 1); g.globalCompositeOperation = 'lighter'; g.drawImage(GLOW, -k, -k, k * 2, k * 2); g.restore();
+  closeOverlay(id) {
+    $(id).hidden = true;
+    if (id === 'guess') this.on.closeGuess?.();
+  }
+
+  get overlayOpen() {
+    return $$('.overlay').some((o) => !o.hidden);
+  }
+
+  // ------------------------------------------------------------ state
+
+  setState(state) {
+    this.state = state;
+    document.body.dataset.state = state;
+    $('menu').hidden = state !== 'menu';
+    $$('.menu-corner')[0].hidden = state !== 'menu';
+    $('hud').hidden = !(state === 'paint' || state === 'magic');
+    $('play-hud').hidden = state !== 'play';
+  }
+
+  setMode(mode) {
+    this.mode = mode;
+    document.body.dataset.mode = mode;
+    for (const b of $$('.mode')) b.setAttribute('aria-checked', String(b.dataset.mode === mode));
+    this.buildPaints();
+  }
+
+  buildPaints() {
+    const box = $$('.paints')[0];
+    box.textContent = '';
+    const list = this.mode === 'big' ? BIG_COLORS : LITTLE_COLORS;
+    if (!list.includes(this.color)) this.color = list[0];
+    for (const name of list) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tool paint';
+      b.dataset.color = name;
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-label', `${name} paint`);
+      const c = hex(COLORS[name]);
+      b.style.setProperty('--c', c);
+      // a swipe of wet paint above a brush dipped in it
+      b.innerHTML = fatBrush(c, shade(COLORS[name]));
+      b.addEventListener('click', () => this.on.color(name));
+      box.appendChild(b);
+    }
+    this.setColor(this.color, this.kind);
+  }
+
+  setColor(name, kind = this.kind) {
+    this.color = name;
+    this.kind = kind;
+    for (const b of $$('.paint')) b.setAttribute('aria-checked', String(b.dataset.color === name && kind !== 'sponge'));
+    for (const b of $$('.kind')) b.setAttribute('aria-checked', String(b.dataset.kind === kind));
+    // the brushes wear the colour they would paint with
+    for (const b of $$('.kind')) {
+      if (b.dataset.kind === 'sponge') continue;
+      b.querySelector('svg').style.color = hex(COLORS[name]);
+    }
+  }
+
+  setSize(size) {
+    this.size = size;
+    for (const b of $$('.size')) b.setAttribute('aria-checked', String(b.dataset.size === size));
+  }
+
+  setMuted(m) {
+    for (const b of $$('.mute')) {
+      b.setAttribute('aria-pressed', String(m));
+      b.setAttribute('aria-label', m ? 'Sound on' : 'Sound off');
+    }
+  }
+
+  syncFullscreen() {
+    const fs = isFullscreen();
+    for (const b of $$('.fs')) {
+      b.setAttribute('aria-pressed', String(fs));
+      b.setAttribute('aria-label', fs ? 'Leave full screen' : 'Full screen');
+    }
+  }
+
+  // GO glows when the painting is ready to come alive
+  setReady(ready) {
+    $('go-btn').classList.toggle('ready', !!ready);
+  }
+
+  // ------------------------------------------------------------ picker
+
+  buildPicker() {
+    const grid = $$('.pick-grid')[0];
+    grid.textContent = '';
+    let group = null;
+    for (const s of SUBJECTS) {
+      if (group && s.group !== group) {
+        const g = document.createElement('div');
+        g.className = 'pick-group';
+        g.setAttribute('aria-hidden', 'true');
+        grid.appendChild(g);
+      }
+      group = s.group;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pick';
+      b.setAttribute('role', 'listitem');
+      b.setAttribute('aria-label', s.name);
+      b.appendChild(picture(s.id));
+      b.addEventListener('click', () => {
+        $('picker').hidden = true;
+        this.on.pick(s.id);
+      });
+      grid.appendChild(b);
+    }
+  }
+
+  showPicker() {
+    $('picker').hidden = false;
+  }
+
+  // ------------------------------------------------------------ guess
+
+  // choices: subject ids, best first
+  showGuess(choices) {
+    const box = $$('.guess-cards')[0];
+    box.classList.remove('all');
+    box.textContent = '';
+    for (const id of choices) box.appendChild(this.guessCard(id));
+    $$('.guess-more')[0].hidden = false;
+    $('guess').hidden = false;
+  }
+
+  showGuessAll() {
+    const box = $$('.guess-cards')[0];
+    box.classList.add('all');
+    box.textContent = '';
+    for (const s of SUBJECTS) box.appendChild(this.guessCard(s.id));
+    $$('.guess-more')[0].hidden = true;
+  }
+
+  guessCard(id) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'guess-card';
+    b.setAttribute('role', 'listitem');
+    b.setAttribute('aria-label', BY_ID[id]?.name || id);
+    b.appendChild(picture(id));
+    b.addEventListener('click', () => {
+      $('guess').hidden = true;
+      this.on.guess(id);
+    });
+    return b;
+  }
+
+  // ------------------------------------------------------------ shelf
+
+  // friends: records ({ id, kind, portrait }), out: set of ids playing now;
+  // paintings: kept paintings ({ id, image })
+  showShelf(friends, out, paintings = []) {
+    const grid = $$('.shelf-grid')[0];
+    grid.textContent = '';
+    for (const r of friends) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'well' + (out.has(r.id) ? ' out' : '');
+      b.setAttribute('role', 'listitem');
+      b.setAttribute('aria-label', BY_ID[r.kind]?.name || r.kind);
+      const img = new Image();
+      img.alt = '';
+      img.decoding = 'async'; // (a JPEG decoded on the main thread as the shelf opens would stall the frame)
+      img.src = r.portrait || r.skin;
+      b.appendChild(img);
+      b.addEventListener('click', () => {
+        $('shelf').hidden = true;
+        this.on.shelfFriend(r);
+      });
+      grid.appendChild(b);
+    }
+    $$('.shelf-empty')[0].hidden = friends.length > 0;
+    const pbox = $$('.shelf-paintings')[0];
+    pbox.textContent = '';
+    for (const p of paintings) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'frame';
+      b.setAttribute('role', 'listitem');
+      b.setAttribute('aria-label', 'A kept painting');
+      const img = new Image();
+      img.alt = '';
+      img.decoding = 'async';
+      img.src = p.image;
+      b.appendChild(img);
+      b.addEventListener('click', () => {
+        $('shelf').hidden = true;
+        this.on.shelfPainting?.(p);
+      });
+      pbox.appendChild(b);
+    }
+    $('shelf').hidden = false;
+  }
 }

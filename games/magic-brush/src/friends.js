@@ -1,247 +1,945 @@
-// The twelve friends, ported from the concept renderer. Each friend is a stack
-// of rounded parts in its own units (ground at y = 0, up is -y, about 220
-// units tall, facing right). Every part names a paint slot (the default
-// colours) and a rig group. Groups hinge on a pivot and hang off a parent, so
-// a head can nod on the body, ears flop on the head and legs swing at the hip.
-// The face is drawn on top of its group and is never painted.
-import { el, bl, rrect, bbox } from './lib.js';
+// Friends at play in the world.
+//
+// Every friend has a tiny brain: it idles with personality (looks about,
+// giggles, hops, sniffs, notices your finger), wanders the lawn in front of
+// the garden camera, and sometimes plays with another friend (a bow, a chase).
+// Getting anywhere is a journey along a path found round the easel, the
+// worktable, trunks, lantern posts and the pond (world/nav.js): the friend
+// speeds up, turns into its direction of travel with a lean, slows into the
+// end, and its gait is driven by its true speed so feet stay planted. Friends
+// that do not walk get about the way they would: a flower or tree hops, a
+// boat leaps from stone to stone into the pond, a sun or rainbow floats up
+// into the sky.
+//
+// Its motion is smooth to the last derivative that matters: a heading turns
+// through an angular speed that eases in and out (smooth.js `steer`), a speed
+// changes through an acceleration that comes on gradually (`accelerate`), a squash
+// follows a spring, so no start, stop or turn is ever a jerk.
+//
+// A tap on a friend makes it stop, turn to you and do one of its tricks. Only
+// so many friends play at once (by device); when one more arrives, the friend
+// who has played longest waves goodbye in a puff of sparkles and goes back to
+// the shelf.
+//
+// For the toys and games (play/): every entry `e` has { friend, pos, heading,
+// speed, state, home, scale, busy }. Never set e.heading or e.speed: to turn a
+// standing friend ask face(e, angle, rate) every frame you want it to. Use
+//   send(e, {x, z}, { pace: 'walk'|'run', stopR, onArrive(e), onCancel(e) })
+//                              run or walk there by a sensible path
+//   release(e)                 back to free roaming
+//   emote(e, name, dur)        'hop' 'cheer' 'giggle' 'spin' 'eat' 'nuzzle' 'sniff' 'bow'
+//   lookAt(e, point|null, s)   eyes and head follow a point for a while
+//   walkers()                  the friends that can be sent places
+//   nearest(point, filter)     the closest friend (entry) to a point
+//   stageSpot(avoid, r)        a free spot on the lawn in front of the camera
+// and set `friends.pointer` (a THREE.Vector3 on the ground, or null) each
+// frame so friends notice where the child's finger is.
+import * as THREE from 'three';
+import { clamp, rand, angleDiff, damp, pick } from './config.js';
+import { homeSpot, onPond, WATER_Y, stageAt, STAGE, STONES_X } from './world/world.js';
+import { Nav } from './world/nav.js';
+import { blobTexture } from './play/art.js';
+import { steer, accelerate, smoothDamp, smoother } from './smooth.js';
 
-const P = (name, pts, slot, group = 'body') => ({ name, pts, slot, group });
+const _v = new THREE.Vector3();
+const _w = new THREE.Vector3();
+const _vel = new THREE.Vector3();
+const WATER = new THREE.Color(0.75, 0.9, 1.0);
+const SPARK = [[1.8, 1.4, 0.8], [1.4, 1.2, 1.9]];
 
-export const FRIENDS = {
-  dragon: {
-    pal: ['#5cc79a', '#ffd65a', '#ff8fb8', '#ff9a3d'],
-    parts: () => [
-      P('tail', bl(-30, -45, -95, -30, -150, -50, -172, -92, -158, -100, -128, -66, -70, -78), 0, 'tail'),
-      P('tip', bl(-160, -88, -196, -116, -178, -136, -152, -106), 3, 'tail'),
-      P('wingB', bl(-34, -104, -104, -150, -96, -176, -70, -170, -62, -214, -34, -190, -8, -222, 8, -150, 4, -108), 2, 'wing'),
-      P('legB', el(-36, -16, 26, 19), 0, 'legB'),
-      P('spk1', bl(-62, -104, -80, -136, -46, -118), 3),
-      P('spk2', bl(-38, -122, -46, -158, -16, -130), 3),
-      P('body', el(0, -72, 66, 60), 0),
-      P('belly', el(24, -60, 34, 44, -0.25), 1),
-      P('legF', el(30, -16, 26, 19), 0, 'legF'),
-      P('arm', el(48, -78, 14, 22, -0.6), 0, 'arm'),
-      P('hornB', bl(32, -182, 20, -222, 50, -194), 3, 'head'),
-      P('head', el(56, -148, 54, 47), 0, 'head'),
-      P('snout', el(100, -134, 34, 27), 0, 'head'),
-      P('hornF', bl(62, -192, 66, -232, 84, -190), 3, 'head'),
-    ],
-    groups: { tail: { pivot: [-40, -58] }, wing: { pivot: [-10, -112] }, legB: { pivot: [-36, -30], root: true }, legF: { pivot: [30, -30], root: true }, arm: { pivot: [40, -92] }, head: { pivot: [40, -112] } },
-    face: { group: 'head', eyes: [[46, -156], [78, -160]], er: 12, mouth: [104, -122, 22], nose: [[118, -142], [128, -138]], blush: [[40, -128], [118, -120]] },
-    mouthAt: [128, -132], gait: 'quad', voice: 0.8, trick: 'flame',
-  },
-  unicorn: {
-    pal: ['#c9a7f5', 'rainbow', '#ffd23f', '#ff86b8'],
-    parts: () => [
-      P('tail', bl(-58, -100, -102, -118, -126, -78, -112, -30, -96, -58, -76, -82), 1, 'tail'),
-      P('legB1', rrect(-52, -70, 24, 66, 10), 0, 'legB'), P('hoofB1', rrect(-53, -14, 26, 16, 6), 3, 'legB'),
-      P('legB2', rrect(28, -70, 24, 66, 10), 0, 'legB2'), P('hoofB2', rrect(27, -14, 26, 16, 6), 3, 'legB2'),
-      P('body', el(0, -90, 76, 44), 0),
-      P('legF1', rrect(-32, -64, 24, 62, 10), 0, 'legF'), P('hoofF1', rrect(-33, -12, 26, 16, 6), 3, 'legF'),
-      P('legF2', rrect(46, -64, 24, 62, 10), 0, 'legF2'), P('hoofF2', rrect(45, -12, 26, 16, 6), 3, 'legF2'),
-      P('neck', bl(38, -102, 52, -158, 92, -160, 82, -96), 0, 'head'),
-      P('ear', bl(60, -186, 58, -216, 78, -192), 0, 'head'),
-      P('head', el(84, -162, 40, 32, 0.3), 0, 'head'),
-      P('snout', el(114, -140, 24, 21), 0, 'head'),
-      P('mane', bl(64, -196, 34, -176, 26, -132, 38, -96, 52, -118, 52, -152, 72, -182), 1, 'head'),
-      P('horn', bl(80, -188, 100, -246, 96, -186), 2, 'head'),
-    ],
-    groups: { tail: { pivot: [-62, -98] }, legB: { pivot: [-40, -66], root: true }, legB2: { pivot: [40, -66], root: true }, legF: { pivot: [-20, -60], root: true }, legF2: { pivot: [58, -60], root: true }, head: { pivot: [56, -104] } },
-    face: { group: 'head', eyes: [[92, -166]], er: 11, mouth: [116, -128, 16], nose: [[128, -142]], blush: [[100, -146]] },
-    lines: [[[85, -200], [97, -206]], [[88, -214], [98, -219]], [[91, -228], [99, -231]]], linesGroup: 'head',
-    mouthAt: [120, -134], gait: 'quad', voice: 1.15, trick: 'rainbow',
-  },
-  puppy: {
-    pal: ['#f4a95b', '#fff0c9', '#8a64c8', '#3aa0ff'],
-    parts: () => [
-      P('tail', bl(-38, -48, -78, -76, -84, -100, -66, -92, -46, -66), 0, 'tail'),
-      P('legB', el(-30, -20, 32, 22), 0),
-      P('body', el(0, -62, 50, 60), 0),
-      P('belly', el(10, -52, 27, 38), 1),
-      P('pawL', el(-8, -10, 18, 13), 1, 'feet'), P('pawR', el(26, -10, 18, 13), 1, 'feet'),
-      P('collar', bl(-34, -108, 40, -114, 42, -98, -30, -96), 3),
-      P('head', el(6, -150, 56, 48), 0, 'head'),
-      P('spot', el(-16, -168, 18, 15, 0.3), 2, 'head'),
-      P('earL', bl(-34, -178, -66, -150, -60, -104, -36, -120, -28, -160), 2, 'earL'),
-      P('earR', bl(44, -182, 76, -152, 72, -108, 52, -122, 38, -164), 2, 'earR'),
-      P('muzzle', el(14, -128, 28, 19), 1, 'head'),
-    ],
-    groups: { tail: { pivot: [-40, -54] }, feet: { pivot: [10, -10], root: true }, head: { pivot: [6, -106] }, earL: { pivot: [-36, -168], parent: 'head' }, earR: { pivot: [44, -172], parent: 'head' } },
-    face: { group: 'head', eyes: [[-10, -152], [30, -152]], er: 11, mouth: [14, -118, 20], tongue: true, noseBlob: [14, -136, 9], blush: [[-26, -132], [50, -132]] },
-    mouthAt: [14, -120], gait: 'hop', voice: 1.0, trick: 'spin',
-  },
-  kitten: {
-    pal: ['#ff9bc8', '#fff3d6', '#b56be0', '#ffd23f'],
-    parts: () => [
-      P('tail', bl(-36, -28, -78, -42, -96, -96, -84, -132, -70, -128, -74, -84, -52, -60), 0, 'tail'),
-      P('body', el(0, -58, 48, 56), 0),
-      P('chest', el(8, -60, 26, 34), 1),
-      P('pawL', el(-8, -9, 16, 12), 1, 'feet'), P('pawR', el(24, -9, 16, 12), 1, 'feet'),
-      P('earL', bl(-42, -158, -48, -210, -10, -180), 0, 'earL'), P('earR', bl(24, -180, 58, -210, 54, -160), 0, 'earR'),
-      P('head', el(6, -142, 56, 44), 0, 'head'),
-      P('str1', bl(-6, -186, 0, -158, 8, -186), 2, 'head'), P('str2', bl(-26, -180, -18, -160, -12, -184), 2, 'head'), P('str3', bl(14, -184, 22, -162, 30, -180), 2, 'head'),
-      P('muzzle', el(8, -126, 22, 14), 1, 'head'),
-    ],
-    groups: { tail: { pivot: [-40, -34] }, feet: { pivot: [8, -8], root: true }, head: { pivot: [6, -100] }, earL: { pivot: [-30, -170], parent: 'head' }, earR: { pivot: [40, -172], parent: 'head' } },
-    face: { group: 'head', eyes: [[-14, -144], [30, -144]], er: 11.5, mouth: [8, -118, 16], noseTri: [8, -131], blush: [[-30, -126], [46, -126]], whiskers: [8, -126] },
-    mouthAt: [8, -120], gait: 'hop', voice: 1.25, trick: 'pounce',
-  },
-  bunny: {
-    pal: ['#8fd3ff', '#ff9fc4', '#fff4c4', '#ff9a3d'],
-    parts: () => [
-      P('tail', el(-44, -42, 18, 17), 2, 'tail'),
-      P('earL', bl(-22, -158, -44, -244, -12, -256, 2, -166), 0, 'earL'), P('innerL', bl(-18, -170, -32, -236, -14, -238, -6, -172), 1, 'earL'),
-      P('earR', bl(16, -164, 26, -254, 56, -244, 36, -160), 0, 'earR'), P('innerR', bl(20, -172, 32, -238, 46, -232, 30, -170), 1, 'earR'),
-      P('body', el(0, -56, 46, 52), 0),
-      P('belly', el(8, -50, 26, 32), 2),
-      P('footL', el(-18, -9, 26, 12), 0, 'feet'), P('footR', el(28, -9, 26, 12), 0, 'feet'),
-      P('head', el(6, -132, 48, 42), 0, 'head'),
-    ],
-    groups: { tail: { pivot: [-40, -42] }, feet: { pivot: [5, -8], root: true }, head: { pivot: [6, -94] }, earL: { pivot: [-10, -164], parent: 'head' }, earR: { pivot: [26, -166], parent: 'head' } },
-    face: { group: 'head', eyes: [[-10, -136], [24, -136]], er: 11, mouth: [7, -114, 14], noseTri: [7, -124], blush: [[-26, -118], [40, -118]], teeth: [7, -112] },
-    mouthAt: [7, -116], gait: 'bunny', voice: 1.35, trick: 'superhop',
-  },
-  fox: {
-    pal: ['#ff8a3a', '#fff6e6', '#6a4fb3', '#5cc28a'],
-    parts: () => [
-      P('tail', bl(-36, -66, -96, -50, -142, -98, -122, -150, -78, -116, -44, -96), 0, 'tail'),
-      P('tailTip', bl(-128, -118, -144, -100, -132, -146, -112, -150, -110, -128), 1, 'tail'),
-      P('legB', rrect(-44, -48, 22, 48, 9), 2, 'legB'), P('legB2', rrect(20, -48, 22, 48, 9), 2, 'legB2'),
-      P('body', el(0, -70, 58, 40), 0),
-      P('legF', rrect(-26, -44, 22, 44, 9), 2, 'legF'), P('legF2', rrect(38, -44, 22, 44, 9), 2, 'legF2'),
-      P('chest', bl(34, -100, 60, -100, 56, -56, 30, -60), 1),
-      P('earB', bl(28, -150, 26, -196, 56, -162), 0, 'head'), P('earF', bl(62, -160, 84, -200, 92, -152), 0, 'head'),
-      P('head', el(60, -128, 42, 36), 0, 'head'),
-      P('muzzle', bl(64, -126, 104, -122, 118, -112, 100, -98, 66, -102), 1, 'head'),
-    ],
-    groups: { tail: { pivot: [-40, -80] }, legB: { pivot: [-33, -44], root: true }, legB2: { pivot: [31, -44], root: true }, legF: { pivot: [-15, -40], root: true }, legF2: { pivot: [49, -40], root: true }, head: { pivot: [46, -98] } },
-    face: { group: 'head', eyes: [[54, -134], [82, -134]], er: 10, mouth: [104, -106, 12], noseBlob: [118, -113, 7], blush: [[44, -112]] },
-    mouthAt: [108, -108], gait: 'quad', voice: 1.05, trick: 'dive',
-  },
-  elephant: {
-    pal: ['#9b8cff', '#ffb3d1', '#ffe066', '#57c785'],
-    parts: () => [
-      P('tail', bl(-74, -84, -96, -64, -92, -58, -72, -76), 0, 'tail'),
-      P('legB', rrect(-62, -60, 34, 60, 12), 0, 'legB'), P('legB2', rrect(20, -60, 34, 60, 12), 0, 'legB2'),
-      P('body', el(-12, -86, 74, 56), 0),
-      P('legF', rrect(-38, -54, 34, 54, 12), 0, 'legF'), P('legF2', rrect(36, -54, 34, 54, 12), 0, 'legF2'),
-      P('head', el(58, -130, 50, 48), 0, 'head'),
-      P('trunk', bl(86, -120, 116, -96, 128, -58, 138, -46, 128, -36, 110, -56, 98, -86, 76, -98), 0, 'trunk'),
-      P('ear', bl(22, -168, -10, -146, -14, -96, 22, -84, 44, -112, 40, -150), 1, 'ear'),
-      P('hat', bl(36, -172, 58, -232, 82, -170), 3, 'head'),
-      P('pom', el(58, -232, 11, 11), 2, 'head'),
-    ],
-    groups: { tail: { pivot: [-74, -80] }, legB: { pivot: [-45, -56], root: true }, legB2: { pivot: [37, -56], root: true }, legF: { pivot: [-21, -50], root: true }, legF2: { pivot: [53, -50], root: true }, head: { pivot: [36, -104] }, trunk: { pivot: [92, -112], parent: 'head' }, ear: { pivot: [30, -150], parent: 'head' } },
-    face: { group: 'head', eyes: [[60, -140], [88, -140]], er: 10.5, mouth: [82, -108, 12], blush: [[54, -116], [100, -120]] },
-    lines: [[[-42, -6], [-38, -14]], [[-30, -6], [-30, -14]], [[44, -6], [48, -14]], [[56, -6], [56, -14]]], linesGroup: null,
-    mouthAt: [130, -40], gait: 'quad', voice: 0.6, trick: 'spray',
-  },
-  turtle: {
-    pal: ['#4bbf73', '#ffd23f', '#a8e06a', '#ff86b8'],
-    parts: () => [
-      P('legB', el(-52, -14, 22, 16), 2, 'legB'), P('legB2', el(36, -14, 22, 16), 2, 'legB2'),
-      P('tail', bl(-82, -30, -106, -22, -84, -16), 2, 'tail'),
-      P('head', bl(62, -40, 84, -86, 128, -96, 148, -66, 128, -36, 90, -24), 2, 'head'),
-      P('shell', bl(-90, -26, -82, -96, -10, -132, 66, -100, 86, -26), 0),
-      P('rim', bl(-96, -30, 92, -30, 94, -12, -94, -12), 1),
-      P('p1', el(-40, -70, 20, 16), 1), P('p2', el(14, -88, 22, 16), 1), P('p3', el(50, -58, 16, 14), 1), P('p4', el(-6, -46, 16, 12), 1),
-      P('legF', el(-36, -6, 22, 14), 2, 'legF'), P('legF2', el(52, -6, 22, 14), 2, 'legF2'),
-    ],
-    groups: { tail: { pivot: [-84, -24] }, legB: { pivot: [-52, -20], root: true }, legB2: { pivot: [36, -20], root: true }, legF: { pivot: [-36, -14], root: true }, legF2: { pivot: [52, -14], root: true }, head: { pivot: [76, -40] } },
-    face: { group: 'head', eyes: [[112, -74], [134, -74]], er: 9.5, mouth: [128, -54, 14], blush: [[104, -54]] },
-    mouthAt: [140, -56], gait: 'quad', voice: 0.75, trick: 'shell', swims: true,
-  },
-  whale: {
-    pal: ['#4a9cf0', '#cfeeff', '#ff86b8', '#ffd23f'],
-    parts: () => [
-      P('fluke', bl(-92, -58, -128, -104, -156, -112, -138, -78, -158, -40, -124, -42, -92, -40), 0, 'tail'),
-      P('body', bl(-102, -52, -78, -120, 6, -146, 86, -116, 110, -58, 70, -12, -36, -10), 0),
-      P('belly', bl(-40, -24, 20, -40, 96, -60, 84, -22, 36, -10, -20, -12), 1),
-      P('fin', el(14, -50, 26, 12, 0.6), 0, 'fin'),
-    ],
-    groups: { tail: { pivot: [-96, -50] }, fin: { pivot: [0, -58] } },
-    face: { group: 'body', eyes: [[52, -92], [82, -92]], er: 11, mouth: [78, -68, 22], blush: [[42, -70], [104, -76]] },
-    lines: [[[30, -34], [44, -16]], [[48, -40], [60, -20]], [[66, -46], [76, -26]]], linesGroup: 'body',
-    mouthAt: [90, -66], gait: 'swim', voice: 0.55, trick: 'spout', swims: true, lives: 'pond', spout: [-6, -146],
-  },
-  butterfly: {
-    pal: ['#ff6fa8', '#ffb347', '#6a4fb3', '#5ad1e8'],
-    parts: () => [
-      P('wtl', bl(-6, -118, -60, -186, -122, -170, -112, -108, -16, -98), 0, 'wingL'), P('s1', el(-74, -146, 18, 15), 3, 'wingL'),
-      P('wbl', bl(-6, -96, -90, -96, -96, -40, -56, -26, -10, -72), 1, 'wingL'), P('s3', el(-58, -62, 13, 13), 3, 'wingL'),
-      P('wtr', bl(6, -118, 60, -186, 122, -170, 112, -108, 16, -98), 0, 'wingR'), P('s2', el(74, -146, 18, 15), 3, 'wingR'),
-      P('wbr', bl(6, -96, 90, -96, 96, -40, 56, -26, 10, -72), 1, 'wingR'), P('s4', el(58, -62, 13, 13), 3, 'wingR'),
-      P('body', el(0, -84, 13, 50), 2),
-      P('head', el(0, -146, 22, 20), 2, 'head'),
-    ],
-    groups: { wingL: { pivot: [-4, -104] }, wingR: { pivot: [4, -104] }, head: { pivot: [0, -128] } },
-    face: { group: 'head', eyes: [[-8, -148], [8, -148]], er: 5.5, mouth: [0, -138, 8], blush: [] },
-    lines: [[[-6, -164], [-18, -192], [-30, -200]], [[6, -164], [18, -192], [30, -200]]], linesGroup: 'head',
-    dots: [[-30, -200, 6], [30, -200, 6]],
-    mouthAt: [0, -138], gait: 'fly', voice: 1.6, trick: 'loop', front: true,
-  },
-  penguin: {
-    pal: ['#3d5bd9', '#fff7e0', '#ffa630', '#f0544f'],
-    parts: () => [
-      P('footL', el(-18, -6, 22, 10), 2, 'footL'), P('footR', el(24, -6, 22, 10), 2, 'footR'),
-      P('flipL', bl(-42, -110, -70, -70, -62, -50, -38, -76), 0, 'flipL'),
-      P('body', bl(-48, -40, -50, -140, -24, -196, 20, -200, 50, -150, 52, -40, 2, -10), 0),
-      P('belly', bl(-30, -50, -34, -120, 0, -150, 34, -120, 32, -50, 2, -24), 1),
-      P('flipR', bl(44, -110, 72, -70, 66, -50, 42, -76), 0, 'flipR'),
-      P('beak', bl(-8, -160, 24, -162, 8, -140), 2, 'head'),
-      P('hat', bl(-34, -186, -26, -222, 4, -236, 30, -222, 38, -186, 2, -178), 3, 'head'),
-      P('hatBand', bl(-38, -192, 40, -192, 42, -176, -36, -176), 1, 'head'),
-      P('pom', el(4, -240, 13, 13), 2, 'head'),
-    ],
-    groups: { footL: { pivot: [-18, -8], root: true }, footR: { pivot: [24, -8], root: true }, flipL: { pivot: [-42, -104] }, flipR: { pivot: [44, -104] }, head: { pivot: [2, -140] } },
-    face: { group: 'head', eyes: [[-16, -170], [24, -170]], er: 10.5, mouth: null, blush: [[-30, -150], [40, -150]] },
-    mouthAt: [8, -150], gait: 'waddle', voice: 1.2, trick: 'slide', swims: true,
-  },
-  teddy: {
-    pal: ['#c98a52', '#ffe0b8', '#f0544f', '#5cc28a'],
-    parts: () => [
-      P('legL', el(-26, -20, 26, 22), 0, 'footL'), P('padL', el(-30, -18, 12, 12), 1, 'footL'),
-      P('legR', el(30, -20, 26, 22), 0, 'footR'), P('padR', el(34, -18, 12, 12), 1, 'footR'),
-      P('armL', el(-48, -76, 16, 26, 0.45), 0, 'armL'), P('armR', el(52, -76, 16, 26, -0.45), 0, 'armR'),
-      P('body', el(2, -66, 48, 50), 0),
-      P('tummy', el(2, -60, 28, 30), 1),
-      P('earL', el(-38, -180, 18, 18), 0, 'earL'), P('inL', el(-38, -180, 9, 9), 1, 'earL'),
-      P('earR', el(42, -180, 18, 18), 0, 'earR'), P('inR', el(42, -180, 9, 9), 1, 'earR'),
-      P('head', el(2, -146, 52, 46), 0, 'head'),
-      P('muzzle', el(2, -128, 22, 16), 1, 'head'),
-      P('bowL', bl(2, -104, -26, -120, -28, -92), 2), P('bowR', bl(2, -104, 30, -120, 32, -92), 2), P('knot', el(2, -104, 8, 8), 2),
-    ],
-    groups: { footL: { pivot: [-26, -30], root: true }, footR: { pivot: [30, -30], root: true }, armL: { pivot: [-38, -94] }, armR: { pivot: [42, -94] }, head: { pivot: [2, -106] }, earL: { pivot: [-30, -172], parent: 'head' }, earR: { pivot: [34, -172], parent: 'head' } },
-    face: { group: 'head', eyes: [[-16, -152], [20, -152]], er: 10, mouth: [2, -120, 14], noseBlob: [2, -132, 8], blush: [[-32, -132], [36, -132]] },
-    mouthAt: [2, -122], gait: 'waddle', voice: 0.9, trick: 'wave',
-  },
-};
-export const FRIEND_IDS = ['dragon', 'unicorn', 'puppy', 'kitten', 'bunny', 'fox', 'elephant', 'turtle', 'whale', 'butterfly', 'penguin', 'teddy'];
+// idle fidgets: name, weight (for friends that walk on legs)
+const FIDGETS = [
+  ['giggle', 3],
+  ['hop', 3],
+  ['sniff', 2],
+  ['spin', 1],
+  ['bow', 1],
+];
 
-const PARTS = new Map();
-export function partsOf(kind) {
-  let p = PARTS.get(kind);
-  if (!p) { p = FRIENDS[kind].parts(); PARTS.set(kind, p); }
-  return p;
-}
-const BOX = new Map();
-export function friendBox(kind) {
-  let b = BOX.get(kind);
-  if (!b) { const all = []; for (const p of partsOf(kind)) all.push(...p.pts); b = bbox(all); BOX.set(kind, b); }
-  return b;
-}
-// ordered chain from root to group, e.g. ['body', 'head', 'earL']
-export function groupChain(def, name) {
-  const out = [];
-  let n = name;
-  for (let i = 0; i < 4 && n; i++) {
-    out.unshift(n);
-    if (n === 'body') break;
-    const gd = def.groups && def.groups[n];
-    if (!gd) { if (n !== 'body') out.unshift('body'); break; }
-    if (gd.root) break;
-    n = gd.parent || 'body';
+export class Friends {
+  constructor({ scene, fx, audio, quality, walkable, groundAt }) {
+    this.scene = scene;
+    this.fx = fx;
+    this.audio = audio;
+    this.q = quality;
+    this.walkable = walkable;
+    this.groundAt = groundAt;
+    this.nav = new Nav(walkable);
+    this.list = [];
+    this.time = 0;
+    this.pointer = null; // the finger on the ground, or null
+    this.onLeave = null;
+    this.onJourney = null; // (entry, 'start' | 'end') for the camera
+    this.socialTimer = rand(8, 14);
+    this.later = [];
   }
-  return out;
+
+  // run fn after `sec` seconds of play (paused with the game, unlike setTimeout)
+  after(sec, fn) {
+    this.later.push({ t: sec, fn });
+  }
+
+  get cap() {
+    return this.q.active;
+  }
+
+  // ------------------------------------------------------------ adding and leaving
+
+  // a friend that has just come alive (or come back from the shelf).
+  // fresh: it says hello first; journey: and then sets off for the garden
+  add(friend, record, { x, z, heading = 0, fresh = true, journey = fresh } = {}) {
+    const home = friend.info.home || 'ground';
+    const e = {
+      friend,
+      record,
+      home,
+      pos: new THREE.Vector3(x, this.groundAt(x, z), z),
+      heading,
+      speed: 0,
+      acc: 0, // its acceleration (m/s^2), so speed changes ease in and out
+      turnVel: 0, // its angular speed (rad/s) and acceleration, for the same
+      turnAcc: 0,
+      state: 'idle',
+      timer: fresh ? 1.4 : rand(0.5, 2),
+      task: null,
+      target: new THREE.Vector3(),
+      trickIndex: 0,
+      born: performance.now(),
+      lookTimer: 0,
+      leaving: 0,
+      scale: home === 'ground' ? friend.landScale : 1,
+      travel: 0,
+      busy: 0,
+      bank: 0,
+      fidget: rand(3, 8),
+      squash: 0, // what is asked for (a landing kicks it up; it decays); sqS is what shows
+      sqS: 0,
+      vSq: { v: 0 },
+      vY: { v: 0 },
+      hopper: null,
+      lookHold: 0,
+      journey,
+    };
+    if (home !== 'ground') {
+      if (fresh && journey) {
+        // say hello where it landed, then off home
+        e.state = 'hello';
+        e.timer = 0.9;
+      } else this.settle(e, this.homeFor(e), fresh);
+    } else if (fresh && journey) {
+      // (the come-alive moment already ended with its own hello)
+      e.state = 'hello';
+      e.timer = 0.7;
+    }
+    // (a friend that has just landed carries what is left of its landing squash)
+    if (friend.landSquash) {
+      e.squash = e.sqS = friend.landSquash;
+      friend.landSquash = 0;
+    }
+    friend.object.rotation.order = 'YXZ';
+    friend.object.position.copy(e.pos);
+    friend.object.rotation.set(0, e.heading, 0);
+    friend.object.scale.setScalar(e.scale);
+    if (!friend.object.parent) this.scene.add(friend.object);
+    this.list.push(e);
+    // over the limit: the friend who has played longest goes to the shelf
+    const playing = this.list.filter((x) => !x.leaving);
+    if (playing.length > this.cap) {
+      const oldest = playing.filter((x) => x !== e).sort((a, b) => a.born - b.born)[0];
+      if (oldest) this.leave(oldest);
+    }
+    return e;
+  }
+
+  taken(home) {
+    return this.list.filter((o) => o.home === home && !o.leaving).map((o) => o.pos);
+  }
+
+  // where a friend with a home of its own settles: flowers and trees in the
+  // beds around the lawn nearest the garden camera, suns and rainbows up over
+  // the garden, boats on the pond
+  homeFor(e) {
+    if (e.home !== 'garden') return homeSpot(e.home, this.taken(e.home));
+    const spots = [[-1.9, -1.6], [-0.9, -3.3], [0.9, -2.6], [1.6, -1.6], [-2.4, -2.6], [0.3, -3.9], [-1.3, -1.7], [1.8, -3.4], [-0.2, -1.5]];
+    const taken = this.taken('garden');
+    let best = spots[0];
+    let bestS = -Infinity;
+    for (const p of spots) {
+      // not on the stepping stones
+      if (Math.abs(p[0] - STONES_X(p[1])) < 0.5) continue;
+      let d = 1.5;
+      for (const t of taken) d = Math.min(d, Math.hypot(t.x - p[0], t.z - p[1]));
+      const s = d * 2 - Math.hypot(p[0] - STAGE.x, p[1] - STAGE.z) * 0.4 + Math.random() * 0.4;
+      if (s > bestS) {
+        bestS = s;
+        best = p;
+      }
+    }
+    return { x: best[0], y: this.groundAt(best[0], best[1]), z: best[1] };
+  }
+
+  // put a friend at its home spot; grow: it pops up small and grows to size
+  settle(e, spot, grow = true) {
+    e.pos.set(spot.x, spot.y, spot.z);
+    e.baseY = spot.y;
+    e.scale = e.friend.worldScale;
+    e.friend.atHome = true;
+    e.state = 'idle';
+    e.timer = rand(1, 3);
+    e.task = null;
+    e.speed = 0;
+    // face the studio, where the children are
+    e.heading = Math.atan2(0.4 - spot.x, 2 - spot.z) + rand(-0.3, 0.3);
+    if (grow) e.grow = 0.001;
+  }
+
+  leave(e) {
+    e.leaving = 0.001;
+    e.state = 'leaving';
+    e.task = null;
+  }
+
+  has(record) {
+    return this.list.some((e) => e.record === record || (e.record && record && e.record.id === record.id));
+  }
+
+  clear() {
+    for (const e of this.list) {
+      this.scene.remove(e.friend.object);
+      e.friend.dispose();
+    }
+    this.list = [];
+  }
+
+  // ------------------------------------------------------------ for toys and games
+
+  // friends that can be sent places (not leaving, not in a journey)
+  walkers() {
+    return this.list.filter((e) => !e.leaving && (e.home === 'ground' || e.home === 'pond') && e.friend.walkSpeed > 0 && e.state !== 'hello' && e.state !== 'journey');
+  }
+
+  nearest(p, filter = null) {
+    let best = null;
+    let bestD = Infinity;
+    for (const e of this.list) {
+      if (e.leaving || (filter && !filter(e))) continue;
+      const d = Math.hypot(e.pos.x - p.x, e.pos.z - p.z);
+      if (d < bestD) {
+        bestD = d;
+        best = e;
+      }
+    }
+    return best;
+  }
+
+  // a free spot on the lawn in front of the garden camera
+  stageSpot(avoid = null, r = 0.7) {
+    let best = null;
+    for (let i = 0; i < 30; i++) {
+      const x = STAGE.x + rand(-1.5, 1.5);
+      const z = STAGE.z + rand(-1.15, 1.15);
+      if (stageAt(x, z) > -0.1 || !this.nav.free(x, z, 0.16)) continue;
+      let near = 1.6;
+      for (const o of this.list) if (!o.leaving) near = Math.min(near, Math.hypot(o.pos.x - x, o.pos.z - z));
+      if (avoid) near = Math.min(near, Math.hypot(avoid.x - x, avoid.z - z) * 1.3);
+      const s = near + Math.random() * 0.25;
+      if (!best || s > best.s) best = { x, z, s };
+    }
+    return best ? { x: best.x, z: best.z } : { x: STAGE.x, z: STAGE.z };
+  }
+
+  // Send a friend to a point by a sensible path. Returns false when it cannot
+  // (a friend that does not walk, or no way through).
+  send(e, to, { pace = 'walk', stopR = 0.04, onArrive = null, onCancel = null } = {}) {
+    const f = e.friend;
+    if (e.leaving || f.walkSpeed <= 0) return false;
+    this.cancelTask(e);
+    const clear = 0.07 + 0.17 * f.restRadius * e.scale;
+    let path = this.nav.find(e.pos.x, e.pos.z, to.x, to.z, clear);
+    if (!path) path = this.nav.find(e.pos.x, e.pos.z, to.x, to.z, 0.05);
+    if (!path) return false;
+    e.task = { path, i: 0, pace, stopR, onArrive, onCancel, stuck: 0, lastD: Infinity, age: 0 };
+    e.state = 'go';
+    e.busy = 0;
+    return true;
+  }
+
+  cancelTask(e) {
+    const t = e.task;
+    if (!t) return;
+    e.task = null;
+    t.onCancel?.(e);
+  }
+
+  // back to roaming freely
+  release(e) {
+    this.cancelTask(e);
+    if (e.state === 'go' || e.state === 'trick') e.state = 'idle';
+    e.timer = rand(1.5, 3);
+  }
+
+  emote(e, name, dur) {
+    if (e.leaving || e.state === 'journey') return false;
+    const ok = e.friend.emote(name, dur);
+    if (ok) e.busy = Math.max(e.busy, e.friend.emoteState.dur + 0.15);
+    return ok;
+  }
+
+  // ask a standing friend to turn to face an angle (call it every frame it should keep
+  // doing so); it turns through the same eased steering as everything else
+  face(e, angle, rate = 4) {
+    e.faceAngle = angle;
+    e.faceRate = rate;
+    e.faceUntil = this.time + 0.1;
+  }
+
+  lookAt(e, point, seconds = 2) {
+    e.friend.look = point;
+    e.lookHold = point ? seconds : 0;
+  }
+
+  // ------------------------------------------------------------ tapping
+
+  // screen-space tap: the friend under (x, y) px, if any
+  pick(x, y, camera, view) {
+    let best = null;
+    let bestD = Infinity;
+    for (const e of this.list) {
+      if (e.leaving || e.state === 'journey') continue;
+      const f = e.friend;
+      const c = f.worldCenter(_v);
+      _w.copy(c).project(camera);
+      if (_w.z > 1) continue;
+      const sx = (_w.x * 0.5 + 0.5) * view.w;
+      const sy = (-_w.y * 0.5 + 0.5) * view.h;
+      const dist = camera.position.distanceTo(c);
+      const rpx = ((f.restRadius * f.object.scale.x) / (dist * Math.tan((camera.fov * Math.PI) / 360))) * (view.h / 2);
+      const d = Math.hypot(x - sx, y - sy);
+      if (d < rpx * 1.05 + 28 && d / rpx < bestD) {
+        bestD = d / rpx;
+        best = e;
+      }
+    }
+    return best;
+  }
+
+  // a tap: stop, turn to face the camera, do the next trick
+  play(e, camera) {
+    const f = e.friend;
+    if (f.trick || e.state === 'journey' || e.state === 'hello') return;
+    const tricks = f.tricks;
+    const name = tricks[e.trickIndex % tricks.length];
+    e.trickIndex++;
+    this.cancelTask(e);
+    e.state = 'trick';
+    // friends at home in the sky or a bed keep their place and just turn a little
+    e.faceCamera = true;
+    f.startTrick(name, f.trickLength(name));
+    this.audio.tap?.();
+  }
+
+  // ------------------------------------------------------------ the frame
+
+  // lite (concept v2): friends cast no shadow-map shadow; one instanced soft
+  // contact shadow each, under them on the ground, drawn in a single call
+  update(dt, t, camera) {
+    this._update(dt, t, camera);
+    if (!this.q?.lite) return;
+    if (!this.blobs) {
+      const m = new THREE.MeshBasicMaterial({ map: blobTexture(), color: 0x1a0d05, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+      this.blobs = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), m, 24);
+      this.blobs.frustumCulled = false;
+      this.blobs.renderOrder = -1;
+      this.scene.add(this.blobs);
+      this._bm = new THREE.Matrix4();
+    }
+    let n = 0;
+    for (const e of this.list) {
+      const f = e.friend;
+      if (!f.object.parent || n >= 24 || e.home === 'sky') continue;
+      const p = f.object.position;
+      const g = this.groundAt(p.x, p.z);
+      const lift = Math.max(0, p.y - g);
+      const r = f.restRadius * f.object.scale.x * 2.1 * (1 + lift * 1.5);
+      this._bm.makeScale(r, 1, r * 0.85).setPosition(p.x, g + 0.004, p.z);
+      this.blobs.setMatrixAt(n++, this._bm);
+    }
+    this.blobs.count = n;
+    this.blobs.instanceMatrix.needsUpdate = true;
+  }
+
+  _update(dt, t, camera) {
+    this.time += dt;
+    for (let i = this.later.length - 1; i >= 0; i--) {
+      const l = this.later[i];
+      if ((l.t -= dt) <= 0) {
+        this.later.splice(i, 1);
+        l.fn();
+      }
+    }
+    this.social(dt);
+    const n = this.list.length;
+    for (let i = n - 1; i >= 0; i--) {
+      const e = this.list[i];
+      const f = e.friend;
+      let shrink = 1;
+      e.busy = Math.max(0, e.busy - dt);
+      if (e.lookHold > 0 && (e.lookHold -= dt) <= 0 && f.look !== camera.position) f.look = null;
+      if (e.leaving) {
+        if (!e.waving && !f.trick) {
+          e.waving = true;
+          f.startTrick('bye', 1.2);
+        }
+        if (e.waving) e.leaving += dt;
+        this.rest(e, dt);
+        const k = clamp((e.leaving - 0.8) / 0.6, 0, 1);
+        shrink = Math.max(0.001, 1 - smoother(k));
+        if (k > 0 && !e.poofed) {
+          e.poofed = true;
+          this.fx.sparkles.burst(f.worldCenter(_v), 50, { colors: SPARK.concat([[1.8, 1.4, 0.8]]), speed: 0.9, up: 0.5 });
+          this.audio.poof?.();
+        }
+        if (k >= 1) {
+          this.scene.remove(f.object);
+          f.dispose();
+          this.list.splice(i, 1);
+          this.onLeave?.(e);
+          continue;
+        }
+      } else if (e.state === 'hello') {
+        e.timer -= dt;
+        f.look = camera.position;
+        this.rest(e, dt);
+        if (e.timer <= 0) this.setOff(e);
+      } else if (e.state === 'journey') {
+        shrink = this.journey(e, dt);
+      } else this.think(e, dt, t, camera);
+      this.integrate(e, dt, shrink, camera);
+      for (const ev of f.events) this.onEvent(e, ev);
+      f.events.length = 0;
+    }
+  }
+
+  // stand there: speed and turning ease away to nothing
+  rest(e, dt) {
+    accelerate(e, 0, dt, 1, this.brakeOf(e));
+    steer(e, e.heading, dt, e.friend.turnRate);
+  }
+
+  // how hard this friend brakes (m/s^2): from a run to a stop in under half a second
+  brakeOf(e) {
+    return Math.max(0.6, (e.friend.run * e.scale) / 0.45);
+  }
+
+  // move, keep apart, settle onto the ground, write the transform
+  integrate(e, dt, shrink, camera) {
+    const f = e.friend;
+    if (e.state !== 'journey') {
+      const fwdX = Math.sin(e.heading);
+      const fwdZ = Math.cos(e.heading);
+      e.pos.x += fwdX * e.speed * dt;
+      e.pos.z += fwdZ * e.speed * dt;
+      // stay apart from other friends on the ground
+      if (e.home === 'ground' || e.home === 'pond') {
+        for (const o of this.list) {
+          if (o === e || o.home !== e.home || o.state === 'journey') continue;
+          const dx = e.pos.x - o.pos.x;
+          const dz = e.pos.z - o.pos.z;
+          const d = Math.hypot(dx, dz);
+          const want = (f.restRadius * e.scale + o.friend.restRadius * o.scale) * 0.7;
+          if (d < want && d > 1e-4) {
+            const push = (want - d) * 2.5 * dt;
+            e.pos.x += (dx / d) * push;
+            e.pos.z += (dz / d) * push;
+          }
+        }
+      }
+      const floor = e.home === 'pond' && e.baseY !== undefined ? WATER_Y : e.home === 'sky' && e.baseY !== undefined ? e.baseY : this.groundAt(e.pos.x, e.pos.z);
+      // (a step up or down, like the edge of the deck, is taken in a smooth stride)
+      e.pos.y = smoothDamp(e.pos.y, floor, e.vY, 0.09, dt);
+    }
+    // planting: a friend that has arrived at its home pops up and grows to size
+    let grow = 1;
+    if (e.grow) {
+      e.grow += dt;
+      const k = clamp(e.grow / 0.9, 0, 1);
+      const g0 = e.growFrom ?? 0.001;
+      // (it grows from rest, overshoots a little and settles: no jolt as it starts)
+      const sn = Math.sin(Math.PI * k);
+      grow = Math.max(0.001, g0 + (1 - g0) * (smoother(k) + 0.5 * k * sn * sn));
+      if (k >= 1) e.grow = 0;
+    }
+    // what is asked for decays; what shows follows it through a spring, so a landing
+    // or a crouch (which set it in one go) never make the body step
+    e.squash = damp(e.squash, 0, 9, dt);
+    e.sqS = smoothDamp(e.sqS, e.squash, e.vSq, 0.08, dt);
+    const sq = e.sqS;
+    f.object.position.copy(e.pos);
+    f.object.rotation.set(0, e.heading, e.bank);
+    const s = Math.max(0.001, e.scale * shrink * grow);
+    f.object.scale.set(s * (1 + sq * 0.5), s * (1 - sq), s * (1 + sq * 0.5));
+    // gaits count in the friend's own units
+    f.motion.speed = e.speed / Math.max(0.05, e.scale);
+    f.update(dt, camera);
+  }
+
+  // ------------------------------------------------------------ thinking
+
+  think(e, dt, t, camera) {
+    const f = e.friend;
+    const roams = (e.home === 'ground' || e.home === 'pond') && f.walkSpeed > 0;
+    let desired = e.heading;
+    let turnRate = f.turnRate;
+    let bankTarget = 0;
+    if (e.state === 'trick') {
+      if (e.faceCamera) {
+        const toCam = Math.atan2(camera.position.x - e.pos.x, camera.position.z - e.pos.z);
+        // planted and floating friends only turn part of the way
+        desired = roams ? toCam : e.heading + clamp(angleDiff(e.heading, toCam), -0.6, 0.6);
+      }
+      f.look = camera.position;
+      accelerate(e, 0, dt, 1, this.brakeOf(e));
+      if (!f.trick) {
+        e.state = 'idle';
+        e.timer = rand(1.5, 3);
+        e.faceCamera = false;
+      }
+    } else if (e.state === 'idle') {
+      accelerate(e, 0, dt, 1, this.brakeOf(e));
+      // (a toy may want it to face something)
+      if (e.faceUntil > this.time) {
+        desired = e.faceAngle;
+        turnRate = Math.max(turnRate, e.faceRate);
+      }
+      e.timer -= dt;
+      e.lookTimer -= dt;
+      this.gaze(e, camera);
+      if (e.busy <= 0 && !f.emoting) {
+        e.fidget -= dt;
+        if (e.fidget <= 0) {
+          e.fidget = rand(4, 10);
+          if (roams && e.home === 'ground') this.emote(e, this.fidget(), undefined);
+        }
+      }
+      if (e.timer <= 0 && e.busy <= 0) {
+        if (roams) this.wander(e);
+        else e.timer = rand(2, 5);
+      }
+    } else if (e.state === 'go') {
+      const r = this.followPath(e, dt);
+      desired = r.desired;
+      turnRate *= r.turnBoost;
+      // lean into a bend, in proportion to how hard it is turning at speed
+      bankTarget = clamp(-e.turnVel * 0.07 * r.bank * clamp(e.speed / Math.max(0.05, f.run * e.scale), 0, 1.2), -0.22, 0.22);
+      f.look = null;
+    }
+    // slow, weighty friends still turn; the turn eases in and out
+    steer(e, desired, dt, turnRate);
+    e.bank = damp(e.bank, bankTarget, 6, dt);
+  }
+
+  // where the eyes go while standing about: the finger if it is near, else
+  // you, else another friend, else nothing in particular
+  gaze(e, camera) {
+    const f = e.friend;
+    const ptr = this.pointer;
+    if (ptr && Math.hypot(ptr.x - e.pos.x, ptr.z - e.pos.z) < 2.4) {
+      f.look = ptr;
+      e.lookHold = 0.6;
+      return;
+    }
+    if (e.lookHold > 0) return;
+    if (e.lookTimer > 0) return;
+    e.lookTimer = rand(1.5, 4);
+    const r = Math.random();
+    if (r < 0.45) f.look = camera.position;
+    else if (r < 0.75 && this.list.length > 1) {
+      const other = pick(this.list.filter((x) => x !== e && !x.leaving));
+      f.look = other ? other.friend.object.position : null;
+    } else f.look = null;
+  }
+
+  fidget() {
+    let total = 0;
+    for (const [, w] of FIDGETS) total += w;
+    let r = Math.random() * total;
+    for (const [name, w] of FIDGETS) {
+      r -= w;
+      if (r <= 0) return name;
+    }
+    return 'giggle';
+  }
+
+  // a stroll to somewhere nearby on the lawn
+  wander(e) {
+    const pond = e.home === 'pond';
+    if (pond) {
+      if (e.spot0x === undefined) {
+        e.spot0x = e.pos.x;
+        e.spot0z = e.pos.z;
+      }
+      for (let tries = 0; tries < 12; tries++) {
+        const x = e.pos.x + rand(-0.7, 0.7);
+        const z = e.pos.z + rand(-0.7, 0.7);
+        if (onPond(x, z) < -0.25) return this.startWalk(e, x, z);
+      }
+      return this.startWalk(e, e.spot0x, e.spot0z);
+    }
+    // friends like company: most strolls end up beside another friend, which keeps
+    // the group together in the picture and gives them someone to play with
+    const mates = this.walkers().filter((o) => o !== e && o.home === e.home);
+    if (mates.length && Math.random() < 0.6) {
+      const m = pick(mates);
+      const gap = (m.friend.restRadius * m.scale + e.friend.restRadius * e.scale) * 0.9 + 0.1;
+      for (let tries = 0; tries < 10; tries++) {
+        const a = rand(0, Math.PI * 2);
+        const d = gap + rand(0.05, 0.5);
+        const x = m.pos.x + Math.sin(a) * d;
+        const z = m.pos.z + Math.cos(a) * d;
+        if (stageAt(x, z) < -0.1 && this.nav.free(x, z, 0.16)) return this.startWalk(e, x, z);
+      }
+    }
+    for (let tries = 0; tries < 20; tries++) {
+      const a = rand(0, Math.PI * 2);
+      const d = rand(0.6, 1.7);
+      const x = e.pos.x + Math.sin(a) * d;
+      const z = e.pos.z + Math.cos(a) * d;
+      if (stageAt(x, z) < -0.1 && this.nav.free(x, z, 0.16)) return this.startWalk(e, x, z);
+    }
+    const s = this.stageSpot();
+    this.startWalk(e, s.x, s.z);
+  }
+
+  startWalk(e, x, z) {
+    if (e.home === 'pond') {
+      // on the water: straight lines, no paths to find
+      e.task = { path: [{ x, z }], i: 0, pace: 'walk', stopR: 0.05, stuck: 0, lastD: Infinity, age: 0, open: true };
+      e.state = 'go';
+      return;
+    }
+    if (!this.send(e, { x, z }, { pace: 'walk' })) e.timer = rand(1.5, 3);
+  }
+
+  // Steering along a path: a lookahead point, a speed that eases in and out
+  // and drops for sharp turns, and a lean into the bend.
+  followPath(e, dt) {
+    const f = e.friend;
+    const t = e.task;
+    if (!t) {
+      e.state = 'idle';
+      e.timer = rand(2, 5);
+      return { desired: e.heading, turnBoost: 1, bank: 0 };
+    }
+    t.age += dt;
+    const path = t.path;
+    // move on when a waypoint is reached (corners are cut a little)
+    while (t.i < path.length - 1 && Math.hypot(path[t.i].x - e.pos.x, path[t.i].z - e.pos.z) < 0.14 + e.speed * 0.15) t.i++;
+    const wp = path[t.i];
+    const last = t.i === path.length - 1;
+    const dx = wp.x - e.pos.x;
+    const dz = wp.z - e.pos.z;
+    const d = Math.hypot(dx, dz);
+    // steer to a point a little way along the path so bends are smooth
+    let ax = dx;
+    let az = dz;
+    if (!last && d < 0.5) {
+      const nx = path[t.i + 1].x - wp.x;
+      const nz = path[t.i + 1].z - wp.z;
+      const nl = Math.hypot(nx, nz) || 1;
+      const k = 1 - d / 0.5;
+      ax += (nx / nl) * 0.5 * k;
+      az += (nz / nl) * 0.5 * k;
+    }
+    const desired = Math.atan2(ax, az);
+    const diff = angleDiff(e.heading, desired);
+    // what is left to go
+    let remaining = d;
+    for (let i = t.i; i < path.length - 1; i++) remaining += Math.hypot(path[i + 1].x - path[i].x, path[i + 1].z - path[i].z);
+    // speeds are in the friend's own units; a bigger friend covers more ground
+    const vmax = (t.pace === 'run' ? f.run : f.walkSpeed) * e.scale;
+    const accel = vmax / 0.55;
+    const decel = vmax / 0.45;
+    // a speed from which it can stop at the end, easing in and out
+    const vStop = Math.sqrt(2 * decel * 0.8 * Math.max(0, remaining - t.stopR));
+    const align = clamp(1.15 - Math.abs(diff) / 1.1, 0.12, 1);
+    const want = Math.min(vmax, vStop) * align;
+    accelerate(e, want, dt, accel, decel * 1.6);
+    // arrived (it keeps its speed and eases to a stop as it stands there)
+    if (last && remaining <= t.stopR + 0.03) {
+      e.task = null;
+      e.state = 'idle';
+      e.timer = rand(1.5, 4);
+      t.onArrive?.(e);
+      return { desired: e.heading, turnBoost: 1, bank: 0 };
+    }
+    // stuck (pushed by others, wedged on scenery): give up gracefully
+    if (d > t.lastD - 0.002 * (dt * 60)) t.stuck += dt;
+    else t.stuck = Math.max(0, t.stuck - dt);
+    t.lastD = d;
+    if (t.stuck > 2.5 || t.age > 40) {
+      const cb = t.onArrive;
+      e.task = null;
+      e.state = 'idle';
+      e.timer = rand(1, 2);
+      cb?.(e);
+      return { desired: e.heading, turnBoost: 1, bank: 0 };
+    }
+    return { desired, turnBoost: t.pace === 'run' ? 1.5 : 1.15, bank: 1 };
+  }
+
+  // ------------------------------------------------------------ social play
+
+  // now and then two free friends play together: one bows and runs over, the
+  // other giggles, and they chase each other round for a moment
+  social(dt) {
+    this.socialTimer -= dt;
+    if (this.socialTimer > 0) return;
+    this.socialTimer = rand(14, 26);
+    const free = this.walkers().filter((e) => e.home === 'ground' && e.state === 'idle' && e.busy <= 0 && !e.friend.trick && !e.friend.emoting);
+    if (free.length < 2) return;
+    const a = pick(free);
+    const others = free.filter((o) => o !== a).sort((p, q) => Math.hypot(p.pos.x - a.pos.x, p.pos.z - a.pos.z) - Math.hypot(q.pos.x - a.pos.x, q.pos.z - a.pos.z));
+    const b = others[0];
+    if (Math.hypot(b.pos.x - a.pos.x, b.pos.z - a.pos.z) > 3) return;
+    this.playTogether(a, b);
+  }
+
+  playTogether(a, b) {
+    const stop = 0.28 + (a.friend.restRadius * a.scale + b.friend.restRadius * b.scale) * 0.5;
+    const ok = this.send(a, b.pos, {
+      pace: 'run',
+      stopR: stop,
+      onArrive: () => {
+        if (b.leaving) return;
+        this.emote(a, 'bow');
+        this.lookAt(b, a.friend.object.position, 2);
+        this.after(0.7, () => this.chase(b, a));
+      },
+    });
+    if (ok) {
+      b.busy = 4;
+      this.lookAt(b, a.friend.object.position, 2);
+      a.busy = 6;
+    }
+  }
+
+  // b runs off round the lawn and a chases; both cheer at the end
+  chase(b, a) {
+    if (a.leaving || b.leaving || this.list.indexOf(a) < 0 || this.list.indexOf(b) < 0) return;
+    const spot = this.stageSpot(b.pos, 1);
+    b.busy = 0;
+    this.send(b, spot, {
+      pace: 'run',
+      onArrive: () => this.emote(b, 'cheer'),
+    });
+    b.busy = 6;
+    this.after(0.5, () => {
+      if (a.leaving) return;
+      this.send(a, spot, { pace: 'run', stopR: 0.3, onArrive: () => this.emote(a, 'giggle') });
+      a.busy = 6;
+    });
+  }
+
+  // ------------------------------------------------------------ journeys
+
+  // After the hello: off to the garden, the way this friend gets about
+  setOff(e) {
+    const f = e.friend;
+    e.friend.look = null;
+    this.onJourney?.(e, 'start');
+    if (e.home === 'ground' && f.walkSpeed > 0) {
+      const spot = this.stageSpot(e.pos, 0.9);
+      const ok = this.send(e, spot, {
+        pace: 'run',
+        onArrive: () => this.arrived(e),
+        onCancel: () => this.arrived(e, true),
+      });
+      if (ok) {
+        e.state = 'go';
+        e.fidget = rand(4, 8);
+        return;
+      }
+      e.state = 'idle';
+      this.onJourney?.(e, 'end');
+      return;
+    }
+    // a hopping, floating or leaping journey
+    const spot = this.homeFor(e);
+    e.spot = spot;
+    e.state = 'journey';
+    e.jt = 0;
+    e.jStart = e.pos.clone();
+    e.jScale0 = e.scale;
+    e.travel = 0;
+    if (e.home === 'sky') {
+      const dx = spot.x - e.pos.x;
+      const dz = spot.z - e.pos.z;
+      e.jDur = 4.2;
+      e.jSpin = Math.atan2(dx, dz);
+    } else {
+      // hops along a path: flowers hop small, trees thump, boats leap stone to stone
+      const clear = 0.16;
+      let path = this.nav.find(e.pos.x, e.pos.z, spot.x, spot.z, clear);
+      if (e.home === 'pond') path = this.pondHops(e, spot);
+      if (!path) path = [{ x: spot.x, z: spot.z }];
+      e.jPath = path;
+      e.jI = 0;
+      e.hopper = null;
+    }
+  }
+
+  // stones and lawn between the easel and the pond, for a boat to leap along
+  pondHops(e, spot) {
+    const a = this.nav.find(e.pos.x, e.pos.z, -1.2, -2.6, 0.16) || [];
+    return a.concat([{ x: spot.x, z: spot.z }]);
+  }
+
+  arrived(e, cancelled = false) {
+    if (e.arrivedFired) return;
+    e.arrivedFired = true;
+    if (!cancelled) {
+      e.friend.look = null;
+      this.emote(e, 'cheer');
+    }
+    this.onJourney?.(e, 'end');
+  }
+
+  // one frame of a special journey; returns the scale factor
+  journey(e, dt) {
+    const f = e.friend;
+    e.jt += dt;
+    if (e.home === 'sky') return this.floatUp(e, dt);
+    // hopping
+    const path = e.jPath;
+    const home = e.home;
+    const big = home === 'pond' ? 2.2 : f.worldScale > 2 ? 0.55 : 0.4;
+    const dur = home === 'pond' ? 0.95 : f.worldScale > 2 ? 0.62 : 0.48;
+    const height = home === 'pond' ? 0.75 : f.worldScale > 2 ? 0.11 : 0.09;
+    if (!e.hopper) {
+      const p = path[e.jI];
+      const dx = p.x - e.pos.x;
+      const dz = p.z - e.pos.z;
+      const d = Math.hypot(dx, dz);
+      const step = Math.min(big, d);
+      const last = e.jI === path.length - 1;
+      e.hopper = { t: -0.16, from: e.pos.clone(), to: new THREE.Vector3(e.pos.x + (dx / d) * step, 0, e.pos.z + (dz / d) * step), dur: dur * Math.min(1, 0.45 + (step / big) * 0.55), reach: d <= big + 1e-3, last };
+      e.hopper.heading = Math.atan2(dx, dz);
+      // the ground it comes down on (the pond for the last leap of a boat)
+      e.hopper.y1 = last && e.hopper.reach ? e.spot.y : this.groundAt(e.hopper.to.x, e.hopper.to.z);
+    }
+    const h = e.hopper;
+    h.t += dt;
+    // turn towards the hop, then crouch, spring, fly and squash on landing
+    steer(e, h.heading, dt, f.turnRate * 2.5);
+    if (h.t < 0) {
+      const k = (h.t + 0.16) / 0.16;
+      e.squash = 0.08 * Math.sin(Math.min(1, k) * Math.PI * 0.5);
+      return 1;
+    }
+    const k = clamp(h.t / h.dur, 0, 1);
+    // it leaves the ground and comes back to it at no speed at all (a sine
+    // squared up, a quintic along), so a hop has no jolt at take-off or touch-down
+    const kx = smoother(k);
+    e.pos.x = h.from.x + (h.to.x - h.from.x) * kx;
+    e.pos.z = h.from.z + (h.to.z - h.from.z) * kx;
+    // (the ground under it changes between where it left and where it lands as it does, so
+    // the edge of the deck or the water is no step)
+    const gy = h.from.y + (h.y1 - h.from.y) * kx;
+    const sn = Math.sin(Math.PI * k);
+    // (a short hop is a low one, so it is never a violent one)
+    e.pos.y = gy + height * (h.dur / dur) * (h.dur / dur) * sn * sn;
+    f.motion.air = 0;
+    // stretched in flight
+    e.squash = -0.06 * Math.sin(k * Math.PI);
+    if (k >= 1) {
+      e.pos.y = gy;
+      e.squash = 0.14;
+      f.touchDown?.(Math.min(3, height * 4));
+      this.fx.sparkles.burst(_v.set(e.pos.x, gy + 0.02, e.pos.z), home === 'pond' ? 22 : 8, { colors: [[1.6, 1.4, 1]], speed: 0.5, up: 0.4, size: 0.014 });
+      if (home === 'pond' && h.reach && e.jI === path.length - 1) {
+        // splash into the pond
+        for (let i = 0; i < 26; i++) this.fx.droplets.throw(_v.set(e.pos.x, WATER_Y + 0.02, e.pos.z), _vel.set(rand(-0.9, 0.9), rand(1, 2.4), rand(-0.9, 0.9)), WATER, rand(0.004, 0.009), true);
+        this.audio.poof?.();
+      }
+      this.audio.land?.();
+      if (h.reach) e.jI++;
+      e.hopper = null;
+      if (e.jI >= path.length) return this.plant(e);
+    }
+    return 1;
+  }
+
+  // a sun or rainbow rises up over the garden, growing as it goes
+  floatUp(e, dt) {
+    const f = e.friend;
+    const k = clamp(e.jt / e.jDur, 0, 1);
+    const ease = k * k * (3 - 2 * k);
+    const s = e.spot;
+    const w = Math.sin(k * Math.PI);
+    e.pos.x = e.jStart.x + (s.x - e.jStart.x) * ease + Math.sin(k * Math.PI * 2) * 0.25 * w * w * (1 - k);
+    e.pos.z = e.jStart.z + (s.z - e.jStart.z) * ease;
+    e.pos.y = e.jStart.y + (s.y - e.jStart.y) * ease + w * w * 0.4;
+    steer(e, Math.atan2(0.4 - s.x, 2 - s.z), dt, 1.2);
+    const grow = e.jScale0 + (f.worldScale - e.jScale0) * ease;
+    if (Math.random() < 0.8) this.fx.sparkles.emit(e.pos.x + rand(-0.1, 0.1), e.pos.y + rand(-0.05, 0.1), e.pos.z + rand(-0.1, 0.1), rand(-0.1, 0.1), rand(-0.15, 0.05), rand(-0.1, 0.1), [1.9, 1.5, 0.8], rand(0.012, 0.03), rand(0.6, 1.2));
+    if (k >= 1) {
+      e.pos.set(s.x, s.y, s.z);
+      e.baseY = s.y;
+      f.atHome = true;
+      e.scale = f.worldScale;
+      e.state = 'idle';
+      e.timer = rand(2, 4);
+      this.fx.sparkles.burst(_v.copy(e.pos), 70, { colors: [[1.9, 1.5, 0.8], [1.2, 1.6, 1.2]], speed: 1.1, up: 0.9, size: 0.03 });
+      this.audio.magic?.('shimmer');
+      f.onArrive?.();
+      this.arrived(e);
+      return 1;
+    }
+    e.scale = grow;
+    return 1;
+  }
+
+  // a flower or tree hops the last hop and plants itself
+  plant(e) {
+    const f = e.friend;
+    const spot = e.spot;
+    e.baseY = spot.y;
+    e.pos.set(spot.x, spot.y, spot.z);
+    e.friend.atHome = true;
+    e.state = 'idle';
+    e.timer = rand(2, 4);
+    e.speed = 0;
+    e.squash = 0.18;
+    // it grows to size from what it was hopping at (a boat in the water, a flower or
+    // tree putting down roots in a puff of earth and sparkles)
+    e.growFrom = clamp(e.scale / f.worldScale, 0.2, 1);
+    e.scale = f.worldScale;
+    e.grow = 0.001;
+    if (e.home !== 'pond') this.fx.sparkles.burst(_v.set(spot.x, spot.y + 0.1, spot.z), 60, { colors: [[1.9, 1.5, 0.8], [1.2, 1.6, 1.2]], speed: 1.1, up: 0.9, size: 0.03 });
+    this.audio.magic?.('shimmer');
+    f.onArrive?.();
+    this.arrived(e);
+    return 1;
+  }
+
+  onEvent(e, ev) {
+    const f = e.friend;
+    if (ev.type === 'sound') this.audio.creature?.(f.info.id, ev.name);
+    else if (ev.type === 'puff') {
+      const dir = _w.copy(ev.dir).sub(ev.at).normalize();
+      const colors = ev.colors || f.sparkleColors || [[1.8, 1.5, 0.8], [0.9, 1.4, 2.0], [1.6, 0.9, 1.9]];
+      this.fx.sparkles.burst(ev.at, ev.count ?? 90, { colors, speed: ev.speed ?? 1.6, size: ev.size ?? 0.022, dir: dir.multiplyScalar(ev.push ?? 1.4), spread: 0.6, up: 0.1, life: 1.6, gravity: -0.1 });
+    } else if (ev.type === 'sparkle') {
+      this.fx.sparkles.burst(ev.at, ev.count ?? 30, { colors: ev.colors || [[1.8, 1.5, 0.9]], speed: ev.speed ?? 0.6, up: ev.up ?? 0.4, size: ev.size ?? 0.018, life: ev.life ?? 1.2 });
+    } else if (ev.type === 'splash') {
+      // water drops (a whale's spout, a boat's bow wave)
+      const c = ev.color || WATER;
+      for (let k = 0; k < (ev.count ?? 20); k++) {
+        const vel = _vel.set(rand(-0.4, 0.4), rand(0.8, 1.6) * (ev.up ?? 1), rand(-0.4, 0.4));
+        this.fx.droplets.throw(ev.at, vel, c, rand(0.004, 0.009), true);
+      }
+    } else if (ev.type === 'land') {
+      this.fx.sparkles.burst(ev.at.setY(this.groundAt(ev.at.x, ev.at.z) + 0.02), 18, { colors: [[1.6, 1.4, 1]], speed: 0.6, up: 0.4, size: 0.015 });
+    }
+  }
 }

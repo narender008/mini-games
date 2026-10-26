@@ -1,31 +1,38 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#8fcbef"/>
-      <stop offset="1" stop-color="#d9f0f7"/>
+    <radialGradient id="bg" cx="0.5" cy="0.35" r="0.75">
+      <stop offset="0" stop-color="#8a5f8c"/>
+      <stop offset="1" stop-color="#3b2a4a"/>
+    </radialGradient>
+    <linearGradient id="rainbow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff6b6b"/>
+      <stop offset="0.25" stop-color="#ffc93c"/>
+      <stop offset="0.5" stop-color="#6ed36e"/>
+      <stop offset="0.75" stop-color="#4fa8ff"/>
+      <stop offset="1" stop-color="#b16cff"/>
+    </linearGradient>
+    <linearGradient id="ferrule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#9aa0a8"/>
+      <stop offset="0.45" stop-color="#f4f6f8"/>
+      <stop offset="1" stop-color="#8a9098"/>
     </linearGradient>
     <linearGradient id="handle" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#f0544f"/>
-      <stop offset="1" stop-color="#ff8a7a"/>
+      <stop offset="0" stop-color="#e0574a"/>
+      <stop offset="1" stop-color="#9c2a20"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="112" fill="url(#sky)"/>
-  <path d="M0 372 C 110 330 190 350 270 368 S 430 352 512 330 L 512 400 C 512 462 462 512 400 512 L 112 512 C 50 512 0 462 0 400 Z" fill="#9ad48a"/>
-  <g fill="none" stroke-linecap="round" stroke-width="26">
-    <path d="M86 372 A 170 170 0 0 1 426 372" stroke="#f0544f"/>
-    <path d="M112 372 A 144 144 0 0 1 400 372" stroke="#ffd23f"/>
-    <path d="M138 372 A 118 118 0 0 1 374 372" stroke="#5cc28a"/>
-    <path d="M164 372 A 92 92 0 0 1 348 372" stroke="#4b8ef0"/>
-    <path d="M190 372 A 66 66 0 0 1 322 372" stroke="#9b6ff0"/>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M104 372c46-110 110-160 176-128s96 14 112-50" stroke="url(#rainbow)" stroke-width="58" fill="none" stroke-linecap="round"/>
+  <g transform="translate(318 236) rotate(35)">
+    <rect x="-22" y="16" width="44" height="178" rx="18" fill="url(#handle)"/>
+    <rect x="-27" y="-36" width="54" height="54" rx="4" fill="url(#ferrule)"/>
+    <path d="M-27-36c0-48 13-74 27-100 14 26 27 52 27 100z" fill="#ffd04a"/>
+    <path d="M-9-52c0-20 4-38 9-52" stroke="#fff4c0" stroke-width="7" fill="none" stroke-linecap="round"/>
   </g>
-  <g transform="rotate(-38 300 250)">
-    <rect x="262" y="40" width="60" height="230" rx="30" fill="url(#handle)" stroke="#3a2a4a" stroke-width="12"/>
-    <rect x="262" y="40" width="60" height="62" rx="30" fill="#ffd23f" stroke="#3a2a4a" stroke-width="12"/>
-    <rect x="256" y="262" width="72" height="54" rx="10" fill="#c9c3d6" stroke="#3a2a4a" stroke-width="12"/>
-    <path d="M262 312 C 254 360 270 410 292 432 C 314 410 330 360 322 312 Z" fill="#ff86b8" stroke="#3a2a4a" stroke-width="12" stroke-linejoin="round"/>
-  </g>
-  <g fill="#fff6c8" stroke="#3a2a4a" stroke-width="8" stroke-linejoin="round">
-    <path d="M110 120 L122 150 L152 162 L122 174 L110 204 L98 174 L68 162 L98 150 Z"/>
-    <path d="M420 300 L428 320 L448 328 L428 336 L420 356 L412 336 L392 328 L412 320 Z"/>
+  <g fill="#fff">
+    <path d="M118 120l10 24 24 10-24 10-10 24-10-24-24-10 24-10z"/>
+    <path d="M400 88l7 16 16 7-16 7-7 16-7-16-16-7 16-7z"/>
+    <circle cx="190" cy="84" r="9"/>
+    <circle cx="430" cy="200" r="7"/>
   </g>
 </svg>
