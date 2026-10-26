@@ -45,6 +45,8 @@ import { guess, squeeze } from './guess.js';
 import { SHAPE_W, SHAPE_H } from './creatures/shapes.js';
 import { MASK_W, MASK_H } from './paint/outline.js';
 import { canFullscreen, enterFullscreen, toggleFullscreen, onFullscreenChange } from './fullscreen.js';
+import { Doodle } from './doodle/doodle.js'; // [doodle]
+import { MoreLife } from './doodle/life.js'; // [doodle]
 
 export async function start(canvas, progress) {
   const app = new App(canvas, progress);
@@ -209,8 +211,13 @@ class App {
     this.store = new Store();
 
     this.ui = new UI(this.handlers());
+    // [doodle] free drawing that comes alive as itself, and more life in the garden (src/doodle/)
+    this.doodle = new Doodle(this);
+    this.more = new MoreLife(this);
+    if (Doodle.wanted()) this.mode = 'big';
     this.ui.setMode(this.mode);
     this.toys.setMode(this.mode);
+    this.doodle.setOn(Doodle.wanted()); // [doodle]
     this.ui.setMuted(this.audio.muted);
     this.ui.setColor('red', 'brush');
     this.ui.setSize('medium');
@@ -379,10 +386,14 @@ class App {
   }
 
   setMode(m) {
-    if (m !== this.mode) this.picked = false;
+    // [doodle] Doodle paints with the big kid tools, with the doodle mode on
+    const doodle = m === 'doodle';
+    if (doodle) m = 'big';
+    if (m !== this.mode || doodle !== this.doodle.on) this.picked = false;
     this.mode = m;
-    save('mode', m);
+    save('mode', doodle ? 'doodle' : m);
     this.ui.setMode(m);
+    this.doodle.setOn(doodle); // [doodle]
     this.toys?.setMode(m);
     this.applyTool();
     if (this.state === 'paint') this.showOutline();
@@ -625,6 +636,7 @@ class App {
       this.startMagic(this.canvasFriend);
       return;
     }
+    if (this.doodle.on) return this.doodle.go(); // [doodle] the drawing itself comes alive
     // big kids: what is it?
     const rect = this.magic.paintedRect();
     if (!rect) {
@@ -732,6 +744,7 @@ class App {
     f.ownSkin = skin;
     // (the picture of the skin is made in the background; the record is kept once it is ready)
     const record = { id: newId(), kind: f.info.id, skin: '', made: Date.now(), mode: this.mode };
+    Object.assign(record, f.recordExtra); // [doodle] what builds a doodle friend again
     const skinKept = this.magic.skinImage().then((url) => (record.skin = url), () => {});
     if (this.mode === 'big') this.savePainting();
     this.unprime();
@@ -890,6 +903,7 @@ class App {
   }
 
   async friendFromRecord(rec) {
+    if (rec.doodle) return this.doodle.fromRecord(rec); // [doodle]
     if (!BY_ID[rec.kind]) return null;
     try {
       const [f, tex] = await Promise.all([makeFriend(rec.kind, this.friendCtx), loadTexture(rec.skin)]);
@@ -1071,6 +1085,7 @@ class App {
 
   // a tap on the lawn: a sprinkle of sparkles, and friends look over
   tapGround(x, y) {
+    if (this.more.tap(x, y)) return; // [doodle] the pond ripples, flowers bloom
     const ndc = new THREE.Vector2((x / this.view.w) * 2 - 1, -(y / this.view.h) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
     const ray = this.raycaster.ray;
@@ -1174,6 +1189,8 @@ class App {
     this.warmer.update();
     if (this.primed && --this.primed.left <= 0) this.unprime();
     this.updateLife(dt, t);
+    this.doodle.update(dt); // [doodle]
+    this.more.update(dt, t); // [doodle]
     this.fx.sparkles.update(dt, t);
     this.fx.droplets.update(dt);
     this.fx.petals.update(dt, t);
@@ -1437,6 +1454,8 @@ class App {
       friends: () => app.friends.list.map((e) => ({ kind: e.friend.info.id, x: +e.pos.x.toFixed(2), z: +e.pos.z.toFixed(2), state: e.state })),
       state: () => ({ state: app.state, mode: app.mode, coverage: +app.coverage.toFixed(3), strokes: app.paint.strokes.length, busy: app.alive.busy, magic: app.magicRun?.phase ?? null, scale: app.governor.scale, strain: app.governor.strain, fps: +(1000 / app.pacer.step).toFixed(1), refresh: +(1000 / app.pacer.vsync).toFixed(1) }),
     };
+    // [doodle] doodle(preset | strokes, { go }), doodleInfo(), and life.* (src/doodle/)
+    Object.assign(window.__mb, app.doodle.debugApi(), { life: app.more.debugApi() });
   }
 }
 

@@ -1,0 +1,63 @@
+/* Doodle (src/doodle/): the third start-screen card and the gentle hint. */
+
+/* three cards still fit a phone */
+@media (max-width: 420px) {
+  .modes {
+    gap: 10px;
+  }
+  .mode {
+    width: 96px;
+  }
+  .mode svg {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* doodling has no friend to pick */
+body[data-doodle='on'] #pick-btn {
+  display: none;
+}
+
+/* the doodle card wiggles a little when chosen, like a drawing coming alive */
+.mode[data-mode='doodle'][aria-checked='true'] svg {
+  animation: doodle-alive 1.6s ease-in-out infinite;
+}
+@keyframes doodle-alive {
+  0%,
+  100% {
+    transform: rotate(0) scale(1, 1);
+  }
+  25% {
+    transform: rotate(-4deg) scale(1.04, 0.97);
+  }
+  50% {
+    transform: rotate(0) scale(0.98, 1.03);
+  }
+  75% {
+    transform: rotate(4deg) scale(1.03, 0.98);
+  }
+}
+
+/* "draw something!": the paint pots bounce one after another */
+#toolbar.doodle-hint .paint {
+  animation: doodle-hop 0.5s ease-out 2;
+}
+#toolbar.doodle-hint .paint:nth-child(2n) {
+  animation-delay: 0.08s;
+}
+#toolbar.doodle-hint .paint:nth-child(3n) {
+  animation-delay: 0.16s;
+}
+@keyframes doodle-hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-14px) rotate(-6deg);
+  }
+  70% {
+    transform: translateY(2px);
+  }
+}
