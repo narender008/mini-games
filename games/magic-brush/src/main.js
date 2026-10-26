@@ -1,249 +1,1677 @@
-// Magic Brush: a storybook painting game for children of about 2 to 7.
-// Pick a friend, paint it on the easel, press the magic wand and it peels
-// off the paper wearing the child's own paint, then lives in a meadow with
-// up to five others. Every painted friend is kept in a sticker book.
+// Magic Brush: paint a friend on a real canvas and watch it come alive.
 //
-// Pure Canvas 2D, no assets: every picture is painted by code (src/art.js,
-// src/rig.js) and every sound is synthesised (src/audio.js). Screens live in
-// src/screens/; each has enter/exit/layout/update/draw/pointer and owns its
-// DOM buttons (src/ui.js). Static backgrounds are baked once per size into
-// offscreen canvases; friends are cached part bitmaps (src/rig.js) animated
-// by src/actor.js. The painting engine and coverage grid are src/paint.js,
-// saved friends src/store.js (index in localStorage, textures in IndexedDB).
+// The scene is a treehouse art studio at golden hour (world/), with an easel
+// whose canvas shows a live painting (paint/). Little ones pick a friend, a
+// dotted outline appears, and any colouring inside it counts: when enough
+// is covered (or GO is tapped) the magic sweeps across, filling the rest
+// with their own colours, and the friend (creatures/) lifts off the canvas
+// half paint, half alive (alive.js) and leaps into the garden to play
+// (friends.js). Big kids paint freely; GO asks what it is (guess.js) and the
+// friend takes its shape from their painting, unless they picked a friend,
+// which gives them its outline as for Little ones. Friends are kept on this
+// device (store.js) and wait on the friends shelf.
 //
-// Must-keep rules: every screen ignores taps for 400 ms after it appears and
-// any tap whose press began on an earlier screen; screen actions are
-// one-shot; no screen puts a button where the previous screen had one that
-// leads onward; the easel's friend is captured synchronously at GO; each
-// painting is saved once; resizing re-lays out immediately (backgrounds are
-// re-baked once the size settles).
+// Doodle (src/doodle/, hooks marked [doodle]) is the third way to play: a
+// free drawing puffs up into a friend of its own shape.
 //
-// Debug (?debug) exposes window.__mb: freeze, thaw, step(ms), state(),
-// screen(name), pick(id|'blank'), paint(points, color) in page uv,
-// colourIn(colors?), undo, go, toy(name, x, y), tapFriend(i), clearSave,
-// perf(). Switches: ?screen=, ?pick=, ?cover (hides UI), ?mute, ?seed=N.
-import { clamp, rng } from './lib.js';
-import { Fx, setFxDpr } from './fx.js';
-import { unlock, suspend, sfx } from './audio.js';
-import * as store from './store.js';
-import { TitleScreen } from './screens/title.js';
-import { PickScreen } from './screens/pick.js';
-import { EaselScreen } from './screens/easel.js';
-import { AliveScreen } from './screens/alive.js';
-import { MeadowScreen } from './screens/meadow.js';
-import { BookScreen } from './screens/book.js';
+// ?play starts straight at the easel, ?mode=little|big|doodle, ?pick=<id>,
+// ?cover hides the UI, ?fps=N forces the frame pacing (quality.js), ?lod=N
+// how much coarser far friends' bodies are (0: never), plus ?quality=, ?msaa=, ?shadows=0, ?ao=0,
+// ?dof=0, ?fur=, ?tone=; ?debug exposes window.__mb (see the end of this
+// file). Tests drive it frozen and stepped: games/magic-brush/test/.
+import * as THREE from 'three';
+import { QUERY, DEBUG, REDUCED_MOTION, MODES, load, save, pickValid, clamp, damp, rand, lin, tick } from './config.js';
+import { detectQuality, FrameGovernor, FramePacer } from './quality.js';
+import { makePost } from './post.js';
+import { Warmer } from './warm.js';
+import { InstanceTrim } from './trim.js';
+import { Sky } from './world/sky.js';
+import { World, walkable, groundAt, STAGE, obstacleAt } from './world/world.js';
+import { Motes, PaintDrops } from './world/air.js';
+import { GardenLife } from './world/life.js';
+import { Easel } from './paint/canvas.js';
+import { PaintEngine } from './paint/engine.js';
+import { Outline } from './paint/outline.js';
+import { Magic } from './paint/magic.js';
+import { Brush3D } from './paint/brush3d.js';
+import { COLORS, BRUSHES, SIZES } from './paint/tools.js';
+import { Sparkles, Droplets, Petals } from './fx.js';
+import { ComeAlive } from './alive.js';
+import { Friends } from './friends.js';
+import { CameraRig } from './camera.js';
+import { GardenCam } from './garden-cam.js';
+import { Toys } from './play/toys.js';
+import { Audio } from './sound/audio.js';
+import { Store, newId } from './store.js';
+import { SUBJECTS, BY_ID, makeFriend } from './creatures/catalog.js';
+import { CANVAS_W, CANVAS_H } from './creatures/friend.js';
+import { UI } from './ui.js';
+import { guess, squeeze } from './guess.js';
+import { SHAPE_W, SHAPE_H } from './creatures/shapes.js';
+import { MASK_W, MASK_H } from './paint/outline.js';
+import { canFullscreen, enterFullscreen, toggleFullscreen, onFullscreenChange } from './fullscreen.js';
+import { Doodle } from './doodle/doodle.js'; // [doodle]
+import { MoreLife } from './doodle/life.js'; // [doodle]
 
-const Q = new URLSearchParams(location.search);
-const DEBUG = Q.has('debug');
-const COVER = Q.has('cover');
-if (COVER) document.body.classList.add('cover');
-
-const canvas = document.getElementById('scene');
-const g = canvas.getContext('2d', { alpha: false });
-const ui = document.getElementById('ui');
-
-const QUIET = 0.4; // seconds a new screen ignores taps
-
-export const app = {
-  canvas, g, ui, W: 0, H: 0, dpr: 1, t: 0,
-  cover: COVER, debug: DEBUG,
-  screen: null, screens: {}, trans: null,
-  screenAt: -1, readyAt: 0, resizedAt: -9,
-  fx: new Fx(),
-  rand: rng(Number(Q.get('seed')) || (Date.now() & 0xffff)),
-  store, sfx,
-  clock: () => performance.now() / 1000,
-  // where the button that opened this screen was (CSS px), for a short while
-  landing: null,
-  landingGuard(btn) {
-    const L = this.landing;
-    if (!L || this.clock() - this.screenAt > 1.0 || L.W !== this.W || L.H !== this.H) return false;
-    const r = btn.rect ? Math.max(btn.w, btn.h) / 2 : btn.r;
-    return Math.hypot(btn.x - L.x, btn.y - L.y) < r + L.r;
-  },
-  inputReady() { return !this.trans && this.clock() >= this.readyAt; },
-  bakeOk() { return this.clock() - this.resizedAt > 0.15; },
-  unlockAudio() { unlock(); },
-  // a button radius that is at least 28 px (56 px targets) on phones and 40 px (80 px) on tablets
-  get btnR() { const m = Math.min(this.W, this.H); return Math.max(clamp(m * 0.062, 28, 62), m >= 600 ? 40 : 28); },
-  get phone() { return Math.min(this.W, this.H) < 600; },
-  get portrait() { return this.H > this.W * 1.05; },
-  go(name, opts = {}) {
-    if (this.trans) return false;
-    if (!this.screens[name]) return false;
-    this.trans = { phase: 'out', t: 0, dur: opts.fast ? 0.12 : 0.22, to: name, opts };
-    this.readyAt = Infinity;
-    return true;
-  },
-  jump(name, opts = {}) { this.trans = null; switchTo(name, opts); },
-};
-
-app.screens = {
-  title: new TitleScreen(app),
-  pick: new PickScreen(app),
-  paint: new EaselScreen(app),
-  alive: new AliveScreen(app),
-  meadow: new MeadowScreen(app),
-  book: new BookScreen(app),
-};
-
-function switchTo(name, opts) {
-  if (app.screen) app.screen.exit();
-  app.fx.clear();
-  app.screen = app.screens[name];
-  app.screenAt = app.clock();
-  app.readyAt = app.screenAt + QUIET;
-  const lt = app.lastTapSpot;
-  app.landing = lt && app.screenAt - lt.t < 1.5 ? lt : null;
-  document.body.dataset.screen = name;
-  app.screen.enter(opts || {});
-  app.screen.layout(app.W, app.H);
+export async function start(canvas, progress) {
+  const app = new App(canvas, progress);
+  await app.init();
+  return app;
 }
 
-// ---------------------------------------------------------------- sizing
+// how full an outline must be before the magic starts by itself
+const AUTO_COVER = 0.8;
+// ... and before GO starts to glow
+const READY_COVER = 0.3;
+// kept paintings on the shelf, newest first
+const MAX_PAINTINGS = 30;
 
-// the pixel ratio comes down a step (never below 1) on a device that cannot
-// keep up: 4 s averaging under 45 fps outside the come-alive moment
-let dprCap = 2, slowT = 0, slowN = 0;
-function adapt(dt) {
-  if (app.trans || !app.screen || app.screen.name === 'alive' || document.hidden) { slowT = slowN = 0; return; }
-  slowT += dt; slowN++;
-  if (slowT < 4) return;
-  const f = slowN / slowT; slowT = slowN = 0;
-  if (f < 45 && app.dpr > 1.05 && !Q.has('dpr')) { dprCap = Math.max(1, app.dpr * 0.8); resizePending = true; }
-}
-function resize() {
-  const W = Math.max(1, window.innerWidth), H = Math.max(1, window.innerHeight);
-  let dpr = Math.min(window.devicePixelRatio || 1, 2, dprCap);
-  if (W * H * dpr * dpr > 3.5e6) dpr = Math.sqrt(3.5e6 / (W * H));
-  dpr = Math.max(0.5, Math.round(dpr * 100) / 100);
-  const changed = W !== app.W || H !== app.H || dpr !== app.dpr;
-  if (!changed) return;
-  if (app.W) app.resizedAt = app.clock();
-  app.W = W; app.H = H; app.dpr = dpr;
-  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
-  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-  setFxDpr(dpr);
-  if (app.screen) app.screen.layout(W, H);
-}
-let resizePending = true;
-window.addEventListener('resize', () => { resizePending = true; });
-window.addEventListener('orientationchange', () => { resizePending = true; });
+const _v = new THREE.Vector3();
+const _w = new THREE.Vector3();
 
-// ---------------------------------------------------------------- input
-
-const ignored = new Set();
-function pt(e) { return { id: e.pointerId, x: e.clientX, y: e.clientY, type: e.pointerType, t: app.clock() }; }
-canvas.addEventListener('pointerdown', (e) => {
-  unlock();
-  if (resizePending) { resizePending = false; resize(); }
-  if (!app.inputReady()) { ignored.add(e.pointerId); return; }
-  try { canvas.setPointerCapture(e.pointerId); } catch {}
-  app.screen && app.screen.pointer('down', pt(e));
-});
-canvas.addEventListener('pointermove', (e) => {
-  if (ignored.has(e.pointerId)) return;
-  const events = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
-  if (events && events.length > 1) for (const ce of events) app.screen && app.screen.pointer('move', { id: e.pointerId, x: ce.clientX, y: ce.clientY, type: e.pointerType, t: app.clock(), buttons: e.buttons });
-  else app.screen && app.screen.pointer('move', Object.assign(pt(e), { buttons: e.buttons }));
-});
-const upHandler = (type) => (e) => {
-  if (ignored.has(e.pointerId)) { ignored.delete(e.pointerId); return; }
-  app.screen && app.screen.pointer(type, pt(e));
-};
-canvas.addEventListener('pointerup', upHandler('up'));
-canvas.addEventListener('pointercancel', upHandler('cancel'));
-canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse' && app.screen) app.screen.pointer('leave', pt(e)); });
-canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && app.screen && app.screen.name !== 'title' && app.screen.name !== 'alive' && app.inputReady()) app.go('title'); });
-
-// ---------------------------------------------------------------- loop
-
-let frozen = false, raf = 0, last = 0;
-const frameMs = [];
-let frames = 0, fpsT = 0, fps = 0;
-
-function sim(dt) {
-  app.t += dt;
-  const tr = app.trans;
-  if (tr) {
-    tr.t += dt;
-    if (tr.phase === 'out' && tr.t >= tr.dur) { switchTo(tr.to, tr.opts); app.trans = { phase: 'in', t: 0, dur: 0.26 }; app.readyAt = Infinity; }
-    else if (tr.phase === 'in' && tr.t >= tr.dur) { app.trans = null; app.readyAt = app.clock() + QUIET * 0.6; app.screenAt = Math.min(app.screenAt, app.clock()); }
+class App {
+  constructor(canvas, progress) {
+    this.canvas = canvas;
+    this.progress = progress;
+    this.state = 'loading';
+    this.mode = pickValid(QUERY.get('mode') || load('mode', 'little'), MODES);
+    this.time = 0;
+    this.frozen = false;
+    this.idleDt = 0; // world time held back by the quiet-screen cadence (see frame)
+    this.lastDraw = 0;
+    this.hidden = false;
+    this.last = performance.now();
+    this.raycaster = new THREE.Raycaster();
+    this.pointer = { id: null, down: false, uv: null, hover: null, x: 0, y: 0, type: 'mouse', speed: 0, lastUv: null };
+    this.coverage = 0;
+    this.coverToken = 0;
+    this.coverBusy = false; // a coverage read is on its way back from the GPU
+    this.coverAgain = false;
+    this.coverTimer = 0;
+    this.idleSinceStroke = 0;
+    this.lineAlpha = 0;
+    this.lineSolid = 0;
+    this.subjectId = pickValid(QUERY.get('pick'), SUBJECTS.map((s) => s.id)) || 'dragon';
+    this.canvasFriend = null;
+    this.subjectToken = 0;
+    this.picked = false;
+    this.records = [];
+    this.paintings = [];
   }
-  app.screen.update(dt);
-  app.fx.update(dt);
-}
-function render() {
-  const { W, H, dpr } = app;
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
-  app.screen.draw(g);
-  const tr = app.trans;
-  if (tr) {
-    const a = tr.phase === 'out' ? tr.t / tr.dur : 1 - tr.t / tr.dur;
-    g.fillStyle = `rgba(255,248,234,${clamp(a, 0, 1)})`;
-    g.fillRect(0, 0, W, H);
+
+  // ------------------------------------------------------------ start-up
+
+  async init() {
+    const { progress } = this;
+    progress(0.52, 'Setting up the easel');
+    const q = (this.quality = detectQuality());
+    const renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: false, alpha: false, stencil: false, powerPreference: 'high-performance' });
+    this.renderer = renderer;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // tone mapping happens in the post chain's last pass (see post.js)
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.toneMappingExposure = 1;
+    renderer.shadowMap.enabled = q.shadows;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    // lite: the world stands still, so its shadows are drawn once (and again only when asked)
+    if (q.lite) renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = true;
+
+    const scene = (this.scene = new THREE.Scene());
+    const camera = (this.camera = new THREE.PerspectiveCamera(40, 1.6, 0.03, 1500));
+    scene.add(camera);
+
+    // golden-hour sky, sun and bounce light
+    this.sky = new Sky();
+    scene.add(this.sky.mesh);
+    this.env = this.sky.environment(renderer, q.envSize);
+    scene.environment = this.env.texture;
+    scene.environmentIntensity = 0.6;
+    // a low, warm late-afternoon sun and a soft haze that warms the distance
+    scene.fog = new THREE.FogExp2(new THREE.Color(0.85, 0.52, 0.27), 0.009);
+    const sun = (this.sun = new THREE.DirectionalLight(new THREE.Color(1.0, 0.7, 0.42), 4.0));
+    sun.position.copy(this.sky.sunDir).multiplyScalar(14).add(new THREE.Vector3(-0.5, 0, -1.5));
+    sun.target.position.set(-0.5, 0, -1.5);
+    scene.add(sun, sun.target);
+    if (q.shadows) {
+      sun.castShadow = true;
+      sun.shadow.mapSize.set(q.shadowSize, q.shadowSize);
+      const s = sun.shadow.camera;
+      s.left = -5.5;
+      s.right = 5.5;
+      s.top = 5.5;
+      s.bottom = -5.5;
+      s.near = 2;
+      s.far = 30;
+      sun.shadow.bias = -0.0004;
+      sun.shadow.normalBias = 0.015;
+      sun.shadow.radius = 3;
+    }
+    this.hemi = new THREE.HemisphereLight(new THREE.Color(0.75, 0.82, 1.0), new THREE.Color(0.42, 0.34, 0.2), 0.45);
+    scene.add(this.hemi);
+    // a soft warm fill from the studio side so faces facing the painter are never dark
+    const fill = new THREE.DirectionalLight(new THREE.Color(1.0, 0.84, 0.68), 0.6);
+    fill.position.set(1.5, 2.2, 4);
+    scene.add(fill);
+
+    progress(0.58, 'Building the treehouse');
+    await tick();
+    this.world = new World({ quality: q, sky: this.sky });
+    scene.add(this.world.group);
+
+    this.motes = new Motes(scene, q.tier === 'low' ? 90 : q.tier === 'medium' ? 150 : 220);
+    this.drops = new PaintDrops(scene, [COLORS.pink, COLORS.blue, COLORS.yellow, COLORS.purple, COLORS.green, COLORS.orange, COLORS.teal, COLORS.red, COLORS.sky]);
+
+    progress(0.66, 'Stretching the canvas');
+    await tick();
+    this.paint = new PaintEngine(renderer, q.paint);
+    this.easel = new Easel({ quality: q, paint: this.paint });
+    scene.add(this.easel.group);
+    this.outline = new Outline(renderer, this.paint.w, this.paint.h);
+    this.magic = new Magic(renderer, this.paint);
+    this.brush = new Brush3D();
+    scene.add(this.brush.group);
+
+    this.fx = {
+      sparkles: new Sparkles(scene, q.particles),
+      droplets: new Droplets(scene, q.tier === 'low' ? 120 : 320, groundAt),
+      petals: new Petals(scene, 160, groundAt),
+    };
+    this.audio = new Audio();
+    this.life = new GardenLife({ scene, quality: q, groundAt, walkable, world: this.world, audio: this.audio });
+    this.friends = new Friends({ scene, fx: this.fx, audio: this.audio, quality: q, walkable, groundAt });
+    this.rig = new CameraRig(camera);
+    this.alive = new ComeAlive({ easel: this.easel, fx: this.fx, audio: this.audio, groundAt, rig: this.rig });
+    this.gcam = new GardenCam({ camera, friends: this.friends });
+    this.rig.avoid = this.gcam.push;
+    this.friends.onJourney = (e, phase) => this.onJourney(e, phase);
+    // the toys: petting, bubbles, a ball, treats, the call, puddles and the welcome (play/toys.js)
+    this.toys = new Toys({
+      scene,
+      camera,
+      view: () => this.view,
+      fx: this.fx,
+      audio: this.audio,
+      sky: this.sky,
+      friends: this.friends,
+      gcam: this.gcam,
+      quality: q,
+      strain: () => this.governor?.strain ?? 0,
+      groundAt,
+      direct: (e, kind, seconds) => this.direct(e, kind, seconds),
+      onTapFriend: (e) => {
+        this.friends.play(e, this.camera);
+        if (this.state === 'play' && e.state === 'trick') this.direct(e, 'close', 3.4);
+      },
+    });
+    // idle effect pools are left out of the draw (see trim.js)
+    this.trim = new InstanceTrim();
+    this.trim.add(this.fx.droplets.mesh, this.fx.droplets.splats, this.fx.petals.mesh, this.toys.bubbles?.mesh, this.toys.puddles?.mesh, this.life.glints?.mesh, this.life.pond?.rings, this.life.pond?.drops);
+    this.post = makePost(renderer, scene, camera, q);
+    // shader compiles happen ahead of need, a little at a time (see warm.js)
+    this.warmer = new Warmer(renderer, scene, camera, () => this.post.composer.renderTarget1);
+    // golden hour: a touch warm in the highlights, cool in the shadows
+    this.post.setGrade({ white: [1.0, 0.99, 0.97], saturation: 1.04, contrast: 0.08, shadowTint: [-0.002, 0.0, 0.006], highTint: [0.006, 0.003, -0.004], vignette: 0.24 });
+    this.post.bloomStrength = 0.28;
+    this.post.bloomThreshold = 1.1;
+    this.pacer = new FramePacer(Number(QUERY.get('fps')) || 0);
+    // a change of render scale re-allocates every target: only when nothing is on the move
+    // (lite: the new scale glides in over a second or two inside the post chain, no re-allocation)
+    this.governor = new FrameGovernor((s) => (q.lite ? this.post.setScale(s) : this.resize()), this.pacer, () => !this.magicRun && !this.rig.moving);
+    this.friendCtx = { quality: q, strain: () => this.governor.strain, viewHeight: () => this.view.h * this.dpr };
+    this.store = new Store();
+
+    this.ui = new UI(this.handlers());
+    // [doodle] free drawing that comes alive as itself, and more life in the garden (src/doodle/)
+    this.doodle = new Doodle(this);
+    this.more = new MoreLife(this);
+    if (Doodle.wanted()) this.mode = 'big';
+    this.ui.setMode(this.mode);
+    this.toys.setMode(this.mode);
+    this.doodle.setOn(Doodle.wanted()); // [doodle]
+    this.ui.setMuted(this.audio.muted);
+    this.ui.setColor('red', 'brush');
+    this.ui.setSize('medium');
+    this.applyTool();
+    onFullscreenChange(() => this.ui.syncFullscreen());
+
+    this.resize(true);
+    addEventListener('resize', () => this.resize());
+    this.bindInput();
+    document.addEventListener('visibilitychange', () => this.onVisibility());
+
+    progress(0.74, 'Waking up the friends');
+    await this.setSubject(this.subjectId);
+    this.rig.snap(this.shot('menu'));
+    this.update(0.016);
+    progress(0.86, 'Mixing the paints');
+    // Compile every material now rather than on the first frames: for the
+    // target the post chain draws into (a program compiled for the screen would
+    // never be used), with the first friend standing in the scene out of sight
+    // so that the shadow pass compiles the shader friends cast shadows with too.
+    this.warmer.step(Infinity);
+    this.toys.warm(true);
+    const probe = this.canvasFriend?.object;
+    if (probe) {
+      probe.scale.setScalar(0.001);
+      scene.add(probe);
+    }
+    await this.compileScene();
+    // (drawn once with the hidden toys shown, so their textures and buffers are uploaded now too)
+    this.trim.showAll(true);
+    this.trimHold = true;
+    this.render();
+    this.trimHold = false;
+    this.toys.warm(false);
+    // (lite draws the world's shadows once: again now, without the toys and the probe friend shown for the warm-up)
+    if (q.lite) renderer.shadowMap.needsUpdate = true;
+    if (probe) {
+      scene.remove(probe);
+      probe.scale.setScalar(1);
+      this.canvasFriend.primed = true;
+    }
+    progress(0.96, 'Ready');
+    if (QUERY.has('cover')) document.body.classList.add('cover');
+    this.setState('menu');
+    this.restoreFriends();
+    if (QUERY.has('play')) this.startPainting(true);
+    renderer.setAnimationLoop((t) => this.frame(t));
+    // (the sound is built in the idle moments from here, so a first tap only wakes it)
+    this.audio.prepare();
+    if (DEBUG) this.exposeDebug();
+  }
+
+  // compile all the scene's shaders, for the target the post chain draws into
+  async compileScene() {
+    const r = this.renderer;
+    const prev = r.getRenderTarget();
+    r.setRenderTarget(this.post.composer.renderTarget1);
+    let done;
+    try {
+      done = r.compileAsync(this.scene, this.camera);
+    } catch {
+      done = Promise.resolve();
+    }
+    r.setRenderTarget(prev);
+    // (compileAsync is only an optimisation)
+    await done.catch(() => {});
+  }
+
+  // Compile a friend's shaders a little at a time, from now on; f.ready says
+  // when it can be shown without a hitch (never later than a few seconds).
+  warmFriend(f) {
+    f.ready = false;
+    const timeout = new Promise((resolve) => setTimeout(resolve, 4000));
+    return Promise.race([this.warmer.warm(f.object), timeout]).then(() => {
+      f.ready = true;
+      if (f === this.canvasFriend) this.primeFriend(f);
+    });
+  }
+
+  // Compiled is not yet drawn: a friend's first frame on screen still costs 80-100 ms (buffers,
+  // vertex bindings, driver state for its dozens of meshes), which used to freeze the picture at
+  // the start of the come-alive. So once its shaders are ready it is drawn for a few frames at a
+  // thousandth of its size, through the real post chain, while the child is still painting.
+  primeFriend(f) {
+    if (f.primed || f.object.parent || this.primed) return;
+    f.primed = true;
+    f.object.scale.setScalar(0.001);
+    this.scene.add(f.object);
+    this.primed = { f, left: 3 };
+  }
+
+  unprime() {
+    const p = this.primed;
+    if (!p) return;
+    this.primed = null;
+    this.scene.remove(p.f.object);
+    p.f.object.scale.setScalar(1);
+  }
+
+  handlers() {
+    return {
+      any: () => this.audio.unlock(),
+      start: () => {
+        enterFullscreen();
+        this.audio.unlock();
+        this.audio.click();
+        this.startPainting();
+      },
+      mode: (m) => {
+        this.setMode(m);
+        this.audio.select();
+      },
+      color: (name) => {
+        this.ui.setColor(name, this.ui.kind === 'sponge' ? 'brush' : this.ui.kind);
+        this.applyTool();
+        this.audio.dip();
+      },
+      kind: (k) => {
+        this.ui.setColor(this.ui.color, k);
+        this.applyTool();
+        this.audio.dip();
+      },
+      size: (s) => {
+        this.ui.setSize(s);
+        this.audio.select();
+      },
+      undo: () => {
+        if (this.state !== 'paint') return;
+        if (this.paint.undo()) this.audio.undo();
+        this.checkCoverage();
+      },
+      go: () => this.go(),
+      openPicker: () => {
+        this.audio.select();
+        this.ui.showPicker();
+      },
+      pick: (id) => {
+        this.audio.select();
+        if (this.mode === 'little') this.newCanvas();
+        this.setSubject(id, true);
+      },
+      world: () => {
+        this.audio.click();
+        this.toPlay();
+      },
+      paintNew: () => {
+        this.audio.click();
+        this.startPainting();
+      },
+      shelf: () => this.openShelf(),
+      shelfFriend: (r) => this.fromShelf(r),
+      shelfPainting: (p) => this.hangPainting(p),
+      newCanvas: () => {
+        this.audio.select();
+        this.newCanvas();
+      },
+      keep: () => this.keepPainting(),
+      guess: (id) => this.guessed(id),
+      closeGuess: () => {},
+      menu: () => {
+        this.audio.click();
+        this.toMenu();
+      },
+      mute: () => {
+        this.audio.unlock();
+        this.audio.setMuted(!this.audio.muted);
+        this.ui.setMuted(this.audio.muted);
+      },
+      fullscreen: () => toggleFullscreen(),
+      // the toolbar changed size (a mode switch, a turn): keep the canvas framed beside it
+      layout: () => {
+        if (this.state === 'paint' && !this.rig.moving && this.view) this.rig.snap(this.shot('paint'));
+      },
+    };
+  }
+
+  setMode(m) {
+    // [doodle] Doodle paints with the big kid tools, with the doodle mode on
+    const doodle = m === 'doodle';
+    if (doodle) m = 'big';
+    if (m !== this.mode || doodle !== this.doodle.on) {
+      this.picked = false;
+      // (a painting carried over from the other mode never starts the magic by itself)
+      this.autoArmed = false;
+    }
+    this.mode = m;
+    save('mode', doodle ? 'doodle' : m);
+    this.ui.setMode(m);
+    this.doodle.setOn(doodle); // [doodle]
+    this.toys?.setMode(m);
+    this.applyTool();
+    if (this.state === 'paint') this.showOutline();
+  }
+
+  setState(s) {
+    if (s !== 'paint') this.goWaiting = false;
+    this.state = s;
+    this.ui.setState(s);
+    this.toys?.setActive(s === 'play');
+    this.audio.setScene(s === 'menu' ? 'menu' : s === 'play' ? 'play' : 'paint');
+  }
+
+  // ------------------------------------------------------------ layout and camera
+
+  resize(first = false) {
+    const w = Math.max(1, innerWidth);
+    const h = Math.max(1, innerHeight);
+    const q = this.quality;
+    let dpr = Math.min(devicePixelRatio || 1, q.maxDpr);
+    if (w * h * dpr * dpr > q.maxPixels) dpr = Math.sqrt(q.maxPixels / (w * h));
+    // (lite: the governor's render scale is applied inside the post chain, without re-allocating: see pointSizes)
+    dpr = Math.max(0.5, dpr * (this.governor && !q.lite ? this.governor.scale : 1));
+    this.dpr = dpr;
+    this.view = { w, h, aspect: w / h };
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setPixelRatio(dpr);
+    this.renderer.setSize(w, h, false);
+    this.post.setSize(w, h, dpr);
+    this.pointSizes();
+    if (!first && this.state !== 'loading') {
+      // keep the canvas framed when the screen turns
+      // (also mid-glide: the glide is re-aimed at the new framing, from where it is and as fast as it is going)
+      if (this.state === 'paint' || this.state === 'menu') {
+        const shot = this.shot(this.state);
+        if (!this.rig.moving) this.rig.snap(shot);
+        else this.rig.go(shot, Math.max(0.25, this.rig.dur - this.rig.t), 0.03);
+      }
+      if (this.frozen) this.render();
+    }
+  }
+
+  // point sprites are sized in drawing-buffer pixels: the height the scene is drawn at now
+  pointSizes() {
+    const h = this.view.h * this.dpr * (this.post.scale ?? 1);
+    this.fx.sparkles.setViewport(h);
+    this.motes?.setViewport(h);
+    this.toys?.resize(h);
+    this.life?.setViewport(h);
+  }
+
+  // Camera shots. The painting shot frames the canvas square on, leaving
+  // room for the toolbar (below it, or beside it on a landscape phone).
+  shot(name) {
+    const { aspect, w, h } = this.view;
+    if (name === 'paint') {
+      const plane = this.easel.plane;
+      const c = _v.setFromMatrixPosition(plane).clone();
+      const n = new THREE.Vector3().setFromMatrixColumn(plane, 2).normalize();
+      const up = new THREE.Vector3().setFromMatrixColumn(plane, 1).normalize();
+      const right = new THREE.Vector3().setFromMatrixColumn(plane, 0).normalize();
+      const fov = aspect < 0.8 ? 44 : 38;
+      const t = Math.tan((fov * Math.PI) / 360);
+      const sideBar = aspect > 1 && h <= 520;
+      // a landscape phone: the canvas sits in the room between the column of buttons on the left and the
+      // toolbar on the right (its width as laid out now, see ui.js)
+      let side = 0.16;
+      let sideFill = 0.72;
+      if (sideBar) {
+        const bar = parseFloat(document.body.style.getPropertyValue('--toolbar-w')) || 170;
+        const left = 66;
+        const free = Math.max(120, w - bar - 16 - left);
+        sideFill = (free * 0.96) / w;
+        side = (w / 2 - (left + free / 2)) / (w / 2);
+      }
+      // what share of the screen the canvas may fill
+      const fillV = sideBar ? 0.84 : aspect < 0.8 ? 0.62 : 0.72;
+      const fillH = sideBar ? sideFill : aspect < 0.8 ? 0.96 : 0.9;
+      const dV = CANVAS_H / 2 / (t * fillV);
+      const dH = CANVAS_W / 2 / (t * aspect * fillH);
+      const d = Math.max(dV, dH) * 1.04;
+      const look = c.clone();
+      // move the canvas up above the toolbar, or left of a side toolbar
+      const halfV = d * t;
+      if (sideBar) look.addScaledVector(right, halfV * aspect * side);
+      else look.addScaledVector(up, -halfV * (aspect < 0.8 ? 0.2 : 0.12));
+      const pos = c.clone().addScaledVector(n, d).addScaledVector(up, 0.03);
+      if (sideBar) pos.addScaledVector(right, halfV * aspect * side);
+      else pos.addScaledVector(up, -halfV * (aspect < 0.8 ? 0.2 : 0.12));
+      return { pos, look, fov };
+    }
+    const tall = aspect < 0.8;
+    if (name === 'alive') {
+      return tall
+        ? { pos: new THREE.Vector3(0.5, 1.0, 2.75), look: new THREE.Vector3(0.0, 0.64, 0.3), fov: 50 }
+        : { pos: new THREE.Vector3(0.72, 0.9, 1.95), look: new THREE.Vector3(0.0, 0.6, 0.3), fov: 40 };
+    }
+    if (name === 'hello' && this.helloAt) {
+      // close on a friend that has just landed
+      const p = this.helloAt;
+      // (a big friend needs the camera further back to fit)
+      const k = (tall ? 1.35 : 1) * (this.helloSize ?? 1);
+      return { pos: new THREE.Vector3(p.x + 0.32 * k, p.y + 0.34 * k, p.z + 0.95 * k), look: new THREE.Vector3(p.x, p.y + 0.14 * (this.helloSize ?? 1), p.z), fov: tall ? 46 : 38 };
+    }
+    if (name === 'play') {
+      return tall
+        ? { pos: new THREE.Vector3(1.4, 1.9, 2.6), look: new THREE.Vector3(-0.4, 0.1, -1.6), fov: 56 }
+        : { pos: new THREE.Vector3(1.75, 1.45, 1.9), look: new THREE.Vector3(-0.45, 0.2, -1.9), fov: 44 };
+    }
+    // menu: the easel in the studio, the garden beyond
+    return tall
+      ? { pos: new THREE.Vector3(1.1, 1.2, 3.3), look: new THREE.Vector3(-0.15, 0.95, -0.4), fov: 52 }
+      : { pos: new THREE.Vector3(1.35, 1.12, 2.7), look: new THREE.Vector3(-0.3, 1.0, -0.5), fov: 42 };
+  }
+
+  // ------------------------------------------------------------ flow
+
+  toMenu() {
+    this.endStroke();
+    this.setState('menu');
+    this.rig.go(this.shot('menu'), 1.6);
+  }
+
+  // at the easel, ready to paint (a Little one picks a friend first)
+  startPainting(direct = false) {
+    if (this.alive.busy) return;
+    this.setState('paint');
+    this.rig.go(this.shot('paint'), this.rig.pos.distanceTo(this.shot('paint').pos) > 0.05 ? 1.5 : 0.01, 0.1);
+    this.showOutline();
+    if (!this.canvasFriend && this.mode === 'little') this.setSubject(this.subjectId);
+    if (this.mode === 'little' && !direct && !this.paint.strokes.length && !QUERY.has('pick')) {
+      setTimeout(() => this.state === 'paint' && !this.paint.strokes.length && !this.paint.painting && !this.ui.overlayOpen && this.ui.showPicker(), REDUCED_MOTION.matches ? 100 : 900);
+    }
+    this.checkCoverage();
+  }
+
+  // the garden: glide to the group shot, then the garden director keeps the
+  // friends nicely framed (camera follows them, comes close on a tap)
+  toPlay() {
+    this.endStroke();
+    this.setState('play');
+    this.gcam.release();
+    const g = this.gcam.shot(0);
+    this.rig.go({ pos: g.pos.clone(), look: g.look.clone(), fov: g.fov }, this.rig.pos.distanceTo(g.pos) > 0.5 ? 1.8 : 0.4, 0.25);
+    this.directing = true;
+  }
+
+  // a friend sets off for the garden (or arrives): the camera runs with it
+  onJourney(e, phase) {
+    if (this.state === 'magic' && !this.magicRun) this.setState('play');
+    if (this.state !== 'play') return;
+    if (phase === 'start') {
+      this.gcam.frame(e, 'chase', 0);
+      this.directing = true;
+      this.rig.follow((dt) => this.gcam.shot(dt), { smooth: 0.55, lookSmooth: 0.3 });
+    } else {
+      // a close look at the arrival cheer, then back to the whole garden
+      this.gcam.frame(e, 'close', 2.4);
+      this.rig.follow((dt) => this.gcam.shot(dt), { smooth: 0.7, lookSmooth: 0.4 });
+      this.directing = true;
+      this.toys.onFriendArrived(e);
+    }
+  }
+
+  newCanvas() {
+    this.endStroke();
+    this.autoArmed = false;
+    this.paint.clearAll();
+    this.coverage = 0;
+    this.coverToken++;
+    this.ui.setReady(false);
+  }
+
+  // the friend to paint next: built now, its outline drawn on the canvas
+  // (picked: a child chose it, which gives Big kids its outline too)
+  async setSubject(id, picked = false) {
+    this.subjectId = id;
+    const token = ++this.subjectToken;
+    // (until its outline is drawn, GO waits for this friend: see go())
+    this.subjectReady = false;
+    this.pickPending = picked;
+    this.autoArmed = false;
+    let f;
+    try {
+      f = await makeFriend(id, this.friendCtx);
+    } catch {
+      if (token === this.subjectToken) this.subjectDone();
+      return;
+    }
+    if (token !== this.subjectToken) {
+      f.dispose();
+      return;
+    }
+    this.warmFriend(f);
+    this.unprime();
+    if (this.canvasFriend) this.canvasFriend.dispose();
+    this.canvasFriend = f;
+    if (picked) this.picked = true;
+    this.outline.clear();
+    this.lineAlpha = 0;
+    await this.outline.draw(f);
+    if (token !== this.subjectToken) return;
+    this.showOutline();
+    this.checkCoverage();
+    this.subjectDone();
+  }
+
+  // the friend to paint is on the canvas: a GO tapped while it was on its way goes now
+  subjectDone() {
+    this.subjectReady = true;
+    this.pickPending = false;
+    if (this.goWaiting) {
+      this.goWaiting = false;
+      this.go();
+    }
+  }
+
+  // painting a chosen friend's outline: always for Little ones, for Big kids once they pick one
+  get outlined() {
+    return this.mode === 'little' || this.picked;
+  }
+
+  showOutline() {
+    if (this.outlined && this.canvasFriend) this.easel.setOutline(this.outline.lines, this.outline.mask);
+    else this.easel.setOutline(null, null);
+    this.lineSolid = 0;
+  }
+
+  applyTool() {
+    const kind = this.ui.kind;
+    this.brush.setTool(kind, kind === 'sponge' ? null : COLORS[this.ui.color]);
+  }
+
+  brushSpec() {
+    const kind = this.ui.kind;
+    const b = BRUSHES[this.mode][kind];
+    const s = (this.paint.w / 1024) * (this.mode === 'big' ? SIZES[this.ui.size] : 1);
+    return { ...b, radius: b.radius * s, load: (b.load ?? 0) * s, color: kind === 'sponge' ? 0xffffff : COLORS[this.ui.color] };
+  }
+
+  checkCoverage() {
+    if (this.mode !== 'little' || !this.canvasFriend) {
+      this.ui.setReady(this.paint.strokes.length > 0);
+      return;
+    }
+    // (read back in the background: waiting for the GPU here would stall the frame; a sample a frame or two old will
+    // do. One read at a time: a burst of strokes asks again once the read in flight is back)
+    if (this.coverBusy) {
+      this.coverAgain = true;
+      return;
+    }
+    this.coverBusy = true;
+    const token = ++this.coverToken;
+    this.magic
+      .coverageAsync(this.outline.mask)
+      .then(
+        (c) => {
+          if (token !== this.coverToken) return;
+          this.coverage = c.inside;
+          if (this.mode === 'little' && this.canvasFriend) this.ui.setReady(this.coverage > READY_COVER);
+        },
+        () => {},
+      )
+      .then(() => {
+        this.coverBusy = false;
+        if (this.coverAgain) {
+          this.coverAgain = false;
+          this.checkCoverage();
+        }
+      });
+  }
+
+  // GO: make it come alive
+  go() {
+    if (this.state !== 'paint' || this.alive.busy) return;
+    this.audio.unlock();
+    this.endStroke();
+    if (this.outlined || this.pickPending) {
+      // a friend just picked is still being built: it comes alive the moment it is ready (never the one before it)
+      if (!this.canvasFriend || this.subjectReady === false) {
+        this.goWaiting = true;
+        return;
+      }
+      this.startMagic(this.canvasFriend);
+      return;
+    }
+    if (this.doodle.on) return this.doodle.go(); // [doodle] the drawing itself comes alive
+    // big kids: what is it?
+    const rect = this.magic.paintedRect();
+    if (!rect) {
+      // nothing painted yet: GO wiggles and the canvas twinkles, inviting a first stroke
+      this.audio.tap();
+      this.ui.nudgeGo?.();
+      this.hintSparkle();
+      return;
+    }
+    this.bigRect = rect;
+    this.audio.magic('shimmer');
+    const g = guess(this.magic.paintedMap(), 128, 96, this.paintedWeights());
+    this.lastGuess = g;
+    this.ui.showGuess(g.sure ? [g.ranked[0].id] : g.ranked.slice(0, 3).map((r) => r.id));
+  }
+
+  // how much of each colour was painted (stroke length x width)
+  paintedWeights() {
+    const w = new Map();
+    for (const s of this.paint.strokes) {
+      if (s.brush.tool === 'sponge') continue;
+      const k = (s.pts[s.pts.length - 1][3] + s.brush.radius) * s.brush.radius;
+      w.set(s.brush.color, (w.get(s.brush.color) || 0) + k);
+    }
+    return [...w];
+  }
+
+  async guessed(id) {
+    if (this.state !== 'paint' || this.alive.busy) return;
+    this.setState('magic');
+    let f;
+    try {
+      f = await makeFriend(id, this.friendCtx);
+    } catch {
+      this.setState('paint');
+      return;
+    }
+    // the friend takes the place and size of the painting
+    f.computeProjection(this.bigRect);
+    this.warmFriend(f);
+    this.outline.clear();
+    await this.outline.draw(f);
+    this.easel.setOutline(this.outline.lines, this.outline.mask);
+    this.startMagic(f);
+  }
+
+  // ------------------------------------------------------------ the magic
+
+  startMagic(f) {
+    this.endStroke();
+    this.setState('magic');
+    this.canvasFriend = f === this.canvasFriend ? null : this.canvasFriend;
+    this.subjectToken++;
+    const colors = this.paintedColors();
+    this.coverToken++;
+    const run = (this.magicRun = { f, t: 0, phase: 'prepare', sweep: REDUCED_MOTION.matches ? 0.5 : 1.35, colors, tidy: this.mode === 'little' });
+    this.easel.uniforms.uHasMask.value = 1;
+    this.easel.uniforms.tMask.value = this.outline.mask;
+    this.ui.setReady(false);
+    // the fill is worked out first (a frame or two: the GPU is read back in the background), then the sweep begins
+    this.magic
+      .prepare(this.defaultSkin(f.info), this.outline.mask)
+      .catch(() => {})
+      .then(() => {
+        if (this.magicRun !== run) return;
+        run.phase = 'sweep';
+        this.audio.magic('sweep');
+      });
+  }
+
+  updateMagic(dt) {
+    const r = this.magicRun;
+    if (!r || r.phase === 'prepare') return;
+    r.t += dt;
+    const u = this.easel.uniforms;
+    if (r.phase === 'sweep') {
+      const k = Math.min(1, r.t / r.sweep);
+      const x = -0.05 + k * 1.15;
+      this.magic.sweep(this.outline.mask, x, r.tidy);
+      u.uSweep.value = x;
+      u.uGlow.value = 1;
+      this.lineSolid = Math.min(1, k * 2);
+      // sparkles ride along the sweep line
+      if (Math.random() < 0.9) this.sweepSparkle(x);
+      // (the friend's shaders are long ready by now; it never shows before they are)
+      if (k >= 1 && r.f.ready !== false) {
+        this.magic.sweep(this.outline.mask, 1.3, r.tidy);
+        this.paint.commitLive();
+        u.uSweep.value = -1;
+        this.comeAlive(r);
+      }
+    }
+  }
+
+  // a twinkle over the empty canvas: paint here
+  hintSparkle() {
+    const plane = this.easel.plane;
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * Math.PI * 2;
+      _v.set(Math.cos(a) * CANVAS_W * 0.3, Math.sin(a) * CANVAS_H * 0.3, 0.012).applyMatrix4(plane);
+      this.fx.sparkles.emit(_v.x, _v.y, _v.z, rand(-0.05, 0.05), rand(0.02, 0.12), rand(0.02, 0.1), [2, 1.7, 1.1], rand(0.012, 0.02), rand(0.6, 1.0));
+    }
+  }
+
+  sweepSparkle(x) {
+    const plane = this.easel.plane;
+    const v = Math.random();
+    if (!this.outline.inside(x, v)) return;
+    _v.set((x - 0.5) * CANVAS_W, (v - 0.5) * CANVAS_H, 0.01).applyMatrix4(plane);
+    this.fx.sparkles.emit(_v.x, _v.y, _v.z, rand(-0.1, 0.1), rand(0, 0.25), rand(0.05, 0.25), [2.2, 1.7, 0.9], rand(0.012, 0.025), rand(0.5, 1.1));
+  }
+
+  comeAlive(r) {
+    const f = r.f;
+    this.magic.bakeSkin(this.outline.mask);
+    const skin = this.magic.skinCopy();
+    f.setSkin(skin.texture);
+    f.ownSkin = skin;
+    // (the picture of the skin is made in the background; the record is kept once it is ready)
+    const record = { id: newId(), kind: f.info.id, skin: '', made: Date.now(), mode: this.mode };
+    Object.assign(record, f.recordExtra); // [doodle] what builds a doodle friend again
+    const skinKept = this.magic.skinImage().then((url) => (record.skin = url), () => {});
+    if (this.mode === 'big') this.savePainting();
+    this.unprime();
+    this.scene.add(f.object);
+    const land = this.landingSpot({ home: f.info.home, landScale: f.landScale });
+    r.phase = 'alive';
+    r.record = record;
+    this.alive.onLand = () => {
+      f.startTrick('hello', 1.5);
+      r.landedAt = this.time;
+      this.helloAt = f.object.position.clone();
+      this.helloSize = Math.max(1, (f.restRadius * f.object.scale.x) / 0.4);
+      this.rig.go(this.shot('hello'), REDUCED_MOTION.matches ? 0.3 : 1.2, 0.02);
+    };
+    this.alive.start(f, land, r.colors, () => {
+      this.magicRun = null;
+      this.lineAlpha = 0;
+      this.friends.add(f, record, { x: land.x, z: land.z, heading: land.yaw, fresh: true, journey: true });
+      this.records.unshift(record);
+      skinKept.then(() => this.store.put('friends', record)).catch(() => {});
+      this.wantPortrait(f, record, 0.4);
+      // the canvas is fresh and white again for the next friend
+      this.paint.clearAll();
+      this.coverage = 0;
+      this.outline.clear();
+      this.easel.setOutline(null, null);
+      this.canvasFriend?.dispose();
+      this.canvasFriend = null;
+      this.picked = false;
+      if (this.mode === 'little') this.setSubject(this.subjectId);
+      // (the friend now says hello and sets off for the garden: see onJourney)
+    });
+  }
+
+  // in front of the easel, clear of friends already there
+  landingSpot(info) {
+    let best = null;
+    for (let i = 0; i < 12; i++) {
+      const x = rand(-0.3, 0.3);
+      const z = rand(0.78, 0.92);
+      let near = Infinity;
+      for (const e of this.friends.list) near = Math.min(near, Math.hypot(e.pos.x - x, e.pos.z - z));
+      if (!best || near > best.near) best = { x, z, near };
+    }
+    // facing where the camera settles for the hello
+    return { x: best.x, z: best.z, yaw: Math.atan2(0.4 - best.x, 2.3 - best.z), scale: info?.home === 'ground' ? info.landScale : 1 };
+  }
+
+  // the colours the child painted with (for droplets and sparkles)
+  paintedColors() {
+    const seen = new Set();
+    const out = [];
+    for (const s of this.paint.strokes) {
+      if (s.brush.tool === 'sponge') continue;
+      const c = s.brush.color;
+      if (seen.has(c)) continue;
+      seen.add(c);
+      out.push(new THREE.Color(c));
+    }
+    return out;
+  }
+
+  // a friend's own colours as a texture (for anything not painted at all)
+  defaultSkin(info) {
+    this._defaults ??= {};
+    if (this._defaults[info.id]) return this._defaults[info.id];
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 48;
+    const g = c.getContext('2d');
+    const p = info.palette.map((n) => '#' + n.toString(16).padStart(6, '0'));
+    const grad = g.createLinearGradient(0, 0, 64, 48);
+    p.forEach((col, i) => grad.addColorStop(i / Math.max(1, p.length - 1), col));
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 48);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    this._defaults[info.id] = t;
+    return t;
+  }
+
+  // ------------------------------------------------------------ keeping
+
+  // which painting is on the canvas (its strokes), to keep each painting once
+  paintingKey() {
+    const s = this.paint.strokes;
+    return { n: s.length, last: s[s.length - 1] || null };
+  }
+
+  savePainting() {
+    // kept already (Keep, then GO; or hung from the shelf and not touched): not again
+    const key = this.paintingKey();
+    if (this.kept && this.kept.n === key.n && this.kept.last === key.last) return null;
+    this.kept = key;
+    // the picture for the shelf, and the strokes themselves to hang it again
+    const strokes = this.paint.strokes.map((c) => ({ brush: c.brush, seed: c.seed, time: c.time, pts: c.pts }));
+    const rec = { id: newId(), image: '', strokes, w: this.paint.w, made: Date.now() };
+    this.paintings.unshift(rec);
+    // (the picture is made in the background; the painting is kept once it is ready)
+    this.magic
+      .paintingImage()
+      .then((url) => (rec.image = url), () => {})
+      .then(() => this.store.put('paintings', rec))
+      .catch(() => {});
+    // the shelf keeps the newest few dozen
+    for (const old of this.paintings.splice(MAX_PAINTINGS)) this.store.remove('paintings', old.id).catch(() => {});
+    return rec;
+  }
+
+  keepPainting() {
+    if (this.state !== 'paint' || !this.paint.strokes.length) return;
+    this.endStroke();
+    this.savePainting();
+    this.audio.magic('shimmer');
+    const plane = this.easel.plane;
+    for (let i = 0; i < 40; i++) {
+      _v.set(rand(-0.5, 0.5) * CANVAS_W, rand(-0.5, 0.5) * CANVAS_H, 0.01).applyMatrix4(plane);
+      this.fx.sparkles.emit(_v.x, _v.y, _v.z, rand(-0.2, 0.2), rand(0, 0.4), rand(0, 0.3), [2, 1.6, 1], 0.02, rand(0.6, 1.2));
+    }
+  }
+
+  // a kept painting back on the easel, dry, to paint more on (big kids keep paintings)
+  hangPainting(p) {
+    // (kept paintings belong to Big kids: the shelf only shows them in that mode, and never switches modes)
+    if (!p.strokes?.length || this.alive.busy || this.mode !== 'big') return;
+    this.startPainting(true);
+    this.newCanvas();
+    const last = p.strokes[p.strokes.length - 1].time;
+    const now = this.paint.clock;
+    const k = this.paint.w / (p.w ?? 1024);
+    this.paint.replay(
+      p.strokes.map((c) => ({
+        ...c,
+        brush: { ...c.brush, radius: c.brush.radius * k, load: c.brush.load * k },
+        pts: c.pts.map(([x, y, r, len]) => [x * k, y * k, r * k, len * k]),
+        time: now - 120 - (last - c.time),
+      })),
+    );
+    // (it is on the shelf already: GO or Keep without a new stroke keeps no copy)
+    this.kept = this.paintingKey();
+    this.checkCoverage();
+  }
+
+  async restoreFriends() {
+    let list = [];
+    try {
+      list = await this.store.all('friends');
+      this.paintings = (await this.store.all('paintings')).sort((a, b) => b.made - a.made);
+    } catch {
+      return;
+    }
+    list.sort((a, b) => b.made - a.made);
+    this.records = list;
+    // the most recent friends come out to play
+    const out = list.slice(0, Math.min(3, this.friends.cap)).reverse();
+    for (const rec of out) {
+      if (this.friends.has(rec)) continue;
+      const f = await this.friendFromRecord(rec);
+      if (!f) continue;
+      if (this.friends.has(rec)) {
+        f.dispose();
+        continue;
+      }
+      const spot = this.freeSpot();
+      this.friends.add(f, rec, { x: spot.x, z: spot.z, heading: rand(-Math.PI, Math.PI), fresh: false });
+      if (!rec.portrait) this.wantPortrait(f, rec, 1);
+    }
+  }
+
+  async friendFromRecord(rec) {
+    if (rec.doodle) return this.doodle.fromRecord(rec); // [doodle]
+    if (!BY_ID[rec.kind]) return null;
+    try {
+      const [f, tex] = await Promise.all([makeFriend(rec.kind, this.friendCtx), loadTexture(rec.skin)]);
+      f.setSkin(tex);
+      f.ownSkin = tex;
+      // (its shaders compile a little at a time, so it shows without a hitch)
+      await this.warmFriend(f);
+      this.renderer.initTexture(tex);
+      return f;
+    } catch {
+      return null;
+    }
+  }
+
+  freeSpot() {
+    return this.friends.stageSpot();
+  }
+
+  openShelf() {
+    this.audio.select();
+    const out = new Set(this.friends.list.filter((e) => !e.leaving).map((e) => e.record?.id));
+    this.ui.showShelf(this.records, out, this.mode === 'big' ? this.paintings : []);
+  }
+
+  async fromShelf(rec) {
+    this.audio.click();
+    const playing = () => this.friends.list.find((e) => e.record?.id === rec.id && !e.leaving);
+    if (this.state !== 'play') this.toPlay();
+    const out = playing();
+    if (out) {
+      this.friends.play(out, this.camera);
+      return;
+    }
+    const f = await this.friendFromRecord(rec);
+    if (!f) return;
+    if (playing()) {
+      f.dispose();
+      return;
+    }
+    const spot = this.freeSpot();
+    const e = this.friends.add(f, rec, { x: spot.x, z: spot.z, heading: rand(-Math.PI, Math.PI), fresh: true, journey: false });
+    this.fx.sparkles.burst(_v.copy(e.pos).setY(e.pos.y + 0.12), 50, { colors: [[1.8, 1.4, 0.8], [1.3, 1.2, 1.9]], speed: 0.9, up: 0.6 });
+    this.audio.poof();
+    f.startTrick('hello', 1.5);
+  }
+
+  // ------------------------------------------------------------ input
+
+  bindInput() {
+    const el = this.canvas;
+    el.addEventListener('pointerdown', (e) => this.onDown(e));
+    el.addEventListener('pointermove', (e) => this.onMove(e));
+    el.addEventListener('pointerup', (e) => this.onUp(e));
+    el.addEventListener('pointercancel', (e) => this.onUp(e));
+    el.addEventListener('pointerleave', (e) => {
+      if (e.pointerType === 'mouse') {
+        this.pointer.hover = null;
+        this.friends.pointer = null;
+      }
+    });
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+    // (any touch, anywhere, wakes the full frame rate: see idle)
+    for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown']) addEventListener(type, () => (this.lastInput = performance.now()), { capture: true, passive: true });
+    addEventListener('keydown', (e) => {
+      if (e.key === 'f' || e.key === 'F') {
+        if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('input, textarea')) return;
+        toggleFullscreen();
+      } else if ((e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey) && this.state === 'paint') {
+        e.preventDefault();
+        if (this.paint.undo()) this.audio.undo();
+        this.checkCoverage();
+      } else if (e.key === 'Escape') {
+        for (const id of ['picker', 'guess', 'shelf']) if (!document.getElementById(id).hidden) this.ui.closeOverlay(id);
+      }
+    });
+  }
+
+  canvasUv(x, y) {
+    const ndc = new THREE.Vector2((x / this.view.w) * 2 - 1, -(y / this.view.h) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    return this.easel.hit(this.raycaster);
+  }
+
+  pressureOf(e) {
+    if (e.pointerType === 'pen' && e.pressure > 0) return clamp(e.pressure * 1.1, 0.15, 1);
+    // no pressure: faster strokes run a little thinner, like a real brush
+    return clamp(0.62 - this.pointer.speed * 0.12, 0.35, 0.62);
+  }
+
+  onDown(e) {
+    this.audio.unlock();
+    const p = this.pointer;
+    if (this.state === 'paint' && !this.alive.busy) {
+      if (p.id !== null) return; // one brush at a time
+      const uv = this.canvasUv(e.clientX, e.clientY);
+      if (!uv) return;
+      p.id = e.pointerId;
+      p.type = e.pointerType;
+      p.down = true;
+      p.uv = uv.clone();
+      p.hover = uv.clone();
+      p.speed = 0;
+      p.lastUv = uv.clone();
+      capture(this.canvas, e.pointerId, true);
+      this.paint.begin(this.brushSpec(), uv.x * this.paint.w, uv.y * this.paint.h, this.pressureOf(e));
+      this.idleSinceStroke = 0;
+    } else if (this.state === 'play' || this.state === 'menu') {
+      this.trackGround(e);
+      if (this.state === 'play') capture(this.canvas, e.pointerId, true);
+      // a toy may take the touch (petting, a bubble, the ball, a treat ...)
+      if (this.state === 'play' && this.toys.pointerDown(e.clientX, e.clientY, e)) return;
+      const hit = this.friends.pick(e.clientX, e.clientY, this.camera, this.view);
+      if (hit) {
+        this.friends.play(hit, this.camera);
+        if (this.state === 'play' && hit.state === 'trick') this.direct(hit, 'close', 3.4);
+      } else if (this.state === 'play') this.tapGround(e.clientX, e.clientY);
+    }
+  }
+
+  // the garden camera follows friends; (re)start it and frame a friend for a while
+  direct(e = null, kind = 'close', seconds = 2.5) {
+    if (e) this.gcam.frame(e, kind, seconds);
+    if (!this.rig.following) this.rig.follow((dt) => this.gcam.shot(dt), { smooth: 0.65, lookSmooth: 0.35 });
+    this.directing = true;
+  }
+
+  // where the finger or mouse is on the lawn, so friends can notice it
+  trackGround(e) {
+    if (this.state !== 'play') {
+      this.friends.pointer = null;
+      return;
+    }
+    const ndc = new THREE.Vector2((e.clientX / this.view.w) * 2 - 1, -(e.clientY / this.view.h) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const ray = this.raycaster.ray;
+    if (ray.direction.y >= -0.01) {
+      this.friends.pointer = null;
+      return;
+    }
+    const at = (this.groundPtr ??= new THREE.Vector3());
+    ray.at((0.03 - ray.origin.y) / ray.direction.y, at);
+    this.friends.pointer = Math.hypot(at.x - STAGE.x, at.z - STAGE.z) < 4.5 ? at : null;
+  }
+
+  onMove(e) {
+    const p = this.pointer;
+    if (this.state === 'play' && (e.pointerType === 'mouse' || e.buttons)) this.trackGround(e);
+    if (this.state === 'play') this.toys.pointerMove(e.clientX, e.clientY, e);
+    if (this.state !== 'paint') return;
+    if (p.id !== null && e.pointerId !== p.id) return;
+    const events = e.getCoalescedEvents?.() || [e];
+    for (const ev of events.length ? events : [e]) {
+      const uv = this.canvasUv(ev.clientX, ev.clientY);
+      if (e.pointerType === 'mouse' || p.down) p.hover = uv ? uv.clone() : null;
+      if (!p.down || !uv) continue;
+      p.uv = uv.clone();
+      this.paint.move(uv.x * this.paint.w, uv.y * this.paint.h, this.pressureOf(ev));
+    }
+  }
+
+  onUp(e) {
+    const p = this.pointer;
+    if (e.pointerType !== 'mouse') this.friends.pointer = null;
+    this.toys.pointerUp(e.clientX, e.clientY, e);
+    if (e.pointerId !== p.id) return;
+    this.endStroke();
+    if (e.pointerType !== 'mouse') p.hover = null;
+  }
+
+  endStroke() {
+    const p = this.pointer;
+    if (p.id !== null) capture(this.canvas, p.id, false);
+    p.id = null;
+    p.down = false;
+    if (this.paint.painting) {
+      this.paint.end();
+      this.idleSinceStroke = 0;
+      if (this.state === 'paint') {
+        this.autoArmed = true;
+        this.checkCoverage();
+      }
+    }
+  }
+
+  // a tap on the lawn: a sprinkle of sparkles, and friends look over
+  tapGround(x, y) {
+    if (this.more.tap(x, y)) return; // [doodle] the pond ripples, flowers bloom
+    const ndc = new THREE.Vector2((x / this.view.w) * 2 - 1, -(y / this.view.h) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const ray = this.raycaster.ray;
+    if (ray.direction.y >= -0.01) return;
+    const t = -ray.origin.y / ray.direction.y;
+    const at = ray.at(t, new THREE.Vector3());
+    at.y = groundAt(at.x, at.z) + 0.02;
+    this.fx.sparkles.burst(at, 16, { colors: [[1.8, 1.5, 0.9], [1.2, 1.4, 1.9]], speed: 0.4, up: 0.5, size: 0.016, life: 0.9 });
+    this.audio.tap();
+    for (const e of this.friends.list) if (!e.leaving && e.state !== 'trick') this.friends.lookAt(e, at.clone(), 2.5);
+    // the nearest friend trots over to see what it is
+    const walkers = this.friends.walkers();
+    const who = this.friends.nearest(at, (e) => walkers.includes(e) && (e.state === 'idle' || e.state === 'go') && !e.friend.trick);
+    if (who) {
+      const d = Math.hypot(who.pos.x - at.x, who.pos.z - at.z);
+      if (d > 0.35 && d < 4) {
+        const spot = this.friends.nav.nearestFree(at.x, at.z, 0.18) || at;
+        this.friends.send(who, spot, { pace: d > 1.3 ? 'run' : 'walk', stopR: 0.22, onArrive: (en) => this.friends.emote(en, Math.random() < 0.5 ? 'sniff' : 'giggle') });
+      }
+    }
+  }
+
+  // ------------------------------------------------------------ frame loop
+
+  onVisibility() {
+    this.hidden = document.hidden;
+    this.audio.pageHidden(this.hidden);
+    // nothing stays held across a tab switch: the brush is lifted, a drag let go, hover forgotten
+    this.endStroke();
+    this.toys.abort?.();
+    this.pointer.hover = null;
+    this.friends.pointer = null;
+    this.last = performance.now();
+    // the first frame back starts afresh: no catch-up step, and its long gap says nothing about the device
+    this.pacer.reset();
+    this.governor.sample(0, true);
+    this.lastInput = performance.now();
+    this.lastDraw = 0;
+    this.idleDt = 0;
+  }
+
+  // Quiet screens draw at half the cadence: the start screen and the easel when no one has touched the
+  // screen for a few seconds and nothing is on the move (the grass sways, motes drift and the camera
+  // breathes, all slowly enough that 30 fps shows them as well as 60). Any touch, key or change of
+  // screen brings the full cadence back on the very next frame, so taps never feel slow.
+  get idle() {
+    if (this.state !== 'menu' && this.state !== 'paint') return false;
+    if (this.pointer.down || this.paint.painting || this.magicRun || this.alive.busy || this.rig.moving || this.rig.following) return false;
+    if (performance.now() - Math.max(this.lastInput || 0, this.ui.stateAt || 0) < 3000) return false;
+    for (const e of this.friends.list) if (e.speed > 0.04 || e.state === 'trick' || e.leaving) return false;
+    return !this.primed && !this.portraits?.length;
+  }
+
+  // Every screen refresh calls this; the pacer lets a steady share of them through
+  // (a fixed ~60 fps cadence even on a 120 Hz screen) and gives the step in whole
+  // refreshes, so the motion is evenly spaced (see FramePacer in quality.js).
+  frame(now) {
+    this.last = now;
+    if (this.hidden) return;
+    let dt = this.pacer.tick(now);
+    if (!dt) return;
+    const since = this.lastDraw ? now - this.lastDraw : this.pacer.step;
+    // (a quiet screen draws about 30 times a second: a frame due sooner is skipped and the next one
+    // advances the world by both; a device slower than that is never slowed further)
+    if (!QUERY.has('fps') && since < 30 && this.idle) {
+      this.idleDt += dt;
+      return;
+    }
+    const stretched = this.idleDt > 0;
+    dt += this.idleDt;
+    this.idleDt = 0;
+    this.lastDraw = now;
+    // frames drawn per second, as seen (for stats())
+    this.fpsAvg = this.fpsAvg ? this.fpsAvg + (1000 / Math.max(1, since) - this.fpsAvg) * 0.2 : 1000 / Math.max(1, since);
+    // (a frame we held back on purpose says nothing about how the device copes)
+    this.governor.sample(Math.min(0.25, since / 1000), !!this.magicRun || stretched);
+    if (this.frozen) return;
+    this.update(dt);
+    // a new render scale glides in (lite: see LitePost.setScale)
+    if (this.post.stepScale?.(dt)) this.pointSizes();
+    this.render();
+  }
+
+  update(dt) {
+    this.time += dt;
+    const t = this.time;
+    this.sky.update(t);
+    this.world.update(dt, t);
+    this.motes.update(t);
+    this.drops.update(t);
+    this.paint.update(dt);
+    // the outline fades in (and the magic turns its dots into a line)
+    const wantLine = this.state === 'paint' || this.state === 'magic' ? 1 : 0.0;
+    this.lineAlpha = damp(this.lineAlpha, this.outlined || this.magicRun ? wantLine : 0, 3, dt);
+    const u = this.easel.uniforms;
+    u.uLineAlpha.value = this.lineAlpha;
+    u.uLineSolid.value = this.lineSolid;
+    if (!this.magicRun) u.uGlow.value = damp(u.uGlow.value, 0, 3, dt);
+    this.easel.update(dt, t, this.paint.clock);
+
+    // the brush in the hand, over the canvas
+    const p = this.pointer;
+    const showBrush = this.state === 'paint' && p.hover;
+    this.brush.update(dt, this.easel.plane, showBrush ? p.hover : null, p.down, CANVAS_W, CANVAS_H);
+    if (p.down && p.uv && p.lastUv) {
+      const d = Math.hypot(p.uv.x - p.lastUv.x, (p.uv.y - p.lastUv.y) * 0.75);
+      p.speed = damp(p.speed, d / Math.max(dt, 1e-3), 12, dt);
+      p.lastUv.copy(p.uv);
+    } else p.speed = damp(p.speed, 0, 10, dt);
+    this.audio.paint(this.ui.kind, p.speed, p.down, dt);
+    this.audio.update(dt);
+
+    // coverage while painting; the magic starts by itself on a full outline
+    if (this.state === 'paint' && this.mode === 'little') {
+      this.coverTimer -= dt;
+      if (p.down && this.coverTimer <= 0) {
+        this.coverTimer = 0.6;
+        this.checkCoverage();
+      }
+      if (!p.down) {
+        this.idleSinceStroke += dt;
+        if (this.autoArmed && this.coverage >= AUTO_COVER && this.idleSinceStroke > 1.0 && !this.ui.overlayOpen) this.go();
+      }
+    }
+
+    this.updateMagic(dt);
+    if (this.magicRun?.phase === 'alive') {
+      const f = this.magicRun.f;
+      this.alive.update(dt);
+      if (this.magicRun) {
+        f.look = this.camera.position;
+        f.update(dt, this.camera);
+        for (const ev of f.events) this.friends.onEvent({ friend: f }, ev);
+        f.events.length = 0;
+      }
+    }
+    this.friends.update(dt, t, this.camera);
+    this.toys.update(dt, t);
+    this.warmer.update();
+    if (this.primed && --this.primed.left <= 0) this.unprime();
+    this.updateLife(dt, t);
+    this.doodle.update(dt); // [doodle]
+    this.more.update(dt, t); // [doodle]
+    this.fx.sparkles.update(dt, t);
+    this.fx.droplets.update(dt);
+    this.fx.petals.update(dt, t);
+
+    if (this.state === 'play' && this.directing && !this.rig.moving && !this.rig.following) this.direct();
+    if (this.state !== 'play') this.friends.pointer = null;
+    this.rig.update(dt);
+    // focus: the canvas when painting, the friends when playing
+    // (on a friend the near side of it: its face, not the middle of its body)
+    // (the focus glides to it, so a change of shot racks focus instead of popping; a cut snaps)
+    const focus = Math.max(0.3, this.camera.position.distanceTo(this.rig.look) - (this.state === 'play' ? 0.14 : 0));
+    const cut = this._focusFrom && this._focusFrom.distanceToSquared(this.camera.position) > 0.36;
+    this._focus = this._focus === undefined || cut ? focus : damp(this._focus, focus, 7, dt);
+    (this._focusFrom ??= new THREE.Vector3()).copy(this.camera.position);
+    this.post.setFocus(this._focus);
+  }
+
+  // the garden's little life (birds, insects, the pond, the wind in the grass) reacts to
+  // the friends on the ground and to a finger
+  updateLife(dt, t) {
+    const inp = (this._lifeIn ??= { camera: this.camera, friends: [], pointer: null, state: '' });
+    inp.friends.length = 0;
+    for (const e of this.friends.list) {
+      if (e.leaving || e.home === 'sky') continue;
+      const o = (e.lifeObj ??= { pos: e.pos, radius: 0, speed: 0 });
+      o.radius = e.friend.restRadius * e.scale;
+      o.speed = e.speed;
+      inp.friends.push(o);
+    }
+    inp.pointer = this.friends.pointer;
+    inp.state = this.state;
+    this.life.update(dt, t, inp);
+  }
+
+  render() {
+    if (!this.trimHold) this.trim.update();
+    this.world.view(this.camera);
+    this.post.update(this.time);
+    const pq = this.portraits;
+    if (pq?.length && this.time >= pq[0].at) this.takePortrait(pq.shift());
+    // (what one frame draws, all passes together, for stats())
+    const info = this.renderer.info;
+    info.autoReset = false;
+    info.reset();
+    this.post.render();
+    this.frameInfo = { tris: info.render.triangles, calls: info.render.calls };
+    this.frames = (this.frames || 0) + 1;
+  }
+
+  // The shelf picture of a new friend: one extra frame rendered from a
+  // portrait camera close on the friend (3/4 view, in the garden light),
+  // copied square from the canvas at once; the normal frame is drawn right
+  // after, so the portrait never shows.
+  wantPortrait(f, record, delay) {
+    (this.portraits ??= []).push({ f, record, at: this.time + delay });
+  }
+
+  takePortrait({ f, record }) {
+    if (!f.object.parent || !record) return;
+    // (the picture is encoded in the background: reading it back here would wait for the GPU to finish the extra frame)
+    const cv = this.portraitCanvas(f);
+    canvasDataUrl(cv, 'image/jpeg', 0.86)
+      .then((url) => {
+        record.portrait = url;
+        // (a record still waiting for its skin picture is saved, portrait too, when that is ready)
+        if (record.skin) return this.store.put('friends', record);
+      })
+      .catch(() => {});
+  }
+
+  portraitOf(f, size = 256, quality = 0.86) {
+    return this.portraitCanvas(f, size).toDataURL('image/jpeg', quality);
+  }
+
+  portraitCanvas(f, size = 256) {
+    const el = this.portraitFrame(f);
+    const side = Math.min(el.width, el.height);
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = size;
+    cv.getContext('2d').drawImage(el, (el.width - side) / 2, (el.height - side) / 2, side, side, 0, 0, size, size);
+    return cv;
+  }
+
+  // draws the portrait frame into the canvas (from a camera close on the friend), and gives the camera back
+  portraitFrame(f) {
+    const cam = this.camera;
+    const savePos = cam.position.clone();
+    const saveQ = cam.quaternion.clone();
+    const saveFov = cam.fov;
+    const c = f.worldCenter(new THREE.Vector3());
+    const r = (f.portraitRadius ?? f.restRadius) * f.object.scale.x;
+    const fov = 30;
+    const dist = (r * 0.92) / Math.tan((fov * Math.PI) / 360);
+    // from the front, a little to the side and above; if a plant, a trunk or the
+    // easel would be in the way, from the nearest side that is clear
+    let yaw = f.object.rotation.y + 0.45;
+    const clear = (a) => {
+      const x = c.x + Math.sin(a) * dist * 0.94;
+      const z = c.z + Math.cos(a) * dist * 0.94;
+      if (obstacleAt(x, z) > -0.15) return false;
+      for (let i = 1; i <= 5; i++) if (obstacleAt(x + (c.x - x) * i * 0.16, z + (c.z - z) * i * 0.16) > -0.02) return false;
+      return true;
+    };
+    for (const off of [0.45, -0.45, 0.1, 0.9, -0.9, 1.4, -1.4]) {
+      if (clear(f.object.rotation.y + off)) {
+        yaw = f.object.rotation.y + off;
+        break;
+      }
+    }
+    cam.position.set(c.x + Math.sin(yaw) * dist * 0.94, c.y + dist * 0.28, c.z + Math.cos(yaw) * dist * 0.94);
+    cam.fov = squareFov(fov, cam.aspect);
+    cam.updateProjectionMatrix();
+    cam.lookAt(c);
+    cam.updateMatrixWorld();
+    // (the portrait is close: full fur and the fine body, whatever the garden view had)
+    f.forceFine = true;
+    f.fitShells?.(cam);
+    this.post.setFocus(cam.position.distanceTo(c));
+    // this close, the usual lens would blur half the friend: stop it down
+    const aperture = this.post.lens.aperture;
+    this.post.setAperture(aperture * 0.3);
+    // (the shadows were drawn a frame ago and the normal frame right after redraws them: this one reuses them)
+    const shadows = this.renderer.shadowMap;
+    const autoShadows = shadows.autoUpdate;
+    shadows.autoUpdate = false;
+    this.post.render();
+    shadows.autoUpdate = autoShadows;
+    this.post.setAperture(aperture);
+    cam.position.copy(savePos);
+    cam.quaternion.copy(saveQ);
+    cam.fov = saveFov;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    f.forceFine = false;
+    f.fitShells?.(cam);
+    // (the focus goes back to where the frame had it, so the normal frame right after does not jump)
+    this.post.setFocus(this._focus ?? cam.position.distanceTo(this.rig.look));
+    return this.renderer.domElement;
+  }
+
+  // ------------------------------------------------------------ debug
+
+  exposeDebug() {
+    const app = this;
+    const toPx = (u, v) => [u * app.paint.w, v * app.paint.h];
+    window.__mb = {
+      app,
+      toys: app.toys,
+      freeze() {
+        app.frozen = true;
+      },
+      thaw() {
+        app.frozen = false;
+        app.last = performance.now();
+      },
+      step(ms = 16) {
+        let left = ms / 1000;
+        while (left > 1e-6) {
+          const dt = Math.min(1 / 60, left);
+          app.update(dt);
+          left -= dt;
+        }
+        app.render();
+      },
+      // a stroke through canvas-uv points [[u, v], ...]
+      paint(points, { color, kind = 'brush', pressure = 0.55 } = {}) {
+        if (color) app.ui.setColor(color, kind);
+        else app.ui.setColor(app.ui.color, kind);
+        app.applyTool();
+        const [x, y] = toPx(points[0][0], points[0][1]);
+        app.paint.begin(app.brushSpec(), x, y, pressure);
+        for (let i = 1; i < points.length; i++) {
+          const a = points[i - 1];
+          const b = points[i];
+          const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) * 200));
+          for (let j = 1; j <= n; j++) {
+            const [px, py] = toPx(a[0] + ((b[0] - a[0]) * j) / n, a[1] + ((b[1] - a[1]) * j) / n);
+            app.paint.move(px, py, pressure);
+          }
+        }
+        app.paint.update(0);
+        app.paint.end();
+        app.checkCoverage();
+      },
+      stroke(u0, v0, u1, v1, opts) {
+        this.paint([[u0, v0], [u1, v1]], opts);
+      },
+      // scribble over the outline (a child colouring in), in the given colours
+      colourIn(colors = ['green', 'blue', 'purple'], rows = 22) {
+        const f = app.canvasFriend;
+        if (!f) return;
+        for (let i = 0; i < rows; i++) {
+          const v = 0.12 + (0.76 * i) / (rows - 1);
+          const pts = [];
+          for (let u = 0.08; u <= 0.92; u += 0.02) if (app.outline.inside(u, v)) pts.push([u, v + Math.sin(u * 40) * 0.006]);
+          if (pts.length < 2) continue;
+          this.paint(pts, { color: colors[Math.floor((i / rows) * colors.length)] });
+        }
+      },
+      go: () => app.go(),
+      pick: (id) => app.setSubject(id),
+      mode: (m) => app.setMode(m),
+      play: () => app.startPainting(true),
+      garden: () => app.toPlay(),
+      menu: () => app.toMenu(),
+      // a guess card tapped (the guess sheet closes, as for a real tap)
+      guess: (id) => {
+        document.getElementById('guess').hidden = true;
+        app.guessed(id);
+      },
+      // every friend's silhouette for creatures/shapes.js (dev tool)
+      async shapes() {
+        const out = {};
+        for (const sub of SUBJECTS) {
+          let f;
+          try {
+            f = await makeFriend(sub.id, app.friendCtx);
+          } catch {
+            continue;
+          }
+          app.outline.clear();
+          await app.outline.draw(f);
+          const d = app.outline.data;
+          const map = new Uint8Array(MASK_W * MASK_H);
+          for (let i = 0; i < map.length; i++) map[i] = d[i * 4] > 127 ? 1 : 0;
+          const sq = squeeze(map, MASK_W, MASK_H);
+          const bytes = new Uint8Array(Math.ceil((SHAPE_W * SHAPE_H) / 8));
+          sq.grid.forEach((v, i) => {
+            if (v >= 0.5) bytes[i >> 3] |= 1 << (i & 7);
+          });
+          out[sub.id] = { aspect: +((sq.aspect * MASK_H * CANVAS_W) / (MASK_W * CANVAS_H)).toFixed(3), bits: btoa(String.fromCharCode(...bytes)) };
+          f.dispose();
+        }
+        app.setSubject(app.subjectId);
+        return out;
+      },
+      // a friend straight into the garden, in its own colours
+      async pose(id, x = 0, z = 0.3, heading = 0) {
+        const f = await makeFriend(id, app.friendCtx);
+        const t = app.defaultSkin(f.info);
+        f.setSkin(t);
+        return app.friends.add(f, null, { x, z, heading, fresh: false });
+      },
+      trick(name, i = 0) {
+        const e = app.friends.list[i];
+        if (!e) return;
+        if (name) {
+          e.state = 'trick';
+          e.faceCamera = true;
+          e.friend.startTrick(name, e.friend.trickLength?.(name) ?? 2);
+        } else {
+          app.friends.play(e, app.camera);
+          if (e.state === 'trick') app.direct(e, 'close', 3.4);
+        }
+      },
+      // (view, shot and close hold the camera where they put it: the garden camera stands down)
+      view(pos, look, fov = 40) {
+        app.directing = false;
+        app.rig.snap({ pos: new THREE.Vector3(...pos), look: new THREE.Vector3(...look), fov });
+      },
+      shot: (name) => {
+        app.directing = false;
+        app.rig.snap(app.shot(name));
+      },
+      // the camera close on the i-th friend (from its front, yaw degrees to the side, k times
+      // further; with abs, yaw is a world direction instead)
+      close(i = 0, yaw = 25, k = 1.3, fov = 32, abs = false) {
+        const f = app.friends.list[i]?.friend;
+        if (!f) return;
+        app.directing = false;
+        const c = f.worldCenter(new THREE.Vector3());
+        const d = ((f.portraitRadius ?? f.restRadius) * f.object.scale.x * k) / Math.tan((fov * Math.PI) / 360);
+        const a = (abs ? 0 : f.object.rotation.y) + (yaw * Math.PI) / 180;
+        app.rig.snap({ pos: new THREE.Vector3(c.x + Math.sin(a) * d * 0.94, c.y + d * 0.26, c.z + Math.cos(a) * d * 0.94), look: c, fov: squareFov(fov, app.camera.aspect) });
+      },
+      // the i-th friend in the garden as a square jpeg data URL (picker pictures)
+      portrait: (i = 0, size = 256, quality = 0.86) => app.friends.list[i] && app.portraitOf(app.friends.list[i].friend, size, quality),
+      friends: () => app.friends.list.map((e) => ({ kind: e.friend.info.id, x: +e.pos.x.toFixed(2), z: +e.pos.z.toFixed(2), state: e.state })),
+      // what a frame costs: triangles and draw calls of the last frame (all passes), frames per second as
+      // drawn, the governor's render scale and the one in use now (lite glides between them), half cadence
+      stats: () => ({ ...(app.frameInfo || {}), fps: +(app.fpsAvg || 0).toFixed(1), scale: app.governor.scale, renderScale: +(app.post.scale ?? 1).toFixed(3), idle: app.idle, tier: app.quality.tier, frames: app.frames || 0 }),
+      // each friend's detail: body and shells on the coarse mesh or not, fur shells drawn (a doodle's coarse body is coarseGeo)
+      lod: () => app.friends.list.map((e) => { const f = e.friend; const lod = f.lodGeo || f.coarseGeo; return { kind: f.info.id, body: lod && f.body.geometry === lod ? 'coarse' : 'fine', shells: f.shells.length ? (f.shells[0].geometry === lod ? 'coarse' : 'fine') : null, shown: f.shellsShown, ready: !!lod, swaps: f.lodSwaps || 0 }; }),
+      // the render scale, at once or gliding (lite), as the governor would set it
+      scale: (s, now = true) => (app.post.setScale ? app.post.setScale(s, now) : null, app.pointSizes()),
+      // a pick as a child makes it from the picker (a fresh canvas for Little ones, then the friend)
+      pickTap: (id) => app.handlers().pick(id),
+      // the UI's buttons as a tap reaches them (with the double-tap guard): go, menu, paintNew, world, shelf
+      tap: (name) => document.getElementById({ go: 'go-btn', paintNew: 'paint-btn', world: 'world-btn', start: 'start' }[name] || name)?.click(),
+      // a tab switch (hidden true/false), as the page sees it
+      visibility: (hidden) => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden }); app.onVisibility(); },
+      // the shelf's kept paintings, and hanging one (as from the shelf)
+      paintings: () => app.paintings.map((p) => ({ id: p.id, strokes: p.strokes.length })),
+      hang: (i = 0) => app.hangPainting(app.paintings[i]),
+      keep: () => app.keepPainting(),
+      state: () => ({ state: app.state, mode: app.mode, goWaiting: !!app.goWaiting, subject: app.subjectId, subjectReady: app.subjectReady !== false, canvasFriend: app.canvasFriend?.info.id ?? null, autoArmed: !!app.autoArmed, coverage: +app.coverage.toFixed(3), strokes: app.paint.strokes.length, busy: app.alive.busy, magic: app.magicRun?.phase ?? null, scale: app.governor.scale, strain: app.governor.strain, fps: +(1000 / app.pacer.step).toFixed(1), refresh: +(1000 / app.pacer.vsync).toFixed(1) }),
+    };
+    // [doodle] doodle(preset | strokes, { go }), doodleInfo(), and life.* (src/doodle/)
+    Object.assign(window.__mb, app.doodle.debugApi(), { life: app.more.debugApi() });
   }
 }
-function frame(ts) {
-  raf = requestAnimationFrame(frame);
-  if (resizePending) { resizePending = false; resize(); }
-  const dt = last ? Math.min(0.05, Math.max(0, (ts - last) / 1000)) : 1 / 60;
-  if (last) { frameMs.push(ts - last); if (frameMs.length > 240) frameMs.shift(); }
-  last = ts;
-  frames++; fpsT += dt;
-  if (fpsT >= 0.5) { fps = frames / fpsT; frames = 0; fpsT = 0; }
-  if (frozen) return;
-  adapt(dt);
-  sim(dt);
-  render();
+
+// pointer capture throws for a pointer the browser no longer tracks (lifted
+// already, or synthetic); that must never leave the brush stuck down
+function capture(el, id, on) {
+  try {
+    if (on) el.setPointerCapture?.(id);
+    else el.releasePointerCapture?.(id);
+  } catch {
+    // painting carries on without capture
+  }
 }
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { cancelAnimationFrame(raf); raf = 0; suspend(true); sfx.brush(0); }
-  else { suspend(false); last = 0; if (!raf) raf = requestAnimationFrame(frame); }
-});
 
-// ---------------------------------------------------------------- boot
+// the vertical field of view that shows at least `fov` across the narrower side of the screen
+function squareFov(fov, aspect) {
+  return aspect >= 1 ? fov : (360 / Math.PI) * Math.atan(Math.tan((fov * Math.PI) / 360) / aspect);
+}
 
-resize(); resizePending = false;
-// ?pick= opens the easel with that friend, unless ?screen=alive asks for it to come alive
-const startScreen = Q.get('screen') === 'alive' ? 'alive' : Q.get('pick') ? 'paint' : Q.get('screen') && app.screens[Q.get('screen')] ? Q.get('screen') : 'title';
-if (startScreen === 'alive') {
-  switchTo('paint', { kind: Q.get('pick') || 'dragon' });
-  app.screens.paint.painting.colourIn();
-  switchTo('alive', { painting: app.screens.paint.painting });
-} else switchTo(startScreen, { kind: Q.get('pick') || 'dragon' });
-raf = requestAnimationFrame(frame);
-// bake the next likely backgrounds while the child looks at the title
-const idle = window.requestIdleCallback || ((f) => setTimeout(f, 300));
-idle(() => { for (const s of ['pick', 'paint', 'meadow']) { try { app.screens[s].prebake && app.screens[s].prebake(); } catch {} } });
+// a canvas as a data URL, encoded off the main thread
+function canvasDataUrl(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) return reject(new Error('no picture'));
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(blob);
+    }, type, quality);
+  });
+}
 
-// ---------------------------------------------------------------- debug
-
-if (DEBUG) {
-  const pct = (a, p) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))]; };
-  const stepMs = (ms) => { let left = ms; while (left > 0) { const d = Math.min(1 / 60, left / 1000); sim(d); left -= d * 1000; } render(); };
-  window.__mb = {
-    app,
-    freeze() { frozen = true; },
-    thaw() { frozen = false; last = 0; },
-    step(ms = 16.7) { stepMs(ms); },
-    state() {
-      const s = app.screen;
-      const base = { screen: s.name, friend: null, coverage: 0, stars: 0, goReady: false, meadow: [], book: store.count(), fps: Math.round(fps * 10) / 10, busy: !!app.trans || !!(s.busy) };
-      return Object.assign(base, s.debugState ? s.debugState() : {});
-    },
-    screen(name, opts) { app.jump(name, opts || {}); app.readyAt = 0; return app.screen.name; },
-    pick(id = 'dragon') { app.jump('paint', { kind: id }); app.readyAt = 0; return app.screens.paint.kind; },
-    paint(points, color) { return app.screens.paint.debugPaint(points, color); },
-    colourIn(colors) { return app.screens.paint.debugColourIn(colors); },
-    undo() { return app.screens.paint.undo(); },
-    go() { app.readyAt = 0; return app.screen.name === 'paint' ? app.screens.paint.pressGo(true) : false; },
-    toy(name, x, y) { return app.screen.name === 'meadow' ? app.screens.meadow.useToy(name, x, y) : false; },
-    tapFriend(i) { return app.screen.tapFriend ? app.screen.tapFriend(i) : false; },
-    clearSave() { return store.clearSave(); },
-    perf() { return { fps: Math.round(fps * 10) / 10, frameMs: { p50: Math.round(pct(frameMs, 0.5) * 10) / 10, p95: Math.round(pct(frameMs, 0.95) * 10) / 10 }, canvasPx: canvas.width * canvas.height }; },
-    ready() { app.readyAt = 0; },
-  };
+function loadTexture(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      // (decoded now, off the main thread, not by the first frame that draws it)
+      (img.decode ? img.decode() : Promise.resolve()).catch(() => {}).then(() => {
+        const t = new THREE.Texture(img);
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.needsUpdate = true;
+        resolve(t);
+      });
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
 }

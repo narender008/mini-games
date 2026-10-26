@@ -1,95 +1,189 @@
-// Screenshot pass: every screen at 1280x800 and on a phone in portrait
-// (390x844) and in landscape (844x390), into out/screens/
-// with an index.html contact sheet. The game is set up through the hook
-// (six friends in the meadow, a part-painted easel, the come-alive moment
-// held at the peel and at the landing) and frozen for each shot. Fails if a
-// screen cannot be reached, a frame is blank, or the page logs an error.
+// npm run shots [-- <dir>]: the game's story in pictures at 1280x720 (and a
+// phone in portrait), written to out/shots/ unless a directory is given:
+// title, picker, colouring in, the friend leaping off the canvas, the garden
+// with toys, a doodle drawn and leaping, doodles playing with friends, the
+// garden's extra life, and the paint screen on a phone. Several frames of
+// each leap are kept (leap-*.png) to pick the best from.
 const fs = require('fs');
 const path = require('path');
-const { serve } = require('./lib/server.cjs');
-const { launch, open, close, hook, frameStats } = require('./lib/browser.cjs');
-const G = require('./lib/game.cjs');
+const { open, OUT } = require('./helpers.cjs');
 
-const OUT = path.join(__dirname, 'out', 'screens');
-const VIEWS = [
-  { tag: 'desktop', width: 1280, height: 800, dpr: 1 },
-  { tag: 'phone-portrait', width: 390, height: 844, dpr: 2, touch: true, mobile: true },
-  { tag: 'phone-landscape', width: 844, height: 390, dpr: 2, touch: true, mobile: true },
-];
-// [name, screen expected, setup(mb, page)]
-const SHOTS = [
-  ['01-title', 'title', async (mb) => { await mb('screen', 'title'); await mb('thaw'); await G.sleep(900); }],
-  ['02-pick', 'pick', async (mb) => { await mb('screen', 'pick'); await mb('thaw'); await G.sleep(700); }],
-  ['03-paint-blank', 'paint', async (mb) => { await mb('pick', 'unicorn'); await mb('thaw'); await G.sleep(500); }],
-  ['04-paint', 'paint', async (mb) => {
-    await mb('pick', 'dragon');
-    await mb('paint', [[0.3, 0.45], [0.7, 0.42], [0.35, 0.55], [0.68, 0.6]], 'green');
-    await mb('paint', [[0.4, 0.3], [0.6, 0.35], [0.45, 0.62]], 'rainbow');
-    await mb('paint', [[0.25, 0.7], [0.75, 0.72]], 'glitter');
-    await mb('thaw'); await G.sleep(600);
-  }],
-  ['05-alive-sweep', 'alive', async (mb) => { await mb('freeze'); await mb('pick', 'kitten'); await mb('colourIn', ['orange', 'yellow', 'pink']); await mb('go'); await mb('step', 400); await mb('step', 700); }],
-  ['06-alive-peel', 'alive', async (mb) => { await mb('freeze'); await mb('pick', 'puppy'); await mb('colourIn', ['brown', 'yellow', 'red']); await mb('go'); await mb('step', 400); await mb('step', 1950); }],
-  ['07-alive-landed', 'alive', async (mb) => { await mb('freeze'); await mb('pick', 'fox'); await mb('colourIn', ['orange', 'purple']); await mb('go'); await mb('step', 400); await mb('step', 2800); }],
-  ['08-meadow', 'meadow', async (mb, page) => {
-    await mb('screen', 'meadow'); await mb('thaw');
-    await page.waitForFunction(() => window.__mb.app.screens.meadow.ents.every((e) => e.actor && e.actor.rig), null, { timeout: 8000 });
-    await G.sleep(1800); await mb('toy', 'bubbles'); await G.sleep(800);
-  }],
-  ['09-book', 'book', async (mb, page) => {
-    await mb('screen', 'book'); await mb('thaw');
-    await page.waitForFunction(() => { const b = window.__mb.app.screens.book; return [...b.portraits.values()].every((p) => p.actor); }, null, { timeout: 8000 });
-    await G.sleep(600);
-  }],
-];
+const dir = path.resolve(process.argv[2] || path.join(OUT, 'shots'));
+fs.mkdirSync(dir, { recursive: true });
 
-async function main() {
-  fs.mkdirSync(OUT, { recursive: true });
-  for (const f of fs.readdirSync(OUT)) fs.unlinkSync(path.join(OUT, f));
-  const server = await serve(process.env.MB_ROOT);
-  const browser = await launch();
-  const failures = [];
-  const rows = [];
-  try {
-    for (const V of VIEWS) {
-      const page = await open(browser, server.url, 'debug&seed=11', V);
-      const mb = await hook(page);
-      // six friends in the meadow and a seventh in the book
-      for (const k of ['whale', 'bunny', 'dragon', 'unicorn', 'teddy', 'butterfly', 'penguin']) await G.makeFriend(mb, k);
-      await G.sleep(500);
-      for (const [name, screen, setup] of SHOTS) {
-        const file = `${name}-${V.tag}.png`;
-        try {
-          await setup(mb, page);
-          await mb('freeze');
-          await mb('step', 16);
-          const st = await mb('state');
-          if (st.screen !== screen) throw new Error(`on '${st.screen}', wanted '${screen}'`);
-          await page.screenshot({ path: path.join(OUT, file) });
-          const s = await frameStats(page);
-          if (s.std < 8 || s.colours < 40) throw new Error(`frame looks blank: ${JSON.stringify(s)}`);
-          rows.push({ file, name, tag: V.tag, w: V.width, h: V.height });
-          console.log(`ok   ${file}`);
-        } catch (e) {
-          failures.push(`${file}: ${e.message}`);
-          console.log(`FAIL ${file}: ${e.message}`);
-        }
-        await mb('thaw');
+(async () => {
+  const t0 = Date.now();
+  const mb = await open({ query: '&mode=little' });
+  const { ev, step } = mb;
+  const shot = async (name) => {
+    await ev(() => window.__mb.scale(1, true));
+    await mb.page.screenshot({ path: path.join(dir, name + '.png'), timeout: 15 * 60 * 1000 });
+    console.log('shot', name);
+  };
+  // the camera on everyone in the garden (and any extra points), from the front and a little above
+  const frameAll = (extra = []) =>
+    ev((extra) => {
+      const mb = window.__mb;
+      let pts = mb.app.friends.list.map((e) => [e.pos.x, 0.15, e.pos.z]).concat(extra);
+      const centre = () => pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length, a[2] + p[2] / pts.length], [0, 0, 0]);
+      const far = (c) => pts.map((p) => Math.hypot(p[0] - c[0], p[2] - c[2]));
+      let c = centre();
+      // (a friend that wandered off on its own is left out: the picture is of the group)
+      while (pts.length > 3 && Math.max(...far(c)) > 1.4) {
+        const d = far(c);
+        pts.splice(d.indexOf(Math.max(...d)), 1);
+        c = centre();
       }
-      if (page.problems.length) failures.push(`${V.tag}: page problems:\n${page.problems.join('\n')}`);
-      await close(page);
+      const r = Math.max(0.8, ...far(c));
+      const d = (r * 1.25) / Math.tan((40 * Math.PI) / 360);
+      const k = Math.hypot(0.5, 0.42, 0.76);
+      mb.view([c[0] + (d * 0.5) / k, c[1] + (d * 0.42) / k, c[2] + (d * 0.76) / k], c, 40);
+      mb.step(16);
+    }, extra);
+  // the magic up to the come-alive, then frames at chosen moments of it (seconds from its start)
+  const alive = async (prefix, times) => {
+    await mb.until(() => ['sweep', 'alive'].includes(window.__mb.state().magic), null, 180000);
+    for (let i = 0; i < 40 && !(await ev(() => !!window.__mb.app.alive.active)); i++) await step(250);
+    for (const [i, t] of times.entries()) {
+      await ev((t) => {
+        const a = window.__mb.app.alive.active;
+        if (a && t > a.t) window.__mb.step((t - a.t) * 1000);
+      }, t);
+      await shot(`${prefix}-${i}`);
     }
-  } finally {
-    await browser.close();
-    await server.close();
-  }
-  const html = `<!doctype html><meta charset="utf-8"><title>Magic Brush screens</title>
-<style>body{font:14px system-ui,sans-serif;background:#f6efe3;margin:16px}h2{margin:24px 0 8px}div{display:flex;flex-wrap:wrap;gap:12px}figure{margin:0}img{max-width:420px;max-height:420px;border:1px solid #ccc;display:block}figcaption{color:#555}</style>
-<h1>Magic Brush screens</h1>
-${VIEWS.map((V) => `<h2>${V.tag} ${V.width}x${V.height}</h2><div>${rows.filter((r) => r.tag === V.tag).map((r) => `<figure><a href="${r.file}"><img src="${r.file}" loading="lazy"></a><figcaption>${r.name}</figcaption></figure>`).join('')}</div>`).join('\n')}`;
-  fs.writeFileSync(path.join(OUT, 'index.html'), html);
-  console.log(`${rows.length} screenshots in ${OUT}`);
-  if (failures.length) { console.error(failures.join('\n')); process.exit(1); }
-}
+    await mb.comeAlive();
+  };
 
-main().catch((e) => { console.error(e); process.exit(1); });
+  try {
+    // Little ones: a dragon coloured in, and the magic
+    await ev(() => window.__mb.play());
+    await ev(() => window.__mb.pickTap('dragon'));
+    await mb.until(() => window.__mb.state().canvasFriend === 'dragon' && window.__mb.state().subjectReady);
+    await ev(() => {
+      document.getElementById('picker').hidden = true;
+      window.__mb.step(2200);
+      window.__mb.colourIn(['green', 'yellow', 'orange'], 9);
+      window.__mb.step(300);
+    });
+    await shot('03-colouring-in');
+    await ev(() => window.__mb.colourIn(['green', 'yellow', 'orange'], 18));
+    await ev(() => window.__mb.go());
+    // glow 0.9, emerge 2.5, crouch 0.4, leap 0.95
+    await alive('leap-dragon', [2.4, 2.9, 3.3, 3.6, 4.0, 4.3]);
+    await step(2500);
+
+    // more friends to play with
+    await ev(async () => {
+      const mb = window.__mb;
+      await mb.pose('bunny', -0.8, -0.5, 0.6);
+      await mb.pose('kitten', 0.8, -0.9, -0.5);
+      await mb.pose('elephant', -0.4, -2.0, 0.3);
+    });
+    await mb.until(() => window.__mb.lod().every((l) => l.ready), null, 120000);
+    await ev(() => {
+      window.__mb.garden();
+      window.__mb.step(3000);
+      document.querySelector('.toy[data-toy="bubbles"]').click();
+      window.__mb.step(1500);
+      document.querySelector('.toy[data-toy="ball"]').click();
+      window.__mb.step(2500);
+    });
+    await frameAll();
+    await shot('06-garden-toys');
+
+    // Doodle: a star drawn, coming alive
+    await ev(() => window.__mb.mode('doodle'));
+    await ev(() => window.__mb.play());
+    await step(2000);
+    await ev(() => window.__mb.doodle('star'));
+    await step(300);
+    await shot('07-doodle-drawn');
+    await mb.settle();
+    await ev(() => window.__mb.tap('go'));
+    await alive('leap-doodle', [2.6, 3.0, 3.4, 3.8, 4.1, 4.4]);
+    await step(2500);
+    for (const p of ['snake', 'two-blobs']) {
+      await ev(() => window.__mb.play());
+      await step(1600);
+      await mb.doodle(p);
+      await step(2500);
+    }
+
+    // everybody called over: doodles and friends together, then fireworks
+    await ev(() => {
+      window.__mb.garden();
+      window.__mb.step(2500);
+      document.querySelector('.toy[data-toy="call"]').click();
+    });
+    for (let i = 0; i < 30; i++) {
+      const ph = await ev(() => {
+        window.__mb.step(500);
+        return window.__mb.toys.call.run?.phase ?? null;
+      });
+      if (ph === 'cheer') break;
+    }
+    await step(600);
+    await frameAll();
+    await shot('09-doodles-and-friends');
+    await ev(() => window.__mb.life.fireworks());
+    await step(900);
+    await shot('10-fireworks');
+    await step(4000);
+    // flowers spring up where the lawn is tapped, the pond ripples and a koi leaps
+    await ev(() => {
+      const L = window.__mb.life;
+      L.bloom(-1.25, -3.25, 7);
+      L.bloom(-0.85, -3.55, 6);
+      L.bloom(-1.05, -2.9, 5);
+      L.pond(-2.0, -3.8);
+      window.__mb.step(1400);
+      window.__mb.view([-0.1, 0.62, -2.55], [-1.6, 0.08, -3.75], 42);
+      // (friends wandering right in front of the lens step out of this one picture)
+      for (const e of window.__mb.app.friends.list) if (Math.hypot(e.pos.x + 0.85, e.pos.z + 3.15) < 1.0) e.friend.object.visible = false;
+      window.__mb.step(16);
+    });
+    await shot('10-blooms-and-pond');
+    await ev(() => window.__mb.app.friends.list.forEach((e) => (e.friend.object.visible = true)));
+
+    // the start screen with friends about, and the picker
+    await ev(() => {
+      window.__mb.menu();
+      window.__mb.step(2500);
+    });
+    await shot('01-title');
+    await ev(() => {
+      window.__mb.mode('little');
+      window.__mb.play();
+      window.__mb.app.newCanvas();
+      window.__mb.step(2000);
+      window.__mb.app.ui.showPicker();
+      window.__mb.step(600);
+    });
+    await shot('02-picker');
+  } finally {
+    await mb.close();
+  }
+
+  // a phone in portrait, colouring in
+  const phone = await open({ query: '&mode=little', width: 390, height: 844, mobile: true });
+  try {
+    await phone.ev(() => window.__mb.play());
+    await phone.ev(() => window.__mb.pickTap('unicorn'));
+    await phone.until(() => window.__mb.state().canvasFriend === 'unicorn' && window.__mb.state().subjectReady);
+    await phone.ev(() => {
+      document.getElementById('picker').hidden = true;
+      window.__mb.step(2200);
+      window.__mb.colourIn(['pink', 'purple', 'blue'], 10);
+      window.__mb.step(300);
+      window.__mb.scale(1, true);
+    });
+    await phone.page.screenshot({ path: path.join(dir, '11-phone-portrait-paint.png'), timeout: 15 * 60 * 1000 });
+    console.log('shot 11-phone-portrait-paint');
+  } finally {
+    await phone.close();
+  }
+  console.log(`screenshots in ${dir} (${((Date.now() - t0) / 60000).toFixed(1)} min)`);
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

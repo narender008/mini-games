@@ -1,15 +1,17 @@
 {
   "name": "magic-brush-tests",
   "private": true,
-  "description": "Automated tests for Magic Brush: browser smoke tests, the full loop with real mouse and touch input, regressions of the old game's bugs, every friend, the meadow, performance and screenshots.",
+  "description": "Automated tests for Magic Brush in headless Chromium (software GL): smoke, phone layout, triangle budgets, the Little ones, Big kid and Doodle flows, the garden's toys and life, regressions of fixed bugs, persistence, a Node unit test of doodle inflation, and screenshots.",
   "scripts": {
     "test": "node run.cjs",
-    "smoke": "node --test --test-reporter=spec smoke.test.cjs",
-    "loop": "node --test --test-reporter=spec loop.test.cjs",
-    "regressions": "node --test --test-reporter=spec regressions.test.cjs",
-    "friends": "node --test --test-reporter=spec friends.test.cjs",
-    "meadow": "node --test --test-reporter=spec meadow.test.cjs",
-    "perf": "node --test --test-reporter=spec perf.test.cjs",
+    "unit": "node --test --test-reporter=spec inflate.test.mjs",
+    "smoke": "node run.cjs smoke",
+    "layout": "node run.cjs layout",
+    "perf": "node run.cjs perf",
+    "little": "node run.cjs little",
+    "doodle": "node run.cjs doodle",
+    "regressions": "node run.cjs regressions",
+    "persistence": "node run.cjs persistence",
     "shots": "node screenshots.cjs"
   },
   "devDependencies": {

@@ -1,48 +1,32 @@
-// npm test: the smoke tests, the full loop with real input, the regressions
-// of the old game's bugs, every friend, the meadow, performance and the
-// screenshot pass, one after another. Exits non-zero if any of them fails.
-// `node run.cjs smoke perf` runs only the steps whose names start with those
-// words. Reports land in out/: a JUnit file per test step, perf.json,
-// screens/ with a contact sheet, and summary.txt.
-const { spawnSync } = require('child_process');
+// npm test: serves the site and runs every test file with node:test.
+//   node run.cjs              all of them
+//   node run.cjs smoke doodle only files whose names contain these words
+// MB_JOBS sets how many files run at once (default 2: each browser keeps a few
+// cores busy rendering in software). Screenshots and failure notes go to out/.
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { serve, OUT } = require('./helpers.cjs');
 
-const OUT = path.join(__dirname, 'out');
-const t = (file) => ['--test', '--test-reporter=spec', '--test-reporter-destination=stdout', '--test-reporter=junit', `--test-reporter-destination=${path.join(OUT, file.replace('.test.cjs', '.junit.xml'))}`, file];
-const steps = [
-  ['smoke tests', t('smoke.test.cjs')],
-  ['loop with real input', t('loop.test.cjs')],
-  ['regressions', t('regressions.test.cjs')],
-  ['friends', t('friends.test.cjs')],
-  ['meadow', t('meadow.test.cjs')],
-  ['perf', t('perf.test.cjs')],
-  ['screenshots', ['screenshots.cjs']],
-];
-const only = process.argv.slice(2);
-fs.mkdirSync(OUT, { recursive: true });
-const results = [];
-const t0 = Date.now();
-for (const [name, args] of steps) {
-  if (only.length && !only.some((o) => name.startsWith(o))) continue;
-  console.log(`\n=== ${name} ===`);
-  const ts = Date.now();
-  const r = spawnSync(process.execPath, args, { cwd: __dirname, stdio: 'inherit', env: process.env });
-  const junit = args.find((a) => a.endsWith('.junit.xml'));
-  let counts = '';
-  if (junit) {
-    try {
-      const x = fs.readFileSync(junit.split('=')[1], 'utf8');
-      const n = (x.match(/<testcase /g) || []).length, f = (x.match(/<failure/g) || []).length;
-      counts = ` ${n - f}/${n} tests`;
-    } catch {}
-  }
-  results.push({ name, ok: r.status === 0, secs: ((Date.now() - ts) / 1000).toFixed(1), counts });
-}
-const lines = results.map((r) => `${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.counts} (${r.secs}s)`);
-lines.push(`total ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-console.log('\n=== summary ===');
-console.log(lines.join('\n'));
-fs.writeFileSync(path.join(OUT, 'summary.txt'), lines.join('\n') + '\n');
-console.log(`reports: ${OUT}`);
-process.exit(results.every((r) => r.ok) ? 0 : 1);
+const ORDER = ['inflate.test.mjs', 'smoke.test.cjs', 'layout.test.cjs', 'perf.test.cjs', 'little.test.cjs', 'doodle.test.cjs', 'regressions.test.cjs', 'persistence.test.cjs'];
+
+(async () => {
+  const want = process.argv.slice(2);
+  const files = ORDER.filter((f) => !want.length || want.some((w) => f.includes(w)));
+  const extra = fs.readdirSync(__dirname).filter((f) => /\.test\.(c|m)?js$/.test(f) && !ORDER.includes(f));
+  if (extra.length) console.warn('not in run.cjs ORDER, not run:', extra.join(', '));
+  fs.mkdirSync(OUT, { recursive: true });
+  const { url, server } = await serve();
+  const jobs = String(Number(process.env.MB_JOBS) || 2);
+  const t0 = Date.now();
+  const child = spawn(process.execPath, ['--test', `--test-concurrency=${jobs}`, '--test-reporter=spec', ...files], {
+    cwd: __dirname,
+    stdio: 'inherit',
+    env: { ...process.env, MB_URL: url },
+  });
+  child.on('exit', (code) => {
+    server.close();
+    console.log(`\nMagic Brush tests: ${code === 0 ? 'passed' : 'FAILED'} in ${((Date.now() - t0) / 60000).toFixed(1)} min (${files.length} files, ${jobs} at a time)`);
+    process.exit(code ?? 1);
+  });
+})();
