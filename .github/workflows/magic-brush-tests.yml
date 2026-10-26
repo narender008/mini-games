@@ -14,7 +14,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # (every frame is rendered in software: about 8 minutes on a 4-core machine, allow for slower runners)
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: games/magic-brush/test
@@ -26,9 +27,6 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
       - run: npm test
-        env:
-          # shared runners are slower than a laptop; 50 fps is asserted locally
-          MB_FPS_MIN: '40'
       - if: always()
         uses: actions/upload-artifact@v4
         with:

@@ -11,10 +11,14 @@
 // which gives them its outline as for Little ones. Friends are kept on this
 // device (store.js) and wait on the friends shelf.
 //
-// ?play starts straight at the easel, ?mode=little|big, ?pick=<id>, ?cover
-// hides the UI, ?fps=N forces the frame pacing (quality.js), plus ?quality=,
-// ?msaa=, ?shadows=0, ?ao=0, ?dof=0, ?fur=, ?tone=; ?debug exposes
-// window.__mb (see the end of this file).
+// Doodle (src/doodle/, hooks marked [doodle]) is the third way to play: a
+// free drawing puffs up into a friend of its own shape.
+//
+// ?play starts straight at the easel, ?mode=little|big|doodle, ?pick=<id>,
+// ?cover hides the UI, ?fps=N forces the frame pacing (quality.js), ?lod=N
+// how much coarser far friends' bodies are (0: never), plus ?quality=, ?msaa=, ?shadows=0, ?ao=0,
+// ?dof=0, ?fur=, ?tone=; ?debug exposes window.__mb (see the end of this
+// file). Tests drive it frozen and stepped: games/magic-brush/test/.
 import * as THREE from 'three';
 import { QUERY, DEBUG, REDUCED_MOTION, MODES, load, save, pickValid, clamp, damp, rand, lin, tick } from './config.js';
 import { detectQuality, FrameGovernor, FramePacer } from './quality.js';
@@ -1529,7 +1533,11 @@ class App {
       play: () => app.startPainting(true),
       garden: () => app.toPlay(),
       menu: () => app.toMenu(),
-      guess: (id) => app.guessed(id),
+      // a guess card tapped (the guess sheet closes, as for a real tap)
+      guess: (id) => {
+        document.getElementById('guess').hidden = true;
+        app.guessed(id);
+      },
       // every friend's silhouette for creatures/shapes.js (dev tool)
       async shapes() {
         const out = {};
