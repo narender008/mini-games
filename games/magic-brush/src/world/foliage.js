@@ -129,9 +129,9 @@ function windProject(amount, extra = '') {
 
 // ------------------------------------------------------------ grass
 
-function bladeGeometry() {
-  // a tapered, gently curved blade, 5 segments tall, 1 m high (scaled per instance)
-  const seg = 5;
+function bladeGeometry(seg = 5) {
+  // a tapered, gently curved blade, 5 segments tall, 1 m high (scaled per instance);
+  // far off, where a blade is a few pixels tall, fewer segments draw the same shape
   const pos = [];
   const uv = [];
   const idx = [];
@@ -155,7 +155,11 @@ function bladeGeometry() {
 }
 
 // A lawn of blades inside `area(x, z) => density 0..1` over a rectangle.
-export function grassField({ count, x0, x1, z0, z1, density, height = 0.09, width = 0.006, seed = 1, colors }) {
+// lod(x, z) (optional) gives each blade's band: 0 near (5 segments), 1 a
+// little further (3), 2 far (2). The blades are the same either way (the same
+// places, sizes and colours from the same random sequence); the lawn is then
+// cut into tiles so a view draws only the tiles it can see. Returns a group.
+export function grassField({ count, x0, x1, z0, z1, density, height = 0.09, width = 0.006, seed = 1, colors, lod = null, tile = 0 }) {
   const R = rng(seed);
   const geo = bladeGeometry();
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.62, side: THREE.DoubleSide });
@@ -182,13 +186,15 @@ export function grassField({ count, x0, x1, z0, z1, density, height = 0.09, widt
       .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= (0.45 + 0.75 * vH) * (1.0 + vGust * 0.7 * vH);');
     cloudLight(s);
   };
-  const mesh = new THREE.InstancedMesh(geo, mat, count);
+  const banded = !!lod;
+  const mesh = banded ? null : new THREE.InstancedMesh(geo, mat, count);
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const e = new THREE.Euler();
   const p = new THREE.Vector3();
   const sc = new THREE.Vector3();
   const c = new THREE.Color();
+  const blades = banded ? [] : null;
   let n = 0;
   let tries = 0;
   while (n < count && tries < count * 8) {
@@ -202,16 +208,72 @@ export function grassField({ count, x0, x1, z0, z1, density, height = 0.09, widt
     sc.set(width * (0.7 + R() * 0.6), h, h);
     p.set(x, 0, z);
     m.compose(p, q, sc);
-    mesh.setMatrixAt(n, m);
     c.copy(cols[Math.floor(R() * cols.length)]).multiplyScalar(0.85 + R() * 0.3);
-    mesh.setColorAt(n, c);
+    if (banded) blades.push({ x, z, band: lod(x, z), m: m.clone(), c: c.clone() });
+    else {
+      mesh.setMatrixAt(n, m);
+      mesh.setColorAt(n, c);
+    }
     n++;
   }
+  if (banded) return bandedGrass(blades, mat, tile || 3.5, x0, z0, height);
   mesh.count = n;
   mesh.instanceMatrix.needsUpdate = true;
   mesh.receiveShadow = true;
   mesh.frustumCulled = false;
   return mesh;
+}
+
+// The blades in tiles. A tile's blade has as many segments as its band
+// allows, and fewer while the camera is far from it (a blade more than a few
+// metres off is a dozen pixels tall: 3 segments draw the same curve, 2 at the
+// back of the lawn). group.userData.view(camera) picks them once a frame.
+const SEGS = [5, 3, 2];
+function bandedGrass(blades, mat, tile, x0, z0, height) {
+  const group = new THREE.Group();
+  const geos = { 5: bladeGeometry(5), 3: bladeGeometry(3), 2: bladeGeometry(2) };
+  const cells = new Map();
+  for (const b of blades) {
+    const key = `${b.band}:${Math.floor((b.x - x0) / tile)}:${Math.floor((b.z - z0) / tile)}`;
+    let cell = cells.get(key);
+    if (!cell) cells.set(key, (cell = { band: b.band, list: [] }));
+    cell.list.push(b);
+  }
+  const tiles = [];
+  for (const cell of cells.values()) {
+    const max = SEGS[cell.band];
+    const mesh = new THREE.InstancedMesh(geos[max], mat, cell.list.length);
+    cell.list.forEach((b, i) => {
+      mesh.setMatrixAt(i, b.m);
+      mesh.setColorAt(i, b.c);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.receiveShadow = true;
+    // (culled tile by tile; the bounds allow for the sway and a friend's push)
+    mesh.computeBoundingSphere();
+    mesh.boundingSphere.radius += height * 2;
+    mesh.frustumCulled = true;
+    group.add(mesh);
+    tiles.push({ mesh, max, seg: max, centre: mesh.boundingSphere.center, r: mesh.boundingSphere.radius });
+  }
+  group.userData.view = (camera) => {
+    const cp = camera.position;
+    for (const t of tiles) {
+      // distance to the nearest part of the tile, with a margin so a tile on the line does not flip
+      const d = Math.max(0, t.centre.distanceTo(cp) - t.r);
+      let want = t.seg;
+      if (t.seg === 5 && d > 2.6) want = 3;
+      if (want === 3 && d > 6.5) want = 2;
+      if (t.seg === 2 && d < 5.5) want = 3;
+      if (want === 3 && d < 1.8) want = 5;
+      const seg = Math.min(t.max, want);
+      if (seg !== t.seg) {
+        t.seg = seg;
+        t.mesh.geometry = geos[seg];
+      }
+    }
+  };
+  return group;
 }
 
 // ------------------------------------------------------------ leaves

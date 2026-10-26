@@ -297,7 +297,11 @@ export class Audio {
       [2.76, 0.35, 0.6],
       [5.4, 0.15, 0.35],
     ];
+    // (a partial at or above the Nyquist limit cannot be played: the browser complains and drops it; it would be
+    // far above hearing anyway)
+    const top = Math.min(16000, ctx.sampleRate * 0.45);
     for (const [m, a, d] of parts) {
+      if (freq * m >= top) continue;
       const o = ctx.createOscillator();
       o.type = 'sine';
       o.frequency.value = freq * m;

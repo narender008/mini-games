@@ -491,7 +491,13 @@ export class World {
       if (z < DECK_Z0 && Math.abs(x - STONES_X(z)) < 0.24 && z > -6.5) return 0.15;
       return 1;
     };
-    this.group.add(grassField({ count: Math.round(60000 * k), x0: -7, x1: 7, z0: -10, z1: 3.5, density: inPlay, height: 0.075, width: 0.005, seed: 3 }));
+    // (lite: blades well away from where friends play and cameras go are drawn with fewer segments, see grassField)
+    const band = (x, z) => {
+      const d = Math.min(walkable(x, z), Math.hypot(Math.max(0, Math.abs(x) - DECK_X), Math.max(0, z - DECK_Z1, DECK_Z0 - z)));
+      return d < 1.4 ? 0 : d < 3.6 ? 1 : 2;
+    };
+    this.grass = grassField({ count: Math.round(60000 * k), x0: -7, x1: 7, z0: -10, z1: 3.5, density: inPlay, height: 0.075, width: 0.005, seed: 3, lod: q.lite ? band : null, tile: 2.5 });
+    this.group.add(this.grass);
     // flower beds round the edges of the lawn and by the pond
     const pinks = [0xf58fb5, 0xf2a3c7, 0xffffff, 0xe96b9a];
     const blues = [0x8f86e8, 0x7aa6f0, 0xb98ff0, 0xffffff];
@@ -776,6 +782,11 @@ export class World {
     hill.scale.set(1.3, 0.38, 1);
     hill.position.set(-38, -1, -70);
     this.group.add(hill);
+  }
+
+  // the camera this frame sees from (fewer grass segments far off: see grassField)
+  view(camera) {
+    this.grass.userData.view?.(camera);
   }
 
   update(dt, t) {

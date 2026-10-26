@@ -1,8 +1,8 @@
 // Device quality tiers. The starting tier comes from a quick look at the
 // device; the frame governor then trims the render scale if frames run long.
 // URL switches: ?quality=high|medium|low forces a tier, ?msaa=N, ?shadows=0,
-// ?ao=0, ?dof=0 and ?fur=N (shells per furry friend) override single
-// features.
+// ?ao=0, ?dof=0, ?fur=N (shells per furry friend) and ?lod=N (how much
+// coarser a friend's far body is; 0 = none) override single features.
 import { QUERY } from './config.js';
 
 // fur: shells drawn over a furry friend close up (fewer far away).
@@ -14,7 +14,7 @@ const TIERS = {
   // LitePost), the world's shadows drawn once, contact shadows under friends.
   lite: {
     tier: 'lite', lite: true, maxDpr: 1.5, msaa: 0, shadows: true, shadowSize: 2048, ao: false, dof: true,
-    maxPixels: 1.6e6, particles: 700, envSize: 128, fur: 8, active: 6, paint: 1024, voxel: 0.005, grass: 0.55,
+    maxPixels: 1.6e6, particles: 700, envSize: 128, fur: 8, active: 6, paint: 1024, voxel: 0.005, grass: 0.55, lod: 2,
   },
   high: {
     tier: 'high', maxDpr: 2, msaa: 4, shadows: true, shadowSize: 2048, ao: true, dof: true,
@@ -36,6 +36,7 @@ export function detectQuality() {
   if (QUERY.has('shadows')) q.shadows = QUERY.get('shadows') !== '0';
   if (QUERY.has('ao')) q.ao = QUERY.get('ao') !== '0';
   if (QUERY.has('dof')) q.dof = QUERY.get('dof') !== '0';
+  if (QUERY.has('lod')) q.lod = Math.max(0, Math.min(4, Number(QUERY.get('lod')) || 0));
   if (QUERY.has('fur')) q.fur = Math.max(0, Math.min(48, Number(QUERY.get('fur')) || 0));
   return q;
 }
@@ -62,8 +63,9 @@ function pickTier() {
 // 60 fps (the largest n that stays at or above ~54 fps: n = 1 on 60 Hz, 2 on
 // 120 and 144 Hz, 4 on 240 Hz), and it hands the simulation a time step made
 // of WHOLE refreshes, so timestamp jitter never reaches the motion: on time,
-// every frame advances the world by exactly the same amount. After a hitch the
-// step is capped, so the world slows for a moment instead of jumping.
+// every frame advances the world by exactly the same amount. A lone late frame
+// advances it by the usual step (the world pauses for that moment instead of
+// jumping); a device that steadily runs slower gets steps to match.
 // ?fps=N forces the target (e.g. ?fps=120 to let a fast screen run flat out).
 const RATES = [24, 30, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 180, 240];
 const MAX_STEP = 40; // ms of world time a single frame may advance
@@ -81,6 +83,10 @@ export class FramePacer {
     this.real = this.step; // ms since the previous frame that was drawn (what the governor watches)
     this.pending = 0;
     this.pendingRuns = 0;
+    // refreshes per frame of the last few frames (the usual step, see tick)
+    this.ks = new Uint8Array(7).fill(1);
+    this.sorted = new Uint8Array(7);
+    this.ki = 0;
   }
 
   // called on every refresh with the animation-frame time (ms); returns the
@@ -101,7 +107,24 @@ export class FramePacer {
     this.lastRender = now;
     this.real = first ? this.step : since;
     const k = Math.max(1, Math.round((first ? this.step : since) / this.vsync));
-    return Math.min(k * this.vsync, MAX_STEP) / 1000;
+    // A one-off late frame (a hitch: a tab switch, a garbage collection, a busy moment) does not move the
+    // world on by the time it lost: it advances by the usual number of refreshes, so nothing leaps and the
+    // speed of things never changes. Only when frames run late steadily (the device draws at 30 fps, say)
+    // does the step follow, once most of the last few frames agree.
+    const ks = this.ks;
+    ks[this.ki] = Math.min(255, k);
+    this.ki = (this.ki + 1) % ks.length;
+    let usual = 0;
+    for (let i = 0; i < ks.length; i++) this.sorted[i] = ks[i];
+    this.sorted.sort();
+    usual = this.sorted[ks.length >> 1];
+    return Math.min(Math.min(k, usual) * this.vsync, MAX_STEP) / 1000;
+  }
+
+  // after the page was hidden: the next frame starts afresh (no catch-up, no stale cadence)
+  reset() {
+    this.lastRender = 0;
+    this.prev = 0;
   }
 
   // the refresh interval is the low end of what the browser has been giving
