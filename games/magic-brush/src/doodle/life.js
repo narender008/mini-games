@@ -359,7 +359,7 @@ export class MoreLife {
       const across = (i - (n - 1) / 2) * 0.55;
       const x = cx - fx * 0.9 + fz * across;
       const z = cz - fz * 0.9 - fx * across;
-      this.rockets.push({ x, z, y: 0.05, vy: rand(3.4, 4.2), vx: rand(-0.25, 0.25), vz: rand(-0.25, 0.25), t: -i * 0.22 - rand(0, 0.1), fuse: rand(0.55, 0.75), color: pick(colors), color2: pick(colors) });
+      this.rockets.push({ x, z, y: 0.05, vy: rand(2.5, 2.9), vx: rand(-0.2, 0.2), vz: rand(-0.2, 0.2), t: -i * 0.22 - rand(0, 0.1), fuse: rand(0.5, 0.6), color: pick(colors), color2: pick(colors) });
     }
   }
 
@@ -383,7 +383,7 @@ export class MoreLife {
       if (r.t > r.fuse) {
         const c1 = [r.color.r * 2.4 + 0.3, r.color.g * 2.4 + 0.3, r.color.b * 2.4 + 0.3];
         const c2 = [r.color2.r * 2.4 + 0.3, r.color2.g * 2.4 + 0.3, r.color2.b * 2.4 + 0.3];
-        fx.sparkles.burst(_v.set(r.x, r.y, r.z), 70, { colors: [c1, c2, [2.2, 1.9, 1.2]], speed: 1.5, up: 0.2, size: 0.03, life: 1.5, gravity: -0.5 });
+        fx.sparkles.burst(_v.set(r.x, r.y, r.z), this.app.toys?.amount?.(110) ?? 110, { colors: [c1, c2, [2.2, 1.9, 1.2]], speed: 1.7, up: 0.2, size: 0.045, life: 1.6, gravity: -0.5 });
         for (let k = 0; k < 10; k++) fx.droplets.throw(_v.set(r.x, r.y, r.z), _w.set(rand(-1.2, 1.2), rand(-0.4, 1.0), rand(-1.2, 1.2)), k % 2 ? r.color : r.color2, rand(0.006, 0.012));
         this.pop();
         R.splice(i, 1);
@@ -412,7 +412,7 @@ export class MoreLife {
     // the flower held out in front of it, bobbing
     const f = e.friend;
     const bob = Math.sin(t * 6) * 0.004;
-    G.mesh.position.set(0, G.y + bob, G.z);
+    G.mesh.position.set(G.x, G.y + bob, G.z);
     G.mesh.rotation.set(0.9 + Math.sin(t * 2.3) * 0.08, 0, Math.sin(t * 3) * 0.12);
     if (G.phase === 'go') {
       if (G.t > 14) return this.endGift(true);
@@ -450,9 +450,16 @@ export class MoreLife {
     sm.position.y = 0;
     hm.position.y = 0.002;
     const b = f.bounds;
-    const y = b.min.y + (b.max.y - b.min.y) * 0.4;
+    let y = b.min.y + (b.max.y - b.min.y) * 0.4;
     const z = b.max.z + size * 0.6;
-    group.position.set(0, y, z);
+    // (a friend that says where to hold it, a doodle, holds it under its smile)
+    let x = 0;
+    const at = f.giftPoint?.(new THREE.Vector3());
+    if (at) {
+      x = at.x;
+      y = Math.max(b.min.y + size * 2, at.y - size * 1.4);
+    }
+    group.position.set(x, y, z);
     group.scale.setScalar(0.001);
     f.object.add(group);
     // walk up to the child: the front of the lawn, towards the camera
@@ -464,7 +471,7 @@ export class MoreLife {
       tz = STAGE.z + 0.8;
     }
     const spot = F.nav.nearestFree(tx, tz, 0.16) || { x: tx, z: tz };
-    const G = { e, mesh: group, color: col, y, z, t: 0, ot: 0, phase: 'go', size };
+    const G = { e, mesh: group, color: col, x, y, z, t: 0, ot: 0, phase: 'go', size };
     this.gift = G;
     F.emote(e, 'sniff');
     F.after(1.2, () => {

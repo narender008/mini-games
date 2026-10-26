@@ -298,11 +298,20 @@ export class Doodle {
     this.board0 ??= app.easel.board.rotation.z;
     const plane = app.easel.plane;
     const v = new THREE.Vector3();
+    const o = new THREE.Vector3(0, 0, 0).applyMatrix4(plane);
+    const vel = new THREE.Vector3();
+    const col = new THREE.Color();
     const n = REDUCED_MOTION.matches ? 10 : 28;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2;
       v.set(Math.cos(a) * CANVAS_W * 0.28, Math.sin(a) * CANVAS_H * 0.3, 0.012).applyMatrix4(plane);
       app.fx.sparkles.emit(v.x, v.y, v.z, 0, rand(0.02, 0.12), rand(0.02, 0.1), i % 2 ? [2.0, 1.6, 0.9] : [1.2, 1.4, 2.0], rand(0.014, 0.024), rand(0.7, 1.2));
+      // (sparkles hardly show on white paper: a ring of paint-coloured petals
+      // pops out of the canvas and flutters down too)
+      if (i % 2 && app.fx.petals) {
+        vel.set(Math.cos(a) * 0.35, Math.sin(a) * 0.3 + 0.35, 0.45).applyMatrix4(plane).sub(o);
+        app.fx.petals.throw(v, vel, col.setHSL(i / n, 0.75, 0.6), rand(0.01, 0.015));
+      }
     }
     const bar = document.getElementById('toolbar');
     bar?.classList.remove('doodle-hint');

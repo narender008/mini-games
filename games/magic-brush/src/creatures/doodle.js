@@ -259,6 +259,13 @@ export class DoodleFriend extends Friend {
     if (camera) this.fitLod(camera);
   }
 
+  // where it holds a gift (src/doodle/life.js): its smile, in its object's space
+  giftPoint(out) {
+    const b = this.bones.mouth ? 'mouth' : 'head';
+    this.bonePoint(b, [0, 0, 0], out);
+    return this.object.worldToLocal(out);
+  }
+
   // the coarse body when it is small on screen
   fitLod(camera) {
     if (!this.coarseGeo) return;
