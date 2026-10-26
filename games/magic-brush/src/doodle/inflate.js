@@ -758,7 +758,7 @@ function placeFeatures({ inside, D, W, H, box, hAt, maxD, area }) {
       for (const side of [-1, 1]) {
         const cx = mx + side * er * 1.75;
         const cy = my + er * 0.35;
-        if (at(cx, cy) > er * 0.45) cheeks.push({ c: [cx, cy, hAt(cx, cy) - er * 0.05], r: er * 0.42 });
+        if (at(cx, cy) > er * 0.3) cheeks.push({ c: [cx, cy, hAt(cx, cy) - er * 0.05], r: er * 0.42 });
       }
     } else {
       // a little smile tucked between the eyes
@@ -787,12 +787,16 @@ function placeFeatures({ inside, D, W, H, box, hAt, maxD, area }) {
         break;
       }
   const low = box.y0;
-  const wide = sw / sh > 2.1 && maxD < sh * 0.45;
-  const legLen = clamp(wide ? 0.4 * sh : 0.13 * sh, 5, 0.25 * Math.max(sw, sh));
-  const legR = clamp(0.045 * Math.sqrt(area), 2.2, legLen * 0.55);
+  const wide = sw / sh > 2.1 && maxD < sh * 0.3;
+  // (a long, low noodle stands on short, stubby feet, a caterpillar's)
+  const legLen = wide ? clamp(1.1 * maxD, 5, 0.3 * sh + 4) : clamp(0.13 * sh, 5, 0.25 * Math.max(sw, sh));
+  const legR = Math.min(
+    wide ? clamp(0.38 * maxD, 2.4, legLen * 0.6) : clamp(0.045 * Math.sqrt(area), 2.2, legLen * 0.55),
+    Math.max(2.2, 0.06 * Math.sqrt(area))
+  );
   const groundY = low - legLen;
   // columns that reach down near the ground carry the feet
-  const tol = Math.max(legLen * 0.9, sh * 0.06);
+  const tol = wide ? Math.max(maxD * 0.7, sh * 0.06) : Math.max(legLen * 0.9, sh * 0.06);
   const standing = [];
   for (let x = box.x0; x <= box.x1; x++) if (bottom[x] >= 0 && bottom[x] <= low + tol) standing.push(x);
   const sx0 = standing[0];
@@ -880,7 +884,7 @@ function placeFeatures({ inside, D, W, H, box, hAt, maxD, area }) {
     rootX,
     groundY,
     bones,
-    sides: { cx, halfW, low, sh, eyesOut: eyes.out },
+    sides: { cx, halfW, low, sh, eyesOut: eyes.out, flap: smoothstep(0.45, 0.9, sw / sh) },
     box,
   };
 }
@@ -888,13 +892,14 @@ function placeFeatures({ inside, D, W, H, box, hAt, maxD, area }) {
 // a body vertex's bones: hips, chest and head up its height, the side lobes out
 // to its edges; up to four [bone, weight] pairs
 function bodyWeights(x, y, feat, I) {
-  const { cx, halfW, low, sh } = feat.sides;
+  const { cx, halfW, low, sh, flap } = feat.sides;
   const v = (y - low) / sh;
   let wh = 1 - smoothstep(0.08, 0.5, v);
   let wt = smoothstep(0.52, 0.92, v);
   let wc = Math.max(0, 1 - wh - wt);
   const u = (x - cx) / halfW;
-  const side = smoothstep(0.42, 0.95, Math.abs(u)) * 0.95;
+  // (a tall, thin shape has no side lobes to flap, or it splays into a cone)
+  const side = smoothstep(0.42, 0.95, Math.abs(u)) * 0.95 * flap;
   const keep = 1 - side;
   wh *= keep;
   wc *= keep;
