@@ -129,6 +129,15 @@ window.MINI_GAMES = [
     tags: ['2D', 'Ages 2+', 'Touch friendly'],
   },
   {
+    slug: 'juicy-splash',
+    name: 'Juicy Splash',
+    description: 'For the littlest players: swipe or tap fourteen big, slow fruits over a sunny orchard picnic to splash them open, fill the juice jar and make a smiling rainbow smoothie. Bouncy music, no bombs, no losing, no reading.',
+    path: 'games/juicy-splash/',
+    image: 'games/juicy-splash/cover.jpg',
+    imageAlt: 'A watermelon and an orange sliced in half by a rainbow swipe trail, juice splashing, over a picnic blanket in a sunny orchard with a laughing sun and a glass jar filling with juice',
+    tags: ['2D', 'Ages 2+', 'Touch friendly'],
+  },
+  {
     slug: 'tidebreaker',
     name: 'Tidebreaker',
     description: 'A naval roguelite: captain a galleon through five seas from dawn to a crimson-moon night, trade broadsides with pirate fleets, storm sea forts, stack upgrade cards into combos and face the Mistcoil Serpent and the Drowned Leviathan.',

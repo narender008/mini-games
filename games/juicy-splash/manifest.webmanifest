@@ -1,0 +1,12 @@
+{
+  "name": "Juicy Splash",
+  "short_name": "Juicy Splash",
+  "description": "Swipe big bright fruit to splash them into a rainbow smoothie.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "background_color": "#7ccf4c",
+  "theme_color": "#3fb0ff",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
