@@ -1052,3 +1052,97 @@ body.cover #callout {
   45% { transform: rotate(11deg) scale(1.08); }
   70% { transform: rotate(-6deg) scale(1.03); }
 }
+
+/* ---------------------------------------------------------------- v3: phone tap targets and corners */
+/* Paint pots and undo are at least 56 px to a small finger (Little ones); corner groups never meet. */
+@media (orientation: portrait) and (max-width: 760px) {
+  body[data-mode='little'] #toolbar .paints {
+    grid-template-columns: repeat(4, auto);
+    justify-content: center;
+    gap: 8px 10px;
+    padding-top: 6px;
+  }
+  body[data-mode='little'] #toolbar .paint {
+    width: min(72px, max(56px, calc((100vw - 80px) / 4)));
+    height: 60px;
+    max-width: none;
+    max-height: none;
+  }
+  body[data-mode='little'] #toolbar .paint svg {
+    width: 44px;
+    height: 58px;
+  }
+  #toolbar .undo {
+    width: 56px;
+    height: 56px;
+  }
+  /* each corner keeps to its own half of the screen, wrapping to a second row if it must */
+  #hud .corner {
+    flex-wrap: wrap;
+    max-width: 50vw;
+  }
+  #hud .top-right {
+    justify-content: flex-end;
+  }
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  /* the toolbar: the pots in two columns of big targets; undo, brushes and GO beside them */
+  body[data-mode='little'] #toolbar {
+    display: grid;
+    grid-template-columns: auto auto;
+    grid-template-rows: auto auto auto;
+    align-items: center;
+    justify-items: center;
+    gap: 4px 6px;
+  }
+  body[data-mode='little'] #toolbar .paints {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+    grid-template-columns: repeat(2, auto);
+    gap: 2px 4px;
+  }
+  body[data-mode='little'] #toolbar .paint {
+    width: 56px;
+    height: 58px;
+  }
+  body[data-mode='little'] #toolbar .undo {
+    grid-column: 2;
+    grid-row: 1;
+    width: 56px;
+    height: 56px;
+  }
+  body[data-mode='little'] #toolbar .kinds {
+    grid-column: 2;
+    grid-row: 2;
+    flex-direction: column;
+    gap: 0;
+  }
+  body[data-mode='little'] #toolbar .kind {
+    width: 44px;
+    height: 42px;
+  }
+  body[data-mode='little'] #toolbar .go {
+    grid-column: 2;
+    grid-row: 3;
+    width: 58px;
+    height: 58px;
+  }
+  body[data-mode='big'] #toolbar .undo {
+    width: 52px;
+    height: 52px;
+  }
+  /* the screen's own buttons: a column down the left edge, and a row of smaller ones left of the toolbar */
+  #hud .top-left {
+    flex-direction: column;
+  }
+  #hud .top-right .round {
+    width: 44px;
+    height: 44px;
+  }
+}
+@media (orientation: landscape) and (max-height: 520px) and (max-width: 560px) {
+  /* (no room for full screen on the smallest phones; it stays on the start screen) */
+  #hud .top-right .fs {
+    display: none !important;
+  }
+}

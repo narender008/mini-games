@@ -208,7 +208,8 @@ class App {
     this.post.bloomThreshold = 1.1;
     this.pacer = new FramePacer(Number(QUERY.get('fps')) || 0);
     // a change of render scale re-allocates every target: only when nothing is on the move
-    this.governor = new FrameGovernor(() => this.resize(), this.pacer, () => !this.magicRun && !this.rig.moving);
+    // (lite: the new scale glides in over a second or two inside the post chain, no re-allocation)
+    this.governor = new FrameGovernor((s) => (q.lite ? this.post.setScale(s) : this.resize()), this.pacer, () => !this.magicRun && !this.rig.moving);
     this.friendCtx = { quality: q, strain: () => this.governor.strain, viewHeight: () => this.view.h * this.dpr };
     this.store = new Store();
 
@@ -249,6 +250,8 @@ class App {
     this.render();
     this.trimHold = false;
     this.toys.warm(false);
+    // (lite draws the world's shadows once: again now, without the toys and the probe friend shown for the warm-up)
+    if (q.lite) renderer.shadowMap.needsUpdate = true;
     if (probe) {
       scene.remove(probe);
       probe.scale.setScalar(1);
@@ -382,6 +385,10 @@ class App {
         this.ui.setMuted(this.audio.muted);
       },
       fullscreen: () => toggleFullscreen(),
+      // the toolbar changed size (a mode switch, a turn): keep the canvas framed beside it
+      layout: () => {
+        if (this.state === 'paint' && !this.rig.moving && this.view) this.rig.snap(this.shot('paint'));
+      },
     };
   }
 
@@ -415,7 +422,8 @@ class App {
     const q = this.quality;
     let dpr = Math.min(devicePixelRatio || 1, q.maxDpr);
     if (w * h * dpr * dpr > q.maxPixels) dpr = Math.sqrt(q.maxPixels / (w * h));
-    dpr = Math.max(0.5, dpr * (this.governor ? this.governor.scale : 1));
+    // (lite: the governor's render scale is applied inside the post chain, without re-allocating: see pointSizes)
+    dpr = Math.max(0.5, dpr * (this.governor && !q.lite ? this.governor.scale : 1));
     this.dpr = dpr;
     this.view = { w, h, aspect: w / h };
     this.camera.aspect = w / h;
@@ -423,10 +431,7 @@ class App {
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
     this.post.setSize(w, h, dpr);
-    this.fx.sparkles.setViewport(h * dpr);
-    this.motes?.setViewport(h * dpr);
-    this.toys?.resize(h * dpr);
-    this.life?.setViewport(h * dpr);
+    this.pointSizes();
     if (!first && this.state !== 'loading') {
       // keep the canvas framed when the screen turns
       // (also mid-glide: the glide is re-aimed at the new framing, from where it is and as fast as it is going)
@@ -437,6 +442,15 @@ class App {
       }
       if (this.frozen) this.render();
     }
+  }
+
+  // point sprites are sized in drawing-buffer pixels: the height the scene is drawn at now
+  pointSizes() {
+    const h = this.view.h * this.dpr * (this.post.scale ?? 1);
+    this.fx.sparkles.setViewport(h);
+    this.motes?.setViewport(h);
+    this.toys?.resize(h);
+    this.life?.setViewport(h);
   }
 
   // Camera shots. The painting shot frames the canvas square on, leaving
@@ -452,19 +466,30 @@ class App {
       const fov = aspect < 0.8 ? 44 : 38;
       const t = Math.tan((fov * Math.PI) / 360);
       const sideBar = aspect > 1 && h <= 520;
+      // a landscape phone: the canvas sits in the room between the column of buttons on the left and the
+      // toolbar on the right (its width as laid out now, see ui.js)
+      let side = 0.16;
+      let sideFill = 0.72;
+      if (sideBar) {
+        const bar = parseFloat(document.body.style.getPropertyValue('--toolbar-w')) || 170;
+        const left = 66;
+        const free = Math.max(120, w - bar - 16 - left);
+        sideFill = (free * 0.96) / w;
+        side = (w / 2 - (left + free / 2)) / (w / 2);
+      }
       // what share of the screen the canvas may fill
       const fillV = sideBar ? 0.84 : aspect < 0.8 ? 0.62 : 0.72;
-      const fillH = sideBar ? 0.72 : aspect < 0.8 ? 0.96 : 0.9;
+      const fillH = sideBar ? sideFill : aspect < 0.8 ? 0.96 : 0.9;
       const dV = CANVAS_H / 2 / (t * fillV);
       const dH = CANVAS_W / 2 / (t * aspect * fillH);
       const d = Math.max(dV, dH) * 1.04;
       const look = c.clone();
       // move the canvas up above the toolbar, or left of a side toolbar
       const halfV = d * t;
-      if (sideBar) look.addScaledVector(right, halfV * aspect * 0.16);
+      if (sideBar) look.addScaledVector(right, halfV * aspect * side);
       else look.addScaledVector(up, -halfV * (aspect < 0.8 ? 0.2 : 0.12));
       const pos = c.clone().addScaledVector(n, d).addScaledVector(up, 0.03);
-      if (sideBar) pos.addScaledVector(right, halfV * aspect * 0.16);
+      if (sideBar) pos.addScaledVector(right, halfV * aspect * side);
       else pos.addScaledVector(up, -halfV * (aspect < 0.8 ? 0.2 : 0.12));
       return { pos, look, fov };
     }
@@ -1014,6 +1039,8 @@ class App {
       }
     });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
+    // (any touch, anywhere, wakes the full frame rate: see idle)
+    for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown']) addEventListener(type, () => (this.lastInput = performance.now()), { capture: true, passive: true });
     addEventListener('keydown', (e) => {
       if (e.key === 'f' || e.key === 'F') {
         if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('input, textarea')) return;
@@ -1164,8 +1191,28 @@ class App {
   onVisibility() {
     this.hidden = document.hidden;
     this.audio.pageHidden(this.hidden);
-    if (this.hidden) this.endStroke();
+    // nothing stays held across a tab switch: the brush is lifted, a drag let go, hover forgotten
+    this.endStroke();
+    this.toys.abort?.();
+    this.pointer.hover = null;
+    this.friends.pointer = null;
     this.last = performance.now();
+    // the first frame back starts afresh: no catch-up step, and its long gap says nothing about the device
+    this.pacer.reset();
+    this.governor.sample(0, true);
+    this.lastInput = performance.now();
+  }
+
+  // Quiet screens draw at half the cadence: the start screen and the easel when no one has touched the
+  // screen for a few seconds and nothing is on the move (the grass sways, motes drift and the camera
+  // breathes, all slowly enough that 30 fps shows them as well as 60). Any touch, key or change of
+  // screen brings the full cadence back on the very next frame, so taps never feel slow.
+  get idle() {
+    if (this.state !== 'menu' && this.state !== 'paint') return false;
+    if (this.pointer.down || this.paint.painting || this.magicRun || this.alive.busy || this.rig.moving || this.rig.following) return false;
+    if (performance.now() - Math.max(this.lastInput || 0, this.ui.stateAt || 0) < 3000) return false;
+    for (const e of this.friends.list) if (e.speed > 0.04 || e.state === 'trick' || e.leaving) return false;
+    return !this.primed && !this.portraits?.length;
   }
 
   // Every screen refresh calls this; the pacer lets a steady share of them through
@@ -1174,11 +1221,26 @@ class App {
   frame(now) {
     this.last = now;
     if (this.hidden) return;
-    const dt = this.pacer.tick(now);
+    let dt = this.pacer.tick(now);
     if (!dt) return;
-    this.governor.sample(Math.min(0.25, this.pacer.real / 1000), !!this.magicRun);
+    // frames drawn per second, as seen (for stats())
+    this.fpsAvg = this.fpsAvg ? this.fpsAvg + (1000 / Math.max(1, this.pacer.real) - this.fpsAvg) * 0.1 : 60;
+    const idle = !QUERY.has('fps') && this.idle;
+    if (idle && !this.idleSkip) {
+      // (every other frame is skipped; the next one advances the world by both)
+      this.idleSkip = true;
+      this.idleDt = dt;
+      return;
+    }
+    if (this.idleSkip) dt += this.idleDt;
+    this.idleSkip = false;
+    this.idleDt = 0;
+    // (half-cadence frames say nothing about how the device copes)
+    this.governor.sample(Math.min(0.25, this.pacer.real / 1000), !!this.magicRun || idle);
     if (this.frozen) return;
     this.update(dt);
+    // a new render scale glides in (lite: see LitePost.setScale)
+    if (this.post.stepScale?.(dt)) this.pointSizes();
     this.render();
   }
 
@@ -1280,7 +1342,13 @@ class App {
     this.post.update(this.time);
     const pq = this.portraits;
     if (pq?.length && this.time >= pq[0].at) this.takePortrait(pq.shift());
+    // (what one frame draws, all passes together, for stats())
+    const info = this.renderer.info;
+    info.autoReset = false;
+    info.reset();
     this.post.render();
+    this.frameInfo = { tris: info.render.triangles, calls: info.render.calls };
+    this.frames = (this.frames || 0) + 1;
   }
 
   // The shelf picture of a new friend: one extra frame rendered from a
@@ -1508,7 +1576,24 @@ class App {
       // the i-th friend in the garden as a square jpeg data URL (picker pictures)
       portrait: (i = 0, size = 256, quality = 0.86) => app.friends.list[i] && app.portraitOf(app.friends.list[i].friend, size, quality),
       friends: () => app.friends.list.map((e) => ({ kind: e.friend.info.id, x: +e.pos.x.toFixed(2), z: +e.pos.z.toFixed(2), state: e.state })),
-      state: () => ({ state: app.state, mode: app.mode, coverage: +app.coverage.toFixed(3), strokes: app.paint.strokes.length, busy: app.alive.busy, magic: app.magicRun?.phase ?? null, scale: app.governor.scale, strain: app.governor.strain, fps: +(1000 / app.pacer.step).toFixed(1), refresh: +(1000 / app.pacer.vsync).toFixed(1) }),
+      // what a frame costs: triangles and draw calls of the last frame (all passes), frames per second as
+      // drawn, the governor's render scale and the one in use now (lite glides between them), half cadence
+      stats: () => ({ ...(app.frameInfo || {}), fps: +(app.fpsAvg || 0).toFixed(1), scale: app.governor.scale, renderScale: +(app.post.scale ?? 1).toFixed(3), idle: app.idle, tier: app.quality.tier, frames: app.frames || 0 }),
+      // each friend's detail: body and shells on the coarse mesh or not, fur shells drawn
+      lod: () => app.friends.list.map((e) => { const f = e.friend; return { kind: f.info.id, body: f.body.geometry === f.lodGeo ? 'coarse' : 'fine', shells: f.shells.length ? (f.shells[0].geometry === f.lodGeo ? 'coarse' : 'fine') : null, shown: f.shellsShown, ready: !!f.lodGeo, swaps: f.lodSwaps || 0 }; }),
+      // the render scale, at once or gliding (lite), as the governor would set it
+      scale: (s, now = true) => (app.post.setScale ? app.post.setScale(s, now) : null, app.pointSizes()),
+      // a pick as a child makes it from the picker (a fresh canvas for Little ones, then the friend)
+      pickTap: (id) => app.handlers().pick(id),
+      // the UI's buttons as a tap reaches them (with the double-tap guard): go, menu, paintNew, world, shelf
+      tap: (name) => document.getElementById({ go: 'go-btn', paintNew: 'paint-btn', world: 'world-btn', start: 'start' }[name] || name)?.click(),
+      // a tab switch (hidden true/false), as the page sees it
+      visibility: (hidden) => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden }); app.onVisibility(); },
+      // the shelf's kept paintings, and hanging one (as from the shelf)
+      paintings: () => app.paintings.map((p) => ({ id: p.id, strokes: p.strokes.length })),
+      hang: (i = 0) => app.hangPainting(app.paintings[i]),
+      keep: () => app.keepPainting(),
+      state: () => ({ state: app.state, mode: app.mode, goWaiting: !!app.goWaiting, subject: app.subjectId, subjectReady: app.subjectReady !== false, canvasFriend: app.canvasFriend?.info.id ?? null, autoArmed: !!app.autoArmed, coverage: +app.coverage.toFixed(3), strokes: app.paint.strokes.length, busy: app.alive.busy, magic: app.magicRun?.phase ?? null, scale: app.governor.scale, strain: app.governor.strain, fps: +(1000 / app.pacer.step).toFixed(1), refresh: +(1000 / app.pacer.vsync).toFixed(1) }),
     };
   }
 }

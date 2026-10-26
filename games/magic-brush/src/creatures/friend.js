@@ -356,7 +356,7 @@ export class Friend {
         const cos = _v.dot(e.rest);
         const lim = Math.cos(0.45);
         if (cos < lim) {
-          _w.copy(_v).sub(e.rest.clone().multiplyScalar(cos)).normalize();
+          _w.copy(_v).addScaledVector(e.rest, -cos).normalize();
           _v.copy(e.rest).multiplyScalar(lim).addScaledVector(_w, Math.sqrt(1 - lim * lim));
         }
         _q.setFromUnitVectors(e.rest, _v);

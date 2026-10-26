@@ -365,8 +365,14 @@ varying vec2 vUv;
 uniform sampler2D tSoft;
 uniform vec2 uBloom;
 uniform float uDof;
+// the scene fills the lower-left uScale of its target (dynamic resolution); uMax keeps taps inside it
+uniform vec2 uScale;
+uniform vec2 uMax;
+vec2 sUv(vec2 u) { return min(u * uScale, uMax); }
 ${DEPTH}
 ${COC}
+#else
+vec2 sUv(vec2 u) { return u; }
 #endif
 float hash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031 + uTime * 0.37);
@@ -402,12 +408,12 @@ void main() {
   vec3 c;
   // a whisper of lateral colour fringing towards the corners, like a real lens
   float k = uFringe * dot(d, d);
-  c.r = texture2D(tDiffuse, vUv - d * k).r;
-  c.g = texture2D(tDiffuse, vUv).g;
-  c.b = texture2D(tDiffuse, vUv + d * k).b;
+  c.r = texture2D(tDiffuse, sUv(vUv - d * k)).r;
+  c.g = texture2D(tDiffuse, sUv(vUv)).g;
+  c.b = texture2D(tDiffuse, sUv(vUv + d * k)).b;
 #ifdef LITE
   {
-    float m = uDof > 0.5 ? smoothstep(0.3, 1.6, coc(vUv)) : 0.0;
+    float m = uDof > 0.5 ? smoothstep(0.3, 1.6, coc(sUv(vUv))) : 0.0;
     vec3 soft = texture2D(tSoft, vUv).rgb;
     c = mix(c, soft, m);
     c += max(soft - uBloom.y, 0.0) * uBloom.x;
@@ -610,14 +616,17 @@ ${DEPTH}
 ${COC}
 uniform sampler2D tColor;
 uniform vec2 uSrcTexel;
+uniform vec2 uScale;
+uniform vec2 uMax;
 varying vec2 vUv;
 void main() {
   vec2 t = uSrcTexel;
-  vec3 c = texture2D(tColor, vUv + vec2(-t.x, -t.y)).rgb + texture2D(tColor, vUv + vec2(t.x, -t.y)).rgb
-    + texture2D(tColor, vUv + vec2(-t.x, t.y)).rgb + texture2D(tColor, vUv + vec2(t.x, t.y)).rgb;
+  vec2 u = vUv * uScale;
+  vec3 c = texture2D(tColor, min(u + vec2(-t.x, -t.y), uMax)).rgb + texture2D(tColor, min(u + vec2(t.x, -t.y), uMax)).rgb
+    + texture2D(tColor, min(u + vec2(-t.x, t.y), uMax)).rgb + texture2D(tColor, min(u + vec2(t.x, t.y), uMax)).rgb;
   c *= 0.25;
   if (any(isnan(c)) || any(isinf(c))) c = vec3(0.0);
-  gl_FragColor = vec4(min(c, vec3(60.0)), coc(vUv));
+  gl_FragColor = vec4(min(c, vec3(60.0)), coc(min(u, uMax)));
 }`;
 
 const LITE_BLUR = /* glsl */ `
@@ -655,10 +664,16 @@ class LitePost {
     const common = () => ({ tDepth: { value: null }, uInvProj: { value: new THREE.Matrix4() }, uProj: { value: new THREE.Matrix4() } });
     this.cocU = { uFocus: { value: 1.1 }, uTolerance: { value: 0.15 }, uAperture: { value: 30 }, uMaxCoC: { value: 14 } };
     const mat = (fragmentShader, uniforms) => new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader, uniforms, depthTest: false, depthWrite: false });
-    this.prefMat = mat(LITE_PREFILTER, { ...common(), ...this.cocU, tColor: { value: null }, uSrcTexel: { value: new THREE.Vector2() } });
+    // Dynamic resolution: the targets keep their size and the scene is drawn into the lower-left `scale` of
+    // the scene target, read back through uScale. A change of scale then costs nothing (no re-allocation, no
+    // hitch) and can glide over a second or two instead of stepping.
+    this.scale = 1;
+    this.scaleTarget = 1;
+    this.scaleU = { uScale: { value: new THREE.Vector2(1, 1) }, uMax: { value: new THREE.Vector2(1, 1) } };
+    this.prefMat = mat(LITE_PREFILTER, { ...common(), ...this.cocU, ...this.scaleU, tColor: { value: null }, uSrcTexel: { value: new THREE.Vector2() } });
     this.blurMat = mat(LITE_BLUR, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() } });
     this.final = new FinalPass(QUERY.get('tone') || 'agx', true);
-    Object.assign(this.final.uniforms, { ...common(), ...this.cocU });
+    Object.assign(this.final.uniforms, { ...common(), ...this.cocU, ...this.scaleU });
     this.final.uniforms.tSoft = { value: null };
     this.final.uniforms.uBloom = { value: new THREE.Vector2(0.28, 1.1) };
     this.final.uniforms.uDof = { value: quality.dof ? 1 : 0 };
@@ -685,7 +700,25 @@ class LitePost {
     this.blurMat.uniforms.uTexel.value.set(1 / qw, 1 / qh);
     this.final.uniforms.uAspect.value = w / h;
     this.height = H;
+    this.W = W;
+    this.H = H;
     this.applyAperture();
+  }
+
+  // render scale: set at once (between scenes) or as a target the picture glides to (stepScale)
+  setScale(s, now = false) {
+    this.scaleTarget = Math.max(0.3, Math.min(1, s));
+    if (now) this.scale = this.scaleTarget;
+  }
+
+  // per frame: ease towards the target scale (about 0.2 a second: a slow, even change of sharpness no one
+  // sees happen); true while it moves
+  stepScale(dt) {
+    const d = this.scaleTarget - this.scale;
+    if (!d) return false;
+    const m = Math.min(Math.abs(d), dt * 0.2);
+    this.scale += Math.sign(d) * m;
+    return true;
   }
 
   applyAperture() {
@@ -709,7 +742,15 @@ class LitePost {
   render() {
     const r = this.renderer;
     const cam = this.camera;
-    r.setRenderTarget(this.sceneRT);
+    const rt = this.sceneRT;
+    const ws = Math.max(1, Math.round(this.W * this.scale));
+    const hs = Math.max(1, Math.round(this.H * this.scale));
+    rt.viewport.set(0, 0, ws, hs);
+    rt.scissor.set(0, 0, ws, hs);
+    rt.scissorTest = ws < this.W || hs < this.H;
+    this.scaleU.uScale.value.set(ws / this.W, hs / this.H);
+    this.scaleU.uMax.value.set((ws - 0.5) / this.W, (hs - 0.5) / this.H);
+    r.setRenderTarget(rt);
     r.render(this.scene, cam);
     for (const u of [this.prefMat.uniforms, this.final.uniforms]) {
       u.tDepth.value = this.sceneRT.depthTexture;

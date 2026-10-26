@@ -63,8 +63,9 @@ function pickTier() {
 // 60 fps (the largest n that stays at or above ~54 fps: n = 1 on 60 Hz, 2 on
 // 120 and 144 Hz, 4 on 240 Hz), and it hands the simulation a time step made
 // of WHOLE refreshes, so timestamp jitter never reaches the motion: on time,
-// every frame advances the world by exactly the same amount. After a hitch the
-// step is capped, so the world slows for a moment instead of jumping.
+// every frame advances the world by exactly the same amount. A lone late frame
+// advances it by the usual step (the world pauses for that moment instead of
+// jumping); a device that steadily runs slower gets steps to match.
 // ?fps=N forces the target (e.g. ?fps=120 to let a fast screen run flat out).
 const RATES = [24, 30, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 180, 240];
 const MAX_STEP = 40; // ms of world time a single frame may advance
@@ -82,6 +83,10 @@ export class FramePacer {
     this.real = this.step; // ms since the previous frame that was drawn (what the governor watches)
     this.pending = 0;
     this.pendingRuns = 0;
+    // refreshes per frame of the last few frames (the usual step, see tick)
+    this.ks = new Uint8Array(7).fill(1);
+    this.sorted = new Uint8Array(7);
+    this.ki = 0;
   }
 
   // called on every refresh with the animation-frame time (ms); returns the
@@ -102,7 +107,24 @@ export class FramePacer {
     this.lastRender = now;
     this.real = first ? this.step : since;
     const k = Math.max(1, Math.round((first ? this.step : since) / this.vsync));
-    return Math.min(k * this.vsync, MAX_STEP) / 1000;
+    // A one-off late frame (a hitch: a tab switch, a garbage collection, a busy moment) does not move the
+    // world on by the time it lost: it advances by the usual number of refreshes, so nothing leaps and the
+    // speed of things never changes. Only when frames run late steadily (the device draws at 30 fps, say)
+    // does the step follow, once most of the last few frames agree.
+    const ks = this.ks;
+    ks[this.ki] = Math.min(255, k);
+    this.ki = (this.ki + 1) % ks.length;
+    let usual = 0;
+    for (let i = 0; i < ks.length; i++) this.sorted[i] = ks[i];
+    this.sorted.sort();
+    usual = this.sorted[ks.length >> 1];
+    return Math.min(Math.min(k, usual) * this.vsync, MAX_STEP) / 1000;
+  }
+
+  // after the page was hidden: the next frame starts afresh (no catch-up, no stale cadence)
+  reset() {
+    this.lastRender = 0;
+    this.prev = 0;
   }
 
   // the refresh interval is the low end of what the browser has been giving

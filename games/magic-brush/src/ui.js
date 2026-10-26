@@ -106,7 +106,10 @@ export class UI {
     }
     $$('.guess-more')[0].addEventListener('click', () => this.showGuessAll());
     // the toolbar's width, for the corner buttons beside it on landscape phones
-    new ResizeObserver(() => document.body.style.setProperty('--toolbar-w', `${$('toolbar').offsetWidth}px`)).observe($('toolbar'));
+    new ResizeObserver(() => {
+      document.body.style.setProperty('--toolbar-w', `${$('toolbar').offsetWidth}px`);
+      this.on.layout?.();
+    }).observe($('toolbar'));
     this.buildPicker();
     this.setMode('little');
   }
