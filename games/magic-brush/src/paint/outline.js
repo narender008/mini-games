@@ -258,14 +258,15 @@ export class Outline {
     g.lineJoin = 'round';
     for (const p of this.paths) {
       g.strokeStyle = 'rgb(0,255,0)';
-      g.lineWidth = 2.6 * k;
+      g.lineWidth = 4.8 * k;
       g.beginPath();
       p.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
       g.stroke();
     }
     g.fillStyle = 'rgb(255,0,0)';
-    const step = 11 * k;
-    const rad = 3.1 * k;
+    // (bold, well spaced dots: a small child must see at a glance where to colour)
+    const step = 19 * k;
+    const rad = 6.3 * k;
     // (all the dots in one path: one fill instead of one for each)
     g.beginPath();
     for (const p of this.paths) {

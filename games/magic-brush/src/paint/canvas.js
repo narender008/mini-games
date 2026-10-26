@@ -64,7 +64,7 @@ col = mix(col, col * (0.9 + 0.1 * wv), S.a * cov);
 // pencil outline: dots, turning into a fine line under the magic
 vec4 ln = texture2D(tLines, vUvC);
 float line = mix(ln.r, ln.g * 0.85, uLineSolid) * uLineAlpha;
-col = mix(col, vec3(0.16, 0.15, 0.2), line * (1.0 - 0.55 * cov));
+col = mix(col, vec3(0.07, 0.06, 0.1), line * (1.0 - 0.45 * cov));
 diffuseColor.rgb = col;
 float cWet = cov * (1.0 - smoothstep(4.0, 70.0, uNow - S.g * 100.0));
 float cGlit = S.b;

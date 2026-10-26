@@ -272,11 +272,19 @@ export class DoodleFriend extends Friend {
     this.object.getWorldPosition(_v);
     const d = _v.distanceTo(camera.position);
     const px = (this.restRadius * this.object.scale.x) / (d * Math.tan((camera.fov * Math.PI) / 360));
-    const want = this.lod ? (px > 0.27 ? 0 : 1) : px < 0.22 ? 1 : 0;
+    // (a close portrait for the shelf always has the fine body: see main.js portraitOf)
+    const want = this.forceFine ? 0 : this.lod ? (px > 0.27 ? 0 : 1) : px < 0.22 ? 1 : 0;
     if (want !== this.lod) {
       this.lod = want;
       this.body.geometry = want ? this.coarseGeo : this.fineGeo;
+      this.lodSwaps = (this.lodSwaps || 0) + 1;
     }
+  }
+
+  // (the portrait camera asks through fitShells, as for every friend)
+  fitShells(camera) {
+    super.fitShells(camera);
+    this.fitLod(camera);
   }
 
   animate(dt) {

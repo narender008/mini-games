@@ -1601,8 +1601,8 @@ class App {
       // what a frame costs: triangles and draw calls of the last frame (all passes), frames per second as
       // drawn, the governor's render scale and the one in use now (lite glides between them), half cadence
       stats: () => ({ ...(app.frameInfo || {}), fps: +(app.fpsAvg || 0).toFixed(1), scale: app.governor.scale, renderScale: +(app.post.scale ?? 1).toFixed(3), idle: app.idle, tier: app.quality.tier, frames: app.frames || 0 }),
-      // each friend's detail: body and shells on the coarse mesh or not, fur shells drawn
-      lod: () => app.friends.list.map((e) => { const f = e.friend; return { kind: f.info.id, body: f.body.geometry === f.lodGeo ? 'coarse' : 'fine', shells: f.shells.length ? (f.shells[0].geometry === f.lodGeo ? 'coarse' : 'fine') : null, shown: f.shellsShown, ready: !!f.lodGeo, swaps: f.lodSwaps || 0 }; }),
+      // each friend's detail: body and shells on the coarse mesh or not, fur shells drawn (a doodle's coarse body is coarseGeo)
+      lod: () => app.friends.list.map((e) => { const f = e.friend; const lod = f.lodGeo || f.coarseGeo; return { kind: f.info.id, body: lod && f.body.geometry === lod ? 'coarse' : 'fine', shells: f.shells.length ? (f.shells[0].geometry === lod ? 'coarse' : 'fine') : null, shown: f.shellsShown, ready: !!lod, swaps: f.lodSwaps || 0 }; }),
       // the render scale, at once or gliding (lite), as the governor would set it
       scale: (s, now = true) => (app.post.setScale ? app.post.setScale(s, now) : null, app.pointSizes()),
       // a pick as a child makes it from the picker (a fresh canvas for Little ones, then the friend)
