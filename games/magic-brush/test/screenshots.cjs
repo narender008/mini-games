@@ -24,9 +24,17 @@ fs.mkdirSync(dir, { recursive: true });
   const frameAll = (extra = []) =>
     ev((extra) => {
       const mb = window.__mb;
-      const pts = mb.app.friends.list.map((e) => [e.pos.x, 0.15, e.pos.z]).concat(extra);
-      const c = pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length, a[2] + p[2] / pts.length], [0, 0, 0]);
-      const r = Math.max(0.6, ...pts.map((p) => Math.hypot(p[0] - c[0], p[2] - c[2])));
+      let pts = mb.app.friends.list.map((e) => [e.pos.x, 0.15, e.pos.z]).concat(extra);
+      const centre = () => pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length, a[2] + p[2] / pts.length], [0, 0, 0]);
+      const far = (c) => pts.map((p) => Math.hypot(p[0] - c[0], p[2] - c[2]));
+      let c = centre();
+      // (a friend that wandered off on its own is left out: the picture is of the group)
+      while (pts.length > 3 && Math.max(...far(c)) > 1.4) {
+        const d = far(c);
+        pts.splice(d.indexOf(Math.max(...d)), 1);
+        c = centre();
+      }
+      const r = Math.max(0.8, ...far(c));
       const d = (r * 1.25) / Math.tan((40 * Math.PI) / 360);
       const k = Math.hypot(0.5, 0.42, 0.76);
       mb.view([c[0] + (d * 0.5) / k, c[1] + (d * 0.42) / k, c[2] + (d * 0.76) / k], c, 40);
