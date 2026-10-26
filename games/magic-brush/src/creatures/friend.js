@@ -108,7 +108,23 @@ export class Friend {
     const s = new Sculpt();
     this.sculpt(s);
     this.sculptor = s;
-    const geo = await s.build({ voxel: this.q.voxel * this.voxelScale, smooth: this.smoothRounds });
+    const voxel = this.q.voxel * this.voxelScale;
+    const geo = await s.build({ voxel, smooth: this.smoothRounds });
+    this.fineGeo = geo;
+    this.voxel = voxel;
+    // A coarse copy of the body for when the friend is small on screen (quality.lod: how many times coarser),
+    // meshed next in the worker, from the same field: its vertices lie on the same surface with the same
+    // normals, looks and weights (smoothed over the same distance), so only the triangle count differs.
+    if (this.q.lod > 1) {
+      s.build({ voxel: voxel * this.q.lod, smooth: Math.max(1, Math.round(this.smoothRounds / (this.q.lod * this.q.lod))) })
+        .then((g) => {
+          if (this.disposed) return g.dispose();
+          g.boundingBox = geo.boundingBox;
+          g.boundingSphere = geo.boundingSphere;
+          this.lodGeo = g;
+        })
+        .catch(() => {});
+    }
     const sk = s.skeleton();
     this.skeleton = sk.skeleton;
     this.bones = sk.bones;
@@ -316,7 +332,7 @@ export class Friend {
     // whatever still jumped is cross-faded from where the bones were heading
     (this.inertia ??= new Inertia(this.boneList)).apply(dt);
     this.shared.uHappy.value = Math.max(0, this.happy.update(0, dt));
-    if (camera && this.shells.length) this.fitShells(camera);
+    if (camera && (this.shells.length || this.lodGeo)) this.fitShells(camera);
   }
 
   // eyes follow the look target (or wander), lids blink
@@ -357,11 +373,13 @@ export class Friend {
     }
   }
 
-  // fewer fur shells when the friend is small on screen
+  // fewer fur shells, and the coarse body, when the friend is small on screen
   fitShells(camera) {
     this.object.getWorldPosition(_v);
     const d = _v.distanceTo(camera.position);
     const px = (this.restRadius * this.object.scale.x) / (d * Math.tan((camera.fov * Math.PI) / 360));
+    if (this.lodGeo) this.fitLod(px / this.restRadius);
+    if (!this.shells.length) return;
     const n = this.shells.length;
     const want = Math.max(Math.min(n, 4), Math.round(n * Math.min(1, px * 1.6)));
     const strain = this.ctx.strain?.() ?? 0;
@@ -373,6 +391,28 @@ export class Friend {
         const keep = Math.floor(((i + 1) * shown) / n) !== Math.floor((i * shown) / n);
         this.shells[i].visible = keep;
       }
+    }
+  }
+
+  // The coarse body while its triangles would be under ~6 pixels across (side by side renders show no
+  // difference in outline or shading up to about 8: the vertices lie on the true surface with its true
+  // normals), and coarse fur shells sooner (under ~9 px: their edge is a haze of strands anyway). Each with
+  // a margin both ways, so it never flips back and forth. k: screen half-heights per metre of rest size.
+  fitLod(k) {
+    const h = (this.ctx.viewHeight?.() ?? 1000) / 2;
+    const edge = this.voxel * this.q.lod * k * h;
+    const lod = this.lodGeo;
+    const bodyCoarse = this.body.geometry === lod;
+    const shellCoarse = this.shells.length > 0 && this.shells[0].geometry === lod;
+    const wantBody = !this.forceFine && (bodyCoarse ? edge < 7.5 : edge < 6.5);
+    const wantShell = !this.forceFine && (shellCoarse ? edge < 10.5 : edge < 9);
+    if (wantBody !== bodyCoarse) {
+      this.body.geometry = wantBody ? lod : this.fineGeo;
+      this.lodSwaps = (this.lodSwaps || 0) + 1;
+    }
+    if (this.shells.length && wantShell !== shellCoarse) {
+      for (const m of this.shells) m.geometry = wantShell ? lod : this.fineGeo;
+      this.lodSwaps = (this.lodSwaps || 0) + 1;
     }
   }
 
@@ -540,7 +580,10 @@ export class Friend {
   // its shader program, and the next friend of the same kind would have to
   // compile it all over again)
   dispose() {
-    const seen = new Set();
+    this.disposed = true;
+    const seen = new Set([this.fineGeo, this.lodGeo]);
+    this.fineGeo?.dispose();
+    this.lodGeo?.dispose();
     for (const m of this.meshes) {
       if (!seen.has(m.geometry)) {
         m.geometry.dispose();

@@ -66,27 +66,35 @@ export class UI {
     this.kind = 'brush';
     this.size = 'medium';
     this.state = 'loading';
+    this.stateAt = 0;
     for (const type of ['pointerdown', 'pointerup']) document.addEventListener(type, () => on.any?.(), { capture: true });
 
     // start screen
     for (const b of $$('.mode')) b.addEventListener('click', () => on.mode(b.dataset.mode));
-    $('start').addEventListener('click', () => on.start());
+    $('start').addEventListener('click', () => this.settled() && on.start());
+    // The second tap of a double tap lands about a quarter of a second after the first, on whatever the first
+    // one brought up in the same place: Home then the start screen's way out of the game, "paint a new friend"
+    // then GO. Buttons that change the screen ignore taps until the new screen has settled.
+    $$('.home-link')[0]?.addEventListener('click', (e) => {
+      if (!this.settled(900)) e.preventDefault();
+    });
     // corners (there are copies of these in each screen)
     for (const b of $$('.mute')) b.addEventListener('click', () => on.mute());
     for (const b of $$('.fs')) {
       b.hidden = !canFullscreen;
       b.addEventListener('click', () => on.fullscreen());
     }
-    for (const b of $$('.shelf-btn')) b.addEventListener('click', () => on.shelf());
-    for (const b of $$('.to-menu')) b.addEventListener('click', () => on.menu());
+    for (const b of $$('.shelf-btn')) b.addEventListener('click', () => this.settled() && on.shelf());
+    for (const b of $$('.to-menu')) b.addEventListener('click', () => this.settled() && on.menu());
     $('pick-btn').addEventListener('click', () => on.openPicker());
     $('new-btn').addEventListener('click', () => on.newCanvas());
     $('keep-btn').addEventListener('click', () => on.keep());
-    $('world-btn').addEventListener('click', () => on.world());
-    $('paint-btn').addEventListener('click', () => on.paintNew());
+    $('world-btn').addEventListener('click', () => this.settled() && on.world());
+    $('paint-btn').addEventListener('click', () => this.settled() && on.paintNew());
     // toolbar
     $('undo-btn').addEventListener('click', () => on.undo());
-    $('go-btn').addEventListener('click', () => on.go());
+    $('go-btn').addEventListener('click', () => this.settled() && on.go());
+    $('go-btn').addEventListener('animationend', (e) => e.animationName === 'wiggle' && $('go-btn').classList.remove('wiggle'));
     for (const b of $$('.kind')) b.addEventListener('click', () => on.kind(this.kind === b.dataset.kind ? 'brush' : b.dataset.kind));
     for (const b of $$('.size')) b.addEventListener('click', () => on.size(b.dataset.size));
     // overlays close on their X or a tap outside
@@ -103,6 +111,11 @@ export class UI {
     this.setMode('little');
   }
 
+  // true once the screen has been up long enough for a tap to be meant for it (not the tail of a double tap)
+  settled(ms = 650) {
+    return performance.now() - this.stateAt >= ms;
+  }
+
   closeOverlay(id) {
     $(id).hidden = true;
     if (id === 'guess') this.on.closeGuess?.();
@@ -115,6 +128,7 @@ export class UI {
   // ------------------------------------------------------------ state
 
   setState(state) {
+    if (state !== this.state) this.stateAt = performance.now();
     this.state = state;
     document.body.dataset.state = state;
     $('menu').hidden = state !== 'menu';
@@ -187,6 +201,14 @@ export class UI {
   // GO glows when the painting is ready to come alive
   setReady(ready) {
     $('go-btn').classList.toggle('ready', !!ready);
+  }
+
+  // GO with nothing to bring alive yet: a little wiggle, no words
+  nudgeGo() {
+    const b = $('go-btn');
+    b.classList.remove('wiggle');
+    void b.offsetWidth;
+    b.classList.add('wiggle');
   }
 
   // ------------------------------------------------------------ picker

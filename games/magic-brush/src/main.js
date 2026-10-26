@@ -20,6 +20,7 @@ import { QUERY, DEBUG, REDUCED_MOTION, MODES, load, save, pickValid, clamp, damp
 import { detectQuality, FrameGovernor, FramePacer } from './quality.js';
 import { makePost } from './post.js';
 import { Warmer } from './warm.js';
+import { InstanceTrim } from './trim.js';
 import { Sky } from './world/sky.js';
 import { World, walkable, groundAt, STAGE, obstacleAt } from './world/world.js';
 import { Motes, PaintDrops } from './world/air.js';
@@ -195,6 +196,9 @@ class App {
         if (this.state === 'play' && e.state === 'trick') this.direct(e, 'close', 3.4);
       },
     });
+    // idle effect pools are left out of the draw (see trim.js)
+    this.trim = new InstanceTrim();
+    this.trim.add(this.fx.droplets.mesh, this.fx.droplets.splats, this.fx.petals.mesh, this.toys.bubbles?.mesh, this.toys.puddles?.mesh, this.life.glints?.mesh, this.life.pond?.rings, this.life.pond?.drops);
     this.post = makePost(renderer, scene, camera, q);
     // shader compiles happen ahead of need, a little at a time (see warm.js)
     this.warmer = new Warmer(renderer, scene, camera, () => this.post.composer.renderTarget1);
@@ -205,7 +209,7 @@ class App {
     this.pacer = new FramePacer(Number(QUERY.get('fps')) || 0);
     // a change of render scale re-allocates every target: only when nothing is on the move
     this.governor = new FrameGovernor(() => this.resize(), this.pacer, () => !this.magicRun && !this.rig.moving);
-    this.friendCtx = { quality: q, strain: () => this.governor.strain };
+    this.friendCtx = { quality: q, strain: () => this.governor.strain, viewHeight: () => this.view.h * this.dpr };
     this.store = new Store();
 
     this.ui = new UI(this.handlers());
@@ -240,7 +244,10 @@ class App {
     }
     await this.compileScene();
     // (drawn once with the hidden toys shown, so their textures and buffers are uploaded now too)
+    this.trim.showAll(true);
+    this.trimHold = true;
     this.render();
+    this.trimHold = false;
     this.toys.warm(false);
     if (probe) {
       scene.remove(probe);
@@ -379,7 +386,11 @@ class App {
   }
 
   setMode(m) {
-    if (m !== this.mode) this.picked = false;
+    if (m !== this.mode) {
+      this.picked = false;
+      // (a painting carried over from the other mode never starts the magic by itself)
+      this.autoArmed = false;
+    }
     this.mode = m;
     save('mode', m);
     this.ui.setMode(m);
@@ -389,6 +400,7 @@ class App {
   }
 
   setState(s) {
+    if (s !== 'paint') this.goWaiting = false;
     this.state = s;
     this.ui.setState(s);
     this.toys?.setActive(s === 'play');
@@ -417,7 +429,12 @@ class App {
     this.life?.setViewport(h * dpr);
     if (!first && this.state !== 'loading') {
       // keep the canvas framed when the screen turns
-      if (this.state === 'paint' && !this.rig.moving) this.rig.snap(this.shot('paint'));
+      // (also mid-glide: the glide is re-aimed at the new framing, from where it is and as fast as it is going)
+      if (this.state === 'paint' || this.state === 'menu') {
+        const shot = this.shot(this.state);
+        if (!this.rig.moving) this.rig.snap(shot);
+        else this.rig.go(shot, Math.max(0.25, this.rig.dur - this.rig.t), 0.03);
+      }
       if (this.frozen) this.render();
     }
   }
@@ -526,6 +543,7 @@ class App {
 
   newCanvas() {
     this.endStroke();
+    this.autoArmed = false;
     this.paint.clearAll();
     this.coverage = 0;
     this.coverToken++;
@@ -537,10 +555,15 @@ class App {
   async setSubject(id, picked = false) {
     this.subjectId = id;
     const token = ++this.subjectToken;
+    // (until its outline is drawn, GO waits for this friend: see go())
+    this.subjectReady = false;
+    this.pickPending = picked;
+    this.autoArmed = false;
     let f;
     try {
       f = await makeFriend(id, this.friendCtx);
     } catch {
+      if (token === this.subjectToken) this.subjectDone();
       return;
     }
     if (token !== this.subjectToken) {
@@ -558,6 +581,17 @@ class App {
     if (token !== this.subjectToken) return;
     this.showOutline();
     this.checkCoverage();
+    this.subjectDone();
+  }
+
+  // the friend to paint is on the canvas: a GO tapped while it was on its way goes now
+  subjectDone() {
+    this.subjectReady = true;
+    this.pickPending = false;
+    if (this.goWaiting) {
+      this.goWaiting = false;
+      this.go();
+    }
   }
 
   // painting a chosen friend's outline: always for Little ones, for Big kids once they pick one
@@ -620,15 +654,22 @@ class App {
     if (this.state !== 'paint' || this.alive.busy) return;
     this.audio.unlock();
     this.endStroke();
-    if (this.outlined) {
-      if (!this.canvasFriend) return;
+    if (this.outlined || this.pickPending) {
+      // a friend just picked is still being built: it comes alive the moment it is ready (never the one before it)
+      if (!this.canvasFriend || this.subjectReady === false) {
+        this.goWaiting = true;
+        return;
+      }
       this.startMagic(this.canvasFriend);
       return;
     }
     // big kids: what is it?
     const rect = this.magic.paintedRect();
     if (!rect) {
+      // nothing painted yet: GO wiggles and the canvas twinkles, inviting a first stroke
       this.audio.tap();
+      this.ui.nudgeGo?.();
+      this.hintSparkle();
       return;
     }
     this.bigRect = rect;
@@ -713,6 +754,16 @@ class App {
         u.uSweep.value = -1;
         this.comeAlive(r);
       }
+    }
+  }
+
+  // a twinkle over the empty canvas: paint here
+  hintSparkle() {
+    const plane = this.easel.plane;
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * Math.PI * 2;
+      _v.set(Math.cos(a) * CANVAS_W * 0.3, Math.sin(a) * CANVAS_H * 0.3, 0.012).applyMatrix4(plane);
+      this.fx.sparkles.emit(_v.x, _v.y, _v.z, rand(-0.05, 0.05), rand(0.02, 0.12), rand(0.02, 0.1), [2, 1.7, 1.1], rand(0.012, 0.02), rand(0.6, 1.0));
     }
   }
 
@@ -815,7 +866,17 @@ class App {
 
   // ------------------------------------------------------------ keeping
 
+  // which painting is on the canvas (its strokes), to keep each painting once
+  paintingKey() {
+    const s = this.paint.strokes;
+    return { n: s.length, last: s[s.length - 1] || null };
+  }
+
   savePainting() {
+    // kept already (Keep, then GO; or hung from the shelf and not touched): not again
+    const key = this.paintingKey();
+    if (this.kept && this.kept.n === key.n && this.kept.last === key.last) return null;
+    this.kept = key;
     // the picture for the shelf, and the strokes themselves to hang it again
     const strokes = this.paint.strokes.map((c) => ({ brush: c.brush, seed: c.seed, time: c.time, pts: c.pts }));
     const rec = { id: newId(), image: '', strokes, w: this.paint.w, made: Date.now() };
@@ -845,8 +906,8 @@ class App {
 
   // a kept painting back on the easel, dry, to paint more on (big kids keep paintings)
   hangPainting(p) {
-    if (!p.strokes?.length || this.alive.busy) return;
-    if (this.mode !== 'big') this.setMode('big');
+    // (kept paintings belong to Big kids: the shelf only shows them in that mode, and never switches modes)
+    if (!p.strokes?.length || this.alive.busy || this.mode !== 'big') return;
     this.startPainting(true);
     this.newCanvas();
     const last = p.strokes[p.strokes.length - 1].time;
@@ -860,6 +921,8 @@ class App {
         time: now - 120 - (last - c.time),
       })),
     );
+    // (it is on the shelf already: GO or Keep without a new stroke keeps no copy)
+    this.kept = this.paintingKey();
     this.checkCoverage();
   }
 
@@ -911,7 +974,7 @@ class App {
   openShelf() {
     this.audio.select();
     const out = new Set(this.friends.list.filter((e) => !e.leaving).map((e) => e.record?.id));
-    this.ui.showShelf(this.records, out, this.paintings);
+    this.ui.showShelf(this.records, out, this.mode === 'big' ? this.paintings : []);
   }
 
   async fromShelf(rec) {
@@ -1065,7 +1128,10 @@ class App {
     if (this.paint.painting) {
       this.paint.end();
       this.idleSinceStroke = 0;
-      if (this.state === 'paint') this.checkCoverage();
+      if (this.state === 'paint') {
+        this.autoArmed = true;
+        this.checkCoverage();
+      }
     }
   }
 
@@ -1154,7 +1220,7 @@ class App {
       }
       if (!p.down) {
         this.idleSinceStroke += dt;
-        if (this.coverage >= AUTO_COVER && this.idleSinceStroke > 1.0 && !this.ui.overlayOpen) this.go();
+        if (this.autoArmed && this.coverage >= AUTO_COVER && this.idleSinceStroke > 1.0 && !this.ui.overlayOpen) this.go();
       }
     }
 
@@ -1209,6 +1275,8 @@ class App {
   }
 
   render() {
+    if (!this.trimHold) this.trim.update();
+    this.world.view(this.camera);
     this.post.update(this.time);
     const pq = this.portraits;
     if (pq?.length && this.time >= pq[0].at) this.takePortrait(pq.shift());
@@ -1280,6 +1348,9 @@ class App {
     cam.updateProjectionMatrix();
     cam.lookAt(c);
     cam.updateMatrixWorld();
+    // (the portrait is close: full fur and the fine body, whatever the garden view had)
+    f.forceFine = true;
+    f.fitShells?.(cam);
     this.post.setFocus(cam.position.distanceTo(c));
     // this close, the usual lens would blur half the friend: stop it down
     const aperture = this.post.lens.aperture;
@@ -1296,6 +1367,8 @@ class App {
     cam.fov = saveFov;
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
+    f.forceFine = false;
+    f.fitShells?.(cam);
     // (the focus goes back to where the frame had it, so the normal frame right after does not jump)
     this.post.setFocus(this._focus ?? cam.position.distanceTo(this.rig.look));
     return this.renderer.domElement;

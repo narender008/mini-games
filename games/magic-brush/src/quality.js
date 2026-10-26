@@ -1,8 +1,8 @@
 // Device quality tiers. The starting tier comes from a quick look at the
 // device; the frame governor then trims the render scale if frames run long.
 // URL switches: ?quality=high|medium|low forces a tier, ?msaa=N, ?shadows=0,
-// ?ao=0, ?dof=0 and ?fur=N (shells per furry friend) override single
-// features.
+// ?ao=0, ?dof=0, ?fur=N (shells per furry friend) and ?lod=N (how much
+// coarser a friend's far body is; 0 = none) override single features.
 import { QUERY } from './config.js';
 
 // fur: shells drawn over a furry friend close up (fewer far away).
@@ -14,7 +14,7 @@ const TIERS = {
   // LitePost), the world's shadows drawn once, contact shadows under friends.
   lite: {
     tier: 'lite', lite: true, maxDpr: 1.5, msaa: 0, shadows: true, shadowSize: 2048, ao: false, dof: true,
-    maxPixels: 1.6e6, particles: 700, envSize: 128, fur: 8, active: 6, paint: 1024, voxel: 0.005, grass: 0.55,
+    maxPixels: 1.6e6, particles: 700, envSize: 128, fur: 8, active: 6, paint: 1024, voxel: 0.005, grass: 0.55, lod: 2,
   },
   high: {
     tier: 'high', maxDpr: 2, msaa: 4, shadows: true, shadowSize: 2048, ao: true, dof: true,
@@ -36,6 +36,7 @@ export function detectQuality() {
   if (QUERY.has('shadows')) q.shadows = QUERY.get('shadows') !== '0';
   if (QUERY.has('ao')) q.ao = QUERY.get('ao') !== '0';
   if (QUERY.has('dof')) q.dof = QUERY.get('dof') !== '0';
+  if (QUERY.has('lod')) q.lod = Math.max(0, Math.min(4, Number(QUERY.get('lod')) || 0));
   if (QUERY.has('fur')) q.fur = Math.max(0, Math.min(48, Number(QUERY.get('fur')) || 0));
   return q;
 }
