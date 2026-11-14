@@ -4,19 +4,31 @@
 // fill the jar and it becomes a smiling rainbow smoothie with confetti and
 // fireworks, then it is drunk up and play goes on. No text, no losing.
 //
+// Every fruit is a friend with a face (it blinks, watches your finger, gasps
+// when you come close, and its halves giggle). A bunny peeks from her bush
+// and munches the slices she is thrown, a chick catches juice drops, and both
+// giggle when tapped. Now and then a giant fruit floats up and takes three
+// bonks to burst into a shower of small fruit and treats; bubbles drift down
+// carrying a fruit or a treat; at the party the friends dance and balloons
+// rise to be popped.
+//
 // Modules: sim.js (rules, Node-testable), fruits.js (fruit art baked into
 // sprites), world.js (orchard, sun, jar, trail), fx.js (particles),
-// audio.js (Web Audio music and effects), draw.js (helpers).
+// friends.js (faces, bunny, chick, bubbles, treats, balloons), buddies.js
+// (the animal friends' behaviour), audio.js (Web Audio music and effects),
+// draw.js (helpers).
 //
 // URL switches: ?play starts straight into a game, ?fruit=<kind> tosses only
 // that fruit, ?seed=N, ?cover hides the buttons, ?quality=low draws at 1x,
 // ?debug exposes window.__js (see the end of this file).
 import { use, TAU, lerp, clamp, glow, additive, sparkle, sticker } from './draw.js';
-import { FRUIT, KINDS, makeSprites, stain } from './fruits.js';
+import { FRUIT, KINDS, makeSprites, stain, drawFruit, drawHalf } from './fruits.js';
 import * as World from './world.js';
 import * as S from './sim.js';
 import * as FX from './fx.js';
 import * as A from './audio.js';
+import * as Fr from './friends.js';
+import * as B from './buddies.js';
 
 const P = new URLSearchParams(location.search);
 const DEBUG = P.has('debug');
@@ -28,7 +40,11 @@ use(g);
 const force = KINDS.includes(P.get('fruit')) ? P.get('fruit') : null;
 const sim = S.createSim({ seed: +P.get('seed') || (Date.now() & 0xffffff), phase: P.has('play') ? 'play' : 'title', force });
 const fx = FX.createFx();
-const view = { t: 0, mood: 'smile', moodT: 0, bounce: 0, fill: 0, wob: 0, partyK: 0, titleK: sim.phase === 'title' ? 1 : 0, fireT: 0, stainT: 0, lastSwish: 0 };
+const pals = B.createBuddies();
+pals.drawHalf = (kind, x, y, r, rot) => { const sp = sprites[kind], s = sp.size / dpr * r / sp.r * dpr; sprite(sp.half, x, y, rot, s); };
+const balloons = [], treats = [], squash = new Map();
+let feedTurn = 0;
+const view = { t: 0, balloonT: 0, mood: 'smile', moodT: 0, bounce: 0, fill: 0, wob: 0, partyK: 0, titleK: sim.phase === 'title' ? 1 : 0, fireT: 0, stainT: 0, lastSwish: 0 };
 const pointers = new Map();
 const trails = [];
 let L, dpr = 1, fruitR = 80, sprites, bg, stains, stainG, cloudSprites = [];
@@ -55,6 +71,7 @@ function resize() {
   });
   use(g);
   S.resize(sim, w, h, fruitR);
+  B.layout(pals, L);
 }
 
 // ---------- events from the rules ----------
@@ -66,7 +83,7 @@ function handle(ev) {
     case 'cut': {
       const big = ev.sparkle;
       FX.burst(fx, ev.x, ev.y, ev.r, ev.kind, ev.dir, big, [L.BT + 12 * L.u, L.H - 12 * L.u]);
-      FX.stars(fx, ev.x, ev.y, big ? 9 : 3, ev.r);
+      FX.stars(fx, ev.x, ev.y, big ? 9 : 3, Math.min(ev.r, fruitR * 1.2));
       const m = jarMouth();
       FX.toJar(fx, ev.x, ev.y, m.x, m.y, ev.kind, S.JAR_DELAY, ev.r);
       if (big) FX.toJar(fx, ev.x, ev.y, m.x, m.y, ev.kind, S.JAR_DELAY + 0.25, ev.r);
@@ -74,19 +91,62 @@ function handle(ev) {
       A.splat(ev.r / fruitR, big);
       if (ev.n % 2 === 1 || big) A.giggle(big);
       view.mood = 'laugh'; view.moodT = 1.1; view.bounce = 1;
+      if (ev.giant) break;
+      // every other slice goes to a friend: a half to the bunny, juice to the chick
+      if (ev.n % 2 === 0) { if (feedTurn++ % 2 === 0) B.feedBunny(pals, ev.x, ev.y, { type: 'half', kind: ev.kind }); else B.feedChick(pals, ev.x, ev.y, FRUIT[ev.kind].juice); }
       break;
     }
+    case 'giant': A.giant(); B.wow(pals); squash.set(ev.id, { k: 1, t: 0 }); break;
+    case 'thump':
+      squash.set(ev.id, { k: 1, t: 0 }); A.thump(ev.hp); A.giggle(true);
+      FX.stars(fx, ev.x, ev.y - ev.r * 0.6, 6, fruitR); FX.ripple(fx, ev.x, ev.y, ev.r * 1.1);
+      view.mood = 'wow'; view.moodT = 0.8; B.wow(pals);
+      break;
+    case 'burst': {
+      A.burst(); B.cheer(pals);
+      FX.stars(fx, ev.x, ev.y, 14, fruitR, 0.5); FX.firework(fx, ev.x, ev.y, L.u);
+      ev.treats.forEach((k, i) => { const a = -Math.PI / 2 + (i - 2.5) * 0.45, sp = 520 * L.u * (0.8 + Math.random() * 0.4); treats.push({ kind: k, x: ev.x, y: ev.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, rot: 0, spin: (Math.random() - 0.5) * 8, t: 0 }); });
+      B.feedBunny(pals, ev.x - ev.r * 0.4, ev.y, { type: 'treat', kind: 'lolly' });
+      B.feedChick(pals, ev.x + ev.r * 0.4, ev.y, FRUIT[ev.kind].juice);
+      view.mood = 'grin'; view.moodT = 2;
+      break;
+    }
+    case 'bubble': break;
+    case 'bubblePop':
+      A.bubblePop(); FX.ripple(fx, ev.x, ev.y, ev.r * 1.2);
+      for (let i = 0; i < 6; i++) FX.stars(fx, ev.x, ev.y, 1, fruitR * 0.8, 0.5);
+      if (ev.by && ev.inside.type === 'treat') { if (pals.bunny.munch > 0.3) B.feedChick(pals, ev.x, ev.y, B.TREAT_COL[ev.inside.kind]); else B.feedBunny(pals, ev.x, ev.y, { type: 'treat', kind: ev.inside.kind }); A.giggle(true); }
+      if (ev.fruit) squash.set(ev.fruit, { k: 1, t: 0 });
+      break;
     case 'stripe': A.plink(ev.n); view.wob = 1; break;
     case 'party':
       A.fanfare(); A.duck(true); FX.confettiRain(fx, L.W, L.H, L.portrait ? 120 : 180, L.u);
       view.fireT = 0.8; view.mood = 'grin'; view.moodT = 99; view.bounce = 1;
       break;
-    case 'firework': FX.firework(fx, ev.x, ev.y, L.u); A.firework(); break;
-    case 'tap': FX.ripple(fx, ev.x, ev.y, 60 * L.u); A.boop(ev.x / L.W); break;
+    case 'firework': {
+      if (popBalloonAt(ev.x, ev.y) || pokeAt(ev.x, ev.y)) break;
+      FX.firework(fx, ev.x, ev.y, L.u); A.firework(); break;
+    }
+    case 'tap': if (pokeAt(ev.x, ev.y)) break; FX.ripple(fx, ev.x, ev.y, 60 * L.u); A.boop(ev.x / L.W); break;
     case 'drink': A.slurp(); view.wob = 1; break;
     case 'refill': A.duck(false); view.mood = 'smile'; view.moodT = 0; break;
   }
 }
+
+function pokeAt(x, y) {
+  const who = B.hit(pals, x, y); if (!who) return false;
+  B.poke(pals, who); A.boing(); if (who === 'chick') A.chirp();
+  return true;
+}
+function popBalloonAt(x, y, x1 = x, y1 = y) {
+  for (let i = balloons.length - 1; i >= 0; i--) {
+    const b = balloons[i];
+    const d = distSeg(b.x, b.y, x, y, x1, y1);
+    if (d < b.r * 1.15) { balloons.splice(i, 1); A.balloonPop(); FX.ripple(fx, b.x, b.y, b.r * 1.3); FX.stars(fx, b.x, b.y, 4, b.r, 0.5); return true; }
+  }
+  return false;
+}
+function distSeg(px, py, x0, y0, x1, y1) { const dx = x1 - x0, dy = y1 - y0, l2 = dx * dx + dy * dy; let t = l2 ? ((px - x0) * dx + (py - y0) * dy) / l2 : 0; t = clamp(t, 0, 1); return Math.hypot(px - x0 - t * dx, py - y0 - t * dy); }
 
 // ---------- input ----------
 const pos = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
@@ -105,6 +165,7 @@ canvas.addEventListener('pointermove', e => {
     const d = Math.hypot(p.x - last.x, p.y - last.y);
     if (d < 2) continue;
     S.swipe(sim, last.x, last.y, p.x, p.y);
+    if (balloons.length) popBalloonAt(last.x, last.y, p.x, p.y);
     const speed = d / Math.max(0.004, now - last.t);
     if (speed > 1400 * L.u && now - view.lastSwish > 0.28) { view.lastSwish = now; A.swish(0.45); }
     ptr.pts.push({ x: p.x, y: p.y, t: now });
@@ -151,13 +212,68 @@ function sprite(img, x, y, rot, s, alpha = 1) {
   g.save(); g.translate(x, y); g.rotate(rot); if (alpha !== 1) g.globalAlpha = alpha;
   g.drawImage(img, -s / 2, -s / 2, s, s); g.restore();
 }
+// Where each kind's face sits (fruit radii from the centre) and how big it is.
+const FACE = { strawberry: [0, 0.14, 0.72], pineapple: [0, 0.22, 0.68], banana: [0.02, 0.22, 0.5], pear: [0, 0.38, 0.6], lemon: [0, 0.04, 0.72], dragonfruit: [0, 0.08, 0.72], pomegranate: [0, 0.14, 0.76], apple: [0, 0.14, 0.76], watermelon: [0, 0.06, 0.74], mango: [0.04, 0.06, 0.7] };
+function fruitMood(f) {
+  const age = view.t - (f.seen ??= view.t);
+  if ((view.t * 0.31 + f.id * 0.37) % 3.1 < 0.13) return 'sleepy';                    // blink
+  if (f.giant) return f.hp >= 3 ? (age < 2 ? 'wow' : 'happy') : f.hp === 2 ? 'wow' : 'giggle';
+  for (const p of pointers.values()) { const q = p.pts[p.pts.length - 1]; if (Math.hypot(q.x - f.x, q.y - f.y) < f.r * 2.6) return 'wow'; }
+  if (f.mini || f.sparkle) return 'giggle';
+  return f.id % 5 === 0 ? 'wink' : 'happy';
+}
+function fruitLook(f) {
+  let best = null, bd = Infinity;
+  for (const p of pointers.values()) { const q = p.pts[p.pts.length - 1], d = Math.hypot(q.x - f.x, q.y - f.y); if (d < bd) { bd = d; best = q; } }
+  let lx = best ? best.x - f.x : f.vx * 0.4, ly = best ? best.y - f.y : f.vy * 0.15;
+  const n = Math.hypot(lx, ly) || 1; const c = Math.cos(-f.rot), s = Math.sin(-f.rot);
+  lx /= n; ly /= n; return [lx * c - ly * s, lx * s + ly * c];
+}
+// squash and stretch: stretched along a fast rise or fall, round at the top,
+// a wobbly spring after a bonk (giants) or a tumble out of a bubble
+function squashOf(f) {
+  const vmax = Math.sqrt(2 * sim.g * L.H * 0.6), v = clamp(Math.abs(f.vy) / vmax, 0, 1);
+  let sy = f.giant || f.hover ? 1 : 1 + 0.13 * v - 0.05 * (1 - Math.min(1, v * 4)), sx = 1 / Math.sqrt(sy);
+  const q = squash.get(f.id);
+  if (q) { const w = Math.sin(q.t * 22) * q.k * 0.16; sx *= 1 + w; sy *= 1 - w; }
+  if (f.giant) { const b = Math.sin(view.t * 2.2) * 0.025; sx *= 1 + b; sy *= 1 - b; }
+  return [sx, sy];
+}
 function drawFruitSprite(f) {
-  const sp = sprites[f.kind], s = sp.size / dpr;
+  const sp = sprites[f.kind], s = sp.size / dpr * f.r / (sp.r / dpr);
   if (f.sparkle) additive(() => { glow(f.x, f.y, f.r * 1.9, '#fff2a0', 0.75); });
-  sprite(sp.wholeShadow, f.x + f.r * 0.08, f.y + f.r * 0.22, f.rot, s);
-  sprite(sp.whole, f.x, f.y, f.rot, s);
+  if (f.giant) additive(() => { glow(f.x, f.y, f.r * (1.7 + Math.sin(view.t * 3) * 0.1), '#fff2a0', 0.55 + (3 - f.hp) * 0.15); });
+  const [sx, sy] = squashOf(f);
+  g.save(); g.translate(f.x, f.y); g.scale(sx, sy);
+  sprite(sp.wholeShadow, f.r * 0.08, f.r * 0.22, f.rot, s);
+  // a giant is painted from its paths, so it stays crisp at its size
+  if (f.giant) drawFruit(f.kind, 0, 0, f.r, f.rot); else sprite(sp.whole, 0, 0, f.rot, s);
+  g.rotate(f.rot);
+  if (f.giant && f.hp < 3) cracks(f);
+  const fc = FACE[f.kind] || [0, 0.08, 0.8];
+  Fr.face(fc[0] * f.r, fc[1] * f.r, fc[2] * f.r, fruitMood(f), fruitLook(f));
+  g.restore();
   if (f.sparkle) for (let i = 0; i < 4; i++) { const a = view.t * 1.8 + i * TAU / 4; sparkle(f.x + Math.cos(a) * f.r * 1.25, f.y + Math.sin(a) * f.r * 1.25, f.r * (0.16 + 0.08 * Math.sin(view.t * 6 + i)), 1); }
 }
+const CRACKS = [[[-0.2, -0.95], [-0.1, -0.7], [-0.28, -0.55], [-0.12, -0.38]], [[0.85, -0.5], [0.62, -0.42], [0.7, -0.2], [0.5, -0.08]], [[-0.95, 0.25], [-0.72, 0.2], [-0.78, 0.45]], [[0.4, 0.88], [0.32, 0.66], [0.5, 0.55]]];
+function cracks(f) {
+  const n = (3 - f.hp) * 2, r = f.r;
+  g.save(); g.lineJoin = 'round'; g.lineCap = 'round';
+  for (let i = 0; i < n && i < CRACKS.length; i++) {
+    g.beginPath(); CRACKS[i].forEach((p, j) => j ? g.lineTo(p[0] * r, p[1] * r) : g.moveTo(p[0] * r, p[1] * r));
+    g.strokeStyle = '#7a3a00'; g.lineWidth = r * 0.06; g.stroke(); g.strokeStyle = '#ffe680'; g.lineWidth = r * 0.03; g.stroke();
+    additive(() => { g.strokeStyle = 'rgba(255,250,200,0.7)'; g.lineWidth = r * 0.09; g.stroke(); });
+  }
+  g.restore();
+}
+function drawBubble(b) {
+  const inside = b.inside;
+  Fr.bubble(b.x, b.y, b.r, (x, y, r) => {
+    if (inside.type === 'fruit') { const sp = sprites[inside.kind], s = sp.size / dpr * r / (sp.r / dpr) * 0.9; sprite(sp.whole, x, y, Math.sin(view.t + b.id) * 0.2, s); const fc = FACE[inside.kind] || [0, 0.08, 0.8]; Fr.face(x + fc[0] * r * 0.9, y + fc[1] * r * 0.9, fc[2] * r * 0.9, 'sleepy'); }
+    else B.drawTreat(inside.kind, x, y, r * 0.95, Math.sin(view.t * 1.5 + b.id) * 0.3);
+  });
+}
+const BALLOON_COLS = ['#ff4f9a', '#3fb8ff', '#ffd23a', '#7ae04a', '#b06aff', '#ff9f1c'];
 function drawTrail(ptr, now, fade) {
   const pts = ptr.pts.filter(p => now - p.t < 0.16).map(p => [p.x, p.y]);
   if (pts.length < 2) return;
@@ -188,6 +304,7 @@ function render(now) {
   World.sunFriend(0, 0, sp.r, view.mood, view.t * 0.12); g.restore();
   if (view.partyK > 0) { g.save(); g.globalAlpha = ease(view.partyK); World.rainbow(W / 2, L.HZ + 30 * u, Math.min(W * 0.42, 620 * u), 30 * u); g.restore(); }
   g.drawImage(stains, 0, 0, W, H);
+  B.drawBunny(pals);
   // jar (comes forward and grows for the party)
   const jb = jarNow(), pk = ease(view.partyK);
   if (pk > 0) additive(() => {
@@ -200,10 +317,20 @@ function render(now) {
   g.save(); g.translate(jb.x, jb.y); g.scale(1 + w, 1 - w); g.translate(-jb.x, -jb.y);
   World.jar(jb.x, jb.y, jb.w, jb.h, layers.length ? layers : ['#ffffff'], { fill: layers.length ? Math.max(0.02, view.fill) : 0, face: pk > 0.5 || sim.phase === 'drain', glow: pk > 0.2, cream: pk > 0.35 && sim.phase === 'party' });
   g.restore();
+  B.drawChick(pals);
   FX.drawFxBack(fx);
-  for (const h of sim.halves) { const s2 = sprites[h.kind].size / dpr; sprite(sprites[h.kind].halfShadow, h.x + h.r * 0.08, h.y + h.r * 0.2, h.rot, s2); sprite(sprites[h.kind].half, h.x, h.y, h.rot, s2); }
+  for (const h of sim.halves) {
+    const sp = sprites[h.kind], s2 = sp.size / dpr * h.r / (sp.r / dpr);
+    sprite(sp.halfShadow, h.x + h.r * 0.08, h.y + h.r * 0.2, h.rot, s2);
+    if (h.r > sp.r / dpr * 1.4) drawHalf(h.kind, h.x, h.y, h.r, h.rot); else sprite(sp.half, h.x, h.y, h.rot, s2);
+    g.save(); g.translate(h.x, h.y); g.rotate(h.rot); Fr.face(0, -h.r * 0.42, h.r * 0.48, h.side ? 'giggle' : 'yum'); g.restore();
+  }
   for (const f of sim.fruits) drawFruitSprite(f);
+  for (const b of sim.bubbles) drawBubble(b);
+  for (const t of treats) B.drawTreat(t.kind, t.x, t.y, fruitR * 0.5, t.rot);
   FX.drawFxFront(fx);
+  B.drawFront(pals);
+  for (const b of balloons) Fr.balloon(b.x + Math.sin(view.t * 1.3 + b.ph) * b.r * 0.3, b.y, b.r, b.col);
   if (pk > 0.6 && sim.phase === 'party') {
     const t = view.t;
     sticker('star', jb.x - jb.w * 0.95, jb.y - jb.h * 0.75 + Math.sin(t * 3) * 8 * u, 46 * u, Math.sin(t * 2) * 0.3);
@@ -245,6 +372,16 @@ function update(dt) {
     view.fireT -= dt;
     if (view.fireT <= 0) { view.fireT = 0.65 + Math.random() * 0.4; FX.firework(fx, L.W * (0.15 + Math.random() * 0.7), L.H * (0.1 + Math.random() * 0.3), L.u); A.firework(); }
   }
+  pals.dance = sim.phase === 'party';
+  const lookAt = sim.fruits.length ? sim.fruits.reduce((a, f) => f.y < a.y ? f : a).x : null;
+  for (const a of B.step(pals, dt, lookAt)) { if (a.to === 'bunny') A.munch(); else if (a.item.type !== 'drop' || Math.random() < 0.3) A.chirp(); }
+  for (const [id, q] of squash) { q.t += dt; q.k -= dt * 1.6; if (q.k <= 0) squash.delete(id); }
+  for (const t of treats) { t.t += dt; t.x += t.vx * dt; t.y += t.vy * dt; t.vy += sim.g * 1.2 * dt; t.rot += t.spin * dt; }
+  for (let i = treats.length - 1; i >= 0; i--) if (treats[i].y > L.H + 80 * L.u) treats.splice(i, 1);
+  // party balloons drift up from the blanket, ready to be popped
+  if (sim.phase === 'party') { view.balloonT -= dt; if (view.balloonT <= 0 && balloons.length < 7) { view.balloonT = 0.55 + Math.random() * 0.4; const r = (L.portrait ? 44 : 54) * L.u; balloons.push({ x: L.W * (0.08 + Math.random() * 0.84), y: L.H + r * 1.2, r, vy: -(120 + Math.random() * 70) * L.u, ph: Math.random() * TAU, col: BALLOON_COLS[Math.floor(Math.random() * BALLOON_COLS.length)] }); } }
+  for (const b of balloons) b.y += b.vy * dt;
+  for (let i = balloons.length - 1; i >= 0; i--) if (balloons[i].y < -balloons[i].r * 4) balloons.splice(i, 1);
   const landed = FX.stepFx(fx, dt, sim.g);
   if (landed.length) {
     const b = World.basketPos();
@@ -281,7 +418,14 @@ if (DEBUG) {
     swipe(x0, y0, x1, y1, n = 8) { const ptr = { pts: [] }, t0 = performance.now() / 1000; for (let i = 0; i <= n; i++) { const k = i / n, x = lerp(x0, x1, k), y = lerp(y0, y1, k); if (i) S.swipe(sim, ptr.pts[i - 1].x, ptr.pts[i - 1].y, x, y); ptr.pts.push({ x, y, t: t0 - (n - i) * 0.012 }); } trails.push(ptr); },
     tap(x, y) { A.unlock(); S.tap(sim, x, y); },
     fill(n = S.JAR_CAP) { for (let i = 0; i < n; i++) sim.pending.push({ t: 0, kind: KINDS[i % KINDS.length] }); },
-    state: () => ({ phase: sim.phase, fruits: sim.fruits.map(f => ({ id: f.id, kind: f.kind, x: f.x, y: f.y, r: f.r, sparkle: f.sparkle })), halves: sim.halves.length, stripes: sim.stripes.length, sliced: sim.sliced, launched: sim.launched, rounds: sim.rounds, idle: sim.idle, hint: !!S.hintTarget(sim), audio: A.state(), drops: fx.drops.length, layout: { ...L, dpr, fruitR } }),
+    state: () => ({ phase: sim.phase, fruits: sim.fruits.map(f => ({ id: f.id, kind: f.kind, x: f.x, y: f.y, r: f.r, sparkle: f.sparkle, giant: !!f.giant, hp: f.hp, mini: !!f.mini, hover: !!f.hover })), bubbles: sim.bubbles.length, giants: sim.giants, popped: sim.popped, treats: treats.length, balloons: balloons.length, halves: sim.halves.length, stripes: sim.stripes.length, sliced: sim.sliced, launched: sim.launched, rounds: sim.rounds, idle: sim.idle, hint: !!S.hintTarget(sim), audio: A.state(), drops: fx.drops.length, layout: { ...L, dpr, fruitR } }),
     render: () => render(performance.now()),
+    giant(kind) { return S.launchGiant(sim, kind).id; },
+    bubble(type = 'fruit', kind = 'strawberry', x, y) { const b = S.addBubble(sim, { type, kind }, x); if (y != null) b.y = y; return b.id; },
+    bubbles: () => sim.bubbles.map(b => ({ id: b.id, x: b.x, y: b.y, r: b.r, inside: b.inside })),
+    buddies: () => ({ bunny: { ...pals.bunny, head: B.mouths(pals).bunny, snack: undefined }, chick: { ...pals.chick }, flyers: pals.flyers.length, dance: pals.dance }),
+    poke(who) { B.poke(pals, who); A.boing(); },
+    feed(who = 'bunny', kind = 'watermelon') { if (who === 'bunny') B.feedBunny(pals, L.W / 2, L.H / 3, { type: 'half', kind }); else B.feedChick(pals, L.W / 2, L.H / 3, FRUIT[kind].juice); },
+    balloons: () => balloons.map(b => ({ x: b.x, y: b.y, r: b.r })),
   };
 }

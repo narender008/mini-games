@@ -131,6 +131,70 @@ test('a full jar throws a party, is drunk up, and play goes on', async () => {
   clean(page); await close(page);
 });
 
+test('a giant fruit takes three real taps, bursts into a shower, and the friends get treats', async () => {
+  const { page, js } = await quiet();
+  await js('giant', 'watermelon');
+  await until(async () => (await js('state')).fruits.some((f) => f.giant && f.hover), 5000, 'giant hovering');
+  const g = (await js('state')).fruits.find((f) => f.giant);
+  for (let i = 0; i < 3; i++) { await page.mouse.click(g.x, g.y); await sleep(450); }
+  const st = await js('state');
+  assert.ok(!st.fruits.some((f) => f.giant), 'giant should have burst');
+  assert.ok(st.fruits.filter((f) => f.mini).length >= 4, 'small fruit should shower out');
+  assert.ok(st.treats > 0, 'treats should fly');
+  assert.ok((await js('buddies')).flyers > 0, 'friends should be fed');
+  clean(page); await close(page);
+});
+
+test('a finger tap pops a bubble and the fruit inside can be sliced (touch)', async () => {
+  const { page, js } = await quiet('debug&play', { width: 390, height: 844, touch: true, mobile: true });
+  await js('bubble', 'fruit', 'plum', 200, 300);
+  const b = (await js('bubbles'))[0];
+  await page.touchscreen.tap(b.x, b.y);
+  let st = await js('state');
+  assert.equal(st.bubbles, 0); assert.equal(st.popped, 1);
+  const f = st.fruits.find((x) => x.kind === 'plum');
+  assert.ok(f, 'plum should tumble out');
+  await page.touchscreen.tap(f.x, f.y);
+  st = await js('state');
+  assert.equal(st.sliced, 1);
+  clean(page); await close(page);
+});
+
+test('tapping the bunny or the chick makes them hop and giggle', async () => {
+  const { page, js } = await quiet();
+  await js('freeze');
+  await js('poke', 'bunny'); await js('step', 1200);
+  const head = (await js('buddies')).bunny.head;
+  await page.mouse.click(head.x, head.y - 10); await sleep(150);
+  assert.equal((await js('buddies')).bunny.mood, 'cheer');
+  const c = (await js('buddies')).chick;
+  await page.mouse.click(c.x, c.y); await sleep(150);
+  const after = (await js('buddies')).chick;
+  assert.equal(after.mood, 'cheer'); assert.ok(after.hop > 0.5);
+  assert.equal((await js('state')).sliced, 0);
+  clean(page); await close(page);
+});
+
+test('slices fly to the friends, and they dance and balloons pop at the party', async () => {
+  const { page, js } = await quiet();
+  await js('spawn', 'orange', 500, 300); await js('spawn', 'apple', 800, 300);
+  await js('swipe', 400, 300, 900, 300, 12);
+  await js('step', 100);
+  assert.ok((await js('buddies')).flyers > 0, 'the second slice should go to a friend');
+  await js('fill');
+  await until(async () => (await js('state')).phase === 'party', 2000, 'party');
+  await js('step', 2500);
+  assert.equal((await js('buddies')).dance, true);
+  const bl = await js('balloons');
+  assert.ok(bl.length > 0, 'balloons should rise');
+  const b = bl.find((x) => x.y > 40 && x.y < 680) || bl[0];
+  await js('freeze');
+  await page.mouse.click(b.x, b.y);
+  await js('step', 16);
+  assert.ok((await js('balloons')).length < bl.length, 'balloon should pop');
+  clean(page); await close(page);
+});
+
 test('the hint hand appears when nobody plays', async () => {
   const { page, js } = await quiet();
   await js('spawn', 'apple', 640, 300);
