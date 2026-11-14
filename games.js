@@ -32,11 +32,11 @@ window.MINI_GAMES = [
   {
     slug: 'garden-grow',
     name: 'Garden Grow',
-    description: 'Plant seeds in a photoreal garden, water them and watch flowers bloom and butterflies arrive. Calm and bedtime-friendly.',
+    description: 'A glossy, giggly garden for toddlers: tap to plant, water and burst buds into singing flowers, while butterflies, bees, birds, a bunny, a frog and more come to play. Every tap does something.',
     path: 'games/garden-grow/',
     image: 'games/garden-grow/cover.jpg',
-    imageAlt: 'A cottage garden bed at golden hour with tulips, poppies and sunflowers in bloom and a butterfly visiting',
-    tags: ['3D', 'Ages 2+', 'Touch friendly'],
+    imageAlt: 'A candy-bright cartoon garden under a rainbow with smiling flowers, a carrot, butterflies, a bee, a bunny, a frog in a pond and a hot-air balloon',
+    tags: ['Ages 2+', 'No reading', 'Touch friendly'],
   },
   {
     slug: 'block-tower',
