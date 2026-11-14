@@ -95,10 +95,14 @@ test('a finger drag steers the sub (touch)', async () => {
   const cdp = await page.context().newCDPSession(page);
   const pt = (x, y) => [{ x, y, id: 1, radiusX: 10, radiusY: 10, force: 1 }];
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(p.x, p.y) });
-  for (let i = 1; i <= 30; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(p.x + i, p.y) }); await sleep(50); }
+  // keep the finger down and wiggling until the sub has come over (slow CI
+  // machines step the game more slowly than the wall clock)
+  let st, i = 0; const t0 = Date.now();
+  do { i++; await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(p.x + Math.min(i, 30), p.y) }); await sleep(50); st = await js('state'); }
+  while (st.sub.x <= x0 + 120 && Date.now() - t0 < 8000);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  const st = await js('state');
   assert.ok(st.sub.x > x0 + 120, `sub only moved from ${x0} to ${st.sub.x}`);
+  assert.equal(st.sub.face, 1, 'sub did not face the finger');
   clean(page); await close(page);
 });
 
