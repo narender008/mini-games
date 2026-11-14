@@ -122,10 +122,10 @@ window.MINI_GAMES = [
   {
     slug: 'feed-the-monster',
     name: 'Feed the Monster',
-    description: 'For the littlest players: feed thirteen big bright fruits to a squishy, big-eyed jelly monster in a cardboard-box cartoon world, pop bubbles carrying lollipops and donuts, tickle it, make its sprout bloom and watch it chomp, giggle, nap and dance under a rainbow. No losing, no timers, no reading.',
+    description: 'For the littlest players: feed big glossy fruits to a squishy jelly monster and two baby monsters at a sunny picnic. Babies dream of a fruit to match, five stars throw a party with balloons and a cake candle, then it is bath time, tooth brushing or dress-up. No losing, no timers, no reading.',
     path: 'games/feed-the-monster/',
     image: 'games/feed-the-monster/cover.jpg',
-    imageAlt: 'A round green jelly monster with huge eyes, a curly sprout on its head and a wide open mouth stands on a cardboard box, eyeing an apple, with a lollipop in a soap bubble, cherries, a lemon, a banana, a watermelon slice and a kiwi around it on a doodled cardboard wall',
+    imageAlt: 'A round green jelly monster with huge eyes and a wide open mouth sits on a pink gingham picnic blanket in a sunny meadow between a pink and a teal baby monster, an apple flying into its mouth, the pink baby dreaming of cherries in a thought bubble, with a smiling sun, butterflies and big fruits around',
     tags: ['2D', 'Ages 2+', 'Touch friendly'],
   },
   {

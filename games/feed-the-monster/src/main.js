@@ -1,22 +1,31 @@
-// Feed the Monster: a game for toddlers, in a cardboard-box cartoon world.
-// Big fruits float around a squishy, big-eyed monster standing on a box;
-// drag one into its mouth, or just tap it and it flies in. Soap bubbles
-// carrying fruit or a treat float up now and then: pop one and its prize
-// flies to the monster. Poke the monster and its jelly body wobbles and it
-// giggles; tap the bud on its sprout and it blooms. Leave it alone long
-// enough and it yawns and naps until someone touches the screen. Every bite
-// sends a star up to the row at the top, and five stars make it dance under
-// a rainbow and change colour. There is no way to lose, no timer and no text.
+// Feed the Monster: a game for toddlers, on a sunny picnic in a meadow.
+// Big fruits float around a squishy, big-eyed jelly monster sitting on a
+// picnic blanket with two baby monsters; drag a fruit into a mouth, or just
+// tap it and it flies in. Each baby now and then dreams of one fruit (shown
+// in a thought bubble): tapping that fruit sends it to the baby, who
+// cheers. Soap bubbles carrying fruit or a treat float up now and then: pop
+// one and its prize flies to the monster. Poke a monster and its jelly body
+// wobbles and it giggles; tap the bud on its sprout and it blooms; tap the
+// sun and it giggles, tap a butterfly and it flutters off. Leave it alone
+// long enough and the monster yawns and naps until someone touches the
+// screen. Every bite sends a star up to the row at the top; five stars throw
+// a party (pop balloons, blow out the candle), then comes a care game in
+// turn: bath time, brushing teeth or dress-up (see activities.js). There is
+// no way to lose, no timer and no text.
 //
 // Debug switches: ?debug exposes window.__fm (freeze, thaw, step(ms),
 // feed(i) taps fruit i, drag(i, x, y) holds fruit i at a point, drop(i)
 // releases it, bubble(kind) floats a bubble up, popBubble(i), tickle(x, y),
-// bloom, sleep, wake, celebrate, idle (asks for food), state), and ?cover
+// bloom, sleep, wake, celebrate (the party), activity(name) starts party,
+// bath, teeth or dress, want(baby, kind) makes a baby dream of a fruit,
+// sun, butterfly(i), wear(id), idle (asks for food), state), and ?cover
 // hides the two corner buttons.
 import { Monster, PALETTES } from './monster.js';
 import { Scene, star, twinkle } from './scene.js';
 import { KINDS, TREATS, CRUMBS, makeSprites } from './fruits.js';
 import { sfx, unlock, isMuted, setMuted, suspend, audioContext } from './audio.js';
+import { Party, Bath, Teeth, Dress, CARE, outfitOverlay } from './activities.js';
+import * as props from './props.js';
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
@@ -29,7 +38,20 @@ const NAP = 26; // seconds of quiet before it naps
 const canvas = document.getElementById('scene');
 const g = canvas.getContext('2d');
 const monster = new Monster();
+monster.outfit = {};
+monster.overlays.push(outfitOverlay);
 const scene = new Scene();
+// two baby monsters sit on the blanket beside the big one
+const babies = [new Monster(), new Monster()];
+babies.forEach((b, i) => {
+  b.pal = i ? 1 : 3;
+  b.baby = true;
+  b.side = i ? 1 : -1;
+  b.want = null; // the fruit it dreams of, shown in a thought bubble
+  b.wantT = 0;
+  b.nextWant = 3 + i * 3.5;
+});
+const eaters = [monster, ...babies];
 
 let W = 0;
 let H = 0;
@@ -45,7 +67,11 @@ const flyStars = [];
 let nextBubble = 5;
 let asks = 0;
 let snore = 0;
-let celebrating = false;
+let activity = null; // the party or a care game, while one is on
+let careTurn = 0;
+let rounds = 0;
+let matches = 0;
+const busy = () => activity !== null;
 let idle = 0;
 let lastKind = null;
 let frozen = false;
@@ -72,8 +98,8 @@ function layout() {
     monster.y = H * 0.6;
     const cx = Math.max(fruitR * 1.1 + W * 0.045, Math.min(W * 0.18, W / 2 - monster.R * 1.5 - fruitR * 1.2));
     pos = [
-      [cx, 0.3], [cx - W * 0.045, 0.55], [cx, 0.8],
-      [W - cx, 0.3], [W - cx + W * 0.045, 0.55], [W - cx, 0.8],
+      [cx, 0.3], [cx - W * 0.045, 0.55], [cx, 0.79],
+      [W - cx, 0.3], [W - cx + W * 0.045, 0.55], [W - cx, 0.79],
     ].map(([x, y]) => [x, H * y]);
   } else {
     monster.R = Math.min(W * 0.3, H * 0.2);
@@ -85,6 +111,12 @@ function layout() {
     ].map(([x, y]) => [W * x, H * y]);
   }
   const groundY = monster.y + monster.R * 0.95;
+  babies.forEach((b) => {
+    b.R = monster.R * 0.42;
+    b.x = monster.x + b.side * monster.R * (W > H ? 1.22 : 1.18);
+    b.baseY = groundY - b.R * 0.95 + b.R * 0.2 + monster.R * 0.12;
+    b.y = b.baseY - (b.lift || 0);
+  });
   scene.layout(W, H, dpr, groundY, monster.x, monster.R);
   sprites = makeSprites(fruitR, dpr);
 
@@ -151,11 +183,29 @@ function grab(f, p, pid) {
   sfx.pickup();
 }
 
+// who a fruit goes to: a tap sends it to a baby dreaming of it, otherwise to
+// the big monster; a drag goes to whoever it is dropped closest to
+function targetFor(f, tapped) {
+  if (tapped) return babies.find((b) => b.want === f.kind) || monster;
+  let best = null;
+  let bd = Infinity;
+  for (const e of eaters) {
+    const d = dist(f.x, f.y, e.mouthX, e.mouthY) / (e.baby ? 0.8 : 1);
+    if (d < bd) {
+      bd = d;
+      best = e;
+    }
+  }
+  return best;
+}
+
 function release(f) {
   f.pid = null;
-  const toMonster = dist(f.x, f.y, monster.x, monster.y);
+  const tapped = f.moved < fruitR * 0.6;
+  const tgt = targetFor(f, tapped);
+  const toTarget = dist(f.x, f.y, tgt.x, tgt.y);
   const toHome = dist(f.x, f.y, f.homeX, f.homeY);
-  if (f.moved < fruitR * 0.6 || toMonster < monster.R * 1.7 || toMonster < toHome) fly(f);
+  if (tapped || toTarget < tgt.R * (tgt.baby ? 2.6 : 1.7) || toTarget < toHome) fly(f, tgt);
   else {
     f.state = 'home';
     f.t = 0;
@@ -164,12 +214,13 @@ function release(f) {
   }
 }
 
-function fly(f) {
+function fly(f, target = monster) {
   f.state = 'fly';
+  f.target = target;
   f.t = 0;
   f.fromX = f.x;
   f.fromY = f.y;
-  const d = dist(f.x, f.y, monster.mouthX, monster.mouthY);
+  const d = dist(f.x, f.y, target.mouthX, target.mouthY);
   f.dur = 0.4 + d / 2200;
   f.arc = Math.min(H * 0.18, d * 0.35);
   sfx.whoosh();
@@ -185,41 +236,56 @@ function eat(f) {
   if (!TREATS.includes(f.kind)) lastKind = f.kind;
   idle = 0;
   asks = 0;
-  monster.chomp();
+  const who = f.target || monster;
+  who.chomp();
   sfx.chomp();
   try {
     navigator.vibrate?.(25);
   } catch {}
-  const mx = monster.mouthX;
-  const my = monster.mouthY;
+  const mx = who.mouthX;
+  const my = who.mouthY;
   const cols = CRUMBS[f.kind];
   scene.emit('ring', mx, my, 1, { colors: ['#ffffff'], speed: 0, grav: 0, size: 0.16, life: 0.35, even: true });
   scene.emit('drop', mx, my, 10, { colors: cols, angle: -Math.PI / 2, spread: 2.8, speed: 0.85, size: 0.014, grav: 2.4, life: 0.9 });
   scene.emit('crumb', mx, my, 10, { colors: cols, angle: -Math.PI / 2, spread: 2.6, speed: 0.7, size: 0.012, grav: 2.2, life: 0.8 });
   scene.emit('twinkle', mx, my, 6, { colors: ['#ffffff', '#fff3a0'], speed: 0.45, grav: 0, drag: 3, size: 0.03, life: 0.6 });
   for (let i = 0; i < 3; i++) later(0.28 + i * 0.22, () => sfx.nom(i));
-  later(0.95, () => swallow(f.kind));
+  // a baby getting the fruit it dreamed of: keep the wish up until it gulps
+  const match = who.baby && who.want === f.kind;
+  if (match) who.granting = true;
+  later(0.95, () => swallow(f.kind, who, match));
 }
 
-function swallow(kind) {
+function swallow(kind, who = monster, match = false) {
   sfx.yum();
-  monster.gulp();
+  who.gulp();
   const treat = TREATS.includes(kind);
-  if (treat) {
-    monster.love = 2.2;
-    later(0.1, () => sfx.treat());
-  } else monster.joy = 1.3;
-  scene.emit('heart', monster.x, monster.y - monster.R * 0.9, treat ? 10 : 5, {
+  who.granting = false;
+  if (treat || match) {
+    who.love = 2.2;
+    later(0.1, () => (match ? sfx.match() : sfx.treat()));
+  } else who.joy = 1.3;
+  if (match) {
+    matches++;
+    who.want = null;
+    who.wantT = 0;
+    who.nextWant = 5 + Math.random() * 4;
+    who.dance = 1.4;
+    later(0.4, () => sfx.babyGiggle());
+    scene.emit('star', who.x, who.y - who.R, 8, { colors: ['#ffe14a', '#fff6b0'], speed: 0.7, grav: 0.6, size: 0.025, life: 1.1 });
+    monster.joy = Math.max(monster.joy, 1);
+  }
+  scene.emit('heart', who.x, who.y - who.R * 0.9, treat || match ? 10 : 5, {
     colors: ['#ff4f8b', '#ff7aa8', '#ff3b6b'], angle: -Math.PI / 2, spread: treat ? 2.6 : 1.6, speed: 0.35, grav: -0.15, drag: 1.5, size: 0.035, life: 1.6,
   });
-  if (celebrating) return;
+  if (busy()) return;
   const n = stars.findIndex((s) => !s.on && !s.pending);
   if (n < 0) return;
   stars[n].pending = true;
   monster.fed = n + 1;
-  // a star zips up from the monster to its place in the row
+  // a star zips up from whoever ate to its place in the row
   const [tx, ty] = starPos(n);
-  flyStars.push({ n, x0: monster.x, y0: monster.y - monster.R * 0.6, tx, ty, t: 0, dur: 0.75, x: monster.x, y: monster.y });
+  flyStars.push({ n, x0: who.x, y0: who.y - who.R * 0.6, tx, ty, t: 0, dur: 0.75, x: who.x, y: who.y });
   sfx.zip();
 }
 
@@ -234,34 +300,82 @@ function starLands(fs) {
   if (fs.n + 1 === ROUND) later(0.45, celebrate);
 }
 
-function celebrate() {
-  celebrating = true;
-  bubbles.forEach((b) => popBubble(b, true));
-  monster.dance = 3.3;
-  sfx.fanfare();
-  later(1.6, () => sfx.burp());
-  later(1.75, () => sfx.giggle());
-  const colors = ['#ff4b4b', '#ff9f1c', '#ffe14a', '#5fce4f', '#3bb3ff', '#8b5cf6', '#ff5fa8'];
-  for (let k = 0; k < 4; k++) {
-    later(k * 0.45, () => {
-      scene.emit('confetti', W * (0.2 + Math.random() * 0.6), H * 0.05, 40, {
-        colors, angle: Math.PI / 2, spread: 2.4, speed: 0.6, grav: 0.6, drag: 1.4, size: 0.014, life: 2.6,
-      });
-      scene.emit('star', monster.x, monster.y - monster.R * 0.5, 8, {
-        colors: ['#ffe14a', '#fff6b0'], speed: 0.9, grav: 0.8, size: 0.03, life: 1.2,
-      });
-    });
+// what an activity sees of the game; sizes are live so a resize just works
+function world() {
+  return {
+    get W() {
+      return W;
+    },
+    get H() {
+      return H;
+    },
+    get u() {
+      return Math.min(W, H);
+    },
+    monster,
+    babies,
+    scene,
+    sfx,
+    later,
+  };
+}
+
+// clear the fruit away while an activity is on; they come back after
+function clearFruit() {
+  bubbles.slice().forEach((b) => popBubble(b, true));
+  for (const f of [...fruits]) {
+    if (f.state === 'fly') continue;
+    scene.emit('twinkle', f.x, f.y, 3, { colors: ['#ffffff', '#fff3a0'], speed: 0.3, grav: 0, drag: 3, size: 0.025, life: 0.5 });
+    fruits.splice(fruits.indexOf(f), 1);
+    if (drags.get(f.pid) === f) drags.delete(f.pid);
   }
-  later(3.5, () => {
-    // a puff of smoke and a new colour for the next round
+  slots.forEach((s, i) => {
+    s.fruit = null;
+    s.respawn = 0.3 + i * 0.12;
+  });
+  for (const b of babies) b.want = null;
+}
+
+function startActivity(A) {
+  if (activity) endActivity(true);
+  clearFruit();
+  monster.asleep = false;
+  monster.lookAt = null;
+  idle = 0;
+  asks = 0;
+  activity = new A(world());
+  activity.start();
+}
+
+function endActivity(quiet) {
+  const a = activity;
+  if (!a) return;
+  a.end?.();
+  activity = null;
+  scene.rays = Math.min(scene.rays, 0.5);
+  if (quiet) return;
+  if (a.name === 'party') {
+    // a puff of smoke and a new colour for the next round, then a care game
+    rounds++;
     monster.pal = (monster.pal + 1) % PALETTES.length;
+    const free = PALETTES.map((_, i) => i).filter((i) => i !== monster.pal);
+    babies[0].pal = free[(rounds * 2) % free.length];
+    babies[1].pal = free[(rounds * 2 + 1) % free.length];
     monster.fed = 0;
     for (const s of stars) s.on = s.pending = false;
-    scene.emit('puff', monster.x, monster.y, 14, { colors: ['#ffffff'], speed: 0.5, grav: 0, drag: 3, size: 0.06, life: 0.8 });
+    for (const e of eaters) scene.emit('puff', e.x, e.y, e.baby ? 6 : 14, { colors: ['#ffffff'], speed: 0.5, grav: 0, drag: 3, size: e.baby ? 0.035 : 0.06, life: 0.8 });
     sfx.poof();
     monster.joy = 1;
-    celebrating = false;
-  });
+    const Next = CARE[careTurn++ % CARE.length];
+    later(0.6, () => !activity && startActivity(Next));
+  } else {
+    monster.joy = 1;
+    idle = 0;
+  }
+}
+
+function celebrate() {
+  startActivity(Party);
 }
 
 // ---------------------------------------------------------------- bubbles
@@ -370,6 +484,12 @@ function down(p, pid) {
     wakeUp();
     return;
   }
+  if (activity) {
+    if (activity.down(p, pid)) {
+      actPointer = pid;
+      return;
+    }
+  }
   const b = bubbleAt(p);
   if (b) {
     popBubble(b);
@@ -381,7 +501,27 @@ function down(p, pid) {
     drags.set(pid, f);
     return;
   }
-  if (monster.onBud(p.x, p.y)) {
+  const fi = scene.butterflyAt(p.x, p.y);
+  if (fi >= 0) {
+    scene.scare(fi);
+    sfx.flutter();
+    scene.emit('twinkle', p.x, p.y, 6, { colors: ['#ffffff', '#ffd0ec', '#d0f0ff'], speed: 0.4, grav: 0, drag: 2.5, size: 0.028, life: 0.7 });
+    return;
+  }
+  if (!monster.contains(p.x, p.y) && scene.onSun(p.x, p.y)) {
+    scene.tapSun();
+    sfx.sunny();
+    scene.emit('twinkle', scene.sunX, scene.sunY, 8, { colors: ['#ffffff', '#fff3a0'], speed: 0.5, grav: 0, drag: 2.5, size: 0.03, life: 0.8 });
+    return;
+  }
+  const baby = babies.find((b) => b.contains(p.x, p.y));
+  if (baby) {
+    baby.tickle();
+    baby.poke(p.x, p.y);
+    sfx.boing();
+    sfx.babyGiggle();
+    scene.emit('heart', p.x, p.y, 3, { colors: ['#ff4f8b', '#ff7aa8'], angle: -Math.PI / 2, spread: 1.4, speed: 0.3, grav: -0.2, drag: 1.5, size: 0.025, life: 1.2 });
+  } else if (monster.onBud(p.x, p.y) && !monster.hideSprout) {
     if (monster.bloom <= 0.5) sfx.bloom();
     monster.bloom = 2.6;
     monster.sprout.v += 8;
@@ -400,7 +540,13 @@ function down(p, pid) {
   }
 }
 
+let actPointer = null;
+
 function move(p, pid) {
+  if (activity && actPointer === pid) {
+    activity.move(p, pid);
+    return;
+  }
   const f = drags.get(pid);
   if (!f) return;
   const nx = p.x + f.offX;
@@ -409,14 +555,23 @@ function move(p, pid) {
   f.x = nx;
   f.y = ny;
   f.moved = Math.max(f.moved, dist(p.x, p.y, f.downX, f.downY));
-  // the monster snaps it out of your hand once it reaches the mouth
-  if (dist(f.x, f.y, monster.mouthX, monster.mouthY) < monster.R * 0.55) {
-    drags.delete(pid);
-    eat(f);
+  // a monster snaps it out of your hand once it reaches a mouth
+  for (const e of eaters) {
+    if (dist(f.x, f.y, e.mouthX, e.mouthY) < e.R * (e.baby ? 0.8 : 0.55)) {
+      drags.delete(pid);
+      f.target = e;
+      eat(f);
+      return;
+    }
   }
 }
 
 function up(pid) {
+  if (activity && actPointer === pid) {
+    actPointer = null;
+    activity.up(pid);
+    return;
+  }
   const f = drags.get(pid);
   if (!f) return;
   drags.delete(pid);
@@ -473,7 +628,13 @@ function update(dt) {
       popBubble(b, true);
     }
   }
-  if (!monster.asleep && !celebrating) {
+  if (activity) {
+    activity.update(dt);
+    if (activity.done) endActivity();
+  }
+  updateWants(dt);
+
+  if (!monster.asleep && !busy()) {
     nextBubble -= dt;
     if (nextBubble <= 0) {
       if (!bubbles.length) addBubble();
@@ -509,7 +670,7 @@ function update(dt) {
   }
 
   slots.forEach((s, i) => {
-    if (s.fruit) return;
+    if (s.fruit || busy()) return;
     s.respawn -= dt;
     if (s.respawn <= 0) spawn(i);
   });
@@ -541,15 +702,21 @@ function update(dt) {
     } else if (f.state === 'fly') {
       const k = Math.min(1, f.t / f.dur);
       const e = ease(k);
-      const tx = monster.mouthX;
-      const ty = monster.mouthY;
+      const tg = f.target || monster;
+      const tx = tg.mouthX;
+      const ty = tg.mouthY;
       f.x = f.fromX + (tx - f.fromX) * e;
       f.y = f.fromY + (ty - f.fromY) * e - Math.sin(k * Math.PI) * f.arc;
       f.scale = 1.1 - 0.35 * e;
       f.rot += dt * 8;
       if (Math.random() < dt * 30) scene.emit('twinkle', f.x, f.y, 1, { colors: ['#ffffff', '#fff3a0'], speed: 0.04, grav: 0, size: 0.024, life: 0.4 });
-      excite = 1;
-      look = { x: f.x, y: f.y };
+      if (tg === monster) {
+        excite = 1;
+        look = { x: f.x, y: f.y };
+      } else {
+        tg.exciteTarget = 1;
+        tg.lookAt = { x: f.x, y: f.y };
+      }
       if (k >= 1) eat(f);
     } else if (f.state === 'home') {
       const k = Math.min(1, f.t / 0.35);
@@ -569,13 +736,33 @@ function update(dt) {
   if (look) monster.lookAt = look;
   else if (monster.gape <= 0) monster.lookAt = null;
   monster.update(dt);
+  for (const b of babies) {
+    b.lift = (b.lift || 0) + ((activity?.babyLift || 0) * monster.R - (b.lift || 0)) * Math.min(1, dt * 6);
+    b.y = b.baseY - b.lift;
+    if (b.chew > 0) b.exciteTarget = 0;
+    b.update(dt);
+    b.exciteTarget = 0;
+    if (!fruits.some((f) => f.state === 'fly' && f.target === b)) b.lookAt = activity ? monster : null;
+  }
+  // the dragged fruit makes a baby excited too when it comes close
+  for (const f of fruits) {
+    if (f.state !== 'drag') continue;
+    for (const b of babies) {
+      const d = dist(f.x, f.y, b.mouthX, b.mouthY);
+      if (d < b.R * 3) {
+        b.exciteTarget = Math.max(b.exciteTarget, Math.min(1, 1.2 - d / (b.R * 3)));
+        b.lookAt = { x: f.x, y: f.y };
+      }
+    }
+  }
 
-  scene.rainbow += ((celebrating ? 1 : 0) - scene.rainbow) * Math.min(1, dt * 2.5);
-  scene.rays += ((celebrating ? 1 : 0) - scene.rays) * Math.min(1, dt * 3);
+  const party = activity?.name === 'party';
+  scene.rainbow += ((party ? 1 : 0) - scene.rainbow) * Math.min(1, dt * 2.5);
+  if (activity?.name !== 'dress') scene.rays += ((party ? 1 : 0) - scene.rays) * Math.min(1, dt * 3);
   scene.update(dt);
   for (const s of stars) s.t += dt;
 
-  if (!drags.size && !fruits.some((f) => f.state === 'fly') && !celebrating && monster.chew <= 0 && !monster.asleep) {
+  if (!drags.size && !fruits.some((f) => f.state === 'fly') && !busy() && monster.chew <= 0 && !monster.asleep) {
     idle += dt;
     if (asks < 2 && idle > IDLE_HINT * (asks + 1)) {
       asks++;
@@ -700,19 +887,19 @@ function drawStars() {
     g.translate(x, y);
     let k = 1;
     if (s.on && s.t < 0.5) k = 1 + Math.sin((s.t / 0.5) * Math.PI) * 0.5;
-    if (celebrating) k = 1 + Math.abs(Math.sin(now * 6 + i)) * 0.25;
+    if (activity?.name === 'party') k = 1 + Math.abs(Math.sin(now * 6 + i)) * 0.25;
     g.scale(k, k);
     if (s.on) {
       g.rotate(Math.sin(now * 2 + i) * 0.08);
       goldStar(r, true);
     } else {
-      // an empty star pressed into the cardboard
+      // an empty glassy star waiting to be filled
       star(g, r, r * 0.5);
       g.lineJoin = 'round';
-      g.fillStyle = 'rgba(80,38,10,0.28)';
+      g.fillStyle = 'rgba(30,90,170,0.22)';
       g.fill();
       g.lineWidth = r * 0.12;
-      g.strokeStyle = 'rgba(255,236,200,0.55)';
+      g.strokeStyle = 'rgba(255,255,255,0.9)';
       g.stroke();
     }
     g.restore();
@@ -726,11 +913,82 @@ function drawStars() {
   }
 }
 
+// a thought bubble above a baby with the fruit it dreams of
+function drawWant(b) {
+  if (!b.want || b.wantT <= 0) return;
+  const k = Math.min(1, b.wantT / 0.4);
+  const s = k < 1 ? elastic(k) : 1;
+  const r = b.R * 0.78 * s;
+  const x = Math.max(r * 1.1, Math.min(W - r * 1.1, b.x - b.side * b.R * 0.25));
+  const y = b.y - b.R * 2.35 + Math.sin(scene.t * 2 + b.side) * b.R * 0.06;
+  g.save();
+  g.shadowColor = 'rgba(40,60,120,0.25)';
+  g.shadowBlur = r * 0.3;
+  g.shadowOffsetY = r * 0.1;
+  g.fillStyle = '#ffffff';
+  g.beginPath();
+  g.arc(x, y, r, 0, Math.PI * 2);
+  g.fill();
+  for (const [dx, dy, rr] of [[0.15, 1.25, 0.2], [0.3, 1.6, 0.11]]) {
+    g.beginPath();
+    g.arc(x + b.side * r * dx, y + r * dy, r * rr, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.restore();
+  g.save();
+  g.translate(x, y);
+  g.rotate(Math.sin(scene.t * 3) * 0.1);
+  const sz = sprites.size * sprites.scale * (r / fruitR) * 0.62;
+  g.drawImage(sprites.sprites[b.want], -sz / 2, -sz / 2, sz, sz);
+  g.restore();
+  props.shine(x - r * 0.45, y - r * 0.5, r * 0.18, r * 0.08, -0.6, 0.9);
+}
+
+// babies dream of a fruit that is out on the table, now and then
+function updateWants(dt) {
+  for (const b of babies) {
+    if (b.want) {
+      b.wantT += dt;
+      if (b.granting) continue;
+      // the fruit is gone from the table (another monster ate it): forget it
+      const onTable = fruits.some((f) => f.kind === b.want && f.state !== 'fly');
+      const coming = fruits.some((f) => f.kind === b.want && f.state === 'fly' && f.target === b);
+      if (!onTable && !coming) {
+        b.want = null;
+        b.wantT = 0;
+        b.nextWant = 2;
+      }
+      continue;
+    }
+    if (busy() || monster.asleep) continue;
+    b.nextWant -= dt;
+    if (b.nextWant > 0) continue;
+    const taken = new Set(babies.map((x) => x.want));
+    const pool = fruits.filter((f) => f.state === 'idle' && !TREATS.includes(f.kind) && !taken.has(f.kind));
+    if (!pool.length) {
+      b.nextWant = 1;
+      continue;
+    }
+    b.want = pool[Math.floor(Math.random() * pool.length)].kind;
+    b.wantT = 0;
+    b.gape = 0.8;
+    sfx.blub();
+  }
+}
+
 function draw() {
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  props.use(g);
   scene.drawBack(g, monster.x, monster.y, monster.R);
   for (const f of fruits) if (f.state !== 'drag' && f.state !== 'fly') drawFruit(f);
+  activity?.drawBack?.(g);
   monster.draw(g);
+  const front = activity?.babiesFront;
+  if (!front) for (const b of babies) b.draw(g);
+  for (const b of babies) drawWant(b);
+  activity?.draw(g);
+  if (front) for (const b of babies) b.draw(g);
+  scene.drawFront(g);
   for (const b of bubbles) drawBubble(b);
   for (const f of fruits) if (f.state === 'fly') drawFruit(f);
   for (const f of fruits) if (f.state === 'drag') drawFruit(f);
@@ -791,11 +1049,41 @@ if (DEBUG) {
       monster.fed = ROUND;
       celebrate();
     },
+    activity: (name) => {
+      const A = { party: Party, bath: Bath, teeth: Teeth, dress: Dress }[name];
+      if (A) startActivity(A);
+      return activity?.info();
+    },
+    finish: () => {
+      if (activity) {
+        activity.done = true;
+        endActivity();
+      }
+    },
+    want: (i, kind) => {
+      const b = babies[i];
+      if (!b) return;
+      b.want = kind || fruits.find((f) => f.state === 'idle')?.kind || null;
+      b.wantT = 0;
+    },
+    sun: () => down({ x: scene.sunX, y: scene.sunY }, 'debug'),
+    // where butterfly i is now (tap it there; ?debug freeze keeps it still)
+    butterfly: (i = 0) => scene.flyPos(scene.flies[i]),
+    wear: (id) => activity?.name === 'dress' && activity.pick(id),
     idle: askForFood,
     state: () => ({
       fed: monster.fed,
       palette: monster.pal,
-      celebrating,
+      celebrating: activity?.name === 'party',
+      mode: activity ? activity.name : 'feed',
+      act: activity?.info() || null,
+      rounds,
+      matches,
+      outfit: { ...monster.outfit },
+      monster: { x: Math.round(monster.x), y: Math.round(monster.y), R: Math.round(monster.R) },
+      babies: babies.map((b) => ({ x: Math.round(b.x), y: Math.round(b.y), R: Math.round(b.R), want: b.want, pal: b.pal })),
+      sunJoy: scene.sunJoy,
+      flee: scene.flies.map((f) => f.flee > 0),
       asleep: monster.asleep,
       stars: stars.filter((s) => s.on).length,
       bubbles: bubbles.map((b) => ({ kind: b.kind, x: Math.round(b.x), y: Math.round(b.y) })),
@@ -803,6 +1091,7 @@ if (DEBUG) {
       audio: audioContext()?.state || 'none',
     }),
     monster,
+    babies,
     scene,
   };
 }

@@ -1,0 +1,13 @@
+{
+  "name": "feed-the-monster-tests",
+  "private": true,
+  "description": "Automated tests for Feed the Monster: browser smoke tests with mouse and touch, every activity, and screenshots.",
+  "scripts": {
+    "test": "node run.cjs",
+    "smoke": "node --test --test-concurrency=1 --test-reporter=spec smoke.test.cjs",
+    "shots": "node screenshots.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
