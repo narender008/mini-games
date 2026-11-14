@@ -136,6 +136,17 @@ function highlight(g, kind) {
   g.beginPath(); g.arc(0, 0, 0.8, 0.25, 1.05); g.stroke();
 }
 
+// Candy gloss over the skin (unit space, clipped to the fruit): a broad soft
+// sheen from the top left, a bright rim of bounce light at the bottom right
+// and a hard specular dot, so every fruit looks like a glossy sweet.
+function candy(g) {
+  const sh = g.createLinearGradient(-1, -1, 0.3, 0.3); sh.addColorStop(0, 'rgba(255,255,255,0.5)'); sh.addColorStop(0.5, 'rgba(255,255,255,0.06)'); sh.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = sh; g.beginPath(); g.ellipse(-0.28, -0.38, 0.78, 0.5, -0.6, 0, TAU); g.fill();
+  const rim = g.createRadialGradient(-0.25, -0.3, 0.7, 0, 0, 1.12); rim.addColorStop(0, 'rgba(255,255,255,0)'); rim.addColorStop(0.85, 'rgba(255,255,255,0)'); rim.addColorStop(1, 'rgba(255,250,235,0.45)');
+  g.fillStyle = rim; g.beginPath(); g.arc(0.12, 0.12, 1.2, -0.3, 2.0); g.lineTo(0, 0); g.fill();
+  g.fillStyle = 'rgba(255,255,255,0.95)'; g.beginPath(); g.ellipse(-0.42, -0.5, 0.11, 0.07, -0.7, 0, TAU); g.fill();
+  g.beginPath(); g.arc(-0.2, -0.66, 0.035, 0, TAU); g.fill();
+}
 // Whole fruit at (x, y), radius r.
 export function drawFruit(kind, x, y, r, rot = 0, seed = 7) {
   const f = FRUIT[kind], g = ctx; g.save(); g.translate(x, y); g.rotate(rot); g.scale(r, r);
@@ -145,7 +156,7 @@ export function drawFruit(kind, x, y, r, rot = 0, seed = 7) {
   f.shape(g); skinFill(g, f, kind);
   g.save(); f.shape(g); g.clip(); skinDeco(g, kind, seed);
   const rim = g.createRadialGradient(0.1, 0.1, 0.6, 0, 0, 1.15); rim.addColorStop(0, 'rgba(0,0,0,0)'); rim.addColorStop(1, rgba(f.line, 0.35)); g.fillStyle = rim; g.fillRect(-2, -2, 4, 4);
-  highlight(g, kind); g.restore();
+  highlight(g, kind); candy(g); g.restore();
   if (kind !== 'dragonfruit') topper(g, kind);
   g.restore();
 }

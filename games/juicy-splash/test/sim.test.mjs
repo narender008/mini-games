@@ -141,3 +141,97 @@ test('resizing keeps fruit in the same place on screen', () => {
   S.resize(s, 500, 1000, 50);
   assert.equal(f.x, 250); assert.equal(f.y, 500); assert.equal(s.g, 1000 * 0.42);
 });
+
+// ---------- giant fruit and bubbles ----------
+const sliceAll = s => { for (const f of s.fruits.slice()) if (!f.giant && f.y < s.h * 0.7) S.cut(s, f, 0); };
+
+test('after a few slices a giant fruit floats up alone and waits in the middle', () => {
+  const s = S.createSim({ seed: 9, w: 1280, h: 720, r: 72, phase: 'play' });
+  let giant = null;
+  for (let t = 0; t < 120 && !giant; t += 1 / 60) { S.step(s, 1 / 60); sliceAll(s); giant = s.fruits.find(f => f.giant); }
+  run(s, 4);
+  assert.ok(giant, 'no giant came');
+  assert.ok(s.sliced >= S.GIANT_FIRST);
+  const g = s.fruits.find(f => f.giant);
+  assert.ok(g, 'giant left too early');
+  assert.ok(g.hover, 'giant should hover');
+  assert.ok(g.y - g.r > 0 && g.y + g.r < s.h, `giant at ${g.y.toFixed(0)} r ${g.r.toFixed(0)} is off screen`);
+  assert.ok(g.x - g.r > 0 && g.x + g.r < s.w);
+  assert.equal(s.fruits.filter(f => !f.giant).length, 0, 'giant should come alone');
+});
+
+test('a giant takes three hits, one per swipe, then bursts into small fruit and three stripes', () => {
+  for (const [w, h] of [[1280, 720], [390, 844]]) {
+    const s = S.createSim({ seed: 4, w, h, r: 60, phase: 'play' });
+    s.noSpawn = true;
+    const g = S.launchGiant(s, 'watermelon');
+    run(s, 3);
+    S.drainEvents(s);
+    // one long swipe through the giant counts once
+    S.swipe(s, g.x - g.r, g.y, g.x, g.y); S.swipe(s, g.x, g.y, g.x + g.r, g.y);
+    assert.equal(g.hp, S.GIANT_HP - 1);
+    run(s, 0.5); S.tap(s, g.x, g.y);
+    assert.equal(g.hp, 1);
+    assert.ok(s.fruits.includes(g));
+    run(s, 0.5); S.tap(s, g.x, g.y);
+    assert.ok(!s.fruits.includes(g), 'giant should burst on the third hit');
+    const evs = S.drainEvents(s), burst = evs.find(e => e.type === 'burst');
+    assert.ok(burst, 'no burst event');
+    assert.deepEqual(types(evs).filter(t => t === 'thump').length, 2);
+    const minis = s.fruits.filter(f => f.mini);
+    assert.equal(minis.length, S.GIANT_MINIS);
+    // the shower stays on screen
+    for (const m of minis) { const one = { ...m }; for (let t = 0; t < 6; t += 1 / 60) { one.x += one.vx / 60; one.y += one.vy / 60; one.vy += s.g / 60; if (one.y < h) assert.ok(one.x > 0 && one.x < w, `mini went to x=${one.x.toFixed(0)} of ${w}`); } }
+    run(s, 1.5);
+    assert.equal(s.stripes.length, 3);
+  }
+});
+
+test('an ignored giant floats away after a while and play goes on', () => {
+  const s = S.createSim({ seed: 2, w: 1280, h: 720, r: 72, phase: 'play' });
+  S.launchGiant(s);
+  run(s, S.GIANT_LIFE + 8);
+  assert.ok(!s.fruits.some(f => f.giant));
+  run(s, 6);
+  assert.ok(s.fruits.length >= 1, 'normal fruit should come back');
+});
+
+test('bubbles drift down; a tap pops one and its fruit tumbles out to slice', () => {
+  const s = S.createSim({ seed: 3, w: 1280, h: 720, r: 72, phase: 'play' });
+  s.noSpawn = true;
+  const b = S.addBubble(s, { type: 'fruit', kind: 'kiwi' }, 600);
+  run(s, 2);
+  assert.ok(b.y > 0 && b.y < s.h * 0.6);
+  S.drainEvents(s);
+  S.tap(s, b.x, b.y);
+  const ev = S.drainEvents(s).find(e => e.type === 'bubblePop');
+  assert.ok(ev && ev.by && ev.fruit, 'pop should release a fruit');
+  assert.equal(s.bubbles.length, 0);
+  const f = s.fruits.find(x => x.id === ev.fruit);
+  assert.equal(f.kind, 'kiwi');
+  assert.ok(f.vy < 0, 'released fruit hops up');
+  S.tap(s, f.x, f.y);
+  assert.equal(s.sliced, 1);
+});
+
+test('a treat bubble gives no fruit, and a bubble nobody pops pops by itself above the blanket', () => {
+  const s = S.createSim({ seed: 3, w: 1280, h: 720, r: 72, phase: 'play' });
+  s.noSpawn = true;
+  const t = S.addBubble(s, { type: 'treat', kind: 'candy' }, 300);
+  run(s, 2); S.swipe(s, t.x - 50, t.y, t.x + 50, t.y);
+  assert.equal(s.fruits.length, 0); assert.equal(s.popped, 1);
+  S.addBubble(s, { type: 'fruit', kind: 'apple' }, 800);
+  let pop = null;
+  run(s, 20, () => { for (const e of S.drainEvents(s)) if (e.type === 'bubblePop') pop = e; });
+  assert.ok(pop && !pop.by, 'bubble should pop by itself');
+  assert.ok(pop.y < s.h * 0.8);
+  assert.equal(s.fruits.length, 0, 'a self-popped bubble drops nothing');
+});
+
+test('bubbles come along during play, never more than two at once', () => {
+  const s = S.createSim({ seed: 8, w: 1280, h: 720, r: 72, phase: 'play' });
+  let most = 0, made = 0;
+  run(s, 180, () => { most = Math.max(most, s.bubbles.length); for (const e of S.drainEvents(s)) if (e.type === 'bubble') made++; });
+  assert.ok(made >= 8, `only ${made} bubbles in three minutes`);
+  assert.ok(most <= 2);
+});

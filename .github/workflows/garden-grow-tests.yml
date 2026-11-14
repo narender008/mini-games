@@ -1,0 +1,34 @@
+name: Garden Grow tests
+
+on:
+  pull_request:
+    paths:
+      - 'games/garden-grow/**'
+      - '.github/workflows/garden-grow-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'games/garden-grow/**'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: games/garden-grow/test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: garden-grow-test-reports
+          path: games/garden-grow/test/out/
+          if-no-files-found: ignore

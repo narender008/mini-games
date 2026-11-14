@@ -32,11 +32,11 @@ window.MINI_GAMES = [
   {
     slug: 'garden-grow',
     name: 'Garden Grow',
-    description: 'Plant seeds in a photoreal garden, water them and watch flowers bloom and butterflies arrive. Calm and bedtime-friendly.',
+    description: 'A glossy, giggly garden for toddlers: tap to plant, water and burst buds into singing flowers, while butterflies, bees, birds, a bunny, a frog and more come to play. Every tap does something.',
     path: 'games/garden-grow/',
     image: 'games/garden-grow/cover.jpg',
-    imageAlt: 'A cottage garden bed at golden hour with tulips, poppies and sunflowers in bloom and a butterfly visiting',
-    tags: ['3D', 'Ages 2+', 'Touch friendly'],
+    imageAlt: 'A candy-bright cartoon garden under a rainbow with smiling flowers, a carrot, butterflies, a bee, a bunny, a frog in a pond and a hot-air balloon',
+    tags: ['Ages 2+', 'No reading', 'Touch friendly'],
   },
   {
     slug: 'block-tower',
@@ -131,10 +131,10 @@ window.MINI_GAMES = [
   {
     slug: 'juicy-splash',
     name: 'Juicy Splash',
-    description: 'For the littlest players: swipe or tap fourteen big, slow fruits over a sunny orchard picnic to splash them open, fill the juice jar and make a smiling rainbow smoothie. Bouncy music, no bombs, no losing, no reading.',
+    description: 'For the littlest players: swipe or tap fourteen big, slow fruit friends over a sunny orchard picnic to splash them open, feed a munching bunny and a chirpy chick, bonk giant surprise fruit, pop bubbles and balloons, and fill the jar for a rainbow smoothie party. Bouncy music, no bombs, no losing, no reading.',
     path: 'games/juicy-splash/',
     image: 'games/juicy-splash/cover.jpg',
-    imageAlt: 'A watermelon and an orange sliced in half by a rainbow swipe trail, juice splashing, over a picnic blanket in a sunny orchard with a laughing sun and a glass jar filling with juice',
+    imageAlt: 'A smiling watermelon and orange sliced in half by a rainbow swipe trail, a bunny munching a slice from her bush and a chick with hearts on a picnic blanket, a giggling strawberry, a laughing sun and a jar filling with juice',
     tags: ['2D', 'Ages 2+', 'Touch friendly'],
   },
   {

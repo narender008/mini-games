@@ -33,6 +33,29 @@ const scenes = [
     await js('swipe', 40, 520, 340, 380, 12); await js('step', 120);
   }],
   ['07-tablet', 'debug&play&seed=9', { width: 1024, height: 768, touch: true, scale: 2 }, async (js) => { await js('step', 9000); await js('fill', 7); await js('step', 900); }],
+  ['09-giant-fruit', 'debug&play&seed=4', { width: 1600, height: 900 }, async (js) => {
+    await js('noSpawn'); await js('clear'); await js('giant', 'watermelon'); await js('step', 2600);
+    await js('tap', 800, 400); await js('step', 450); await js('tap', 800, 400); await js('step', 120);
+  }],
+  ['10-giant-burst', 'debug&play&seed=4', { width: 1600, height: 900 }, async (js) => {
+    await js('noSpawn'); await js('clear'); await js('fill', 3); await js('giant', 'watermelon'); await js('step', 2600);
+    for (let i = 0; i < 3; i++) { await js('tap', 800, 400); await js('step', 450); }
+    await js('step', -200 + 200);
+  }],
+  ['11-bubbles', 'debug&play&seed=6', { width: 1600, height: 900 }, async (js) => {
+    await js('noSpawn'); await js('clear');
+    await js('bubble', 'fruit', 'peach', 360, 260); await js('bubble', 'treat', 'candy', 1200, 200); await js('bubble', 'fruit', 'kiwi', 980, 470); await js('bubble', 'treat', 'lolly', 640, 120);
+    await js('spawn', 'orange', 650, 420); await js('step', 300);
+  }],
+  ['12-friends-munch', 'debug&play&seed=3', { width: 1600, height: 900 }, async (js) => {
+    await js('noSpawn'); await js('clear'); await js('fill', 4); await js('step', 800);
+    await js('feed', 'bunny', 'watermelon'); await js('feed', 'chick', 'orange'); await js('step', 1000);
+    for (const [k, x, y] of [['strawberry', 700, 330], ['apple', 1050, 260]]) await js('spawn', k, x, y);
+    await js('swipe', 560, 420, 1200, 200, 14); await js('step', 140);
+  }],
+  ['13-phone-giant', 'debug&play&seed=5', { width: 390, height: 844, touch: true, mobile: true, scale: 3 }, async (js) => {
+    await js('noSpawn'); await js('clear'); await js('giant', 'pineapple'); await js('bubble', 'treat', 'candy', 300, 150); await js('step', 2600);
+  }],
   ['08-hint', 'debug&play&seed=2', { width: 1280, height: 720 }, async (js) => { await js('noSpawn'); await js('clear'); await js('spawn', 'orange', 640, 300); await js('step', 7300); }],
 ];
 
