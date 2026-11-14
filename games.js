@@ -138,6 +138,15 @@ window.MINI_GAMES = [
     tags: ['2D', 'Ages 2+', 'Touch friendly'],
   },
   {
+    slug: 'bubble-sub',
+    name: 'Bubble Sub',
+    description: 'For the littlest players: touch to steer a shiny yellow submarine with a teddy-bear pilot through a busy coral reef, a sunken-ship kelp forest and a glowing cave. Tap sea friends to make them giggle, collect pearls, open the treasure and fill the friend shelf for an underwater party. No losing, no reading.',
+    path: 'games/bubble-sub/',
+    image: 'games/bubble-sub/cover.jpg',
+    imageAlt: 'A glossy yellow submarine with a teddy bear in its glass dome glides over a bright coral reef, among schools of little fish, a puffer fish, a turtle, a dolphin and a crab, under sunbeams',
+    tags: ['2D', 'Ages 2+', 'Touch friendly'],
+  },
+  {
     slug: 'tidebreaker',
     name: 'Tidebreaker',
     description: 'A naval roguelite: captain a galleon through five seas from dawn to a crimson-moon night, trade broadsides with pirate fleets, storm sea forts, stack upgrade cards into combos and face the Mistcoil Serpent and the Drowned Leviathan.',

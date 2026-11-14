@@ -1,0 +1,12 @@
+{
+  "name": "Bubble Sub",
+  "short_name": "Bubble Sub",
+  "description": "Steer a shiny yellow submarine through a busy reef full of friendly sea creatures.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "background_color": "#0a4c9c",
+  "theme_color": "#18b6e0",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
