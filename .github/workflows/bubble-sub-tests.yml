@@ -1,0 +1,34 @@
+name: Bubble Sub tests
+
+on:
+  pull_request:
+    paths:
+      - 'games/bubble-sub/**'
+      - '.github/workflows/bubble-sub-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'games/bubble-sub/**'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: games/bubble-sub/test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bubble-sub-test-reports
+          path: games/bubble-sub/test/out/
+          if-no-files-found: ignore
