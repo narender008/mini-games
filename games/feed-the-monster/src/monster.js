@@ -40,6 +40,8 @@ export class Monster {
     this.exciteTarget = 0;
     for (const k of ['chew', 'joy', 'love', 'dance', 'wiggle', 'gape', 'yawn', 'bloom']) this[k] = 0;
     this.asleep = false;
+    this.overlays = [];
+    this.hideSprout = false;
     this.sleep = 0; // 0 awake .. 1 asleep, eased
     this.squash = 0;
     this.squashV = 0;
@@ -275,12 +277,15 @@ export class Monster {
     const body = this.bodyPath(R);
     this.drawFeet(g, R, p);
     this.drawArms(g, R, p);
-    this.drawSprout(g, R, p);
+    if (!this.hideSprout) this.drawSprout(g, R, p);
     this.drawEars(g, R, p);
     this.drawBody(g, R, p, body);
     this.drawEyes(g, R, p);
     this.drawCheeks(g, R);
     this.drawMouth(g, R, p);
+    // extras that ride along with the squash and wobble, in local units of R:
+    // germs to brush, foam, hats and glasses (see activities.js)
+    for (const fn of this.overlays) fn(g, R, this);
     g.restore();
   }
 

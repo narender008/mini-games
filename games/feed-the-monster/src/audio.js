@@ -227,4 +227,90 @@ export const sfx = {
   }),
   // a star zipping up to the row at the top
   zip: on(() => tone({ type: 'triangle', f0: 600, f1: 1800, dur: 0.3, vol: 0.06 })),
+  // ------------------------------------------------ the new activities
+  // a baby got the fruit it was dreaming of: a bright two-note "ding-ding!"
+  match: on(() => {
+    tone({ f0: 1046.5, dur: 0.18, vol: 0.14 });
+    tone({ f0: 1318.51, t: 0.11, dur: 0.35, vol: 0.14 });
+    tone({ type: 'triangle', f0: 2093, t: 0.11, dur: 0.25, vol: 0.04 });
+  }),
+  // a squeaky baby giggle, higher than the big monster's
+  babyGiggle: on(() => {
+    for (let i = 0; i < 4; i++) {
+      const f = 1050 + Math.sin(i * 2.1) * 150 + Math.random() * 80;
+      tone({ type: 'triangle', f0: f, f1: f * 0.82, t: i * 0.07, dur: 0.05, vol: 0.12, filter: 3200, vib: 22 });
+    }
+  }),
+  // the sun giggles and its rays spin
+  sunny: on(() => {
+    for (let i = 0; i < 5; i++) tone({ type: 'triangle', f0: PENTA[i + 2], t: i * 0.05, dur: 0.22, vol: 0.07 });
+    tone({ f0: 523.25, f1: 1046.5, dur: 0.35, vol: 0.06, vib: 8 });
+  }),
+  // a butterfly fluttering off
+  flutter: on(() => {
+    for (let i = 0; i < 6; i++) noise({ t: i * 0.045, dur: 0.03, vol: 0.06, type: 'bandpass', f: 2500 + i * 300, q: 2 });
+    tone({ type: 'triangle', f0: 1200, f1: 1800, dur: 0.25, vol: 0.05 });
+  }),
+  balloon: on((n = 0) => {
+    noise({ dur: 0.08, vol: 0.5, type: 'highpass', f: 900 });
+    tone({ f0: 300, f1: 90, dur: 0.1, vol: 0.25 });
+    tone({ type: 'triangle', f0: PENTA[n % PENTA.length] * 2, t: 0.05, dur: 0.18, vol: 0.06 });
+  }),
+  // blowing out the candle: a breathy whoosh
+  blow: on(() => {
+    noise({ dur: 0.45, vol: 0.28, type: 'bandpass', f: 900, f1: 400, q: 0.7 });
+    noise({ dur: 0.35, vol: 0.12, type: 'highpass', f: 2500 });
+  }),
+  // "yaaay!": a bright cheer with a sparkle on top
+  cheer: on(() => {
+    tone({ type: 'triangle', f0: 520, f1: 900, dur: 0.5, vol: 0.16, attack: 0.04, filter: 2400, vib: 6 });
+    tone({ type: 'triangle', f0: 660, f1: 1100, t: 0.04, dur: 0.5, vol: 0.12, attack: 0.04, filter: 2400, vib: 7 });
+    for (let i = 0; i < 8; i++) tone({ f0: PENTA[(i * 3) % 8] * 2, t: 0.25 + i * 0.05, dur: 0.15, vol: 0.05 });
+  }),
+  splash: on(() => {
+    noise({ dur: 0.5, vol: 0.3, type: 'lowpass', f: 3000, f1: 500 });
+    for (let i = 0; i < 4; i++) tone({ f0: 600 + i * 220, f1: 1500 + i * 300, t: 0.05 + i * 0.06, dur: 0.06, vol: 0.06 });
+  }),
+  splashSmall: on(() => {
+    noise({ dur: 0.18, vol: 0.18, type: 'lowpass', f: 2600, f1: 700 });
+    tone({ f0: 800, f1: 1700, t: 0.03, dur: 0.05, vol: 0.06 });
+  }),
+  shower: on(() => {
+    noise({ dur: 1.6, vol: 0.12, type: 'highpass', f: 3000 });
+    noise({ dur: 1.6, vol: 0.08, type: 'bandpass', f: 1200, q: 0.5 });
+  }),
+  // a soft soapy scrub
+  scrub: on(() => {
+    noise({ dur: 0.12, vol: 0.12, type: 'bandpass', f: 1400 + Math.random() * 600, q: 1.5 });
+    tone({ f0: 700 + Math.random() * 300, f1: 1400, dur: 0.06, vol: 0.04 });
+  }),
+  squeak: on(() => {
+    tone({ type: 'square', f0: 1300, f1: 1900, dur: 0.07, vol: 0.06, filter: 3000 });
+    tone({ type: 'square', f0: 1900, f1: 1200, t: 0.08, dur: 0.12, vol: 0.06, filter: 3000 });
+  }),
+  // the toothbrush: a quick bristly swish
+  brush: on(() => noise({ dur: 0.1, vol: 0.14, type: 'highpass', f: 4000 + Math.random() * 1500 })),
+  // one germ gone: a chime, one note higher each time
+  ding: on((n = 1) => {
+    const f = PENTA[Math.min(PENTA.length - 1, n + 1)] * 2;
+    tone({ f0: f, dur: 0.3, vol: 0.12 });
+    tone({ type: 'triangle', f0: f * 1.5, t: 0.04, dur: 0.2, vol: 0.04 });
+  }),
+  // all clean: a glittering run up and a "ting"
+  sparkleClean: on(() => {
+    for (let i = 0; i < 8; i++) tone({ type: 'triangle', f0: PENTA[i] * 2, t: i * 0.04, dur: 0.2, vol: 0.06 });
+    tone({ f0: 2637, t: 0.36, dur: 0.6, vol: 0.08 });
+  }),
+  // the dress-up tray slides in
+  dress: on(() => {
+    tone({ type: 'triangle', f0: 392, f1: 784, dur: 0.3, vol: 0.1 });
+    for (let i = 0; i < 4; i++) tone({ f0: PENTA[i * 2], t: 0.2 + i * 0.06, dur: 0.15, vol: 0.06 });
+  }),
+  // a piece pops on: a "ta-da", climbing with each piece
+  dressOn: on((n = 0) => {
+    const b = PENTA[Math.min(4, n)];
+    tone({ type: 'triangle', f0: b, dur: 0.12, vol: 0.14 });
+    tone({ type: 'triangle', f0: b * 1.5, t: 0.1, dur: 0.3, vol: 0.14 });
+    noise({ dur: 0.08, vol: 0.08, type: 'highpass', f: 5000 });
+  }),
 };
