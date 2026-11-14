@@ -173,4 +173,13 @@ window.MINI_GAMES = [
     imageAlt: 'Floating grassy islands above golden clouds, joined by rope bridges, with cottages, windmills, a smelter and airships at the moorings',
     tags: ['2D', 'Ages 8+', 'Touch friendly'],
   },
+  {
+    slug: 'last-light',
+    name: 'Emberfall: The Last Light',
+    description: 'A top-down action roguelite: carry the last lantern down through a bioluminescent ruined city, from the Orrery Plaza through the flooded gardens to the ember foundry, choose upgrades and synergies, and free the Choked Star. Runs take about 12 minutes.',
+    path: 'games/last-light/',
+    image: 'games/last-light/cover.jpg',
+    imageAlt: 'A hooded keeper with a glowing lantern swings a golden crescent at a shadow creature on overgrown flagstones between glowing cyan pools and ruined walls',
+    tags: ['2D', 'Ages 10+', 'Mouse first'],
+  },
 ];
