@@ -1,0 +1,42 @@
+name: Last Light tests
+
+on:
+  pull_request:
+    paths:
+      - 'games/last-light/**'
+      - 'vendor/phaser/**'
+      - '.github/workflows/last-light-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'games/last-light/**'
+      - 'vendor/phaser/**'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: games/last-light
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm run typecheck
+      - run: npm run test:unit
+      # The site has no build step, so the committed build must be exactly what the sources produce.
+      - run: npm run build
+      - name: Committed build matches the sources
+        run: git diff --exit-code -- index.html build && test -z "$(git status --porcelain -- index.html build)"
+      - run: npm run test:browser
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: last-light-test-reports
+          path: games/last-light/test/out/
+          if-no-files-found: ignore

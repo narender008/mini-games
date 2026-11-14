@@ -1,0 +1,23 @@
+{
+  "name": "emberfall-the-last-light",
+  "private": true,
+  "type": "module",
+  "description": "Emberfall: The Last Light, a top-down action roguelite. TypeScript + Phaser, built with Vite into this folder so the site needs no build step.",
+  "scripts": {
+    "dev": "vite --config vite.config.ts",
+    "build": "node tools/clean-build.mjs && vite build --config vite.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:unit": "vitest run",
+    "test:browser": "node test/run.cjs",
+    "check": "npm run typecheck && npm run test:unit && npm run build",
+    "test": "npm run check && npm run test:browser"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "phaser": "3.90.0",
+    "playwright": "1.63.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.8",
+    "vitest": "5.1.0"
+  }
+}
