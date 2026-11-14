@@ -131,10 +131,10 @@ window.MINI_GAMES = [
   {
     slug: 'juicy-splash',
     name: 'Juicy Splash',
-    description: 'For the littlest players: swipe or tap fourteen big, slow fruits over a sunny orchard picnic to splash them open, fill the juice jar and make a smiling rainbow smoothie. Bouncy music, no bombs, no losing, no reading.',
+    description: 'For the littlest players: swipe or tap fourteen big, slow fruit friends over a sunny orchard picnic to splash them open, feed a munching bunny and a chirpy chick, bonk giant surprise fruit, pop bubbles and balloons, and fill the jar for a rainbow smoothie party. Bouncy music, no bombs, no losing, no reading.',
     path: 'games/juicy-splash/',
     image: 'games/juicy-splash/cover.jpg',
-    imageAlt: 'A watermelon and an orange sliced in half by a rainbow swipe trail, juice splashing, over a picnic blanket in a sunny orchard with a laughing sun and a glass jar filling with juice',
+    imageAlt: 'A smiling watermelon and orange sliced in half by a rainbow swipe trail, a bunny munching a slice from her bush and a chick with hearts on a picnic blanket, a giggling strawberry, a laughing sun and a jar filling with juice',
     tags: ['2D', 'Ages 2+', 'Touch friendly'],
   },
   {

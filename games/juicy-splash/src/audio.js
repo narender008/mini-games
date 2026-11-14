@@ -173,3 +173,56 @@ export function slurp() {
   s.connect(fl); fl.connect(g); g.connect(sfxBus); s.start(t); s.stop(t + 1.2); lfo.start(t); lfo.stop(t + 1.2);
   osc('sine', 300, t + 1.15, 0.15, 0.2, sfxBus, { f1: 900 });   // "ahh" pop at the end
 }
+
+// ---------- friends and surprises ----------
+// crunchy bites: three short filtered noise chomps with a low thud
+export function munch() {
+  if (!ok()) return; const t = ac.currentTime;
+  for (let i = 0; i < 4; i++) { const st = t + i * 0.16; noise(st, 0.06, 0.22, sfxBus, { f: 1600 + Math.random() * 900, q: 1.2, attack: 0.004 }); osc('sine', 150, st, 0.05, 0.15, sfxBus, { f1: 90 }); }
+  osc('triangle', 520, t + 0.7, 0.18, 0.1, sfxBus, { f1: 780, filter: 2000 });   // "mmm"
+}
+// a little two-note cheep
+export function chirp() {
+  if (!ok()) return; const t = ac.currentTime;
+  for (let i = 0; i < 2; i++) osc('sine', 2200 + i * 300, t + i * 0.1, 0.06, 0.12, sfxBus, { f1: 3200 + i * 400, attack: 0.004 });
+}
+// tapping a friend: a springy boing and a giggle
+export function boing() {
+  if (!ok()) return; const t = ac.currentTime;
+  const o = osc('triangle', 220, t, 0.35, 0.18, sfxBus, { f1: 520, filter: 1800 });
+  const lfo = ac.createOscillator(), dep = ac.createGain(); lfo.frequency.value = 18; dep.gain.value = 40; lfo.connect(dep); dep.connect(o.frequency); lfo.start(t); lfo.stop(t + 0.4);
+  lastGiggle = -9; giggle(true);
+}
+// the giant fruit rising: a slow swelling whoop
+export function giant() {
+  if (!ok()) return; const t = ac.currentTime;
+  osc('triangle', 110, t, 0.9, 0.2, sfxBus, { f1: 330, attack: 0.25, filter: 1200 });
+  osc('sine', 220, t + 0.2, 0.8, 0.08, sfxBus, { f1: 660, attack: 0.25 });
+}
+// a hit on the giant: a deep squashy bonk, higher each time
+export function thump(hp = 2) {
+  if (!ok()) return; const t = ac.currentTime, k = 3 - hp;
+  osc('sine', 120 + k * 50, t, 0.25, 0.55, sfxBus, { f1: 55 + k * 20 });
+  noise(t, 0.08, 0.25, sfxBus, { type: 'lowpass', f: 900, f1: 200 });
+  osc('triangle', 330 + k * 110, t + 0.04, 0.2, 0.1, sfxBus, { f1: 440 + k * 140, filter: 1500 });
+}
+// the giant bursting: a big pop and a glittering run up the scale
+export function burst() {
+  if (!ok()) return; const t = ac.currentTime;
+  noise(t, 0.3, 0.5, sfxBus, { type: 'lowpass', f: 2500, f1: 300 });
+  osc('sine', 160, t, 0.3, 0.5, sfxBus, { f1: 50 });
+  for (let i = 0; i < 10; i++) osc('sine', PENTA[4 + i], t + 0.12 + i * 0.05, 0.35, 0.09, sfxBus);
+  cheer(t + 0.2);
+}
+// a soap bubble popping: a wet bloop with a tiny fizz
+export function bubblePop() {
+  if (!ok()) return; const t = ac.currentTime;
+  osc('sine', 500, t, 0.09, 0.3, sfxBus, { f1: 1400, attack: 0.003 });
+  noise(t + 0.02, 0.05, 0.08, sfxBus, { type: 'highpass', f: 6000 });
+}
+// a party balloon popping
+export function balloonPop() {
+  if (!ok()) return; const t = ac.currentTime;
+  noise(t, 0.09, 0.45, sfxBus, { f: 1800, q: 0.6, attack: 0.002 });
+  osc('sine', 900, t, 0.08, 0.2, sfxBus, { f1: 300 });
+}
