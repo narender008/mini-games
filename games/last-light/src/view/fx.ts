@@ -67,7 +67,7 @@ export class Fx {
       p.drag = b.drag ?? 3; p.grav = b.grav ?? 0;
       const sz = b.size ?? [1, 0];
       const tex = b.tex ?? 'px';
-      const base = tex === 'glow' ? 1 / 64 : tex === 'spark' ? 1 / 3 : 1 / 3;
+      const base = tex === 'glow' ? 1 / 64 : 1 / 32;
       p.s0 = sz[0] * base; p.s1 = sz[1] * base;
       p.a0 = b.alpha ?? 1;
       p.spin = 0;

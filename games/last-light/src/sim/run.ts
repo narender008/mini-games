@@ -104,13 +104,21 @@ export class RunPlan {
   /** The room for node i. Combat rooms get their waves; reward rooms their prop; the boss room is fixed. */
   room(i: number, reward?: Reward): RoomDef {
     const n = this.nodes[i];
+    if (n.kind === 'reward') {
+      n.reward = reward ?? 'shrine';
+      n.name = REWARD_INFO[n.reward].name;
+    }
+    return this.peek(i, reward);
+  }
+
+  /** The room node i would have, without recording the choice (to prepare its art ahead of time). */
+  peek(i: number, reward?: Reward): RoomDef {
+    const n = this.nodes[i];
     if (n.kind === 'sanctum') return ROOMS.sanctum;
     if (n.kind === 'boss') return ROOMS.heart;
     if (n.kind === 'reward') {
       const rw = reward ?? 'shrine';
-      n.reward = rw;
-      n.name = REWARD_INFO[rw].name;
-      const def = generateRoom(this.seed + i * 977, { zone: n.zone, doors: 1, reward: REWARD_INFO[rw].prop, name: n.name, id: `r${i}` });
+      const def = generateRoom(this.seed + i * 977, { zone: n.zone, doors: 1, reward: REWARD_INFO[rw].prop, name: REWARD_INFO[rw].name, id: `r${i}` });
       if (rw === 'trial') def.waves = this.waves(i, 0.75, true);
       return def;
     }

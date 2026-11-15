@@ -1,28 +1,45 @@
-// The lantern keeper, drawn in code as pixel art for three facings (down, up, side; left is the side
-// mirrored) and every animation frame. Returns frames plus where the lantern is in each, so the view
-// can put the light source exactly on it.
+// The lantern keeper, painted in code for three facings (down, up, side; left is the side mirrored) and
+// every animation frame. Each frame is a painter (src/art/sprite.ts) plus where the lantern is, so the
+// view can put the light source exactly on it.
 //
-// Look: a hooded keeper in a dark navy cloak, the face lost in shadow with two ember eyes, a brass
-// lantern held out at arm's length. Moonlight rims the top-left edges; the lantern warms the cloak
-// on its own side. Dark ink outline all round so the silhouette holds on the navy stone.
-import { Pix, bayer, mix, type RGBA } from './pix';
-import { P } from './palette';
+// Look: a hooded keeper in a heavy navy cloak with a tattered hem, a short capelet and a rust-red scarf,
+// the face lost in the hood's shadow except two ember eyes, leather belt and satchel strap, worn boots, and
+// a brass lantern held out at arm's length. Moonlight rims the upper-left edges, the lantern warms the
+// cloak on its side, and an ink outline keeps the silhouette whole on the navy stone. The lantern glass
+// and the eyes are also painted into the emissive layer so they burn bright after the light map.
+import { bez, css, figure, glow, lin, mix, rad, roundPoly, rrect, shade, taper, type Ctx } from './paint';
+import type { Painter } from './sprite';
 
 export const KEEPER_W = 36;
 export const KEEPER_H = 42;
 export const KEEPER_FOOT_Y = 39; // feet baseline inside a frame
-const CX = 18; // body centre column
-const TOP = 4; // hood peak row when standing
+const CX = 18; // body centre line
+const TOP = 4; // hood peak when standing
 const LW = 6, LH = 9; // lantern size
 export type Dir = 'down' | 'up' | 'side';
 export type KeeperAnim = 'idle' | 'run' | 'atk0' | 'atk1' | 'dash' | 'cast' | 'dead';
 export const KEEPER_ANIMS: Record<KeeperAnim, number> = { idle: 4, run: 6, atk0: 1, atk1: 1, dash: 1, cast: 2, dead: 4 };
 
-export interface KeeperFrame { pix: Pix; lx: number; ly: number } // lantern centre relative to the feet point
+export interface KeeperFrame { paint: Painter; lx: number; ly: number } // lantern centre relative to the feet point
+
+const K = {
+  ink: 0x05060c,
+  cloakD: 0x1b2238, cloak: 0x2a3456, cloakM: 0x3a4772, cloakL: 0x52639a, cloakH: 0x7489c4,
+  lining: 0x5a2f33, liningD: 0x32181d,
+  hoodD: 0x1a2036, hood: 0x2c375c, hoodL: 0x44548a, hoodH: 0x6d82c0,
+  face: 0x030409, faceRim: 0x161b2e, eye: 0xffc56a, eyeHot: 0xfff4d0,
+  tunic: 0x77523a, tunicD: 0x46301f, tunicL: 0x9c7552,
+  leather: 0x6a4630, leatherD: 0x3a2518, leatherL: 0x93673f,
+  scarf: 0x9a4430, scarfD: 0x5c2519, scarfL: 0xc8684a,
+  brass: 0xcfa04c, brassD: 0x76552a, brassH: 0xfff0b8,
+  glass: 0xffcf6e, core: 0xfff8e4, amber: 0xffb347, amberD: 0xd9771f,
+  trouser: 0x262a3e, trouserL: 0x3c4260, boot: 0x3a271b, bootL: 0x76533a, sole: 0x140d09,
+  rim: 0xb6c8f4,
+};
 
 interface Pose {
-  bob: number; // body drop in px
-  footA: number; footB: number; // foot offsets (down/up: vertical, side: horizontal stride)
+  bob: number; // body drop
+  footA: number; footB: number; // foot offsets (down/up: vertical, side: stride)
   liftA: number; liftB: number;
   spread: number; // stance width (front views)
   sway: number; // cloak hem sway
@@ -38,17 +55,17 @@ function pose(anim: KeeperAnim, f: number): Pose {
   switch (anim) {
     case 'idle': {
       const t = (f / 4) * Math.PI * 2;
-      return { ...base, bob: f === 2 ? 1 : 0, sway: Math.round(Math.sin(t) * 0.8), swing: Math.round(Math.sin(t + 1) * 0.8) };
+      return { ...base, bob: (1 - Math.cos(t)) * 0.35, sway: Math.sin(t) * 0.7, swing: Math.sin(t + 1) * 0.7 };
     }
     case 'run': {
       const t = (f / 6) * Math.PI * 2;
       const s = Math.sin(t);
       return {
-        ...base, bob: f % 3 === 1 ? 1 : 0, footA: Math.round(s * 3.5), footB: Math.round(-s * 3.5),
-        liftA: s > 0.3 ? 1 : 0, liftB: s < -0.3 ? 1 : 0, sway: Math.round(-s * 1.5), flare: 2, swing: Math.round(-s * 1.5), lean: 1,
+        ...base, bob: Math.abs(Math.cos(t)) * 0.9, footA: s * 3.6, footB: -s * 3.6,
+        liftA: Math.max(0, s) * 1.6, liftB: Math.max(0, -s) * 1.6, sway: -s * 1.4, flare: 2.2, swing: -s * 1.4, lean: 1.1,
       };
     }
-    case 'atk0': return { ...base, lantern: 'back', lean: -1, flare: 1, footA: -2, footB: 2, spread: 1, sway: -1, bob: 1 };
+    case 'atk0': return { ...base, lantern: 'back', lean: -1, flare: 1, footA: -2, footB: 2, spread: 1, sway: -1, bob: 0.8 };
     case 'atk1': return { ...base, lantern: 'forth', lean: 3, flare: 4, bob: 1, footA: 3, footB: -3, spread: 2, sway: 2 };
     case 'dash': return { ...base, lantern: 'trail', lean: 3, flare: 5, bob: 1, footA: 4, footB: -3, liftA: 1, sway: -2 };
     case 'cast': return { ...base, lantern: 'raise', bob: f === 1 ? 0 : 1, flare: f * 2, spread: f, glow: f + 1 };
@@ -56,41 +73,7 @@ function pose(anim: KeeperAnim, f: number): Pose {
   }
 }
 
-const cloakShade = (x: number, y: number, cx: number, top: number, bottom: number, half = 9): RGBA => {
-  // Moonlight from the top-left: lighter on the left, darker toward the hem and the right.
-  const u = (x - cx) / half, v = (y - top) / Math.max(1, bottom - top);
-  const k = -u * 0.55 - v * 0.4 + 0.18 + (bayer(x, y) - 0.5) * 0.14;
-  if (k > 0.55) return P.cloakH;
-  if (k > 0.3) return P.cloakL;
-  if (k > 0.02) return P.cloakM;
-  if (k > -0.3) return P.cloak;
-  return P.cloakD;
-};
-const hoodShade = (x: number, y: number, cx: number, cy: number, r: number, side = 0): RGBA => {
-  const u = (x - cx) / r, v = (y - cy) / r;
-  const k = -u * (side ? 0.35 : 0.6) - v * 0.65 + (bayer(x, y) - 0.5) * 0.12;
-  return k > 0.62 ? P.hoodH : k > 0.25 ? P.hoodL : k > -0.25 ? P.hood : P.hoodD;
-};
-
-function lanternAt(p: Pix, x: number, y: number, lit = 1) {
-  // A brass lantern 6x9: handle ring, cap, caged glass with the flame, base.
-  const g = lit ? P.glass : mix(P.glass, P.ink, 0.65);
-  p.rect(x + 2, y, 2, 1, P.brassD);
-  p.rect(x + 1, y + 1, 4, 1, P.brass); p.set(x + 1, y + 1, P.brassH);
-  p.rect(x, y + 2, 6, 1, P.brassD); p.set(x + 1, y + 2, P.brass);
-  p.rect(x, y + 3, 6, 4, P.brassD);
-  p.rect(x + 1, y + 3, 4, 4, g);
-  if (lit) {
-    p.rect(x + 1, y + 3, 4, 1, P.amberL);
-    p.rect(x + 2, y + 4, 2, 2, P.core);
-    p.set(x + 2, y + 6, P.amberW); p.set(x + 3, y + 6, P.glass);
-    p.set(x + 1, y + 6, P.amber); p.set(x + 4, y + 6, P.amber);
-  }
-  p.rect(x, y + 7, 6, 1, P.brass); p.set(x, y + 7, P.brassH);
-  p.rect(x + 1, y + 8, 4, 1, P.brassD);
-}
-
-/** Lantern top-left for a pose, relative to the frame, plus the hand that holds it. */
+/** Lantern top-left for a pose, relative to the frame. */
 function lanternTopLeft(dir: Dir, ps: Pose, by: number): [number, number] {
   const sw = ps.swing, cx = CX;
   if (dir === 'side') {
@@ -113,220 +96,531 @@ function lanternTopLeft(dir: Dir, ps: Pose, by: number): [number, number] {
   }
 }
 
-function boots(p: Pix, x: number, y: number, side = false) {
+// ---- parts ------------------------------------------------------------------------------------------
+
+/** Cloth fill: light from the upper left, darkening toward the hem. */
+function clothFill(g: Ctx, x0: number, y0: number, x1: number, y1: number, ramp = [K.cloakL, K.cloakM, K.cloak, K.cloakD]) {
+  return lin(g, x0, y0, x1, y1, [[0, css(ramp[0])], [0.32, css(ramp[1])], [0.68, css(ramp[2])], [1, css(ramp[3])]]);
+}
+
+/** A soft fold: a dark crease with a lit ridge beside it. */
+function fold(g: Ctx, pts: number[], w: number, dark = 0.5, lit = 0.32, litSide = -0.7) {
+  g.save();
+  g.lineCap = 'round';
+  g.beginPath(); g.moveTo(pts[0], pts[1]);
+  for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
+  g.lineWidth = w; g.strokeStyle = css(K.cloakD, dark); g.stroke();
+  if (lit > 0) {
+    g.translate(litSide, -0.2);
+    g.beginPath(); g.moveTo(pts[0], pts[1]);
+    for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
+    g.lineWidth = w * 0.5; g.strokeStyle = css(K.cloakH, lit); g.stroke();
+  }
+  g.restore();
+}
+
+function boot(g: Ctx, x: number, y: number, side: number) {
+  // x, y: bottom centre of the boot (side: 0 front, 1 facing right).
+  g.save();
   if (side) {
-    p.rect(x, y, 5, 3, P.boot); p.rect(x + 1, y, 3, 1, P.bootL); p.set(x + 4, y + 2, P.belt);
-  } else {
-    p.rect(x, y, 4, 3, P.boot); p.rect(x, y, 3, 1, P.bootL);
+    g.beginPath();
+    g.moveTo(x - 1.9, y - 3.4); g.lineTo(x + 1.0, y - 3.4);
+    g.quadraticCurveTo(x + 1.4, y - 1.6, x + 3.2, y - 1.3);
+    g.quadraticCurveTo(x + 3.6, y - 0.2, x + 2.8, y);
+    g.lineTo(x - 2.1, y); g.closePath();
+  } else rrect(g, x - 2, y - 3.4, 4, 3.4, 1.3);
+  g.fillStyle = lin(g, x - 2, y - 3.4, x + 2, y, [[0, css(K.bootL)], [0.45, css(K.boot)], [1, css(shade(K.boot, -0.4))]]);
+  g.fill();
+  g.fillStyle = css(K.sole);
+  g.fillRect(x - 2.1, y - 0.55, side ? 5 : 4.2, 0.55);
+  // Cuff of the boot.
+  g.fillStyle = css(K.leatherD);
+  g.fillRect(x - 2, y - 3.4, side ? 3 : 4, 0.7);
+  g.fillStyle = css(K.bootL, 0.6);
+  g.fillRect(x - 1.6, y - 2.6, side ? 1.6 : 1.2, 0.5);
+  g.restore();
+}
+
+function lantern(g: Ctx, e: Ctx | null, x: number, y: number, lit: number, extra = 0) {
+  // A brass lantern 6x9 units: handle ring, domed cap, caged glass with the flame, footed base.
+  const cx = x + LW / 2;
+  g.save();
+  // Handle.
+  g.beginPath(); g.arc(cx, y + 1.25, 1.25, Math.PI * 1.05, Math.PI * 1.95);
+  g.lineWidth = 0.5; g.strokeStyle = css(K.brassD); g.stroke();
+  g.beginPath(); g.arc(cx, y + 1.25, 1.25, Math.PI * 1.1, Math.PI * 1.5);
+  g.lineWidth = 0.25; g.strokeStyle = css(K.brassH, 0.8); g.stroke();
+  // Cap.
+  roundPoly(g, [x + 1.4, y + 1.5, x + 4.6, y + 1.5, x + 5.6, y + 2.9, x + 0.4, y + 2.9], 0.4);
+  g.fillStyle = lin(g, x, y + 1.5, x + 6, y + 2.9, [[0, css(K.brassH)], [0.35, css(K.brass)], [1, css(K.brassD)]]);
+  g.fill();
+  // Glass.
+  rrect(g, x + 0.7, y + 2.8, 4.6, 4.6, 0.7);
+  g.fillStyle = lit
+    ? rad(g, cx - 0.3, y + 5, 0.2, 3.4, [[0, css(K.core)], [0.35, css(0xffe6a8)], [0.75, css(K.glass)], [1, css(K.amberD)]])
+    : lin(g, x, y + 2.8, x + 6, y + 7.4, [[0, css(0x3a3428)], [1, css(0x1a1712)]]);
+  g.fill();
+  if (lit) {
+    // Flame.
+    g.beginPath(); g.moveTo(cx, y + 3.6);
+    g.quadraticCurveTo(cx + 1.2, y + 5.4, cx, y + 6.4);
+    g.quadraticCurveTo(cx - 1.2, y + 5.4, cx, y + 3.6);
+    g.fillStyle = css(0xffffff, 0.95); g.fill();
+  }
+  // Cage bars.
+  for (const bx of [x + 0.75, cx, x + 5.25]) {
+    g.beginPath(); g.moveTo(bx, y + 2.8); g.lineTo(bx, y + 7.4);
+    g.lineWidth = bx === cx ? 0.32 : 0.5; g.strokeStyle = css(K.brassD); g.stroke();
+  }
+  g.beginPath(); g.moveTo(x + 0.75, y + 3); g.lineTo(x + 0.75, y + 7.2);
+  g.lineWidth = 0.2; g.strokeStyle = css(K.brassH, 0.7); g.stroke();
+  // Base.
+  roundPoly(g, [x + 0.3, y + 7.3, x + 5.7, y + 7.3, x + 4.9, y + 8.7, x + 1.1, y + 8.7], 0.35);
+  g.fillStyle = lin(g, x, y + 7.3, x + 6, y + 8.7, [[0, css(K.brassH)], [0.3, css(K.brass)], [1, css(K.brassD)]]);
+  g.fill();
+  g.fillStyle = css(K.brassH, 0.9);
+  g.fillRect(x + 1.2, y + 1.75, 1.1, 0.35);
+  g.restore();
+  if (e && lit) {
+    glow(e, cx, y + 5, 9 + extra * 2.5, K.amber, 0.55 + extra * 0.1, 0.12);
+    glow(e, cx, y + 5, 3.6, 0xfff0c8, 0.9, 0.3);
+    rrect(e, x + 0.9, y + 3, 4.2, 4.2, 0.6);
+    e.fillStyle = rad(e, cx, y + 5.1, 0.2, 3, [[0, css(0xffffff)], [0.5, css(0xffe2a0)], [1, css(K.amber, 0.7)]]);
+    e.fill();
   }
 }
 
-function sleeve(p: Pix, pts: number[]) {
-  p.stroke(pts, 3.4, 2.6, P.cloakM);
-  // Lit upper edge of the sleeve.
+function sleeve(g: Ctx, pts: number[], w0 = 3.3, w1 = 2.5) {
   const n = pts.length;
-  p.line(pts[0] - 1, pts[1] - 1, pts[n - 2] - 1, pts[n - 1] - 1, P.cloakL);
+  taper(g, pts, w0, w1, lin(g, pts[0] - 2, pts[1] - 2, pts[n - 2] + 2, pts[n - 1] + 2, [[0, css(K.cloakL)], [0.5, css(K.cloakM)], [1, css(K.cloak)]]));
+  // Lit upper edge of the sleeve.
+  const q: number[] = [];
+  for (let i = 0; i < n; i += 2) q.push(pts[i] - 0.55, pts[i + 1] - 0.7);
+  taper(g, q, w0 * 0.32, w1 * 0.28, css(K.cloakH, 0.45));
+  // Cuff.
+  const ex = pts[n - 2], ey = pts[n - 1], px = pts[n - 4], py = pts[n - 3];
+  const a = Math.atan2(ey - py, ex - px);
+  const cxp = ex - Math.cos(a) * 0.9, cyp = ey - Math.sin(a) * 0.9;
+  taper(g, [cxp - Math.cos(a) * 0.5, cyp - Math.sin(a) * 0.5, cxp + Math.cos(a) * 0.5, cyp + Math.sin(a) * 0.5], w1 + 0.5, w1 + 0.4, css(K.leatherD));
 }
-function glove(p: Pix, x: number, y: number) {
-  p.rect(Math.round(x) - 1, Math.round(y) - 1, 2, 2, P.glove);
-  p.set(Math.round(x) - 1, Math.round(y) - 1, P.bootL);
+function glove(g: Ctx, x: number, y: number) {
+  g.beginPath(); g.ellipse(x, y, 1.25, 1.1, 0, 0, Math.PI * 2);
+  g.fillStyle = rad(g, x - 0.4, y - 0.4, 0.1, 1.4, [[0, css(K.leatherL)], [0.6, css(K.leather)], [1, css(K.leatherD)]]);
+  g.fill();
 }
 
-function drawFront(p: Pix, ps: Pose, by: number, back: boolean) {
+function armToLantern(g: Ctx, sx: number, sy: number, lx: number, ly: number) {
+  const hx = lx + LW / 2, hy = ly - 0.8;
+  const ex = (sx + hx) / 2 + (hx > sx ? 0.6 : -0.6), ey = Math.max(sy, hy) - 0.6 + (Math.abs(hx - sx) > 6 ? 1.6 : 0);
+  sleeve(g, [sx, sy, ex, ey, hx, hy]);
+  glove(g, hx, hy);
+}
+
+// ---- front and back -----------------------------------------------------------------------------
+
+function legsFront(g: Ctx, ps: Pose, hem: number) {
+  const cx = CX, fy = KEEPER_FOOT_Y, sp = ps.spread * 0.8;
+  for (const [sx, fo, li] of [[-1, ps.footA, ps.liftA], [1, ps.footB, ps.liftB]] as const) {
+    const x = cx + sx * (2.3 + sp);
+    const by = fy + Math.min(0, fo) * 0.6 - li;
+    taper(g, [x, hem - 3, x + sx * 0.2, by - 2.5], 2.9, 2.5, lin(g, x - 1.5, 0, x + 1.5, 0, [[0, css(K.trouserL)], [1, css(K.trouser)]]));
+    boot(g, x, by, 0);
+  }
+}
+
+function cloakFront(g: Ctx, ps: Pose, top: number, hem: number, back: boolean) {
+  const cx = CX, s = ps.sway;
+  const wTop = 5.6, wHem = 9 + Math.min(2.2, ps.flare * 0.55) + ps.spread * 0.4;
+  const L = cx - wHem + s * 0.5, Rr = cx + wHem + s * 0.5;
+  const path = () => {
+    g.beginPath();
+    g.moveTo(cx - wTop, top);
+    g.bezierCurveTo(cx - wTop - 2.4, top + 6, L - 0.3, hem - 8, L, hem - 0.4);
+    const n = 9;
+    for (let i = 1; i <= n; i++) {
+      const t = i / n;
+      const x = L + (Rr - L) * t + s * 0.25 * Math.sin(t * Math.PI);
+      const deep = i % 2 === 1;
+      const y = hem + (deep ? 1.25 + ((i * 7) % 3) * 0.25 : -0.35);
+      const mx = L + (Rr - L) * (t - 0.5 / n);
+      g.quadraticCurveTo(mx, hem + 0.6, x, y);
+    }
+    g.bezierCurveTo(Rr + 0.3, hem - 8, cx + wTop + 2.4, top + 6, cx + wTop, top);
+    g.closePath();
+  };
+  path();
+  g.fillStyle = clothFill(g, cx - wHem, top, cx + wHem + 2, hem + 1);
+  g.fill();
+  g.save();
+  path(); g.clip();
+  // Darker toward the hem and in the lower right.
+  g.fillStyle = lin(g, 0, top + 8, 0, hem + 1.5, [[0, css(K.cloakD, 0)], [1, css(K.cloakD, 0.55)]]);
+  g.fillRect(0, top, KEEPER_W, hem - top + 3);
+  // Folds.
+  fold(g, bez(cx - 2.6, top + 3, cx - 3.4, top + 9, cx - 5 + s * 0.4, hem - 6, cx - 6 + s * 0.6, hem + 1, 8), 1.2);
+  fold(g, bez(cx + 0.2, top + 5, cx - 0.5, top + 11, cx - 1 + s * 0.5, hem - 5, cx - 1.6 + s * 0.6, hem + 1, 8), 0.9, 0.4, 0.28);
+  fold(g, bez(cx + 3.2, top + 3, cx + 4, top + 9, cx + 5 + s * 0.4, hem - 6, cx + 6.2 + s * 0.6, hem + 1, 8), 1.1, 0.55, 0.18);
+  fold(g, bez(cx - 5, top + 6, cx - 6.5, top + 12, cx - 7.5 + s * 0.4, hem - 4, cx - 8.2 + s * 0.5, hem, 8), 0.7, 0.4, 0.25);
+  // Hem shadow band and a worn lighter edge just above it.
+  g.lineWidth = 1.4; g.strokeStyle = css(K.cloakD, 0.6);
+  g.beginPath(); g.moveTo(L - 1, hem + 0.6); g.quadraticCurveTo(cx, hem + 1.6, Rr + 1, hem + 0.6); g.stroke();
+  if (!back) {
+    // The open front: tunic, belt with a brass buckle.
+    const op = () => {
+      g.beginPath();
+      g.moveTo(cx - 0.9, top + 2.5); g.lineTo(cx + 1.5, top + 2.5);
+      g.quadraticCurveTo(cx + 2.4, top + 11, cx + 3 + s * 0.4, hem + 1.5);
+      g.lineTo(cx - 1.6 + s * 0.5, hem + 1.5);
+      g.quadraticCurveTo(cx - 1.6, top + 11, cx - 0.9, top + 2.5);
+      g.closePath();
+    };
+    op();
+    g.fillStyle = lin(g, cx - 2, 0, cx + 3, 0, [[0, css(K.tunicL)], [0.5, css(K.tunic)], [1, css(K.tunicD)]]);
+    g.fill();
+    g.save(); op(); g.clip();
+    g.fillStyle = lin(g, 0, top + 2, 0, hem, [[0, css(0x000000, 0.35)], [0.3, css(0x000000, 0)], [1, css(0x000000, 0.3)]]);
+    g.fillRect(cx - 3, top, 7, hem - top + 2);
+    // Belt.
+    g.fillStyle = css(K.leatherD); g.fillRect(cx - 3, top + 9.4, 7, 1.3);
+    g.fillStyle = css(K.leatherL, 0.6); g.fillRect(cx - 3, top + 9.4, 7, 0.35);
+    g.restore();
+    rrect(g, cx - 0.2, top + 9.15, 1.6, 1.8, 0.35);
+    g.fillStyle = lin(g, cx, top + 9, cx + 1.4, top + 11, [[0, css(K.brassH)], [0.5, css(K.brass)], [1, css(K.brassD)]]);
+    g.fill();
+    // Lit cloak edges either side of the opening.
+    g.lineWidth = 0.45;
+    g.strokeStyle = css(K.cloakH, 0.6);
+    g.beginPath(); g.moveTo(cx - 1, top + 3); g.quadraticCurveTo(cx - 1.7, top + 11, cx - 1.7 + s * 0.5, hem + 1); g.stroke();
+    g.strokeStyle = css(K.cloakD, 0.8);
+    g.beginPath(); g.moveTo(cx + 1.6, top + 3); g.quadraticCurveTo(cx + 2.5, top + 11, cx + 3.1 + s * 0.4, hem + 1); g.stroke();
+    // Satchel strap across the chest.
+    g.lineWidth = 1.1; g.strokeStyle = css(K.leather);
+    g.beginPath(); g.moveTo(cx - 5.5, top + 1.5); g.quadraticCurveTo(cx, top + 6, cx + 5.8, top + 11.5); g.stroke();
+    g.lineWidth = 0.3; g.strokeStyle = css(K.leatherL, 0.8);
+    g.beginPath(); g.moveTo(cx - 5.5, top + 1.1); g.quadraticCurveTo(cx, top + 5.6, cx + 5.8, top + 11.1); g.stroke();
+  } else {
+    // Back seam and a lighter panel either side.
+    fold(g, [cx + 0.2, top + 3, cx + s * 0.4, top + 12, cx + s * 0.8, hem + 1], 0.8, 0.6, 0.3);
+  }
+  g.restore();
+  if (!back) {
+    // Satchel on the hip (screen left), peeking from under the cloak edge.
+    rrect(g, cx - 9.6 + s * 0.2, top + 10.5, 4.2, 3.8, 0.9);
+    g.fillStyle = lin(g, cx - 9.6, top + 10.5, cx - 5.4, top + 14.3, [[0, css(K.leatherL)], [0.5, css(K.leather)], [1, css(K.leatherD)]]);
+    g.fill();
+    g.fillStyle = css(K.leatherD); g.fillRect(cx - 9.6 + s * 0.2, top + 11.6, 4.2, 0.5);
+    g.fillStyle = css(K.brass); g.fillRect(cx - 7.8 + s * 0.2, top + 11.5, 0.8, 0.9);
+  }
+}
+
+function capelet(g: Ctx, top: number, back: boolean) {
   const cx = CX;
-  const top = by + 11, hem = by + 30;
-  const fy = KEEPER_FOOT_Y;
-  const sp = ps.spread;
-  // Legs and boots below the hem.
-  p.rect(cx - 4 - sp, hem - 2, 3, fy - hem, P.cloakD);
-  p.rect(cx + 1 + sp, hem - 2, 3, fy - hem, P.cloakD);
-  boots(p, cx - 5 - sp, fy - 3 + Math.min(0, ps.footA) - ps.liftA);
-  boots(p, cx + 1 + sp, fy - 3 + Math.min(0, ps.footB) - ps.liftB);
-  // Cloak body: a wide bell with a tattered hem.
-  const s = ps.sway, w = 9 + Math.min(2, ps.flare * 0.5);
-  const hemPts: number[] = [];
-  for (let i = 0; i <= 8; i++) {
-    const x = cx - w + (i / 8) * w * 2 + s * (0.5 + i / 16);
-    hemPts.push(x, hem + (i % 2 ? 1 : 0) - (i === 0 || i === 8 ? 1 : 0));
-  }
-  const rev: number[] = [];
-  for (let i = hemPts.length - 2; i >= 0; i -= 2) rev.push(hemPts[i], hemPts[i + 1]);
-  p.poly([cx - 6, top, cx + 6, top, ...rev], (x, y) => cloakShade(x, y, cx, top, hem));
-  // Fold lines with a lit edge beside each.
-  for (const [x0, x1] of [[-4, -6], [4, 6], [-1, -2]] as const) {
-    p.line(cx + x0, top + 4, cx + x1 + s, hem - 1, P.cloakD);
-    if (x0 < 0) p.line(cx + x0 - 1, top + 5, cx + x1 - 1 + s, hem - 2, P.cloakL);
-  }
-  // Hem band.
-  for (let i = 0; i < hemPts.length; i += 2) p.tint(hemPts[i], hemPts[i + 1] - 1, P.cloakD);
+  const path = () => {
+    g.beginPath();
+    g.moveTo(cx - 4.5, top - 1.2);
+    g.bezierCurveTo(cx - 8.4, top - 0.4, cx - 9.4, top + 3, cx - 8.8, top + 5.6);
+    // Scalloped lower edge.
+    const n = 6;
+    for (let i = 1; i <= n; i++) {
+      const x = cx - 8.8 + (17.6 * i) / n;
+      g.quadraticCurveTo(x - 17.6 / n / 2, top + 7.6 - Math.abs(i - n / 2) * 0.35, x, top + 5.6 - Math.abs(i - n / 2) * 0.15);
+    }
+    g.bezierCurveTo(cx + 9.4, top + 3, cx + 8.4, top - 0.4, cx + 4.5, top - 1.2);
+    g.closePath();
+  };
+  path();
+  g.fillStyle = clothFill(g, cx - 8, top - 1, cx + 8, top + 7, [K.cloakH, K.cloakL, K.cloakM, K.cloak]);
+  g.fill();
+  g.save(); path(); g.clip();
+  g.fillStyle = lin(g, 0, top + 3, 0, top + 7.5, [[0, css(K.cloakD, 0)], [1, css(K.cloakD, 0.5)]]);
+  g.fillRect(cx - 10, top - 2, 20, 10);
+  for (const x of [-5.5, -2, 2, 5.5]) fold(g, [cx + x * 0.6, top + 1, cx + x, top + 7], 0.6, 0.45, 0);
+  // Trim along the hem of the capelet.
+  g.lineWidth = 0.45; g.strokeStyle = css(K.brassD, 0.75);
+  g.beginPath(); g.moveTo(cx - 9, top + 5.4); g.quadraticCurveTo(cx, top + 7.4, cx + 9, top + 5.4); g.stroke();
+  g.restore();
   if (!back) {
-    // The tunic through the open front, a strap, a belt with a brass buckle.
-    p.rect(cx - 1, top + 4, 4, hem - top - 6, P.tunicD);
-    p.rect(cx, top + 4, 1, hem - top - 7, P.tunic);
-    p.line(cx - 5, top + 2, cx + 3, top + 10, P.belt);
-    p.rect(cx - 3, top + 10, 7, 1, P.belt);
-    p.set(cx, top + 10, P.brass); p.set(cx + 1, top + 10, P.brassH);
-  } else {
-    p.line(cx, top + 3, cx + s, hem - 1, P.cloakD); // back seam
-    p.line(cx - 1, top + 4, cx - 1 + s, hem - 2, P.cloakM);
+    // Brass clasp.
+    g.beginPath(); g.arc(cx + 0.3, top + 1.6, 0.95, 0, Math.PI * 2);
+    g.fillStyle = rad(g, cx, top + 1.3, 0.1, 1, [[0, css(K.brassH)], [0.5, css(K.brass)], [1, css(K.brassD)]]);
+    g.fill();
   }
-  // Capelet over the shoulders.
-  p.ellipse(cx, top + 2, 8.5, 3.8, (x, y) => (y > top + 3.5 ? P.cloak : x < cx - 2 && y < top + 1.5 ? P.cloakH : x < cx + 2 ? P.cloakL : P.cloakM));
-  for (let i = -7; i <= 7; i += 3) p.tint(cx + i, top + 5, P.cloakD);
-  if (!back) { p.set(cx, top + 3, P.brass); p.set(cx, top + 2, P.brassH); }
-  // The free arm, hand showing at the cloak edge.
-  const fs = back ? 1 : -1;
-  sleeve(p, [cx + fs * 7, top + 2, cx + fs * 8, top + 7, cx + fs * 7.5, top + 10]);
-  glove(p, cx + fs * 7.5, top + 11);
 }
 
-function drawHoodFront(p: Pix, by: number, back: boolean, glow: number) {
-  const cx = CX, cy = by + 6;
+function scarf(g: Ctx, cy: number, back: boolean) {
+  const cx = CX;
+  g.beginPath();
+  g.ellipse(cx, cy + 5.6, 5.4, 1.9, 0, 0, Math.PI * 2);
+  g.fillStyle = lin(g, cx - 5, cy + 4, cx + 5, cy + 7.5, [[0, css(K.scarfL)], [0.5, css(K.scarf)], [1, css(K.scarfD)]]);
+  g.fill();
+  g.lineWidth = 0.3; g.strokeStyle = css(K.scarfD, 0.8);
+  for (const x of [-2.5, 0.5, 3]) { g.beginPath(); g.moveTo(cx + x, cy + 4); g.lineTo(cx + x + 0.8, cy + 7.2); g.stroke(); }
+  if (!back) {
+    // A tail hanging over the capelet.
+    taper(g, [cx + 3.2, cy + 6.2, cx + 4.3, cy + 9, cx + 4.6, cy + 11.6], 2.1, 1.5, lin(g, cx + 2, cy + 6, cx + 6, cy + 12, [[0, css(K.scarf)], [1, css(K.scarfD)]]));
+    g.fillStyle = css(K.scarfD); g.fillRect(cx + 3.7, cy + 11.3, 1.8, 0.5);
+  }
+}
+
+function hoodFront(g: Ctx, e: Ctx, by: number, back: boolean, glowK: number) {
+  const cx = CX, cy = by + 6.2;
   // Drape from the hood onto the shoulders.
-  p.poly([cx - 6, cy + 1, cx + 6, cy + 1, cx + 7, cy + 7, cx - 7, cy + 7], (x, y) => hoodShade(x, y, cx, cy, 7));
-  // Cowl with a peak leaning left.
-  p.ellipse(cx, cy, 6.3, 6.3, (x, y) => hoodShade(x, y, cx, cy, 6.3));
-  p.poly([cx - 3, cy - 4, cx - 1, by - 1, cx + 2, cy - 4], P.hood);
-  p.set(cx - 1, by, P.hoodL); p.set(cx - 2, by + 1, P.hoodH);
+  g.beginPath();
+  g.moveTo(cx - 6.4, cy + 0.5);
+  g.bezierCurveTo(cx - 7.4, cy + 3.5, cx - 8, cy + 6, cx - 7.2, cy + 7.6);
+  g.lineTo(cx + 7.2, cy + 7.6);
+  g.bezierCurveTo(cx + 8, cy + 6, cx + 7.4, cy + 3.5, cx + 6.4, cy + 0.5);
+  g.closePath();
+  g.fillStyle = clothFill(g, cx - 7, cy, cx + 7, cy + 8, [K.hoodL, K.hood, K.hood, K.hoodD]);
+  g.fill();
+  // Cowl with a soft peak leaning left.
+  const cowl = () => {
+    g.beginPath();
+    g.moveTo(cx - 6.3, cy + 2.2);
+    g.bezierCurveTo(cx - 6.9, cy - 3.2, cx - 3.6, by + 0.4, cx - 1.3, by - 0.5);
+    g.bezierCurveTo(cx + 1.6, by + 0.5, cx + 6.7, cy - 3.2, cx + 6.3, cy + 2.2);
+    g.bezierCurveTo(cx + 6.1, cy + 6.4, cx - 6.1, cy + 6.4, cx - 6.3, cy + 2.2);
+    g.closePath();
+  };
+  cowl();
+  g.fillStyle = rad(g, cx - 2.6, cy - 3.2, 0.5, 10, [[0, css(K.hoodH)], [0.3, css(K.hoodL)], [0.65, css(K.hood)], [1, css(K.hoodD)]]);
+  g.fill();
+  g.save(); cowl(); g.clip();
+  // Seam from the peak and a crease on the right.
+  fold(g, bez(cx - 1.3, by - 0.3, cx - 2.8, by + 2.5, cx - 4.4, cy, cx - 5.2, cy + 3, 6), 0.55, 0.45, 0.35);
+  fold(g, bez(cx + 2, by + 1.4, cx + 4, by + 3, cx + 5, cy + 1, cx + 5.4, cy + 4, 6), 0.5, 0.55, 0);
+  g.restore();
   if (!back) {
-    // Face opening: deep shadow, a lit hood rim around it, two ember eyes.
-    p.ellipse(cx, cy + 1.6, 4.2, 3.6, P.hoodD);
-    p.ellipse(cx, cy + 2, 3.4, 3.1, P.face);
-    p.line(cx - 4, cy - 1, cx - 4, cy + 3, P.hoodH);
-    p.line(cx - 3, cy - 2, cx - 1, cy - 2, P.hoodL);
-    const e = glow > 0 ? P.amberW : P.eye;
-    p.set(cx - 2, cy + 2, e); p.set(cx + 1, cy + 2, e);
-    p.set(cx - 2, cy + 3, P.amberD); p.set(cx + 1, cy + 3, P.amberD);
+    // Face opening: deep shadow, the hood's inner lip lit on the left, two ember eyes.
+    const face = () => {
+      g.beginPath();
+      g.moveTo(cx + 0.1, cy - 2.2);
+      g.bezierCurveTo(cx + 3.6, cy - 2, cx + 4.3, cy + 2, cx + 3.4, cy + 4.6);
+      g.quadraticCurveTo(cx, cy + 6.2, cx - 3.3, cy + 4.6);
+      g.bezierCurveTo(cx - 4.2, cy + 2, cx - 3.4, cy - 2, cx + 0.1, cy - 2.2);
+      g.closePath();
+    };
+    face();
+    g.fillStyle = rad(g, cx + 0.3, cy + 2.4, 0.5, 5, [[0, css(K.face)], [0.6, css(0x090b15)], [1, css(K.faceRim)]]);
+    g.fill();
+    g.save(); face(); g.clip();
+    g.lineWidth = 0.9; g.strokeStyle = css(K.hoodH, 0.55);
+    g.beginPath(); g.moveTo(cx - 3.9, cy + 3.6); g.bezierCurveTo(cx - 4.4, cy + 1, cx - 3, cy - 2.2, cx + 0.5, cy - 2.4); g.stroke();
+    g.restore();
+    const ec = glowK > 0 ? K.eyeHot : K.eye;
+    for (const ex of [cx - 1.55, cx + 1.65]) {
+      g.beginPath(); g.ellipse(ex, cy + 2.3, 0.62, 0.42, ex < cx ? 0.12 : -0.12, 0, Math.PI * 2);
+      g.fillStyle = css(ec); g.fill();
+      glow(e, ex, cy + 2.3, 2.2 + glowK * 0.6, K.amber, 0.75, 0.25);
+      e.beginPath(); e.ellipse(ex, cy + 2.3, 0.62, 0.42, 0, 0, Math.PI * 2);
+      e.fillStyle = css(K.eyeHot); e.fill();
+    }
   } else {
-    p.line(cx, cy - 3, cx, cy + 6, P.hoodD);
-    p.line(cx - 1, cy - 2, cx - 1, cy + 5, P.hoodL);
-    p.set(cx - 3, cy - 3, P.hoodH);
+    fold(g, [cx - 0.6, by + 0.5, cx - 0.4, cy + 2, cx, cy + 6.4], 0.7, 0.6, 0.35);
   }
 }
 
-function drawSide(p: Pix, ps: Pose, by: number) {
+// ---- side ---------------------------------------------------------------------------------------
+
+function legsSide(g: Ctx, ps: Pose, hem: number) {
   const cx = CX, fy = KEEPER_FOOT_Y;
-  const top = by + 11, hem = by + 29;
-  const L = ps.lean;
-  // Legs and boots with a stride (far leg darker).
-  const fa = ps.footA, fb = ps.footB;
-  p.stroke([cx - 1, hem - 4, cx - 1 + fb * 0.6, hem, cx - 1 + fb, fy - 3 - ps.liftB], 3, 2.6, P.cloakD);
-  boots(p, cx - 2 + fb, fy - 3 - ps.liftB, true);
-  p.stroke([cx + 1, hem - 4, cx + 1 + fa * 0.6, hem, cx + 1 + fa, fy - 3 - ps.liftA], 3, 2.6, P.cloak);
-  boots(p, cx + fa, fy - 3 - ps.liftA, true);
-  // Cloak: body plus a tail that flares back.
-  const fl = ps.flare, s = ps.sway;
-  p.poly([
-    cx - 3 + L, top, cx + 4 + L, top, cx + 6 + L * 0.5, hem - 4, cx + 5, hem,
-    cx + 1, hem + 1, cx - 3 - fl, hem, cx - 6 - fl * 1.6 + s, hem + 1, cx - 9 - fl * 2.2 + s, hem - 2, cx - 7 - fl * 1.2, top + 7,
-  ], (x, y) => cloakShade(x + 4, y, cx, top, hem));
-  p.line(cx - 2 + L, top + 4, cx - 6 - fl * 1.5 + s, hem - 1, P.cloakD);
-  p.line(cx - 3 + L, top + 5, cx - 7 - fl * 1.5 + s, hem - 2, P.cloakL);
-  p.line(cx + 1 + L, top + 6, cx + 1, hem - 1, P.cloakD);
-  // Tunic edge at the front and the belt.
-  p.line(cx + 4 + L, top + 3, cx + 5, hem - 3, P.tunicD);
-  p.line(cx + 5 + L, top + 4, cx + 5, hem - 5, P.tunic);
-  p.rect(cx + 1 + L, top + 9, 5, 1, P.belt); p.set(cx + 4 + L, top + 9, P.brass);
-  // Capelet.
-  p.ellipse(cx + L, top + 2, 6.5, 3.4, (x, y) => (y < top + 1 ? P.cloakH : x < cx + L ? P.cloakL : P.cloakM));
-  p.tint(cx + L - 5, top + 4, P.cloakD); p.tint(cx + L + 3, top + 4, P.cloakD);
-}
-
-function drawHoodSide(p: Pix, cx: number, by: number, glow: number) {
-  const cy = by + 6;
-  // The cowl's peak trails back.
-  p.poly([cx - 3, cy - 4, cx - 8, cy - 6, cx - 9, cy - 5, cx - 5, cy + 1], (x, y) => hoodShade(x, y, cx, cy, 6, 1));
-  p.set(cx - 8, cy - 6, P.hoodH);
-  p.poly([cx - 5, cy, cx + 4, cy, cx + 5, cy + 7, cx - 6, cy + 7], (x, y) => hoodShade(x, y, cx, cy, 7, 1));
-  p.ellipse(cx, cy, 5.8, 6.2, (x, y) => hoodShade(x, y, cx, cy, 6, 1));
-  // Face opening on the leading side.
-  p.ellipse(cx + 3.2, cy + 1.6, 2.8, 3.4, P.hoodD);
-  p.ellipse(cx + 3.8, cy + 2, 2.2, 2.8, P.face);
-  p.line(cx + 1, cy - 1, cx + 1, cy + 3, P.hoodH);
-  p.set(cx + 4, cy + 2, glow > 0 ? P.amberW : P.eye);
-  p.set(cx + 4, cy + 3, P.amberD);
-}
-
-/** Warm the pixels near the lantern (the lit side of the cloak). */
-function warmth(p: Pix, lx: number, ly: number, r: number, k: number) {
-  for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) {
-    const c = p.get(x, y);
-    if (c[3] === 0) continue;
-    const lum = c[0] + c[1] + c[2];
-    if (lum > 420) continue; // emissive or already bright
-    const d = Math.hypot(x + 0.5 - lx, y + 0.5 - ly);
-    if (d >= r) continue;
-    const t = Math.pow(1 - d / r, 1.4) * k;
-    const lit: RGBA = [Math.min(255, c[0] * 1.5 + 70), Math.min(255, c[1] * 1.2 + 34), c[2] * 0.85 + 6, 255];
-    p.set(x, y, mix(c, lit, Math.min(0.8, t * (lum < 30 ? 0.3 : 1))));
+  const legs: [number, number, number, number][] = [[-1, ps.footB, ps.liftB, 0], [1, ps.footA, ps.liftA, 1]];
+  for (const [dx, fo, li, near] of legs) {
+    const hx = cx + dx * 0.9, hy = hem - 4.5;
+    const ax = cx + dx * 0.6 + fo, ay = fy - 2.6 - li;
+    const kx = (hx + ax) / 2 + 0.9 + Math.max(0, fo) * 0.15, ky = (hy + ay) / 2 - li * 0.4;
+    const col = near ? [K.trouserL, K.trouser] : [K.trouser, shade(K.trouser, -0.35)];
+    taper(g, [hx, hy, kx, ky, ax, ay], 3.0, 2.4, lin(g, hx - 2, hy, hx + 2, ay, [[0, css(col[0])], [1, css(col[1])]]));
+    g.save();
+    if (!near) g.globalAlpha = 0.85;
+    boot(g, ax - 0.4, fy - li, 1);
+    g.restore();
   }
 }
 
-function armToLantern(p: Pix, sx: number, sy: number, lx: number, ly: number) {
-  const hx = lx + LW / 2, hy = ly - 1;
-  // Elbow bends outward and slightly down.
-  const ex = (sx + hx) / 2 + (hx > sx ? 0 : 0), ey = Math.max(sy, hy) - 1 + (Math.abs(hx - sx) > 6 ? 2 : 0);
-  sleeve(p, [sx, sy, ex, ey, hx, hy]);
-  glove(p, hx, hy);
-  p.set(hx, hy + 1, P.brassD);
+function cloakSide(g: Ctx, ps: Pose, top: number, hem: number) {
+  const cx = CX, L = ps.lean, fl = ps.flare, s = ps.sway;
+  const path = () => {
+    g.beginPath();
+    g.moveTo(cx - 3 + L, top);
+    g.lineTo(cx + 3.6 + L, top);
+    g.bezierCurveTo(cx + 5.6 + L, top + 5, cx + 6.2 + L * 0.5, hem - 7, cx + 5.4, hem);
+    // Front hem then the tattered trailing edge.
+    g.quadraticCurveTo(cx + 3, hem + 1.4, cx + 0.6, hem + 0.6);
+    const tail = [[cx - 2.6 - fl, hem + 1.3], [cx - 4 - fl * 1.4 + s, hem - 0.2], [cx - 6.2 - fl * 1.8 + s, hem + 1.5], [cx - 8.2 - fl * 2.2 + s, hem - 1.2], [cx - 9.4 - fl * 2.3 + s, hem - 3.4]];
+    for (const [x, y] of tail) g.lineTo(x, y);
+    g.bezierCurveTo(cx - 8.6 - fl * 1.6, hem - 9, cx - 6.4 - fl * 0.8, top + 7, cx - 4.4 + L * 0.5, top + 2.5);
+    g.closePath();
+  };
+  path();
+  g.fillStyle = clothFill(g, cx - 9 - fl, top, cx + 6, hem + 1);
+  g.fill();
+  g.save(); path(); g.clip();
+  g.fillStyle = lin(g, 0, top + 8, 0, hem + 1.5, [[0, css(K.cloakD, 0)], [1, css(K.cloakD, 0.55)]]);
+  g.fillRect(0, top, KEEPER_W, hem - top + 3);
+  fold(g, bez(cx - 1.6 + L, top + 4, cx - 3 + L * 0.5, top + 10, cx - 4.5 - fl, hem - 6, cx - 6.4 - fl * 1.6 + s, hem, 8), 1.1);
+  fold(g, bez(cx + 1.5 + L, top + 6, cx + 1.2 + L * 0.5, top + 12, cx + 0.8, hem - 4, cx + 0.6, hem, 8), 0.9, 0.5, 0.25);
+  fold(g, bez(cx - 4 + L * 0.5, top + 6, cx - 5.5, top + 12, cx - 7 - fl * 1.4 + s, hem - 5, cx - 8.4 - fl * 2 + s, hem - 2, 8), 0.8, 0.45, 0.3);
+  // Tunic edge and belt at the front.
+  g.fillStyle = lin(g, cx + 3.5, 0, cx + 6.5, 0, [[0, css(K.tunic)], [1, css(K.tunicD)]]);
+  g.beginPath(); g.moveTo(cx + 4 + L, top + 3); g.quadraticCurveTo(cx + 6 + L * 0.6, top + 10, cx + 6 + L * 0.3, hem - 3); g.lineTo(cx + 7, hem - 3); g.lineTo(cx + 7, top); g.closePath(); g.fill();
+  g.fillStyle = css(K.leatherD); g.fillRect(cx - 1 + L, top + 9, 8, 1.3);
+  g.fillStyle = css(K.brass); g.fillRect(cx + 4.2 + L * 0.8, top + 8.9, 1.3, 1.5);
+  g.restore();
 }
+
+function capeletSide(g: Ctx, top: number, L: number) {
+  const cx = CX + L;
+  g.beginPath();
+  g.moveTo(cx - 3.5, top - 1);
+  g.bezierCurveTo(cx - 7, top, cx - 7.6, top + 3, cx - 7, top + 5.4);
+  g.quadraticCurveTo(cx - 4.5, top + 7.4, cx - 1.6, top + 6);
+  g.quadraticCurveTo(cx + 1.4, top + 7.4, cx + 4.6, top + 5.2);
+  g.bezierCurveTo(cx + 5.6, top + 3, cx + 4.6, top, cx + 2.5, top - 1);
+  g.closePath();
+  g.fillStyle = clothFill(g, cx - 7, top - 1, cx + 5, top + 7, [K.cloakH, K.cloakL, K.cloakM, K.cloak]);
+  g.fill();
+  fold(g, [cx - 4, top + 1.5, cx - 5, top + 6], 0.6, 0.45, 0);
+  fold(g, [cx + 1, top + 2, cx + 1.4, top + 6.4], 0.6, 0.45, 0);
+}
+
+function hoodSide(g: Ctx, e: Ctx, cx: number, by: number, glowK: number) {
+  const cy = by + 6.2;
+  // Drape and the cowl's peak trailing back.
+  g.beginPath();
+  g.moveTo(cx - 5.2, cy + 0.5);
+  g.bezierCurveTo(cx - 6.4, cy + 3.5, cx - 6.4, cy + 6.5, cx - 5.4, cy + 7.6);
+  g.lineTo(cx + 5, cy + 7.6);
+  g.bezierCurveTo(cx + 5.6, cy + 5, cx + 4.6, cy + 2, cx + 3.8, cy);
+  g.closePath();
+  g.fillStyle = clothFill(g, cx - 6, cy, cx + 6, cy + 8, [K.hoodL, K.hood, K.hood, K.hoodD]);
+  g.fill();
+  const cowl = () => {
+    g.beginPath();
+    g.moveTo(cx + 5.4, cy + 2.6);
+    g.bezierCurveTo(cx + 6.2, cy - 3, cx + 2.4, by + 0.3, cx - 2, by + 0.6);
+    g.quadraticCurveTo(cx - 6.4, by - 1.2, cx - 9.2, cy - 6);
+    g.quadraticCurveTo(cx - 7.4, cy - 2, cx - 6.2, cy + 1.5);
+    g.bezierCurveTo(cx - 6, cy + 6.2, cx + 4.8, cy + 6.4, cx + 5.4, cy + 2.6);
+    g.closePath();
+  };
+  cowl();
+  g.fillStyle = rad(g, cx - 2.5, cy - 3.2, 0.5, 10, [[0, css(K.hoodH)], [0.3, css(K.hoodL)], [0.65, css(K.hood)], [1, css(K.hoodD)]]);
+  g.fill();
+  g.save(); cowl(); g.clip();
+  fold(g, bez(cx - 1, by + 1.5, cx - 3, by + 3.5, cx - 3.5, cy + 2, cx - 2.6, cy + 5.6, 6), 0.6, 0.5, 0.35);
+  g.restore();
+  // Face opening on the leading side.
+  const face = () => {
+    g.beginPath();
+    g.moveTo(cx + 1.2, cy - 1.6);
+    g.bezierCurveTo(cx + 4, cy - 1.8, cx + 5.6, cy + 1, cx + 5.5, cy + 3.4);
+    g.quadraticCurveTo(cx + 4.4, cy + 5.4, cx + 1.6, cy + 5);
+    g.bezierCurveTo(cx + 0.6, cy + 3, cx + 0.4, cy, cx + 1.2, cy - 1.6);
+    g.closePath();
+  };
+  face();
+  g.fillStyle = rad(g, cx + 3.6, cy + 2, 0.4, 4.4, [[0, css(K.face)], [0.6, css(0x090b15)], [1, css(K.faceRim)]]);
+  g.fill();
+  g.lineWidth = 0.8; g.strokeStyle = css(K.hoodH, 0.55);
+  g.beginPath(); g.moveTo(cx + 1.4, cy + 4.6); g.bezierCurveTo(cx + 0.5, cy + 2.5, cx + 0.6, cy - 0.4, cx + 1.5, cy - 1.6); g.stroke();
+  const ex = cx + 3.7, ey = cy + 2.2;
+  g.beginPath(); g.ellipse(ex, ey, 0.6, 0.44, 0, 0, Math.PI * 2);
+  g.fillStyle = css(glowK > 0 ? K.eyeHot : K.eye); g.fill();
+  glow(e, ex, ey, 2.2 + glowK * 0.6, K.amber, 0.75, 0.25);
+  e.beginPath(); e.ellipse(ex, ey, 0.6, 0.44, 0, 0, Math.PI * 2); e.fillStyle = css(K.eyeHot); e.fill();
+}
+
+// ---- dead -----------------------------------------------------------------------------------------
+
+function drawDead(g: Ctx, f: number) {
+  // Kneel, slump, fall: a heap of cloak with the hood resting on it.
+  const cx = CX, y0 = KEEPER_FOOT_Y;
+  const h = [20, 15, 10, 7][f];
+  const rx = 9.5 + f * 1.6;
+  g.beginPath();
+  g.moveTo(cx - 1 - rx, y0);
+  g.bezierCurveTo(cx - 1 - rx, y0 - h * 0.8, cx - 1 - rx * 0.4, y0 - h, cx - 1, y0 - h);
+  g.bezierCurveTo(cx - 1 + rx * 0.5, y0 - h, cx - 1 + rx, y0 - h * 0.6, cx - 1 + rx, y0);
+  g.quadraticCurveTo(cx - 1, y0 + 1.2, cx - 1 - rx, y0);
+  g.closePath();
+  g.fillStyle = clothFill(g, cx - rx, y0 - h, cx + rx, y0);
+  g.fill();
+  fold(g, [cx - 4, y0 - h + 2, cx - 6, y0 - 0.5], 0.9);
+  fold(g, [cx + 3, y0 - h + 3, cx + 4.5, y0 - 0.5], 0.8, 0.5, 0.2);
+  const hx = cx - 7 - f * 1.6, hy = y0 - h + 3.2 + f;
+  g.beginPath(); g.ellipse(hx, hy, 5, 4.6, -0.3, 0, Math.PI * 2);
+  g.fillStyle = rad(g, hx - 2, hy - 2, 0.3, 6, [[0, css(K.hoodL)], [0.5, css(K.hood)], [1, css(K.hoodD)]]);
+  g.fill();
+  g.beginPath(); g.ellipse(hx + 1, hy + 1.4, 2.6, 2.1, 0, 0, Math.PI * 2);
+  g.fillStyle = css(K.face); g.fill();
+}
+
+// ---- assembly ---------------------------------------------------------------------------------------
 
 export function drawKeeper(dir: Dir, anim: KeeperAnim, f: number): KeeperFrame {
-  const p = new Pix(KEEPER_W, KEEPER_H);
   const ps = pose(anim, f);
   const cx = CX;
-  const by = TOP + ps.bob; // hood peak row
+  const by = TOP + ps.bob; // hood peak
   if (anim === 'dead') {
-    drawDead(p, f);
     const lx = cx + 6, ly = KEEPER_FOOT_Y - LH + 1;
-    finish(p);
-    lanternAt(p, lx, ly, f < 3 ? 1 : 0);
-    p.outline(P.ink);
-    return { pix: p, lx: lx + LW / 2 - cx, ly: ly + LH / 2 - KEEPER_FOOT_Y };
+    const paint: Painter = (g, e) => {
+      figure(g, KEEPER_W, KEEPER_H, (b) => drawDead(b, f), { ink: K.ink, inkW: 0.55, rim: K.rim, rimW: 0.6, rimA: 0.75, shadeW: 0.8, shadeA: 0.3 });
+      lantern(g, e, lx, ly, f < 3 ? 1 : 0, -1);
+    };
+    return { paint, lx: lx + LW / 2 - cx, ly: ly + LH / 2 - KEEPER_FOOT_Y };
   }
   const [lx, ly] = lanternTopLeft(dir, ps, by);
   const lcx = lx + LW / 2, lcy = ly + LH / 2;
   const behind = dir === 'side' && (ps.lantern === 'back' || ps.lantern === 'trail');
-  if (dir === 'side') {
-    const L = ps.lean;
-    if (behind) armToLantern(p, cx + L - 2, by + 13, lx, ly);
-    drawSide(p, ps, by);
-    drawHoodSide(p, cx + L, by, ps.glow);
-    if (!behind) armToLantern(p, cx + L + 1, by + 13, lx, ly);
-  } else {
-    const side = dir === 'down' ? 1 : -1;
-    drawFront(p, ps, by, dir === 'up');
-    if (dir === 'down') {
-      drawHoodFront(p, by, false, ps.glow);
-      armToLantern(p, cx + side * 6, by + 13, lx, ly);
-    } else {
-      drawHoodFront(p, by, true, ps.glow);
-      armToLantern(p, cx + side * 6, by + 13, lx, ly);
+  const paint: Painter = (g, e) => {
+    const top = by + 11;
+    // Warm light from the lantern on the cloth (and a little on everything near it).
+    const warm = (b: Ctx) => {
+      b.save();
+      b.globalCompositeOperation = 'source-atop';
+      b.fillStyle = rad(b, lcx, lcy, 0.5, 15 + ps.glow * 3, [[0, css(0xffb060, 0.55 + ps.glow * 0.06)], [0.4, css(0xff9a40, 0.22)], [1, css(0xff8a30, 0)]]);
+      b.fillRect(0, 0, KEEPER_W, KEEPER_H);
+      b.restore();
+    };
+    const body = (b: Ctx) => {
+      if (dir === 'side') {
+        const L = ps.lean, hem = by + 29.5;
+        if (behind) armToLantern(b, cx + L - 2, by + 13, lx, ly);
+        legsSide(b, ps, hem);
+        cloakSide(b, ps, top, hem);
+        capeletSide(b, top, L);
+        hoodSide(b, e, cx + L, by, ps.glow);
+        if (!behind) armToLantern(b, cx + L + 1, by + 13, lx, ly);
+      } else {
+        const back = dir === 'up';
+        const side = dir === 'down' ? 1 : -1;
+        const hem = by + 30.5;
+        legsFront(b, ps, hem);
+        cloakFront(b, ps, top, hem, back);
+        // The free hand at the cloak's edge.
+        const fs = -side;
+        sleeve(b, [cx + fs * 6.2, top + 2, cx + fs * 7.6, top + 6.5, cx + fs * 7.4, top + 10], 3.2, 2.6);
+        glove(b, cx + fs * 7.4, top + 10.8);
+        capelet(b, top, back);
+        scarf(b, by + 6.2, back);
+        hoodFront(b, e, by, back, ps.glow);
+        armToLantern(b, cx + side * 6, by + 13, lx, ly);
+      }
+    };
+    figure(g, KEEPER_W, KEEPER_H, body, { ink: K.ink, inkW: 0.55, rim: K.rim, rimW: 0.6, rimA: 0.8, shadeW: 0.9, shadeA: 0.28, post: warm });
+    lantern(g, e, lx, ly, 1, ps.glow);
+    if (ps.glow) {
+      // The sunburst gathering: sparks of light around the raised lantern.
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + ps.glow;
+        const r = 5 + ps.glow * 1.5;
+        glow(e, lcx + Math.cos(a) * r, lcy + Math.sin(a) * r, 1.6, 0xffe2a0, 0.9, 0.4);
+        g.beginPath(); g.arc(lcx + Math.cos(a) * r, lcy + Math.sin(a) * r, 0.45, 0, Math.PI * 2); g.fillStyle = css(0xfff1c8); g.fill();
+      }
     }
-  }
-  warmth(p, lcx, lcy, 15 + ps.glow * 3, 0.75 + ps.glow * 0.1);
-  finish(p);
-  lanternAt(p, lx, ly);
-  if (ps.glow) { p.set(lx - 1, ly + 4, P.amberL); p.set(lx + LW, ly + 4, P.amberL); p.set(lx + 2, ly - 1, P.amberL); }
-  p.outline(P.ink);
-  return { pix: p, lx: lcx - cx, ly: lcy - KEEPER_FOOT_Y };
-}
-
-function drawDead(p: Pix, f: number) {
-  // Kneel, slump, fall: a heap of cloak with the hood resting on it.
-  const cx = CX, y0 = KEEPER_FOOT_Y;
-  const h = [20, 15, 10, 7][f];
-  p.ellipse(cx - 1, y0 - h / 2, 9 + f * 1.5, h / 2 + 1, (x, y) => cloakShade(x, y, cx - 1, y0 - h, y0));
-  p.line(cx - 4, y0 - h + 2, cx - 6, y0 - 1, P.cloakD);
-  p.line(cx + 3, y0 - h + 3, cx + 4, y0 - 1, P.cloakD);
-  const hx = cx - 7 - f * 1.5, hy = y0 - h + 3 + f;
-  p.ellipse(hx, hy, 5, 4.6, (x, y) => hoodShade(x, y, hx, hy, 5));
-  p.ellipse(hx + 1, hy + 1.5, 2.4, 2, P.face);
-  if (f < 2) p.set(hx + 1, hy + 1, P.amberD);
-}
-
-function finish(p: Pix) {
-  // Moonlight rim on top/left edges (only on darker cloth, not on glowing bits).
-  p.rim(-1, 0, P.moonRim, 330);
-  p.rim(0, -1, P.moonRimL, 330);
+  };
+  // Keep `mix` referenced for future tints without lint noise.
+  void mix;
+  return { paint, lx: lcx - cx, ly: lcy - KEEPER_FOOT_Y };
 }

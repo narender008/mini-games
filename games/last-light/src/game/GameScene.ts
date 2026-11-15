@@ -2,7 +2,7 @@
 // with render interpolation, turns simulation events into effects and sound, and drives the camera.
 // Menus and flow live in ui/app.ts, which calls the methods here.
 import Phaser from 'phaser';
-import { ART_SCALE, MAX_FRAME_DT, SIM_DT, VIEW_MIN_H, VIEW_MIN_W } from '../config';
+import { MAX_FRAME_DT, SIM_DT, VIEW_MIN_H, VIEW_MIN_W } from '../config';
 import { clamp, damp, lerp } from '../core/math';
 import { Input } from '../core/input';
 import { World } from '../sim/world';
@@ -10,6 +10,10 @@ import { emptyInput, type Fx as FxEvent, type InputFrame, type WeaponId } from '
 import type { RoomDef, Zone } from '../sim/level/rooms';
 import { makeTextures } from '../view/textures';
 import { RoomView, DEPTH } from '../view/roomView';
+import { bakeKey, envSeed, type BakedRoom } from '../view/bake/bakeRoom';
+import { keepOnly, prefetch, release, take } from '../view/bake/client';
+import { DENSITY } from '../view/density';
+import { EMISSIVE_SCALE } from '../art/sprite';
 import { EntityViews } from '../view/entities';
 import { Fx } from '../view/fx';
 import { Lighting, type Light } from '../view/lighting';
@@ -23,7 +27,7 @@ export interface SceneHooks {
   onFrame?: (dt: number) => void;
 }
 
-const AMBIENT: Record<Zone, number> = { sanctum: 0x7884ae, causeway: 0x6c7cac, aqueduct: 0x6582aa, foundry: 0x82709a, heart: 0x685e90 };
+const AMBIENT: Record<Zone, number> = { sanctum: 0x7186b0, causeway: 0x6c82ac, aqueduct: 0x6284ac, foundry: 0x82729a, heart: 0x685e90 };
 
 export class GameScene extends Phaser.Scene {
   world!: World;
@@ -55,7 +59,7 @@ export class GameScene extends Phaser.Scene {
   constructor() { super('game'); }
 
   create() {
-    makeTextures(this);
+    makeTextures(this, new URLSearchParams(location.search).get('quality'));
     this.fx = new Fx(this);
     this.lighting = new Lighting(this);
     this.ents = new EntityViews(this);
@@ -86,22 +90,63 @@ export class GameScene extends Phaser.Scene {
     this.acc = 0;
   }
 
-  loadRoom(def: RoomDef, opts: { combat: boolean } = { combat: true }) {
+  private loadToken = 0;
+  /** Bake density for room art (texels per world unit) and its emissive twin. */
+  private get envD() { return DENSITY.env; }
+  private get envDe() { return Math.max(1, DENSITY.env * EMISSIVE_SCALE); }
+
+  /** Load a room into the world now; its view appears once its art is baked (resolves then). The world
+   *  does not advance until the view exists, and the screen stays faded out meanwhile. */
+  loadRoom(def: RoomDef, opts: { combat: boolean } = { combat: true }): Promise<void> {
     for (const o of this.doorLabels) o.destroy();
     this.doorLabels = [];
-    this.roomView?.destroy();
     this.ents.clearRoom();
     this.fx.clear();
     this.world.loadRoom(def, opts);
-    this.roomView = new RoomView(this, this.world.room, def.zone, this.world.run.seed + this.world.run.roomsCleared * 101);
     this.lighting.ambient = AMBIENT[def.zone];
-    const p = this.world.player;
-    this.camX = p.x; this.camY = p.y - 10;
-    this.cameras.main.setBounds(0, 0, this.world.room.w * 16, this.world.room.h * 16);
-    this.applyZoom();
-    this.placeCamera(0);
     audio.setZone(def.zone);
+    const token = ++this.loadToken;
+    const seed = envSeed(def, this.world.run.seed), d = this.envD, de = this.envDe;
+    const prev = this.roomView;
+    this.roomView = null;
+    // Nothing is drawn while the room bakes (the screen is faded out): the bake gets the whole machine.
+    this.sys.setVisible(false);
+    const show = (baked: BakedRoom, reuse: boolean) => {
+      if (token !== this.loadToken) { if (!reuse) release(baked); return; }
+      this.sys.setVisible(true);
+      this.roomView = new RoomView(this, this.world.room, def.zone, seed, baked);
+      const p = this.world.player;
+      this.camX = p.x; this.camY = p.y - 10;
+      this.cameras.main.setBounds(0, 0, this.world.room.w * 16, this.world.room.h * 16);
+      this.applyZoom();
+      this.placeCamera(0);
+    };
+    // The same art as the room on screen (the title's sanctum becoming the run's): keep its textures.
+    if (prev && prev.baked.key === bakeKey(def, seed, d)) {
+      prev.destroy(true);
+      show(prev.baked, true);
+      return Promise.resolve();
+    }
+    prev?.destroy();
+    const b = take(def, seed, d, de);
+    if (!(b instanceof Promise)) { show(b, false); return Promise.resolve(); }
+    return b.then((r) => show(r, false));
   }
+
+  /** Bake the rooms that may come next while this one is played (only when bakes run in a worker). */
+  prefetchRooms(defs: RoomDef[]) {
+    if (!this.world) return;
+    const d = this.envD, de = this.envDe, keys: string[] = [];
+    for (const def of defs) {
+      const seed = envSeed(def, this.world.run.seed);
+      keys.push(bakeKey(def, seed, d));
+      prefetch(def, seed, d, de);
+    }
+    keepOnly(keys);
+  }
+
+  /** Whether the current room's view is built. */
+  get roomReady() { return !!this.roomView; }
 
   update(_time: number, delta: number) {
     if (!this.world || !this.roomView) return;
@@ -456,6 +501,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private cleanup() {
+    this.loadToken++; // a bake still in flight is dropped when it lands
     this.input2?.destroy();
     this.roomView?.destroy();
     this.fx?.destroy();
@@ -463,5 +509,4 @@ export class GameScene extends Phaser.Scene {
     this.lighting?.destroy();
   }
 
-  get artScale() { return ART_SCALE; }
 }

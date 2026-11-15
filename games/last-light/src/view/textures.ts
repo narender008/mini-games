@@ -1,55 +1,107 @@
-// Generates every texture at boot: character atlases from the pixel-art drawers, and the soft
-// effect textures (lights, glows, sparks, slash arcs) drawn with canvas gradients.
+// Generates every texture at boot: character atlases painted from the vector drawers at the screen's
+// density (src/view/density.ts), each with an emissive twin atlas `<key>_e` (glows drawn additively after
+// the light map), and the soft effect textures (lights, glows, sparks, slash arcs) drawn with gradients.
 import Phaser from 'phaser';
-import { ART_SCALE } from '../config';
-import { makeCanvas, Pix } from '../art/pix';
+import { makeCanvas } from '../art/paint';
+import { EMISSIVE_SCALE, type Painter, type SpriteSet } from '../art/sprite';
 import { drawKeeper, KEEPER_ANIMS, KEEPER_FOOT_Y, KEEPER_H, KEEPER_W, type Dir, type KeeperAnim } from '../art/keeper';
 import { bossSprites, bossThornSprites, bossWallSprites } from '../art/boss';
-import { beetleSprites, colossusSprites, dummySprites, sentinelSprites, stalkerSprites, wardenSprites, type SpriteSet } from '../art/enemies';
+import { beetleSprites, colossusSprites, dummySprites, sentinelSprites, stalkerSprites, wardenSprites } from '../art/enemies';
+import { chooseDensity, DENSITY } from './density';
 
-export interface AtlasInfo { key: string; w: number; h: number; footY: number; anims: Record<string, number> }
+export interface AtlasInfo {
+  key: string; w: number; h: number; footY: number; anims: Record<string, number>;
+  /** Texels per world unit of the body atlas and of the emissive atlas `${key}_e`. */
+  d: number; de: number;
+}
 
 /** Lantern offsets per keeper frame (relative to the feet), for placing its light. */
 export const keeperLantern = new Map<string, { x: number; y: number }>();
 export const ATLAS: Record<string, AtlasInfo> = {};
 
-function addAtlas(scene: Phaser.Scene, key: string, w: number, h: number, frames: { name: string; pix: Pix }[]) {
-  const cols = Math.max(1, Math.floor(2048 / ((w + 1) * ART_SCALE)));
-  const rows = Math.ceil(frames.length / cols);
-  const c = makeCanvas(cols * (w + 1) * ART_SCALE, rows * (h + 1) * ART_SCALE);
-  const g = c.getContext('2d')!;
-  frames.forEach((f, i) => f.pix.drawTo(g, (i % cols) * (w + 1) * ART_SCALE, Math.floor(i / cols) * (h + 1) * ART_SCALE));
-  if (scene.textures.exists(key)) scene.textures.remove(key);
-  const tex = scene.textures.addCanvas(key, c)!;
-  frames.forEach((f, i) => tex.add(f.name, 0, (i % cols) * (w + 1) * ART_SCALE, Math.floor(i / cols) * (h + 1) * ART_SCALE, w * ART_SCALE, h * ART_SCALE));
+let maxTex = 4096;
+
+/**
+ * Paint frames into one texture (several source pages if they do not fit one) at density d, plus the
+ * emissive twin at density de. Every cell is clipped so a stray stroke never bleeds into its neighbour.
+ */
+function buildAtlas(scene: Phaser.Scene, key: string, w: number, h: number, frames: { name: string; paint: Painter }[], d: number, de: number) {
+  const page = Math.min(4096, maxTex);
+  const make = (dens: number, emissive: boolean) => {
+    const cw = Math.ceil(w * dens) + 2, ch = Math.ceil(h * dens) + 2;
+    const cols = Math.max(1, Math.floor(page / cw)), rowsPer = Math.max(1, Math.floor(page / ch));
+    const perPage = cols * rowsPer;
+    const pages: HTMLCanvasElement[] = [];
+    const ctxs: CanvasRenderingContext2D[] = [];
+    for (let p = 0; p * perPage < frames.length; p++) {
+      const n = Math.min(perPage, frames.length - p * perPage);
+      const c = makeCanvas(Math.min(n, cols) * cw, Math.ceil(n / cols) * ch);
+      pages.push(c);
+      ctxs.push(c.getContext('2d')!);
+    }
+    return { cw, ch, cols, perPage, pages, ctxs, dens, emissive };
+  };
+  const A = make(d, false), E = make(de, true);
+  // A scratch context for the layer a frame does not use (the emissive pass ignores body strokes).
+  const scratch = makeCanvas(4, 4).getContext('2d')!;
+  frames.forEach((f, i) => {
+    for (const L of [A, E]) {
+      const pg = Math.floor(i / L.perPage), k = i % L.perPage;
+      const x = (k % L.cols) * L.cw + 1, y = Math.floor(k / L.cols) * L.ch + 1;
+      const g = L.ctxs[pg];
+      g.save();
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.beginPath(); g.rect(x - 1, y - 1, L.cw, L.ch); g.clip();
+      g.setTransform(L.dens, 0, 0, L.dens, x, y);
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+      g.lineJoin = 'round'; g.lineCap = 'round';
+      scratch.setTransform(L.dens, 0, 0, L.dens, 0, 0);
+      try {
+        if (L.emissive) f.paint(scratch, g); else f.paint(g, scratch);
+      } finally { g.restore(); }
+    }
+  });
+  for (const [L, k] of [[A, key], [E, `${key}_e`]] as const) {
+    if (scene.textures.exists(k)) scene.textures.remove(k);
+    const tex = scene.textures.create(k, L.pages as unknown as HTMLImageElement[], undefined as unknown as number, undefined as unknown as number)!;
+    frames.forEach((f, i) => {
+      const pg = Math.floor(i / L.perPage), j = i % L.perPage;
+      tex.add(f.name, pg, (j % L.cols) * L.cw + 1, Math.floor(j / L.cols) * L.ch + 1, Math.ceil(w * L.dens), Math.ceil(h * L.dens));
+    });
+  }
 }
 
-function addSet(scene: Phaser.Scene, key: string, set: SpriteSet) {
-  const frames: { name: string; pix: Pix }[] = [];
+function addSet(scene: Phaser.Scene, key: string, set: SpriteSet, maxD = 6) {
+  const frames: { name: string; paint: Painter }[] = [];
   const anims: Record<string, number> = {};
   for (const [a, list] of Object.entries(set.anims)) {
     anims[a] = list.length;
-    list.forEach((pix, i) => frames.push({ name: `${a}_${i}`, pix }));
+    list.forEach((paint, i) => frames.push({ name: `${a}_${i}`, paint }));
   }
-  addAtlas(scene, key, set.w, set.h, frames);
-  ATLAS[key] = { key, w: set.w, h: set.h, footY: set.footY, anims };
+  const d = Math.min(maxD, DENSITY.sprite), de = Math.max(1.5, d * EMISSIVE_SCALE);
+  buildAtlas(scene, key, set.w, set.h, frames, d, de);
+  ATLAS[key] = { key, w: set.w, h: set.h, footY: set.footY, anims, d, de };
 }
 
-export function makeTextures(scene: Phaser.Scene) {
+export function makeTextures(scene: Phaser.Scene, quality: string | null = null) {
+  const r = scene.renderer as Phaser.Renderer.WebGL.WebGLRenderer;
+  if (typeof r.getMaxTextureSize === 'function') maxTex = r.getMaxTextureSize() || 4096;
+  chooseDensity(scene.scale.width, scene.scale.height, quality);
   // Keeper.
-  const frames: { name: string; pix: Pix }[] = [];
+  const frames: { name: string; paint: Painter }[] = [];
   for (const dir of ['down', 'side', 'up'] as Dir[]) {
     for (const anim of Object.keys(KEEPER_ANIMS) as KeeperAnim[]) {
       for (let f = 0; f < KEEPER_ANIMS[anim]; f++) {
         const fr = drawKeeper(dir, anim, f);
         const name = `${dir}_${anim}_${f}`;
-        frames.push({ name, pix: fr.pix });
+        frames.push({ name, paint: fr.paint });
         keeperLantern.set(name, { x: fr.lx, y: fr.ly });
       }
     }
   }
-  addAtlas(scene, 'keeper', KEEPER_W, KEEPER_H, frames);
-  ATLAS.keeper = { key: 'keeper', w: KEEPER_W, h: KEEPER_H, footY: KEEPER_FOOT_Y, anims: KEEPER_ANIMS };
+  const kd = DENSITY.sprite, kde = Math.max(1.5, kd * EMISSIVE_SCALE);
+  buildAtlas(scene, 'keeper', KEEPER_W, KEEPER_H, frames, kd, kde);
+  ATLAS.keeper = { key: 'keeper', w: KEEPER_W, h: KEEPER_H, footY: KEEPER_FOOT_Y, anims: KEEPER_ANIMS, d: kd, de: kde };
 
   addSet(scene, 'stalker', stalkerSprites());
   addSet(scene, 'stalkerElite', stalkerSprites(true));
@@ -60,7 +112,7 @@ export function makeTextures(scene: Phaser.Scene) {
   addSet(scene, 'colossusElite', colossusSprites(true));
   addSet(scene, 'dummy', dummySprites());
   // The Choked Star (final boss) and its arena pieces.
-  addSet(scene, 'boss', bossSprites());
+  addSet(scene, 'boss', bossSprites(), 5);
   addSet(scene, 'bossWall', bossWallSprites());
   addSet(scene, 'bossThorn', bossThornSprites());
 
@@ -94,10 +146,20 @@ function softTextures(scene: Phaser.Scene) {
     g.fillStyle = r;
     g.fillRect(0, 0, 64, 64);
   });
-  // A crisp pixel dot and a 2x2 spark for particles (upscaled like the art).
-  canvasTex(scene, 'px', ART_SCALE, ART_SCALE, (g) => { g.fillStyle = '#fff'; g.fillRect(0, 0, ART_SCALE, ART_SCALE); });
-  canvasTex(scene, 'spark', ART_SCALE * 3, ART_SCALE, (g) => {
-    g.fillStyle = '#fff'; g.fillRect(0, 0, ART_SCALE * 3, ART_SCALE);
+  // Particles: a soft-edged round dot (32 px = 1 world unit at scale 1/32) and a 3:1 spark with
+  // rounded ends and a hot core, both smooth so they stay crisp when the camera zooms in.
+  canvasTex(scene, 'px', 32, 32, (g) => {
+    const r = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+    r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.6, 'rgba(255,255,255,0.95)'); r.addColorStop(0.85, 'rgba(255,255,255,0.45)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = r; g.fillRect(0, 0, 32, 32);
+  });
+  canvasTex(scene, 'spark', 96, 32, (g) => {
+    const lg = g.createLinearGradient(0, 0, 96, 0);
+    lg.addColorStop(0, 'rgba(255,255,255,0)'); lg.addColorStop(0.45, 'rgba(255,255,255,0.75)'); lg.addColorStop(1, 'rgba(255,255,255,1)');
+    g.fillStyle = lg;
+    g.beginPath(); g.ellipse(48, 16, 47, 11, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.9)';
+    g.beginPath(); g.ellipse(70, 16, 22, 5, 0, 0, Math.PI * 2); g.fill();
   });
   // Contact shadow (ellipse, soft).
   canvasTex(scene, 'shadow', 64, 32, (g) => {

@@ -81,7 +81,9 @@ export class App {
   private attract() {
     const s = this.scene;
     s.newWorld(7, 'lantern');
-    s.loadRoom(ROOMS.sanctum, { combat: false });
+    const token = ++this.gotoToken;
+    this.hud.fadeEl.classList.add('on');
+    void s.loadRoom(ROOMS.sanctum, { combat: false }).then(() => { if (token === this.gotoToken) this.fadeIn(); });
     s.world.player.x = s.world.player.px = -999; // the keeper is not on stage on the title screen
     s.attract = true;
     s.running = true;
@@ -171,7 +173,10 @@ export class App {
     const n = plan.nodes[i];
     const def: RoomDef = plan.room(i, reward);
     const s = this.scene;
-    s.loadRoom(def, { combat: def.waves.length > 0 });
+    // The screen stays dark until the room's art is ready (at once when it was prepared ahead of time).
+    this.hud.fadeEl.classList.add('on');
+    const token = ++this.gotoToken;
+    const ready = s.loadRoom(def, { combat: def.waves.length > 0 });
     s.running = this.phase === 'play';
     const w = s.world;
     w.onInteract = (p) => this.interact(p);
@@ -210,8 +215,22 @@ export class App {
     }
     this.hud.setRoomLabel(n.name || def.name);
     const depth = plan.nodes.slice(0, i + 1).filter((x) => x.kind === 'combat').length;
-    this.hud.toast(n.name || def.name, n.kind === 'combat' ? `Depth ${depth} of 7` : n.kind === 'boss' ? 'The end of the descent' : '', 2.2);
-    this.fadeIn();
+    void ready.then(() => {
+      if (token !== this.gotoToken) return;
+      this.hud.toast(n.name || def.name, n.kind === 'combat' ? `Depth ${depth} of 7` : n.kind === 'boss' ? 'The end of the descent' : '', 2.2);
+      this.fadeIn();
+      // Prepare the rooms behind this room's doors while it is played (after the first frames settle).
+      window.setTimeout(() => { if (token === this.gotoToken) this.prefetchNext(i); }, 1200);
+    });
+  }
+
+  private gotoToken = 0;
+  private prefetchNext(i: number) {
+    const plan = this.plan, next = i + 1;
+    if (!plan || next >= plan.length) return;
+    const n = plan.nodes[i];
+    const defs = n.kind === 'combat' && n.choice ? plan.offers.map((r) => plan.peek(next, r)) : [plan.peek(next)];
+    this.scene.prefetchRooms(defs);
   }
 
   private fadeIn() { this.hud.fadeEl.classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => this.hud.fadeEl.classList.remove('on'))); }
@@ -385,7 +404,7 @@ export class App {
       scene: s,
       app: this,
       world: () => s.world,
-      state: () => ({ phase: this.phase, node: this.node, kind: this.plan?.nodes[this.node].kind, room: s.world.room.def.id, roomState: s.world.roomState, screen: this.screens.current, hp: s.world.player.hp, enemies: s.world.enemies.filter((e) => !e.dead && e.kind !== 'dummy').length, choice: !!s.world.run.choice, level: s.world.run.level }),
+      state: () => ({ phase: this.phase, ready: s.roomReady, node: this.node, kind: this.plan?.nodes[this.node].kind, room: s.world.room.def.id, roomState: s.world.roomState, screen: this.screens.current, hp: s.world.player.hp, enemies: s.world.enemies.filter((e) => !e.dead && e.kind !== 'dummy').length, choice: !!s.world.run.choice, level: s.world.run.level }),
       start: (weapon: WeaponId = 'lantern') => this.startRun(weapon),
       goto: (i: number, reward?: Reward) => this.goto(i, reward),
       freeze: () => { s.frozen = true; },

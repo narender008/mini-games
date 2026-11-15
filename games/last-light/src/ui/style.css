@@ -26,6 +26,8 @@ html, body { margin: 0; height: 100%; background: #04060c; overflow: hidden; }
 body { font-family: 'Spectral', Georgia, serif; color: var(--text); -webkit-font-smoothing: antialiased; user-select: none; }
 #game { position: fixed; inset: 0; }
 #game canvas { display: block; cursor: crosshair; }
+/* A soft lens vignette: the edges of the view fall into the night, the stage in the middle stays lit. */
+#game::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse 75% 70% at 50% 50%, rgba(2, 4, 10, 0) 58%, rgba(2, 4, 10, 0.32) 85%, rgba(2, 4, 10, 0.6) 100%); }
 #ui { position: fixed; inset: 0; pointer-events: none; font-size: calc(16px * var(--ui-scale)); }
 #ui .interactive, #ui button, #ui input, #ui select { pointer-events: auto; }
 .cinzel { font-family: 'Cinzel', Georgia, serif; letter-spacing: 0.06em; }
@@ -41,7 +43,7 @@ body { font-family: 'Spectral', Georgia, serif; color: var(--text); -webkit-font
 .hud-tl { position: absolute; left: 18px; top: 14px; display: flex; align-items: center; gap: 0; }
 .portrait { width: 64px; height: 64px; position: relative; flex: none; }
 .portrait::before { content: ''; position: absolute; inset: 8px; transform: rotate(45deg); background: linear-gradient(135deg, #1a2238, #070a14); border: 2px solid var(--brass); box-shadow: 0 0 0 1px var(--ink), 0 0 12px rgba(255, 179, 71, 0.25); }
-.portrait img { position: absolute; left: 12px; top: 10px; width: 40px; height: 40px; image-rendering: pixelated; }
+.portrait img { position: absolute; left: 12px; top: 10px; width: 40px; height: 40px; }
 .hp-wrap { margin-left: -6px; display: flex; flex-direction: column; gap: 5px; }
 .hp-frame { position: relative; height: 18px; width: 220px; background: linear-gradient(#0a0e1a, #111829); border: 1px solid var(--brass); box-shadow: 0 0 0 1px var(--ink), inset 0 0 6px #000; clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%); }
 .hp-segs { position: absolute; inset: 3px 12px 3px 6px; display: flex; gap: 3px; }
@@ -65,7 +67,7 @@ body { font-family: 'Spectral', Georgia, serif; color: var(--text); -webkit-font
 @keyframes pulse { 50% { box-shadow: 0 0 16px var(--amber-l); background: var(--amber-l); } }
 
 .hud-tr { position: absolute; right: 22px; top: 18px; display: flex; align-items: center; gap: 8px; font: 700 calc(18px * var(--ui-scale)) 'Cinzel', serif; color: var(--text); text-shadow: 0 1px 3px #000; }
-.hud-tr img { width: 32px; height: 32px; image-rendering: pixelated; }
+.hud-tr img { width: 32px; height: 32px; }
 .hud-tr .room { font: 600 12px 'Cinzel', serif; color: var(--muted); margin-right: 12px; letter-spacing: 0.08em; }
 
 .hud-bottom { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; }
@@ -75,7 +77,7 @@ body { font-family: 'Spectral', Georgia, serif; color: var(--text); -webkit-font
 .slot .box::before, .slot .box::after { content: ''; position: absolute; width: 5px; height: 5px; border: 1px solid var(--brass-l); transform: rotate(45deg); background: var(--navy); }
 .slot .box::before { left: -4px; top: -4px; }
 .slot .box::after { right: -4px; bottom: -4px; }
-.slot img { position: absolute; inset: 6px; width: 40px; height: 40px; image-rendering: pixelated; }
+.slot img { position: absolute; inset: 6px; width: 40px; height: 40px; }
 .slot .cd { position: absolute; inset: 0; background: conic-gradient(rgba(4, 6, 12, 0.78) var(--p, 0%), transparent 0); }
 .slot .fill { position: absolute; left: 0; right: 0; bottom: 0; height: var(--f, 0%); background: linear-gradient(transparent, rgba(255, 179, 71, 0.22)); border-top: 1px solid rgba(255, 210, 122, 0.5); }
 .slot.ready .box { box-shadow: 0 0 0 1px var(--ink), 0 0 14px rgba(255, 179, 71, 0.55), inset 0 0 10px #000; }

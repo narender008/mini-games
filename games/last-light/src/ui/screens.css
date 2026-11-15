@@ -169,7 +169,7 @@
 .picks-none { color: var(--muted); font-style: italic; }
 .picks-grid { display: flex; flex-wrap: wrap; gap: 0.35em; }
 .pick { position: relative; width: 2.7em; height: 2.7em; display: grid; place-items: center; background: radial-gradient(circle, rgba(255, 255, 255, 0.06), rgba(5, 7, 14, 0.85) 70%); border: 1px solid rgba(184, 138, 69, 0.45); transition: border-color 0.12s, box-shadow 0.12s; }
-.pick img { width: 2.2em; height: 2.2em; image-rendering: pixelated; }
+.pick img { width: 2.2em; height: 2.2em; }
 .pick .rk { position: absolute; right: -0.3em; bottom: -0.3em; min-width: 1.5em; height: 1.35em; padding: 0 0.25em; display: grid; place-items: center; font: 700 0.62em/1 'Cinzel', Georgia, serif; color: var(--amber-l); background: #0b0f1c; border: 1px solid var(--gold-d); }
 button.pick:focus { border-color: var(--amber-l); box-shadow: 0 0 0 1px var(--amber), 0 0 0.7em rgba(255, 179, 71, 0.6); }
 .picks-detail { margin-top: 0.55em; min-height: 3.9em; padding: 0.45em 0.6em; background: rgba(5, 7, 14, 0.55); border: 1px solid rgba(184, 138, 69, 0.2); display: flex; flex-direction: column; gap: 0.1em; font-size: 0.92em; }
@@ -221,7 +221,7 @@ button.pick:focus { border-color: var(--amber-l); box-shadow: 0 0 0 1px var(--am
 .medal { width: 6.6em; height: 6.6em; margin: 0.65em 0 0.55em; border-radius: 50%; display: grid; place-items: center; position: relative;
   background: radial-gradient(circle, color-mix(in srgb, var(--cc) 30%, #0b0f1c) 0%, #090c17 62%);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--cc) 45%, #05060b), 0 0 0 0.3em rgba(5, 7, 14, 0.8), 0 0 0 calc(0.3em + 1px) rgba(184, 138, 69, 0.35), inset 0 0 1.2em rgba(0, 0, 0, 0.8); }
-.medal img { width: 5.2em; height: 5.2em; image-rendering: pixelated; filter: drop-shadow(0 0 0.4em color-mix(in srgb, var(--cc) 60%, transparent)); transition: transform 0.2s; }
+.medal img { width: 5.2em; height: 5.2em; filter: drop-shadow(0 0 0.4em color-mix(in srgb, var(--cc) 60%, transparent)); transition: transform 0.2s; }
 .card:focus .medal img { transform: scale(1.06); }
 .nm { font: 700 1.16em/1.15 'Cinzel', Georgia, serif; letter-spacing: 0.05em; text-transform: uppercase; color: #f6e6c4; text-shadow: 0 1px 2px #000; }
 .card:focus .nm { color: #ffe9b8; text-shadow: 0 0 0.6em rgba(255, 179, 71, 0.5), 0 1px 2px #000; }

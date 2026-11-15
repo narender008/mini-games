@@ -1,7 +1,6 @@
-// Shared tuning and constants. World units are "art pixels": every sprite is drawn on a 1x pixel grid and
-// upscaled by ART_SCALE into its texture, so 1 world unit = 1 art pixel on screen at camera zoom 1.
+// Shared tuning and constants. All art is painted in vectors in world units and rasterised at the
+// screen's density (src/view/density.ts), so it stays crisp at any camera zoom.
 export const TILE = 16;
-export const ART_SCALE = 3; // texels per art pixel in generated textures
 export const WALL_H = 28; // how far a wall's cap is raised above its footprint (3/4 overhead view)
 export const SIM_HZ = 120;
 export const SIM_DT = 1 / SIM_HZ;
