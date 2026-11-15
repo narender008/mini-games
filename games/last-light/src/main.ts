@@ -20,7 +20,10 @@ const game = new Phaser.Game({
   render: { antialias: true, pixelArt: false, roundPixels: false, powerPreference: 'high-performance' },
   input: { keyboard: false, mouse: false, touch: false, gamepad: false },
   audio: { noAudio: true },
-  fps: { smoothStep: true },
+  // GameScene already clamps every frame to MAX_FRAME_DT, so Phaser's own guards are kept short: frames up to
+  // 500 ms keep their real length (min), and after boot or a refocus only 5 frames are capped at 1/60 s
+  // (panicMax; the default 120 runs the game in slow motion for seconds on any machine below 60 fps).
+  fps: { smoothStep: true, min: 2, panicMax: 5 },
   disableContextMenu: true,
   banner: false,
   scene: [scene],

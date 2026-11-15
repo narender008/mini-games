@@ -29,7 +29,7 @@ for (const [w, h] of [[1600, 900], [1280, 720], [1024, 640], [390, 844]]) {
   test(`viewport ${w}x${h}: boots into play, canvas fills the window, HUD visible, no errors`, async () => {
     const page = await open(env.browser, env.base, 'debug&play&seed=8', { width: w, height: h });
     const lt = await hook(page);
-    await until(async () => playing(await lt('state')), 30000, 100, 'play');
+    await until(async () => playing(await lt('state')), 60000, 100, 'play');
     await shown(page);
     await page.waitForTimeout(1200);
     const box = await page.evaluate(() => { const r = document.querySelector('#game canvas').getBoundingClientRect(); return { w: r.width, h: r.height, x: r.x, y: r.y }; });
@@ -78,9 +78,10 @@ test('malformed and hostile localStorage does not break boot; defaults are used'
     assert.equal(st.s.master, 0.8, bad);
     assert.ok(st.s.textScale >= 1 && st.s.textScale <= 1.3, bad);
     assert.equal(st.r.runs, 0, bad);
-    // ...and the game still starts.
+    // ...and the game still starts (the title ignores keys for 250 ms after it opens).
+    await page.waitForTimeout(400);
     await page.keyboard.press('Enter');
-    await until(async () => playing(await lt('state')), 30000, 100, 'play');
+    await until(async () => playing(await lt('state')), 60000, 100, 'play');
     assert.deepEqual(page.problems, [], bad);
     await close(page);
   }

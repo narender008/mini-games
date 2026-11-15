@@ -49,6 +49,9 @@ function hasInk(c: HTMLCanvasElement) {
   return false;
 }
 
+/** Props whose glow image the room view animates (wakes, fades or flickers with its light). */
+const LIVE_GLOW = 'WVUHCKB';
+
 export function bakeRoom(def: RoomDef, seed: number, d: number, de: number, finish: (c: HTMLCanvasElement) => ImageSrc = (c) => c): BakedRoom {
   const t0 = performance.now();
   const room = parseRoom(def);
@@ -58,6 +61,9 @@ export function bakeRoom(def: RoomDef, seed: number, d: number, de: number, fini
   const images: BakedImage[] = [];
   const lights: BakedLight[] = [];
   const push = (c: HTMLCanvasElement, im: Omit<BakedImage, 'src'>) => images.push({ ...im, src: finish(c) });
+  // Static glow (floor, walls, bushes, most props) is gathered into a few room-wide layers at the end:
+  // one additive pass over the screen instead of a hundred overlapping ones.
+  const glow: { c: HTMLCanvasElement; x: number; y: number; w: number; h: number }[] = [];
 
   // Floor.
   const plan = planFloor(M, zone, seed, kit, room.props);
@@ -68,7 +74,7 @@ export function bakeRoom(def: RoomDef, seed: number, d: number, de: number, fini
     A.g.translate(-x0, -y0); E.g.translate(-x0, -y0);
     paintFloor(plan, A.g, E.g, x0, y0, w, h);
     push(A.c, { x: x0, y: y0, d, kind: 'floor', sortY: 0, emissive: false });
-    if (hasInk(E.c)) push(E.c, { x: x0, y: y0, d: de, kind: 'floor', sortY: 0, emissive: true });
+    glow.push({ c: E.c, x: x0, y: y0, w, h });
   }
 
   // Tall rows, each split into chunks cropped to what they hold.
@@ -90,7 +96,7 @@ export function bakeRoom(def: RoomDef, seed: number, d: number, de: number, fini
       const paintAll = (g: Ctx, e: Ctx) => { for (const el of hit) { g.save(); e.save(); el.draw(g, e); g.restore(); e.restore(); } };
       paintAll(A.g, E.g);
       push(A.c, { x: bx0, y: by0, d, kind: 'row', sortY: baseY, emissive: false });
-      if (hasInk(E.c)) push(E.c, { x: bx0, y: by0, d: de, kind: 'row', sortY: baseY, emissive: true });
+      glow.push({ c: E.c, x: bx0, y: by0, w, h });
     }
   }
 
@@ -102,8 +108,30 @@ export function bakeRoom(def: RoomDef, seed: number, d: number, de: number, fini
     const A = layer(art.w, art.h, d), E = layer(art.w, art.h, de);
     art.paint(A.g, E.g);
     push(A.c, { x, y, d, kind: 'prop', sortY: footY - 2, emissive: false, propId: p.id });
-    if (hasInk(E.c)) push(E.c, { x, y, d: de, kind: 'prop', sortY: footY - 2, emissive: true, propId: p.id });
+    // Props whose glow wakes, fades or flickers keep their own glow image; the rest join the room's.
+    if (LIVE_GLOW.includes(p.kind)) { if (hasInk(E.c)) push(E.c, { x, y, d: de, kind: 'prop', sortY: footY - 2, emissive: true, propId: p.id }); }
+    else glow.push({ c: E.c, x, y, w: art.w, h: art.h });
     if (art.light) lights.push({ propId: p.id, kind: p.kind, x: x + art.light.x, y: y + art.light.y, r: art.light.r, color: art.light.color, i: art.light.i });
+  }
+
+  // The room-wide glow layers, in chunks of at most 2048 texels.
+  if (glow.length) {
+    const gx0 = Math.floor(Math.min(...glow.map((q) => q.x))), gy0 = Math.floor(Math.min(...glow.map((q) => q.y)));
+    const gx1 = Math.ceil(Math.max(...glow.map((q) => q.x + q.w))), gy1 = Math.ceil(Math.max(...glow.map((q) => q.y + q.h)));
+    const GC = Math.floor(2048 / de);
+    for (let y0 = gy0; y0 < gy1; y0 += GC) for (let x0 = gx0; x0 < gx1; x0 += GC) {
+      const w = Math.min(GC, gx1 - x0), h = Math.min(GC, gy1 - y0);
+      const E = layer(w, h, de);
+      E.g.translate(-x0, -y0);
+      E.g.globalCompositeOperation = 'lighter';
+      let any = false;
+      for (const q of glow) {
+        if (q.x >= x0 + w || q.x + q.w <= x0 || q.y >= y0 + h || q.y + q.h <= y0) continue;
+        E.g.drawImage(q.c, q.x, q.y, q.c.width / de, q.c.height / de);
+        any = true;
+      }
+      if (any && hasInk(E.c)) push(E.c, { x: x0, y: y0, d: de, kind: 'floor', sortY: 0, emissive: true });
+    }
   }
   return { key: bakeKey(def, seed, d), images, lights, ms: performance.now() - t0 };
 }

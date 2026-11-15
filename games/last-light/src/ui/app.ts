@@ -71,9 +71,9 @@ export class App {
 
     if (params.has('debug')) (window as unknown as Record<string, unknown>).__lt = this.debugApi();
     if (params.has('play') || params.has('boss') || params.has('room')) {
-      this.startRun(params.get('weapon') === 'sunlance' ? 'sunlance' : 'lantern');
-      if (params.has('boss') && this.plan) this.goto(this.plan.length - 1);
-      else if (params.has('room') && this.plan) this.goto(Math.max(0, Math.min(this.plan.length - 1, Number(params.get('room')) || 0)));
+      // Straight into the asked-for node (no sanctum first, so only that room's art is baked).
+      const first = params.has('boss') ? 'last' : params.has('room') ? Number(params.get('room')) || 0 : 0;
+      this.startRun(params.get('weapon') === 'sunlance' ? 'sunlance' : 'lantern', first);
     } else this.showTitle();
   }
 
@@ -143,7 +143,7 @@ export class App {
   }
 
   // ---- the run -------------------------------------------------------------------------------------
-  startRun(weapon: WeaponId) {
+  startRun(weapon: WeaponId, first: number | 'last' = 0) {
     this.screens.hide();
     const seed = this.seedParam ?? ((Date.now() ^ (Math.random() * 1e9)) >>> 0) % 1000000;
     this.plan = new RunPlan(seed);
@@ -163,7 +163,7 @@ export class App {
       { id: 'weapon', text: 'Press E at a pedestal to choose a weapon', done: false },
     ];
     this.phase = 'play';
-    this.goto(0);
+    this.goto(first === 'last' ? this.plan.length - 1 : Math.max(0, Math.min(this.plan.length - 1, first)));
   }
 
   /** Enter node i (optionally a chosen reward room). */

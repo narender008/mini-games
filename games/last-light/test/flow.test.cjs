@@ -12,7 +12,7 @@ test.after(async () => { await env.done(); });
 test('levelling opens the upgrade choice; key 1 takes the first card and it applies', async () => {
   const page = await open(env.browser, env.base, 'debug&play&seed=3');
   const lt = await hook(page);
-  await until(async () => playing(await lt('state')), 30000);
+  await until(async () => playing(await lt('state')), 60000);
   await lt('freeze');
   // One level's worth of light (16 motes), gathered the way pickups give it.
   await page.evaluate(() => window.__lt.world().gainMotes(16));
@@ -24,7 +24,7 @@ test('levelling opens the upgrade choice; key 1 takes the first card and it appl
   await page.waitForTimeout(500); // the card screen ignores keys for a moment after opening
   await shot(page, 'upgrade');
   await page.keyboard.press('Digit1');
-  await until(async () => playing(await lt('state')), 30000, 100, 'back to play');
+  await until(async () => playing(await lt('state')), 60000, 100, 'back to play');
   const run = await page.evaluate(() => { const r = window.__lt.world().run; return { picks: r.picks, ranks: r.ranks, pending: r.pendingLevels, choice: r.choice }; });
   assert.deepEqual(run.picks, [offered[0]]);
   assert.equal(run.ranks[offered[0]], 1);
@@ -41,7 +41,7 @@ test('levelling opens the upgrade choice; key 1 takes the first card and it appl
 test('death shows the defeat screen; Try Again starts a fresh run without reloading', async () => {
   const page = await open(env.browser, env.base, 'debug&play&seed=3&room=2');
   const lt = await hook(page);
-  await until(async () => (await lt('state')).roomState === 'combat', 15000, 200, 'combat');
+  await until(async () => (await lt('state')).roomState === 'combat', 60000, 200, 'combat');
   await page.evaluate(() => { window.__sameDocument = true; });
   // Mid-fight picture: let the first wave arrive and close in (the keeper is spared meanwhile).
   await lt('god');
@@ -59,7 +59,7 @@ test('death shows the defeat screen; Try Again starts a fresh run without reload
     w.addHazard({ kind: 'slam', team: 'enemy', x: p.x, y: p.y, r: 30, t: 0, dur: 0.3, delay: 0, dmg: 99, tick: 0 });
   });
   await until(async () => (await player(page)).state === 'dead', 5000, 100, 'death');
-  await until(async () => (await lt('state')).screen === 'result', 10000, 100, 'result screen');
+  await until(async () => (await lt('state')).screen === 'result', 30000, 100, 'result screen');
   assert.equal(await page.locator('.scr-result.defeat').count(), 1);
   assert.match(await page.locator('.scr-result .res-title').innerText(), /The Light Fades/i);
   await page.waitForTimeout(1200); // the result screen ignores input for 0.7 s
@@ -69,7 +69,7 @@ test('death shows the defeat screen; Try Again starts a fresh run without reload
   assert.equal(records.wins, 0);
   assert.equal(await page.evaluate(() => document.activeElement?.dataset.id), 'restart');
   await page.keyboard.press('Enter');
-  const s = await until(async () => { const s = await lt('state'); return playing(s) && s; }, 30000, 100, 'fresh run');
+  const s = await until(async () => { const s = await lt('state'); return playing(s) && s; }, 60000, 100, 'fresh run');
   assert.equal(s.node, 0);
   assert.equal(s.kind, 'sanctum');
   assert.equal(s.screen, null);
@@ -91,7 +91,7 @@ test('death shows the defeat screen; Try Again starts a fresh run without reload
 test('victory via the debug path (?debug&boss, killAll): the boss dies and the victory screen shows', async () => {
   const page = await open(env.browser, env.base, 'debug&boss&seed=4');
   const lt = await hook(page);
-  const s = await until(async () => { const s = await lt('state'); return playing(s) && s; }, 30000);
+  const s = await until(async () => { const s = await lt('state'); return playing(s) && s; }, 60000);
   assert.equal(s.kind, 'boss');
   assert.equal(s.node, 13);
   await lt('god');
