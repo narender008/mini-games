@@ -3,7 +3,7 @@
 // Where timing matters the sim is frozen and advanced with __lt.step(ms); the input itself is real events.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { setup, open, close, hook, until, player, shot } = require('./lib/browser.cjs');
+const { setup, open, close, hook, until, player, shot, playing } = require('./lib/browser.cjs');
 
 let env;
 test.before(async () => { env = await setup(); });
@@ -17,7 +17,7 @@ const dummy = (page) => page.evaluate(() => { const e = window.__lt.world().enem
 async function startFrozen(page, lt) {
   await page.waitForTimeout(300); // the title ignores input for a moment after opening
   await page.keyboard.press('Enter');
-  await until(async () => (await lt('state')).phase === 'play', 8000, 100, 'play');
+  await until(async () => playing(await lt('state')), 60000, 100, 'play');
   await lt('freeze');
 }
 
@@ -44,7 +44,7 @@ test('title menu: arrow keys move focus, Esc returns from a submenu, Enter on Be
   while (await focus() !== 'start') await page.keyboard.press('ArrowUp');
   await page.waitForTimeout(300);
   await page.keyboard.press('Enter');
-  const s = await until(async () => { const s = await lt('state'); return s.phase === 'play' && s; }, 8000, 100, 'play');
+  const s = await until(async () => { const s = await lt('state'); return playing(s) && s; }, 60000, 100, 'play');
   assert.equal(s.screen, null);
   assert.equal(s.kind, 'sanctum');
   assert.deepEqual(page.problems, []);
@@ -54,7 +54,7 @@ test('title menu: arrow keys move focus, Esc returns from a submenu, Enter on Be
 test('WASD moves the keeper (real key holds; the frozen sim is stepped while each key is down)', async () => {
   const page = await open(env.browser, env.base, 'debug&play&seed=3');
   const lt = await hook(page);
-  await until(async () => (await lt('state')).phase === 'play', 8000);
+  await until(async () => playing(await lt('state')), 60000);
   await lt('freeze');
   const moves = { KeyD: [1, 0], KeyA: [-1, 0], KeyW: [0, -1], KeyS: [0, 1] };
   for (const [key, [dx, dy]] of Object.entries(moves)) {
@@ -85,7 +85,7 @@ test('WASD moves the keeper (real key holds; the frozen sim is stepped while eac
 test('walls: holding A into the west wall stops the keeper outside it', async () => {
   const page = await open(env.browser, env.base, 'debug&play&seed=3');
   const lt = await hook(page);
-  await until(async () => (await lt('state')).phase === 'play', 8000);
+  await until(async () => playing(await lt('state')), 60000);
   await lt('freeze');
   await page.keyboard.down('KeyA');
   const xs = [];
@@ -169,7 +169,7 @@ test('Esc pauses (pause screen, the sim stops) and Esc resumes', async () => {
   assert.deepEqual(await page.evaluate(() => window.__lt.world().enemies.map((e) => [e.x, e.y])), e0);
   await shot(page, 'pause');
   await page.keyboard.press('Escape');
-  await until(async () => (await lt('state')).phase === 'play', 5000, 100, 'resumed');
+  await until(async () => playing(await lt('state')), 60000, 100, 'resumed');
   await until(async () => (await player(page)).time > t0 + 0.2, 15000, 100, 'the world to resume');
   assert.deepEqual(page.problems, []);
   await close(page);
@@ -182,7 +182,7 @@ test('menus do not leak input: Enter, Space and clicks on menus never attack or 
   await page.waitForTimeout(400);
   // Click Begin Descent with the mouse.
   await page.click('.scr-title button[data-id="start"]');
-  await until(async () => (await lt('state')).phase === 'play', 8000, 100, 'play');
+  await until(async () => playing(await lt('state')), 60000, 100, 'play');
   await lt('step', 200);
   let p = await player(page);
   assert.equal(p.state, 'normal', 'the click on Begin Descent reached the game');
@@ -192,7 +192,7 @@ test('menus do not leak input: Enter, Space and clicks on menus never attack or 
   await page.keyboard.press('KeyJ'); // the attack key, while paused
   await page.mouse.click(20, 400); // a click on the menu backdrop
   await page.keyboard.press('Space');
-  await until(async () => (await lt('state')).phase === 'play', 5000, 100, 'resume with Space');
+  await until(async () => playing(await lt('state')), 60000, 100, 'resume with Space');
   await lt('step', 200);
   p = await player(page);
   assert.equal(p.state, 'normal', `a menu key reached the game (state ${p.state})`);
@@ -208,7 +208,7 @@ test('menus do not leak input: Enter, Space and clicks on menus never attack or 
 test('after resizing mid-game the mouse still aims where it points', async () => {
   const page = await open(env.browser, env.base, 'debug&play&seed=3', { width: 1280, height: 720 });
   const lt = await hook(page);
-  await until(async () => (await lt('state')).phase === 'play', 8000);
+  await until(async () => playing(await lt('state')), 60000);
   await lt('freeze');
   const check = async (label) => {
     const vp = page.viewportSize();

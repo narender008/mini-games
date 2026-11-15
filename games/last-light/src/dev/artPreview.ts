@@ -1,96 +1,116 @@
-import { stalkerSprites, sentinelSprites, beetleSprites, wardenSprites, colossusSprites, dummySprites, type SpriteSet } from '../art/enemies';
-// Dev-only contact sheets of the generated art (served by `npm run dev` at /art.html, never built).
-// The first sheet is a lineup at the in-game scale on navy stone under a dim multiply, to judge size
-// and readability; the rest show every frame of every animation.
+// Dev-only contact sheets of every character set, painted exactly as the game paints them (served by
+// `npm run dev` at /art.html, never built). Query: ?only=keeper,stalker (sets to show), &d=6 (texels per
+// world unit for the sheets), &lit=0 (skip the in-game look rows).
+// For each set: a lineup row at game look (navy floor, dim multiply light like the game's ambient, then
+// the emissive layer added on top) and one row per animation showing the raw painted body.
 import { drawKeeper, KEEPER_ANIMS, KEEPER_FOOT_Y, KEEPER_W, KEEPER_H, type Dir, type KeeperAnim } from '../art/keeper';
-import { makeCanvas, type Pix } from '../art/pix';
+import { stalkerSprites, sentinelSprites, beetleSprites, wardenSprites, colossusSprites, dummySprites } from '../art/enemies';
+import { bossSprites, bossThornSprites, bossWallSprites } from '../art/boss';
+import { layer, makeCanvas } from '../art/paint';
+import type { Painter, SpriteSet } from '../art/sprite';
 
-const S = 4;
-const dim = new URLSearchParams(location.search).has('dim');
+const q = new URLSearchParams(location.search);
+const D = Number(q.get('d')) || 6;
+const only = q.get('only')?.split(',') ?? null;
+const showLit = q.get('lit') !== '0';
 document.body.style.background = '#10131d';
 document.body.style.color = '#ccd';
-document.body.style.font = '12px monospace';
+document.body.style.font = '13px monospace';
+document.body.style.margin = '8px';
 
-function sheet(title: string, rows: { label: string; frames: Pix[] }[], bg = '#3a4256') {
-  const h = document.createElement('div');
-  h.textContent = title;
-  document.body.appendChild(h);
-  const fw = Math.max(...rows.flatMap((r) => r.frames.map((f) => f.w)));
-  const fh = Math.max(...rows.flatMap((r) => r.frames.map((f) => f.h)));
-  const cols = Math.max(...rows.map((r) => r.frames.length));
-  const c = makeCanvas((cols * (fw + 2) + 16) * S, rows.length * (fh + 2) * S);
+type AnySet = { w: number; h: number; footY: number; anims: Record<string, unknown[]> };
+function painter(f: unknown, w: number, h: number): Painter {
+  if (typeof f === 'function') return f as Painter;
+  const pix = f as { w: number; h: number; drawTo(g: CanvasRenderingContext2D, x: number, y: number, s?: number): void };
+  const c = makeCanvas(pix.w, pix.h);
+  pix.drawTo(c.getContext('2d')!, 0, 0, 1);
+  return (g) => { g.imageSmoothingEnabled = false; g.drawImage(c, 0, 0, w, h); };
+}
+function norm(s: AnySet): SpriteSet {
+  const anims: Record<string, Painter[]> = {};
+  for (const [k, v] of Object.entries(s.anims)) anims[k] = v.map((f) => painter(f, s.w, s.h));
+  return { w: s.w, h: s.h, footY: s.footY, anims };
+}
+
+/** Paint one frame: returns body and emissive canvases at density d. */
+function paintFrame(p: Painter, w: number, h: number, d: number) {
+  const a = layer(w, h, d), e = layer(w, h, d);
+  p(a.g, e.g);
+  return { body: a.c, emit: e.c };
+}
+
+const AMBIENT = 'rgb(108,124,172)';
+function floor(g: CanvasRenderingContext2D, w: number, h: number, d: number) {
+  g.fillStyle = '#1a1f2c'; g.fillRect(0, 0, w, h);
+  const s = 15 * d;
+  for (let y = 0; y < h; y += s) for (let x = -s; x < w; x += s) {
+    const off = (Math.floor(y / s) % 2) * s * 0.5;
+    g.fillStyle = (Math.floor(x / s) + Math.floor(y / s)) % 3 ? '#7d8597' : '#737b8e';
+    g.beginPath(); g.roundRect(x + off + 0.6 * d, y + 0.6 * d, s - 1.2 * d, s - 1.2 * d, 2 * d); g.fill();
+  }
+}
+
+function title(t: string) { const h = document.createElement('div'); h.textContent = t; h.style.margin = '14px 0 4px'; document.body.appendChild(h); }
+
+function sheet(name: string, set: SpriteSet) {
+  title(`${name}  ${set.w}x${set.h} units, feet at ${set.footY}  (sheet at ${D} texels/unit)`);
+  const rows = Object.entries(set.anims);
+  const cols = Math.max(...rows.map(([, v]) => v.length));
+  const fw = (set.w + 2) * D, fh = (set.h + 2) * D;
+  const c = makeCanvas(cols * fw + 110, (rows.length + (showLit ? 1 : 0)) * fh);
   const g = c.getContext('2d')!;
-  g.fillStyle = dim ? '#2a3150' : bg;
-  g.fillRect(0, 0, c.width, c.height);
-  rows.forEach((r, j) => {
-    g.fillStyle = '#ccd';
-    g.fillText(r.label, 2, j * (fh + 2) * S + 12);
-    r.frames.forEach((f, i) => put(g, f, (16 + i * (fw + 2)) * S, j * (fh + 2) * S + 8, S));
-  });
-  if (dim) multiply(g, c.width, c.height);
+  g.fillStyle = '#3a4256'; g.fillRect(0, 0, c.width, c.height);
+  let row = 0;
+  if (showLit) {
+    // In-game look: floor x ambient, then each frame body x ambient, then emissive added.
+    const lit = makeCanvas(c.width, fh), lg = lit.getContext('2d')!;
+    floor(lg, lit.width, lit.height, D);
+    const frames = rows.map(([, v]) => v[0]);
+    const painted = frames.map((p) => paintFrame(p, set.w, set.h, D));
+    painted.forEach((f, i) => lg.drawImage(f.body, 110 + i * fw + D, D));
+    lg.globalCompositeOperation = 'multiply'; lg.fillStyle = AMBIENT; lg.fillRect(0, 0, lit.width, lit.height);
+    lg.globalCompositeOperation = 'lighter';
+    painted.forEach((f, i) => lg.drawImage(f.emit, 110 + i * fw + D, D));
+    lg.globalCompositeOperation = 'source-over';
+    g.drawImage(lit, 0, 0);
+    g.fillStyle = '#ccd'; g.fillText('game look', 4, 14);
+    g.fillText('(first frame', 4, 30); g.fillText(' of each anim)', 4, 44);
+    row++;
+  }
+  for (const [k, list] of rows) {
+    g.fillStyle = '#ccd'; g.fillText(k, 4, row * fh + 14);
+    list.forEach((p, i) => {
+      const f = paintFrame(p, set.w, set.h, D);
+      const x = 110 + i * fw + D, y = row * fh + D;
+      g.strokeStyle = 'rgba(255,255,255,0.08)'; g.strokeRect(x, y, set.w * D, set.h * D);
+      g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(x, y + set.footY * D, set.w * D, 1);
+      g.drawImage(f.body, x, y);
+      g.globalCompositeOperation = 'lighter'; g.globalAlpha = 0.6; g.drawImage(f.emit, x, y); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+    });
+    row++;
+  }
   document.body.appendChild(c);
 }
 
-/** Draw a Pix over what is already on the canvas (Pix.drawTo uses putImageData, which replaces). */
-function put(g: CanvasRenderingContext2D, pix: Pix, x: number, y: number, s: number) {
-  const t = makeCanvas(pix.w * s, pix.h * s);
-  pix.drawTo(t.getContext('2d')!, 0, 0, s);
-  g.drawImage(t, x, y);
+function keeperSet(): SpriteSet {
+  const anims: Record<string, Painter[]> = {};
+  for (const dir of ['down', 'side', 'up'] as Dir[]) {
+    for (const anim of Object.keys(KEEPER_ANIMS) as KeeperAnim[]) {
+      if (anim === 'dead' && dir !== 'down') continue;
+      anims[`${dir} ${anim}`] = Array.from({ length: KEEPER_ANIMS[anim] }, (_, f) => drawKeeper(dir, anim, f).paint);
+    }
+  }
+  return { w: KEEPER_W, h: KEEPER_H, footY: KEEPER_FOOT_Y, anims };
 }
 
-function multiply(g: CanvasRenderingContext2D, w: number, h: number) {
-  g.globalCompositeOperation = 'multiply';
-  g.fillStyle = 'rgb(150,160,200)';
-  g.fillRect(0, 0, w, h);
-  g.globalCompositeOperation = 'source-over';
-}
-
-const sets: Record<string, SpriteSet> = {
-  stalker: stalkerSprites(), stalkerElite: stalkerSprites(true), sentinel: sentinelSprites(), beetle: beetleSprites(),
-  warden: wardenSprites(), colossus: colossusSprites(), colossusElite: colossusSprites(true), dummy: dummySprites(),
+const all: Record<string, () => AnySet> = {
+  keeper: keeperSet,
+  stalker: () => stalkerSprites(), stalkerElite: () => stalkerSprites(true), sentinel: () => sentinelSprites(), charger: () => beetleSprites(),
+  warden: () => wardenSprites(), colossus: () => colossusSprites(), colossusElite: () => colossusSprites(true), dummy: () => dummySprites(),
+  boss: () => bossSprites(), bossWall: () => bossWallSprites(), bossThorn: () => bossThornSprites(),
 };
-
-// Lineup at about the in-game screen scale (≈2.65 screen px per art px; 3 here), feet on one line.
-{
-  const L = 3;
-  const list: { pix: Pix; footY: number }[] = [
-    { pix: drawKeeper('down', 'idle', 0).pix, footY: KEEPER_FOOT_Y },
-    { pix: drawKeeper('side', 'atk1', 0).pix, footY: KEEPER_FOOT_Y },
-    ...Object.values(sets).map((s) => ({ pix: s.anims.idle[0], footY: s.footY })),
-    { pix: sets.stalker.anims.windup[1], footY: sets.stalker.footY },
-    { pix: sets.sentinel.anims.windup[1], footY: sets.sentinel.footY },
-    { pix: sets.colossus.anims.windup[1], footY: sets.colossus.footY },
-  ];
-  const base = Math.max(...list.map((e) => e.footY)) + 4;
-  const wsum = list.reduce((a, e) => a + e.pix.w + 4, 8);
-  const c = makeCanvas(wsum * L, (base + 8) * L);
-  const g = c.getContext('2d')!;
-  // Navy flagstones like the game floor.
-  for (let y = 0; y < c.height; y += 16 * L) for (let x = 0; x < c.width; x += 16 * L) {
-    g.fillStyle = ((x / (16 * L) + y / (16 * L)) % 2) ? '#3a4466' : '#343d5d';
-    g.fillRect(x + (y / (16 * L) % 2 ? 8 * L : 0), y, 15 * L, 15 * L);
-  }
-  let x = 8;
-  for (const e of list) { put(g, e.pix, x * L, (base - e.footY) * L, L); x += e.pix.w + 4; }
-  multiply(g, c.width, c.height);
-  const h = document.createElement('div');
-  h.textContent = 'lineup (game scale, dim)';
-  document.body.appendChild(h);
-  document.body.appendChild(c);
-}
-
-const rows: { label: string; frames: Pix[] }[] = [];
-for (const dir of ['down', 'side', 'up'] as Dir[]) {
-  for (const anim of Object.keys(KEEPER_ANIMS) as KeeperAnim[]) {
-    if (anim === 'dead' && dir !== 'down') continue;
-    const frames = [];
-    for (let f = 0; f < KEEPER_ANIMS[anim]; f++) frames.push(drawKeeper(dir, anim, f).pix);
-    rows.push({ label: `${dir} ${anim}`, frames });
-  }
-}
-// Keeper rows side by side in two columns would need a custom layout; one sheet is clear enough.
-sheet(`keeper ${KEEPER_W}x${KEEPER_H}`, rows);
-for (const [name, set] of Object.entries(sets)) {
-  sheet(`${name} ${set.w}x${set.h} foot ${set.footY}`, Object.entries(set.anims).map(([k, v]) => ({ label: k, frames: v })));
+for (const [name, make] of Object.entries(all)) {
+  if (only && !only.includes(name)) continue;
+  sheet(name, norm(make()));
 }
 (window as unknown as { __ready: boolean }).__ready = true;

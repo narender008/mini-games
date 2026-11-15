@@ -2,7 +2,7 @@
 // emergence and death fades), projectiles, motes, telegraphs and lingering hazards. Positions are
 // interpolated between the last two simulation steps by `alpha`.
 import Phaser from 'phaser';
-import { ART_SCALE, PLAYER } from '../config';
+import { PLAYER } from '../config';
 import { lerp } from '../core/math';
 import type { Enemy, Hazard, Pickup, Projectile, Telegraph } from '../sim/types';
 import type { World } from '../sim/world';
@@ -10,13 +10,24 @@ import { wardTargets } from '../sim/enemies';
 import { ATLAS, keeperLantern } from './textures';
 import { DEPTH, ySort } from './roomView';
 import type { Light } from './lighting';
+
+/** The coloured light each foe casts around itself (colour, radius, intensity): their glow lights the floor. */
+const ENEMY_LIGHT: Record<string, [number, number, number]> = {
+  stalker: [0x3fd6e6, 34, 0.5],
+  sentinel: [0xd04ac0, 38, 0.55],
+  warden: [0x4ae0c0, 36, 0.45],
+  charger: [0xff8a3a, 34, 0.45],
+  colossus: [0xffa040, 52, 0.55],
+  dummy: [0x000000, 0, 0],
+};
 import { BossView } from './bossView';
 
-const INV = 1 / ART_SCALE;
 
 interface EnemyView {
   e: Enemy;
   spr: Phaser.GameObjects.Sprite;
+  /** The emissive twin (eyes, cracks, crystals), drawn additively above the light map. */
+  emit: Phaser.GameObjects.Sprite;
   shadow: Phaser.GameObjects.Image;
   bar: Phaser.GameObjects.Graphics;
   shield: Phaser.GameObjects.Image;
@@ -29,7 +40,7 @@ interface EnemyView {
 const SHADOW_W: Record<string, number> = { stalker: 26, sentinel: 18, charger: 38, warden: 18, colossus: 58, boss: 80, dummy: 16 };
 
 export class EntityViews {
-  player: { spr: Phaser.GameObjects.Sprite; shadow: Phaser.GameObjects.Image; glow: Phaser.GameObjects.Image; light: Light; ghosts: Phaser.GameObjects.Image[]; ghostT: number; ward: Phaser.GameObjects.Image; pool: Phaser.GameObjects.Image };
+  player: { spr: Phaser.GameObjects.Sprite; emit: Phaser.GameObjects.Sprite; shadow: Phaser.GameObjects.Image; glow: Phaser.GameObjects.Image; light: Light; ghosts: Phaser.GameObjects.Image[]; ghostT: number; ward: Phaser.GameObjects.Image; pool: Phaser.GameObjects.Image };
   enemies = new Map<number, EnemyView>();
   projs = new Map<number, { img: Phaser.GameObjects.Image; core: Phaser.GameObjects.Image; light: Light }>();
   picks = new Map<number, { img: Phaser.GameObjects.Image; light: Light }>();
@@ -46,13 +57,15 @@ export class EntityViews {
 
   constructor(private scene: Phaser.Scene) {
     const s = scene;
-    const spr = s.add.sprite(0, 0, 'keeper', 'down_idle_0').setScale(INV).setOrigin(0.5, ATLAS.keeper.footY / ATLAS.keeper.h);
+    const K = ATLAS.keeper;
+    const spr = s.add.sprite(0, 0, 'keeper', 'down_idle_0').setScale(1 / K.d).setOrigin(0.5, K.footY / K.h);
+    const emit = s.add.sprite(0, 0, 'keeper_e', 'down_idle_0').setScale(1 / K.de).setOrigin(0.5, K.footY / K.h).setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.glow);
     const shadow = s.add.image(0, 0, 'shadow').setDisplaySize(16, 6).setDepth(DEPTH.decal).setAlpha(0.8);
     const glow = s.add.image(0, 0, 'glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0xffa040).setDisplaySize(36, 36).setAlpha(0.35).setDepth(DEPTH.glow);
     const light: Light = { x: 0, y: 0, r: 120, color: 0xff9a40, i: 0.8 };
     const pool = s.add.image(0, 0, 'glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0xff8a30).setDisplaySize(150, 110).setAlpha(0.1).setDepth(DEPTH.glow);
     const ward = s.add.image(0, 0, 'ringSoft').setBlendMode(Phaser.BlendModes.ADD).setTint(0xffd27a).setDisplaySize(30, 30).setDepth(DEPTH.glow).setVisible(false);
-    this.player = { spr, shadow, glow, light, ghosts: [], ghostT: 0, ward, pool };
+    this.player = { spr, emit, shadow, glow, light, ghosts: [], ghostT: 0, ward, pool };
     this.lights.push(light);
     this.hazardG = s.add.graphics().setDepth(DEPTH.telegraph);
     this.teleG = s.add.graphics().setDepth(DEPTH.telegraph + 1).setBlendMode(Phaser.BlendModes.ADD);
@@ -96,6 +109,7 @@ export class EntityViews {
     else if (p.state === 'dash') v.spr.setTint(0x9ff0ff);
     else v.spr.clearTint();
     v.spr.setAlpha(p.state === 'dash' ? 0.75 : inv && Math.floor(t * 20) % 2 === 0 ? 0.45 : 1);
+    v.emit.setFrame(name).setPosition(x, y).setFlipX(v.spr.flipX).setAlpha(v.spr.alpha).setVisible(p.hurtFlash <= 0.12);
     v.shadow.setPosition(x, y + 0.5);
     // Lantern light at the lantern itself.
     const lo = keeperLantern.get(name) ?? { x: 4, y: -12 };
@@ -111,7 +125,7 @@ export class EntityViews {
     v.ghostT -= dt;
     if (p.state === 'dash' && v.ghostT <= 0) {
       v.ghostT = 0.025;
-      const g = this.scene.add.image(x, y, 'keeper', name).setScale(INV).setOrigin(0.5, ATLAS.keeper.footY / ATLAS.keeper.h)
+      const g = this.scene.add.image(x, y, 'keeper', name).setScale(1 / ATLAS.keeper.d).setOrigin(0.5, ATLAS.keeper.footY / ATLAS.keeper.h)
         .setFlipX(v.spr.flipX).setTintFill(0x5fe0d0).setAlpha(0.5).setBlendMode(Phaser.BlendModes.ADD).setDepth(ySort(y) - 1);
       v.ghosts.push(g);
     }
@@ -173,13 +187,14 @@ export class EntityViews {
       const key = this.enemyKey(e);
       if (!v) {
         const at = ATLAS[key];
-        const spr = this.scene.add.sprite(0, 0, key, 'idle_0').setScale(INV).setOrigin(0.5, at.footY / at.h);
+        const spr = this.scene.add.sprite(0, 0, key, 'idle_0').setScale(1 / at.d).setOrigin(0.5, at.footY / at.h);
+        const emit = this.scene.add.sprite(0, 0, `${key}_e`, 'idle_0').setScale(1 / at.de).setOrigin(0.5, at.footY / at.h).setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.glow);
         const shadow = this.scene.add.image(0, 0, 'shadow').setDepth(DEPTH.decal).setDisplaySize(SHADOW_W[e.kind] ?? 16, (SHADOW_W[e.kind] ?? 16) * 0.38).setAlpha(0.85);
         const bar = this.scene.add.graphics().setDepth(DEPTH.ui - 1);
         const shield = this.scene.add.image(0, 0, 'ringSoft').setBlendMode(Phaser.BlendModes.ADD).setTint(0x5fe0d0).setVisible(false).setDepth(DEPTH.glow);
-        const light: Light = { x: 0, y: 0, r: 26, color: e.elite ? 0xc04090 : 0x3a5a9a, i: 0.25 };
+        const light: Light = { x: 0, y: 0, r: ENEMY_LIGHT[e.kind]?.[1] ?? 30, color: e.elite ? 0xd04aa0 : ENEMY_LIGHT[e.kind]?.[0] ?? 0x3a5a9a, i: 0 };
         this.lights.push(light);
-        v = { e, spr, shadow, bar, shield, light, key, barShown: 0, lastHp: e.hp };
+        v = { e, spr, emit, shadow, bar, shield, light, key, barShown: 0, lastHp: e.hp };
         this.enemies.set(e.id, v);
       }
       v.e = e;
@@ -197,8 +212,9 @@ export class EntityViews {
       // Windup shiver.
       const shiver = (e.state === 'windup' || e.state === 'plant' || e.state === 'slamWind' || e.state === 'stompWind') ? Math.sin(t * 60) * 0.5 : 0;
       v.spr.setPosition(x + shiver, y + yo).setAlpha(alpha).setDepth(ySort(y));
+      v.emit.setFrame(v.spr.frame.name).setPosition(x + shiver, y + yo).setFlipX(faceLeft).setAlpha(e.dead || e.spawnT > 0 ? alpha * 0.5 : alpha).setVisible(!(e.flash > 0));
       v.shadow.setPosition(x, y + 0.5).setAlpha(0.85 * alpha);
-      v.light.x = x; v.light.y = y - 8; v.light.i = e.dead ? 0 : 0.25;
+      v.light.x = x; v.light.y = y - 8; v.light.i = e.dead || e.spawnT > 0 ? 0 : (ENEMY_LIGHT[e.kind]?.[2] ?? 0.3) * (e.elite ? 1.3 : 1);
       // Shield bubble.
       if (e.shield && !e.dead) {
         const h = ATLAS[key].h * 0.8;
@@ -227,7 +243,7 @@ export class EntityViews {
     }
     for (const [id, v] of this.enemies) {
       if (seen.has(id)) continue;
-      v.spr.destroy(); v.shadow.destroy(); v.bar.destroy(); v.shield.destroy();
+      v.spr.destroy(); v.emit.destroy(); v.shadow.destroy(); v.bar.destroy(); v.shield.destroy();
       v.light.i = 0;
       this.lights.splice(this.lights.indexOf(v.light), 1);
       this.enemies.delete(id);
@@ -269,7 +285,7 @@ export class EntityViews {
       light = { x: 0, y: 0, r: 34, color: col, i: 0.7 };
     } else if (p.kind === 'shard') {
       img = s.add.image(0, 0, 'streak').setTint(0xffc860).setBlendMode(Phaser.BlendModes.ADD).setDisplaySize(12, 4).setDepth(DEPTH.fx);
-      core = s.add.image(0, 0, 'px').setTint(0xffffff).setScale(INV).setDepth(DEPTH.fx);
+      core = s.add.image(0, 0, 'px').setTint(0xffffff).setScale(1 / 32).setDepth(DEPTH.fx);
       light = { x: 0, y: 0, r: 18, color: 0xffb040, i: 0.5 };
     } else if (p.kind === 'lance') {
       const crescent = p.r >= 8;
@@ -454,7 +470,7 @@ export class EntityViews {
   /** Remove everything that belongs to a room (keeps the keeper). */
   clearRoom() {
     this.boss.clear(); // boss
-    for (const [, v] of this.enemies) { v.spr.destroy(); v.shadow.destroy(); v.bar.destroy(); v.shield.destroy(); }
+    for (const [, v] of this.enemies) { v.spr.destroy(); v.emit.destroy(); v.shadow.destroy(); v.bar.destroy(); v.shield.destroy(); }
     this.enemies.clear();
     for (const [, v] of this.projs) { v.img.destroy(); v.core.destroy(); }
     this.projs.clear();
@@ -472,7 +488,7 @@ export class EntityViews {
     this.clearRoom();
     this.boss.destroy(); // boss
     const p = this.player;
-    p.spr.destroy(); p.shadow.destroy(); p.glow.destroy(); p.ward.destroy(); p.pool.destroy();
+    p.spr.destroy(); p.emit.destroy(); p.shadow.destroy(); p.glow.destroy(); p.ward.destroy(); p.pool.destroy();
     for (const g of p.ghosts) g.destroy();
     for (const v of this.wisps) v.img.destroy();
     this.wisps = [];

@@ -30,6 +30,8 @@ export default defineConfig({
   // web/*.html refer to /src/...; map that onto this game's src folder (outside the Vite root).
   resolve: { alias: [{ find: /^\/src\//, replacement: here + 'src/' }] },
   server: { fs: { allow: [here, here + '../../vendor'] }, port: 5173, hmr: process.env.NO_HMR ? false : undefined },
+  // The room bake worker (src/view/bake/worker.ts) is its own module script with no Phaser in it.
+  worker: { format: 'es', rollupOptions: { output: { entryFileNames: 'build/[name].js', chunkFileNames: 'build/[name].js' } } },
   build: {
     outDir: here,
     emptyOutDir: false,

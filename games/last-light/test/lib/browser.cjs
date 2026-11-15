@@ -67,7 +67,19 @@ function player(page) {
   return page.evaluate(() => { const w = window.__lt.world(), p = w.player; return { x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, state: p.state, dashCharges: p.dashCharges, aim: p.aim, time: w.time, runTime: w.run.time }; });
 }
 
+/** In play with the room's view built (the world only advances once it is). */
+const playing = (s) => s.phase === 'play' && s.ready;
+
+/** Wait until the room on screen is built and faded in (rooms are baked off the main thread). */
+async function shown(page, timeout = 60000) {
+  const test = () => !window.__lt || (window.__lt.state().ready && !document.querySelector('.fade.on'));
+  if (await page.evaluate(test)) return;
+  await page.waitForFunction(test, null, { timeout });
+  await page.waitForTimeout(450); // the fade in
+}
+
 async function shot(page, name) {
+  await shown(page);
   const file = path.join(SHOTS, `${name}.png`);
   await page.screenshot({ path: file });
   return file;
@@ -75,6 +87,7 @@ async function shot(page, name) {
 
 /** Pixel statistics of the current frame: a blank or flat frame has a tiny spread and few colours. */
 async function frameStats(page) {
+  await shown(page);
   const png = (await page.screenshot({ type: 'png' })).toString('base64');
   return page.evaluate(async (b64) => {
     const img = new Image();
@@ -97,4 +110,4 @@ async function frameStats(page) {
   }, png);
 }
 
-module.exports = { GAME, OUT, SHOTS, launch, setup, open, close, hook, until, player, shot, frameStats };
+module.exports = { GAME, OUT, SHOTS, launch, setup, open, close, hook, until, player, playing, shown, shot, frameStats };

@@ -4,7 +4,7 @@
 // (vent, phase change, death) as particles through the shared Fx pool. It reads the simulation only:
 // state changes are detected by watching the boss brain, not through fx events.
 import Phaser from 'phaser';
-import { ART_SCALE, TILE } from '../config';
+import { TILE } from '../config';
 import { lerp } from '../core/math';
 import type { Enemy, Hazard, Telegraph } from '../sim/types';
 import type { World } from '../sim/world';
@@ -16,12 +16,12 @@ import { DEPTH, ySort } from './roomView';
 import type { Light } from './lighting';
 import type { Fx } from './fx';
 
-const INV = 1 / ART_SCALE;
 const AMBER = 0xffb347, WARM = 0xffd98a, HOT = 0xfff1c8, MAGENTA = 0xe04bb0, MAGENTA_L = 0xff9be0;
 
 interface Body {
   id: number;
   spr: Phaser.GameObjects.Sprite;
+  emit: Phaser.GameObjects.Sprite;
   shadow: Phaser.GameObjects.Image;
   ground: Phaser.GameObjects.Image;
   halo: Phaser.GameObjects.Image;
@@ -90,7 +90,8 @@ export class BossView {
       const add = (key: string, tint: number) => s.add.image(0, 0, key).setBlendMode(Phaser.BlendModes.ADD).setTint(tint).setDepth(DEPTH.glow);
       this.body = {
         id: e.id,
-        spr: s.add.sprite(0, 0, 'boss', 'idle_0').setScale(INV).setOrigin(0.5, at.footY / at.h),
+        spr: s.add.sprite(0, 0, 'boss', 'idle_0').setScale(1 / at.d).setOrigin(0.5, at.footY / at.h),
+        emit: s.add.sprite(0, 0, 'boss_e', 'idle_0').setScale(1 / at.de).setOrigin(0.5, at.footY / at.h).setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.glow),
         shadow: s.add.image(0, 0, 'shadow').setDepth(DEPTH.decal).setAlpha(0.9),
         ground: add('glow', 0xff8a30),
         halo: add('glow', AMBER),
@@ -131,6 +132,7 @@ export class BossView {
     else v.spr.clearTint();
     const shiver = windup || b.mode === 'transition' ? Math.sin(t * 55) * 0.6 : b.mode === 'dying' ? Math.sin(t * 70) * 1.2 * (1 - e.deathT / BOSS_DEATH_T) : 0;
     v.spr.setPosition(x + shiver, y).setAlpha(alpha).setDepth(ySort(y));
+    v.emit.setFrame(frame).setPosition(x + shiver, y).setAlpha(alpha).setVisible(!(e.flash > 0.07 && b.mode !== 'dying'));
     v.shadow.setPosition(x, y + 1).setDisplaySize(92, 30).setAlpha(0.8 * alpha);
 
     // The star's glow and light: breathing, brighter when winding up or venting, magenta in phase 2.
@@ -233,7 +235,7 @@ export class BossView {
   private dropBody() {
     const v = this.body;
     if (!v) return;
-    for (const o of [v.spr, v.shadow, v.ground, v.halo, v.hot, v.corrupt, v.ring]) o.destroy();
+    for (const o of [v.spr, v.emit, v.shadow, v.ground, v.halo, v.hot, v.corrupt, v.ring]) o.destroy();
     for (const L of [v.coreL, v.magL, v.groundL]) this.unlight(L);
     this.body = null;
   }
@@ -259,7 +261,7 @@ export class BossView {
         case 'root': {
           let s = this.thorns.get(h.id);
           if (!s) {
-            s = this.scene.add.sprite(h.x, h.y, 'bossThorn', 'rise_0').setScale(INV).setOrigin(0.5, ATLAS.bossThorn.footY / ATLAS.bossThorn.h).setDepth(ySort(h.y));
+            s = this.scene.add.sprite(h.x, h.y, 'bossThorn', 'rise_0').setScale(1 / ATLAS.bossThorn.d).setOrigin(0.5, ATLAS.bossThorn.footY / ATLAS.bossThorn.h).setDepth(ySort(h.y));
             this.thorns.set(h.id, s);
             fx?.burst({ x: h.x, y: h.y, n: 16, color: [0x1d1820, 0x2e252a, 0x465066], speed: [30, 100], life: [0.3, 0.7], size: [2, 0], add: false, up: 50, grav: 160 });
             fx?.burst({ x: h.x, y: h.y - 6, n: 10, color: p2 ? [MAGENTA, MAGENTA_L] : [AMBER, WARM], speed: [30, 90], life: [0.2, 0.5], tex: 'spark', stretch: true, up: 40 });
@@ -397,7 +399,7 @@ export class BossView {
     this.walls = [];
     for (const tl of want) {
       const x = (tl.tx + 0.5) * TILE, y = (tl.ty + 1) * TILE - 2;
-      const s = this.scene.add.sprite(x, y, 'bossWall', `idle_${(tl.tx + tl.ty) % 2}`).setScale(INV).setOrigin(0.5, ATLAS.bossWall.footY / ATLAS.bossWall.h).setDepth(ySort(y));
+      const s = this.scene.add.sprite(x, y, 'bossWall', `idle_${(tl.tx + tl.ty) % 2}`).setScale(1 / ATLAS.bossWall.d).setOrigin(0.5, ATLAS.bossWall.footY / ATLAS.bossWall.h).setDepth(ySort(y));
       this.walls.push(s);
       fx?.burst({ x, y: y - 4, n: 14, color: [0x232838, 0x363e52, 0x1d1820], speed: [30, 110], life: [0.4, 0.8], size: [2.2, 0], add: false, up: 60, grav: 160 });
       fx?.burst({ x, y: y - 10, n: 8, color: [MAGENTA, MAGENTA_L], speed: [20, 70], life: [0.3, 0.7], tex: 'spark', stretch: true, up: 30 });

@@ -71,9 +71,9 @@ export class App {
 
     if (params.has('debug')) (window as unknown as Record<string, unknown>).__lt = this.debugApi();
     if (params.has('play') || params.has('boss') || params.has('room')) {
-      this.startRun(params.get('weapon') === 'sunlance' ? 'sunlance' : 'lantern');
-      if (params.has('boss') && this.plan) this.goto(this.plan.length - 1);
-      else if (params.has('room') && this.plan) this.goto(Math.max(0, Math.min(this.plan.length - 1, Number(params.get('room')) || 0)));
+      // Straight into the asked-for node (no sanctum first, so only that room's art is baked).
+      const first = params.has('boss') ? 'last' : params.has('room') ? Number(params.get('room')) || 0 : 0;
+      this.startRun(params.get('weapon') === 'sunlance' ? 'sunlance' : 'lantern', first);
     } else this.showTitle();
   }
 
@@ -81,7 +81,9 @@ export class App {
   private attract() {
     const s = this.scene;
     s.newWorld(7, 'lantern');
-    s.loadRoom(ROOMS.sanctum, { combat: false });
+    const token = ++this.gotoToken;
+    this.hud.fadeEl.classList.add('on');
+    void s.loadRoom(ROOMS.sanctum, { combat: false }).then(() => { if (token === this.gotoToken) this.fadeIn(); });
     s.world.player.x = s.world.player.px = -999; // the keeper is not on stage on the title screen
     s.attract = true;
     s.running = true;
@@ -141,7 +143,7 @@ export class App {
   }
 
   // ---- the run -------------------------------------------------------------------------------------
-  startRun(weapon: WeaponId) {
+  startRun(weapon: WeaponId, first: number | 'last' = 0) {
     this.screens.hide();
     const seed = this.seedParam ?? ((Date.now() ^ (Math.random() * 1e9)) >>> 0) % 1000000;
     this.plan = new RunPlan(seed);
@@ -161,7 +163,7 @@ export class App {
       { id: 'weapon', text: 'Press E at a pedestal to choose a weapon', done: false },
     ];
     this.phase = 'play';
-    this.goto(0);
+    this.goto(first === 'last' ? this.plan.length - 1 : Math.max(0, Math.min(this.plan.length - 1, first)));
   }
 
   /** Enter node i (optionally a chosen reward room). */
@@ -171,7 +173,10 @@ export class App {
     const n = plan.nodes[i];
     const def: RoomDef = plan.room(i, reward);
     const s = this.scene;
-    s.loadRoom(def, { combat: def.waves.length > 0 });
+    // The screen stays dark until the room's art is ready (at once when it was prepared ahead of time).
+    this.hud.fadeEl.classList.add('on');
+    const token = ++this.gotoToken;
+    const ready = s.loadRoom(def, { combat: def.waves.length > 0 });
     s.running = this.phase === 'play';
     const w = s.world;
     w.onInteract = (p) => this.interact(p);
@@ -210,8 +215,22 @@ export class App {
     }
     this.hud.setRoomLabel(n.name || def.name);
     const depth = plan.nodes.slice(0, i + 1).filter((x) => x.kind === 'combat').length;
-    this.hud.toast(n.name || def.name, n.kind === 'combat' ? `Depth ${depth} of 7` : n.kind === 'boss' ? 'The end of the descent' : '', 2.2);
-    this.fadeIn();
+    void ready.then(() => {
+      if (token !== this.gotoToken) return;
+      this.hud.toast(n.name || def.name, n.kind === 'combat' ? `Depth ${depth} of 7` : n.kind === 'boss' ? 'The end of the descent' : '', 2.2);
+      this.fadeIn();
+      // Prepare the rooms behind this room's doors while it is played (after the first frames settle).
+      window.setTimeout(() => { if (token === this.gotoToken) this.prefetchNext(i); }, 1200);
+    });
+  }
+
+  private gotoToken = 0;
+  private prefetchNext(i: number) {
+    const plan = this.plan, next = i + 1;
+    if (!plan || next >= plan.length) return;
+    const n = plan.nodes[i];
+    const defs = n.kind === 'combat' && n.choice ? plan.offers.map((r) => plan.peek(next, r)) : [plan.peek(next)];
+    this.scene.prefetchRooms(defs);
   }
 
   private fadeIn() { this.hud.fadeEl.classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => this.hud.fadeEl.classList.remove('on'))); }
@@ -385,7 +404,7 @@ export class App {
       scene: s,
       app: this,
       world: () => s.world,
-      state: () => ({ phase: this.phase, node: this.node, kind: this.plan?.nodes[this.node].kind, room: s.world.room.def.id, roomState: s.world.roomState, screen: this.screens.current, hp: s.world.player.hp, enemies: s.world.enemies.filter((e) => !e.dead && e.kind !== 'dummy').length, choice: !!s.world.run.choice, level: s.world.run.level }),
+      state: () => ({ phase: this.phase, ready: s.roomReady, node: this.node, kind: this.plan?.nodes[this.node].kind, room: s.world.room.def.id, roomState: s.world.roomState, screen: this.screens.current, hp: s.world.player.hp, enemies: s.world.enemies.filter((e) => !e.dead && e.kind !== 'dummy').length, choice: !!s.world.run.choice, level: s.world.run.level }),
       start: (weapon: WeaponId = 'lantern') => this.startRun(weapon),
       goto: (i: number, reward?: Reward) => this.goto(i, reward),
       freeze: () => { s.frozen = true; },
